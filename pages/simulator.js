@@ -3,7 +3,6 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import Head from 'next/head'
 
-export const config = { unstable_runtimeJS: true }
 export const getServerSideProps = () => ({ props: {} })
 
 // ─── Dukascopy candle fetcher ────────────────────────────────────────────────
@@ -93,6 +92,8 @@ export default function Simulator() {
   const [lotSize, setLotSize] = useState(0.01)
   const [sidebarTab, setSidebarTab] = useState('trade') // trade | history
 
+  const [showUserMenu, setShowUserMenu] = useState(false)
+
   // ── Auth check ──────────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -163,10 +164,13 @@ export default function Simulator() {
 
     let candles = []
     try {
-      candles = await fetchDukascopyCandles(p, tf, y, m)
+      candles = await Promise.race([
+        fetchDukascopyCandles(p, tf, y, m),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000))
+      ])
       if (!candles.length) throw new Error('empty')
     } catch {
-      setDataError('Using demo data (Dukascopy unavailable)')
+      setDataError('Demo data · live feed unavailable')
       candles = generateDemoCandles(p, 300)
     }
 
@@ -338,12 +342,25 @@ export default function Simulator() {
             </button>
           </div>
 
-          {/* Account info */}
+          {/* Account info + avatar */}
           <div style={s.accountBar}>
             <div style={s.acctItem}><span style={s.acctLabel}>Balance</span><span style={s.acctVal}>${balance.toLocaleString()}</span></div>
             <div style={s.acctItem}><span style={s.acctLabel}>Equity</span><span style={{ ...s.acctVal, color: equity >= balance ? '#22c55e' : '#ef4444' }}>${equity.toLocaleString()}</span></div>
             <div style={s.acctItem}><span style={s.acctLabel}>P&L</span><span style={{ ...s.acctVal, color: closedPnl >= 0 ? '#22c55e' : '#ef4444' }}>{closedPnl >= 0 ? '+' : ''}${closedPnl}</span></div>
-            <button onClick={handleSignOut} style={s.signOutBtn}>Sign out</button>
+            <button onClick={() => router.push('/dashboard')} style={s.signOutBtn}>Dashboard</button>
+            <div style={{ position: 'relative' }}>
+              <div style={s.avatarBtn} onClick={() => setShowUserMenu(!showUserMenu)}>
+                {user?.email?.slice(0, 2).toUpperCase() || 'FX'}
+              </div>
+              {showUserMenu && (
+                <div style={s.userMenu}>
+                  <div style={s.userMenuEmail}>{user?.email}</div>
+                  <div style={s.userMenuDivider} />
+                  <div style={s.userMenuItem} onClick={() => router.push('/dashboard')}>Dashboard</div>
+                  <div style={{ ...s.userMenuItem, color: '#ef4444' }} onClick={handleSignOut}>Sign out</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -521,6 +538,20 @@ const s = {
     background: 'none', border: '1px solid #1a2035', borderRadius: 5,
     color: '#4a5568', fontSize: 10, fontWeight: 600, padding: '3px 8px', cursor: 'pointer',
   },
+  avatarBtn: {
+    width: 28, height: 28, borderRadius: '50%',
+    background: 'linear-gradient(135deg, #1E90FF, #1060cc)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 10, fontWeight: 800, color: '#fff', cursor: 'pointer', flexShrink: 0,
+  },
+  userMenu: {
+    position: 'absolute', top: '110%', right: 0, zIndex: 100,
+    background: '#0d1220', border: '1px solid #1a2035', borderRadius: 8,
+    minWidth: 180, overflow: 'hidden',
+  },
+  userMenuEmail: { padding: '10px 14px', fontSize: 10, color: '#4a5568', fontWeight: 500, borderBottom: '1px solid #1a2035' },
+  userMenuDivider: { height: 1, background: '#1a2035' },
+  userMenuItem: { padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#c8d0e0', cursor: 'pointer' },
 
   replayBar: {
     display: 'flex', alignItems: 'center', gap: 12, padding: '6px 16px', flexShrink: 0,

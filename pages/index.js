@@ -12,7 +12,7 @@ export default function Login() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace('/simulator')
+      if (session) router.replace('/dashboard')
       else setCheckingSession(false)
     })
   }, [])
@@ -26,7 +26,7 @@ export default function Login() {
       setError('Invalid credentials. Check your email and password.')
       setLoading(false)
     } else {
-      router.push('/simulator')
+      router.push('/dashboard')
     }
   }
 
