@@ -1,42 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #080c14;
+  --bg2: #0a0f1a;
+  --bg3: #0d1220;
+  --bg4: #111827;
+  --border: #1a2035;
+  --blue: #1E90FF;
+  --blue-dim: #1E90FF22;
+  --green: #22c55e;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --white: #ffffff;
+  --text: #c8d0e0;
+  --muted: #4a5568;
+  --font: 'Montserrat', sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+html, body { background: var(--bg); color: var(--text); font-family: var(--font); height: 100%; overflow: hidden; }
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
+input, select, button { font-family: var(--font); }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+select { background: var(--bg3); border: 1px solid var(--border); color: var(--white); border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
+select:focus { outline: none; border-color: var(--blue); }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
+.btn-primary { background: var(--blue); color: #fff; border: none; border-radius: 6px; padding: 10px 24px; font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: .5px; transition: opacity .15s; }
+.btn-primary:hover { opacity: .85; }
+.btn-buy { background: var(--green); color: #fff; border: none; border-radius: 6px; padding: 8px 24px; font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: .5px; transition: opacity .15s; }
+.btn-buy:hover { opacity: .85; }
+.btn-sell { background: var(--red); color: #fff; border: none; border-radius: 6px; padding: 8px 24px; font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: .5px; transition: opacity .15s; }
+.btn-sell:hover { opacity: .85; }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+.tag { font-size: 9px; padding: 2px 6px; border-radius: 3px; font-weight: 700; }
+.tag.buy { background: #22c55e22; color: #22c55e; }
+.tag.sell { background: #ef444422; color: #ef4444; }
+.tag.win { background: #22c55e22; color: #22c55e; }
+.tag.loss { background: #ef444422; color: #ef4444; }
+.tag.be { background: #f59e0b22; color: #f59e0b; }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-}
+.g { color: var(--green); }
+.r { color: var(--red); }
+.b { color: var(--blue); }
+.w { color: var(--white); }
+.m { color: var(--muted); }
