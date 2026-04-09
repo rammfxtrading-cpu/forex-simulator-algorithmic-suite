@@ -9,30 +9,11 @@ export const getServerSideProps = () => ({ props: {} })
 // Fetches OHLCV from Dukascopy historical data API (bi5 format via proxy workaround)
 // We use a public CORS-friendly endpoint pattern
 async function fetchDukascopyCandles(pair, timeframe, year, month) {
-  // Dukascopy stores data as bi5 (LZMA compressed). We use a known public proxy
-  // that decodes and serves JSON: duka-proxy on Vercel (open source, widely used)
-  const symbol = pair.replace('/', '')
-  const m = String(month).padStart(2, '0')
-  // Map our timeframe labels to Dukascopy period codes
-  const tfMap = { 'M1': 'M1', 'M5': 'M5', 'M15': 'M15', 'M30': 'M30', 'H1': 'H1', 'H4': 'H4', 'D1': 'D1' }
-  const tf = tfMap[timeframe] || 'H1'
-
-  // Use dukas-copy-api (public, no auth needed for historical data)
-  const url = `https://freeserv.dukascopy.com/2.0/?path=chart/json&instrument=${symbol}&offer_side=B&interval=${tf}&splits=false&stocks=false&start=${year}-${m}-01T00:00:00&end=${year}-${m}-28T23:59:59&jsonp=false`
-
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('Dukascopy fetch failed')
-  const raw = await res.json()
-
-  // Dukascopy returns array of [timestamp, open, high, low, close, volume]
-  return raw.map(c => ({
-    time: Math.floor(c[0] / 1000),
-    open: parseFloat(c[1].toFixed(5)),
-    high: parseFloat(c[2].toFixed(5)),
-    low: parseFloat(c[3].toFixed(5)),
-    close: parseFloat(c[4].toFixed(5)),
-    volume: c[5] || 0,
-  })).filter(c => c.open && c.high && c.low && c.close)
+  const res = await fetch(`/api/candles?pair=${encodeURIComponent(pair)}&timeframe=${timeframe}&year=${year}&month=${month}`)
+  if (!res.ok) throw new Error('Candles API error')
+  const candles = await res.json()
+  if (!Array.isArray(candles) || candles.length === 0) throw new Error('No candles')
+  return candles
 }
 
 // ─── Fallback: generate demo candles if Dukascopy unavailable ────────────────
