@@ -20,6 +20,61 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
+    const lc = document.getElementById('logoCanvas')
+    if (!lc) return
+    const ctx = lc.getContext('2d')
+    const W = 160, H = 160
+    const nodes = []
+    for (let i = 0; i < 22; i++) {
+      nodes.push({
+        x: Math.random()*W, y: Math.random()*H,
+        vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4,
+        r: Math.random()*1.8+.8,
+        pulse: Math.random()*Math.PI*2
+      })
+    }
+    let id2
+    function drawLogo() {
+      ctx.clearRect(0,0,W,H)
+      const t = Date.now()/1000
+      for (let i=0;i<nodes.length;i++) {
+        for (let j=i+1;j<nodes.length;j++) {
+          const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y
+          const d=Math.sqrt(dx*dx+dy*dy)
+          if(d<55){
+            const alpha=(1-d/55)*0.5
+            ctx.strokeStyle=`rgba(30,144,255,${alpha})`
+            ctx.lineWidth=0.7
+            ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.stroke()
+          }
+        }
+      }
+      nodes.forEach((n,i)=>{
+        const pulse = 0.5+0.5*Math.sin(t*2+n.pulse)
+        const glow = ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*4)
+        glow.addColorStop(0,`rgba(30,144,255,${0.9*pulse})`)
+        glow.addColorStop(1,'rgba(30,144,255,0)')
+        ctx.beginPath();ctx.arc(n.x,n.y,n.r*3,0,Math.PI*2)
+        ctx.fillStyle=glow;ctx.fill()
+        ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2)
+        ctx.fillStyle=`rgba(100,200,255,${0.8+0.2*pulse})`;ctx.fill()
+        n.x+=n.vx;n.y+=n.vy
+        if(n.x<0||n.x>W)n.vx*=-1
+        if(n.y<0||n.y>H)n.vy*=-1
+      })
+      // RAMMFX box
+      ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.lineWidth=0.8
+      ctx.strokeRect(6,25,46,32)
+      ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 6px Montserrat,sans-serif'
+      ctx.fillText('R.A.M.M.FX',9,38)
+      ctx.fillText('TRADING',11,48)
+      id2=requestAnimationFrame(drawLogo)
+    }
+    drawLogo()
+    return ()=>cancelAnimationFrame(id2)
+  }, [loading])
+
+  useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || loading) return
     const ctx = canvas.getContext('2d')
@@ -92,53 +147,13 @@ export default function Dashboard() {
 
       <div style={s.sidebar}>
         <div style={s.logoWrap}>
-          <svg viewBox="0 0 200 200" width="160" height="160" xmlns="http://www.w3.org/2000/svg">
-            {/* Network dots and lines */}
-            <line x1="30" y1="20" x2="80" y2="45" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
-            <line x1="80" y1="45" x2="140" y2="25" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
-            <line x1="140" y1="25" x2="170" y2="60" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
-            <line x1="170" y1="60" x2="160" y2="100" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
-            <line x1="80" y1="45" x2="60" y2="80" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
-            <line x1="140" y1="25" x2="155" y2="55" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.5"/>
-            <line x1="10" y1="70" x2="60" y2="80" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.5"/>
-            <line x1="60" y1="80" x2="100" y2="65" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
-            <line x1="155" y1="55" x2="170" y2="60" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
-            <line x1="20" y1="160" x2="50" y2="140" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.5"/>
-            <line x1="50" y1="140" x2="90" y2="155" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
-            <line x1="150" y1="165" x2="180" y2="145" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
-            <line x1="180" y1="145" x2="190" y2="170" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.5"/>
-            <line x1="50" y1="140" x2="30" y2="170" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
-            {/* Dots */}
-            <circle cx="30" cy="20" r="2.5" fill="#1E90FF" fillOpacity="0.9"/>
-            <circle cx="80" cy="45" r="3" fill="#1E90FF" fillOpacity="1"/>
-            <circle cx="140" cy="25" r="2" fill="#1E90FF" fillOpacity="0.8"/>
-            <circle cx="170" cy="60" r="3.5" fill="#1E90FF" fillOpacity="1"/>
-            <circle cx="155" cy="55" r="1.5" fill="#1E90FF" fillOpacity="0.7"/>
-            <circle cx="160" cy="100" r="2" fill="#1E90FF" fillOpacity="0.6"/>
-            <circle cx="10" cy="70" r="2" fill="#1E90FF" fillOpacity="0.7"/>
-            <circle cx="60" cy="80" r="2.5" fill="#1E90FF" fillOpacity="0.8"/>
-            <circle cx="100" cy="65" r="1.5" fill="#1E90FF" fillOpacity="0.6"/>
-            <circle cx="20" cy="160" r="3" fill="#1E90FF" fillOpacity="1"/>
-            <circle cx="50" cy="140" r="2.5" fill="#1E90FF" fillOpacity="0.9"/>
-            <circle cx="90" cy="155" r="2" fill="#1E90FF" fillOpacity="0.7"/>
-            <circle cx="30" cy="170" r="1.5" fill="#1E90FF" fillOpacity="0.6"/>
-            <circle cx="150" cy="165" r="3" fill="#1E90FF" fillOpacity="1"/>
-            <circle cx="180" cy="145" r="2.5" fill="#1E90FF" fillOpacity="0.9"/>
-            <circle cx="190" cy="170" r="2" fill="#1E90FF" fillOpacity="0.8"/>
-            <circle cx="5" cy="130" r="1.5" fill="#1E90FF" fillOpacity="0.5"/>
-            <circle cx="195" cy="110" r="1.5" fill="#1E90FF" fillOpacity="0.5"/>
-            {/* RAMMFX box top-left */}
-            <rect x="8" y="30" width="52" height="38" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.7"/>
-            <text x="12" y="48" fontFamily="Montserrat,sans-serif" fontSize="7" fill="white" fillOpacity="0.8" letterSpacing="1">R.A.M.M.FX</text>
-            <text x="14" y="60" fontFamily="Montserrat,sans-serif" fontSize="7" fill="white" fillOpacity="0.8" letterSpacing="2">TRADING</text>
-            {/* Main title */}
-            <text x="100" y="108" fontFamily="Montserrat,sans-serif" fontSize="22" fontWeight="800" fill="white" fillOpacity="0.95" textAnchor="middle" letterSpacing="3">ALGORITHMIC</text>
-            <text x="100" y="126" fontFamily="Montserrat,sans-serif" fontSize="13" fontWeight="600" fill="white" fillOpacity="0.85" textAnchor="middle" letterSpacing="4">SUITE</text>
-            {/* Subtitle */}
-            <text x="100" y="142" fontFamily="Montserrat,sans-serif" fontSize="6.5" fill="white" fillOpacity="0.5" textAnchor="middle" fontStyle="italic">Advanced Indicators for Professional Traders</text>
-            {/* Powered by */}
-            <text x="100" y="188" fontFamily="Montserrat,sans-serif" fontSize="5.5" fill="white" fillOpacity="0.4" textAnchor="middle">Powered by R.A.M.M.FX TRADING™</text>
-          </svg>
+          <canvas id="logoCanvas" width="160" height="160" style={{width:160,height:160,display:'block'}}/>
+          <div style={{textAlign:'center',marginTop:-8}}>
+            <div style={{fontSize:13,fontWeight:800,color:'#ffffff',letterSpacing:3,lineHeight:1.3}}>ALGORITHMIC</div>
+            <div style={{fontSize:8,fontWeight:600,color:'#ffffff',letterSpacing:4,marginBottom:3}}>SUITE</div>
+            <div style={{fontSize:6,color:'#6080a0',fontStyle:'italic',letterSpacing:0.5}}>Advanced Indicators for Professional Traders</div>
+            <div style={{fontSize:5,color:'#304050',marginTop:2,letterSpacing:0.5}}>Powered by R.A.M.M.FX TRADING™</div>
+          </div>
         </div>
         <div style={s.sidebarDivider}/>
         <nav style={s.nav}>
