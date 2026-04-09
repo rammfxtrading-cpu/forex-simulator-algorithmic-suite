@@ -65,7 +65,7 @@ export default function Dashboard() {
 
   async function handleScreenshot() {
     try {
-      const { default: html2canvas } = await import('https://esm.sh/html2canvas@1.4.1')
+      const html2canvas = (await import('html2canvas')).default
       const canvas = await html2canvas(document.body, { backgroundColor: '#000000', scale: 2 })
       const link = document.createElement('a')
       link.download = `dashboard-${Date.now()}.png`
