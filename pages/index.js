@@ -40,7 +40,6 @@ export default function Login() {
     <div style={s.page}>
       <div style={s.blob1} />
       <div style={s.blob2} />
-      <div style={s.grid} />
       <div style={s.card}>
         <div style={s.logoWrap}>
           <img src="/logo-algorithmic.png" alt="Algorithmic Suite" style={s.logo} />
@@ -101,10 +100,10 @@ const s = {
   page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000', position: 'relative', overflow: 'hidden' },
   blob1: { position: 'absolute', top: '-10%', left: '30%', width: 600, height: 600, background: 'radial-gradient(circle, #1E90FF18 0%, transparent 65%)', pointerEvents: 'none' },
   blob2: { position: 'absolute', bottom: '-20%', right: '20%', width: 500, height: 500, background: 'radial-gradient(circle, #1E90FF10 0%, transparent 65%)', pointerEvents: 'none' },
-  grid: { position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(#1E90FF08 1px, transparent 1px), linear-gradient(90deg, #1E90FF08 1px, transparent 1px)', backgroundSize: '50px 50px', pointerEvents: 'none' },
+  grid: { display: 'none' },
   card: { position: 'relative', zIndex: 1, background: 'linear-gradient(145deg, #030810, #060d1a)', border: '1px solid #0d1f3c', borderRadius: 16, padding: '40px 44px', width: '100%', maxWidth: 420, boxShadow: '0 0 80px #1E90FF15, 0 0 1px #1E90FF40, 0 30px 80px #00000080' },
   logoWrap: { display: 'flex', justifyContent: 'center', marginBottom: 24 },
-  logo: { width: 180, height: 'auto', filter: 'drop-shadow(0 0 16px #1E90FF70)' },
+  logo: { width: 140, height: 'auto', filter: 'drop-shadow(0 0 16px #1E90FF70)', mixBlendMode: 'screen' },
   divider: { height: 1, background: 'linear-gradient(90deg, transparent, #1E90FF40, transparent)', marginBottom: 28 },
   title: { fontSize: 22, fontWeight: 800, color: '#ffffff', marginBottom: 6, textAlign: 'center' },
   sub: { fontSize: 12, color: '#2a4060', textAlign: 'center', marginBottom: 28 },
