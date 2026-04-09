@@ -23,7 +23,7 @@ export default function Dashboard() {
     const lc = document.getElementById('logoCanvas')
     if (!lc) return
     const ctx = lc.getContext('2d')
-    const W = 160, H = 160
+    const W = 200, H = 180
     const nodes = []
     for (let i = 0; i < 22; i++) {
       nodes.push({
@@ -147,7 +147,7 @@ export default function Dashboard() {
 
       <div style={s.sidebar}>
         <div style={s.logoWrap}>
-          <canvas id="logoCanvas" width="160" height="160" style={{width:160,height:160,display:'block'}}/>
+          <canvas id="logoCanvas" width="200" height="180" style={{width:200,height:180,display:'block'}}/>
           <div style={{textAlign:'center',marginTop:-8}}>
             <div style={{fontSize:13,fontWeight:800,color:'#ffffff',letterSpacing:3,lineHeight:1.3}}>ALGORITHMIC</div>
             <div style={{fontSize:8,fontWeight:600,color:'#ffffff',letterSpacing:4,marginBottom:3}}>SUITE</div>
@@ -271,8 +271,8 @@ export default function Dashboard() {
 const s = {
   root:{display:'flex',height:'100vh',overflow:'hidden',background:'#000',position:'relative'},
   canvas:{position:'fixed',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0},
-  sidebar:{position:'relative',zIndex:1,width:220,flexShrink:0,background:'rgba(2,8,16,0.9)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',padding:'24px 0',backdropFilter:'blur(10px)'},
-  logoWrap:{display:'flex',justifyContent:'center',padding:'0 8px',marginBottom:8},
+  sidebar:{position:'relative',zIndex:1,width:230,flexShrink:0,background:'rgba(2,8,16,0.9)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',padding:'24px 0',backdropFilter:'blur(10px)'},
+  logoWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'0 4px',marginBottom:4},
   logo:{width:130,height:'auto',filter:'drop-shadow(0 0 10px #1E90FF60)',mixBlendMode:'screen'},
   sidebarDivider:{height:1,background:'linear-gradient(90deg,transparent,#1E90FF40,transparent)',marginBottom:16},
   nav:{flex:1,padding:'0 8px',display:'flex',flexDirection:'column',gap:2},
