@@ -20,61 +20,6 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    const lc = document.getElementById('logoCanvas')
-    if (!lc) return
-    const ctx = lc.getContext('2d')
-    const W = 200, H = 180
-    const nodes = []
-    for (let i = 0; i < 22; i++) {
-      nodes.push({
-        x: Math.random()*W, y: Math.random()*H,
-        vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4,
-        r: Math.random()*1.8+.8,
-        pulse: Math.random()*Math.PI*2
-      })
-    }
-    let id2
-    function drawLogo() {
-      ctx.clearRect(0,0,W,H)
-      const t = Date.now()/1000
-      for (let i=0;i<nodes.length;i++) {
-        for (let j=i+1;j<nodes.length;j++) {
-          const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y
-          const d=Math.sqrt(dx*dx+dy*dy)
-          if(d<55){
-            const alpha=(1-d/55)*0.5
-            ctx.strokeStyle=`rgba(30,144,255,${alpha})`
-            ctx.lineWidth=0.7
-            ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.stroke()
-          }
-        }
-      }
-      nodes.forEach((n,i)=>{
-        const pulse = 0.5+0.5*Math.sin(t*2+n.pulse)
-        const glow = ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*4)
-        glow.addColorStop(0,`rgba(30,144,255,${0.9*pulse})`)
-        glow.addColorStop(1,'rgba(30,144,255,0)')
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r*3,0,Math.PI*2)
-        ctx.fillStyle=glow;ctx.fill()
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2)
-        ctx.fillStyle=`rgba(100,200,255,${0.8+0.2*pulse})`;ctx.fill()
-        n.x+=n.vx;n.y+=n.vy
-        if(n.x<0||n.x>W)n.vx*=-1
-        if(n.y<0||n.y>H)n.vy*=-1
-      })
-      // RAMMFX box
-      ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.lineWidth=0.8
-      ctx.strokeRect(6,25,46,32)
-      ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 6px Montserrat,sans-serif'
-      ctx.fillText('R.A.M.M.FX',9,38)
-      ctx.fillText('TRADING',11,48)
-      id2=requestAnimationFrame(drawLogo)
-    }
-    drawLogo()
-    return ()=>cancelAnimationFrame(id2)
-  }, [loading])
-
-  useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || loading) return
     const ctx = canvas.getContext('2d')
