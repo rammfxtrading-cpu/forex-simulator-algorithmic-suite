@@ -55,6 +55,27 @@ export default function Dashboard() {
     router.push('/')
   }
 
+  function handleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen()
+    } else {
+      document.exitFullscreen()
+    }
+  }
+
+  async function handleScreenshot() {
+    try {
+      const { default: html2canvas } = await import('https://esm.sh/html2canvas@1.4.1')
+      const canvas = await html2canvas(document.body, { backgroundColor: '#000000', scale: 2 })
+      const link = document.createElement('a')
+      link.download = `dashboard-${Date.now()}.png`
+      link.href = canvas.toDataURL()
+      link.click()
+    } catch {
+      window.print()
+    }
+  }
+
   if (loading) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}>
       <div className="spinner"/>
@@ -115,10 +136,18 @@ export default function Dashboard() {
             <h1 style={s.headerTitle}>Dashboard</h1>
             <p style={s.headerSub}>Welcome back, <span style={{color:'#1E90FF',fontWeight:700}}>{username}</span></p>
           </div>
-          <button style={s.startBtn} onClick={()=>router.push('/simulator')}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
-            Start Session
-          </button>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button onClick={handleScreenshot} title="Screenshot" style={s.iconBtn}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            </button>
+            <button onClick={handleFullscreen} title="Fullscreen" style={s.iconBtn}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+            </button>
+            <button style={s.startBtn} onClick={()=>router.push('/simulator')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
+              Start Session
+            </button>
+          </div>
         </div>
 
         <div style={s.ctaRow}>
@@ -132,19 +161,19 @@ export default function Dashboard() {
           </div>
           <div style={{...s.ctaCard,...s.ctaOff}}>
             <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a3a5c" strokeWidth="1.5"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3a4a5c" strokeWidth="1.5"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
             </div>
-            <div style={{...s.ctaTitle,color:'#1a3a5c'}}>Backtesting</div>
-            <div style={{...s.ctaSub,color:'#0d1f3c'}}>Test your strategy on historical data</div>
-            <div style={{fontSize:11,fontWeight:700,color:'#1a3a5c'}}>Coming soon</div>
+            <div style={{...s.ctaTitle,color:'#3a4a5c'}}>Backtesting</div>
+            <div style={{...s.ctaSub,color:'#1a2535'}}>Test your strategy on historical data</div>
+            <div style={{fontSize:11,fontWeight:700,color:'#3a4a5c'}}>Coming soon</div>
           </div>
           <div style={{...s.ctaCard,...s.ctaOff}}>
             <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a3a5c" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3a4a5c" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
             </div>
-            <div style={{...s.ctaTitle,color:'#1a3a5c'}}>Live Mode</div>
-            <div style={{...s.ctaSub,color:'#0d1f3c'}}>Trade on live market data in real time</div>
-            <div style={{fontSize:11,fontWeight:700,color:'#1a3a5c'}}>Coming soon</div>
+            <div style={{...s.ctaTitle,color:'#3a4a5c'}}>Live Mode</div>
+            <div style={{...s.ctaSub,color:'#1a2535'}}>Trade on live market data in real time</div>
+            <div style={{fontSize:11,fontWeight:700,color:'#3a4a5c'}}>Coming soon</div>
           </div>
         </div>
 
@@ -164,7 +193,7 @@ export default function Dashboard() {
         </div>
 
         <div style={s.emptyCard}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1a3a5c" strokeWidth="1" style={{marginBottom:14}}><polygon points="5,3 19,12 5,21"/></svg>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3a4a5c" strokeWidth="1" style={{marginBottom:14}}><polygon points="5,3 19,12 5,21"/></svg>
           <div style={s.emptyTitle}>No sessions yet</div>
           <div style={s.emptySub}>Start your first practice session to begin tracking your performance</div>
           <button onClick={()=>router.push('/simulator')} style={{marginTop:20,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'12px 28px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF40'}}>
@@ -186,37 +215,38 @@ const s = {
   logo:{width:130,height:'auto',filter:'drop-shadow(0 0 10px #1E90FF60)'},
   sidebarDivider:{height:1,background:'linear-gradient(90deg,transparent,#1E90FF40,transparent)',marginBottom:16},
   nav:{flex:1,padding:'0 8px',display:'flex',flexDirection:'column',gap:2},
-  navItem:{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,fontSize:12,fontWeight:600,color:'#3a6090',cursor:'pointer',transition:'all .15s'},
+  navItem:{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,fontSize:12,fontWeight:600,color:'#8a9ab5',cursor:'pointer',transition:'all .15s'},
   navActive:{background:'linear-gradient(135deg,#1E90FF20,#1E90FF08)',color:'#1E90FF',borderLeft:'2px solid #1E90FF'},
   navDisabled:{opacity:.3,cursor:'default'},
-  soon:{marginLeft:'auto',fontSize:8,fontWeight:700,letterSpacing:1,background:'#0d1f3c',color:'#2a4060',padding:'2px 5px',borderRadius:3},
+  soon:{marginLeft:'auto',fontSize:8,fontWeight:700,letterSpacing:1,background:'#1a2535',color:'#2a4060',padding:'2px 5px',borderRadius:3},
   userWrap:{position:'relative',display:'flex',alignItems:'center',gap:10,padding:12,margin:'8px 8px 0',borderRadius:8,background:'#030f20',border:'1px solid #0d2040',cursor:'pointer'},
   avatar:{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#1E90FF,#0060cc)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 12px #1E90FF50'},
   userInfo:{flex:1,overflow:'hidden'},
-  userName:{fontSize:11,fontWeight:600,color:'#a0c0e0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},
-  userPlan:{fontSize:9,color:'#2a5070',fontWeight:600,letterSpacing:.5},
+  userName:{fontSize:11,fontWeight:600,color:'#ffffff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},
+  userPlan:{fontSize:9,color:'#6a7a8f',fontWeight:600,letterSpacing:.5},
   menu:{position:'absolute',bottom:'110%',left:0,right:0,background:'#030f20',border:'1px solid #0d2040',borderRadius:8,overflow:'hidden',zIndex:100},
-  menuEmail:{padding:'10px 14px',fontSize:10,color:'#2a5070',fontWeight:500},
+  menuEmail:{padding:'10px 14px',fontSize:10,color:'#6a7a8f',fontWeight:500},
   menuDivider:{height:1,background:'#0d2040'},
   menuItem:{padding:'10px 14px',fontSize:12,fontWeight:600,cursor:'pointer'},
   main:{position:'relative',zIndex:1,flex:1,overflowY:'auto',padding:'32px 40px'},
   header:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:32},
   headerTitle:{fontSize:26,fontWeight:800,color:'#ffffff',marginBottom:4},
-  headerSub:{fontSize:13,color:'#3a6090'},
+  headerSub:{fontSize:13,color:'#8a9ab5'},
+  iconBtn:{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:8,padding:'8px',cursor:'pointer',color:'#a0b0c8',display:'flex',alignItems:'center',justifyContent:'center'},
   startBtn:{display:'flex',alignItems:'center',gap:8,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF40'},
   ctaRow:{display:'flex',gap:16,marginBottom:28},
   ctaCard:{flex:1,background:'#030810',border:'1px solid #0d2040',borderRadius:12,padding:'24px 20px',cursor:'pointer',transition:'all .2s'},
   ctaOff:{opacity:.4,cursor:'default'},
   ctaIcon:{width:44,height:44,borderRadius:10,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14},
   ctaTitle:{fontSize:14,fontWeight:700,color:'#ffffff',marginBottom:6},
-  ctaSub:{fontSize:11,color:'#3a6090',lineHeight:1.5,marginBottom:16},
+  ctaSub:{fontSize:11,color:'#8a9ab5',lineHeight:1.5,marginBottom:16},
   ctaLink:{fontSize:12,fontWeight:700,color:'#1E90FF'},
   statsRow:{display:'flex',gap:16,marginBottom:28},
   statCard:{flex:1,background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:10,padding:20,display:'flex',flexDirection:'column',gap:6,backdropFilter:'blur(8px)'},
   statIcon:{width:36,height:36,borderRadius:8,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4},
   statValue:{fontSize:24,fontWeight:800},
-  statLabel:{fontSize:9,fontWeight:700,color:'#3a6090',letterSpacing:1.5},
+  statLabel:{fontSize:9,fontWeight:700,color:'#8a9ab5',letterSpacing:1.5},
   emptyCard:{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',backdropFilter:'blur(8px)'},
-  emptyTitle:{fontSize:16,fontWeight:700,color:'#a0c0e0',marginBottom:8},
-  emptySub:{fontSize:12,color:'#3a6090',lineHeight:1.6,maxWidth:380},
+  emptyTitle:{fontSize:16,fontWeight:700,color:'#ffffff',marginBottom:8},
+  emptySub:{fontSize:12,color:'#8a9ab5',lineHeight:1.6,maxWidth:380},
 }
