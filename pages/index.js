@@ -107,7 +107,7 @@ export default function Login() {
       <div style={s.card}>
         {/* Logo RAMMFX */}
         <div style={s.logoWrap}>
-          <img src="/logo-rammfx.png" alt="R.A.M.M.FX Trading" style={s.logoRamm} />
+          <img src="/logo-algorithmic.png" alt="Algorithmic Suite" style={s.logoRamm} />
         </div>
 
         {/* Title */}
