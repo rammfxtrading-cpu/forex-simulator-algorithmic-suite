@@ -92,10 +92,10 @@ export default function Dashboard() {
 
       <div style={s.sidebar}>
         <div style={s.logoWrap}>
-          <div style={{textAlign:'center',padding:'16px 0 8px'}}>
-            <div style={{fontSize:28,fontWeight:800,color:'#ffffff',letterSpacing:2,lineHeight:1.1}}>FOREX</div>
-            <div style={{fontSize:16,fontWeight:600,color:'#ffffff',letterSpacing:6,marginBottom:6}}>SIMULATOR</div>
-            <div style={{fontSize:9,color:'#8090a8',fontStyle:'italic',letterSpacing:0.5}}>by Algorithmic Suite</div>
+          <div style={{textAlign:'center',padding:'12px 4px 8px'}}>
+            <div style={{fontSize:15,fontWeight:800,color:'#ffffff',letterSpacing:9,lineHeight:1.5}}>FOREX</div>
+            <div style={{fontSize:11,fontWeight:600,color:'#ffffff',letterSpacing:8,marginBottom:8}}>SIMULATOR</div>
+            <div style={{fontSize:8,color:'#ffffff',fontStyle:'italic',opacity:0.6,letterSpacing:0.5}}>by Algorithmic Suite</div>
           </div>
         </div>
         <div style={s.sidebarDivider}/>
@@ -214,7 +214,7 @@ export default function Dashboard() {
 const s = {
   root:{display:'flex',height:'100vh',overflow:'hidden',background:'#000',position:'relative'},
   canvas:{position:'fixed',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0},
-  sidebar:{position:'relative',zIndex:1,width:230,flexShrink:0,background:'rgba(2,8,16,0.9)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',padding:'24px 0',backdropFilter:'blur(10px)'},
+  sidebar:{position:'relative',zIndex:1,width:230,flexShrink:0,background:'rgba(2,8,16,0.75)',backdropFilter:'blur(2px)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',padding:'24px 0',backdropFilter:'blur(10px)'},
   logoWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'0 4px',marginBottom:4},
   logo:{width:130,height:'auto',filter:'drop-shadow(0 0 10px #1E90FF60)',mixBlendMode:'screen'},
   sidebarDivider:{height:1,background:'linear-gradient(90deg,transparent,#1E90FF40,transparent)',marginBottom:16},
