@@ -4,28 +4,46 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing params' })
   }
 
-  const symbol = pair.replace('/', '')
-  const m = String(month).padStart(2, '0')
-  const tfMap = { M1:'M1', M5:'M5', M15:'M15', M30:'M30', H1:'H1', H4:'H4', D1:'D1' }
-  const tf = tfMap[timeframe] || 'H1'
+  const apiKey = process.env.POLYGON_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'No API key' })
 
-  const url = `https://freeserv.dukascopy.com/2.0/?path=chart/json&instrument=${symbol}&offer_side=B&interval=${tf}&splits=false&stocks=false&start=${year}-${m}-01T00:00:00&end=${year}-${m}-28T23:59:59&jsonp=false`
+  const symbol = `C:${pair.replace('/', '')}`
+
+  const tfMap = {
+    M1:  { multiplier: 1,  timespan: 'minute' },
+    M5:  { multiplier: 5,  timespan: 'minute' },
+    M15: { multiplier: 15, timespan: 'minute' },
+    M30: { multiplier: 30, timespan: 'minute' },
+    H1:  { multiplier: 1,  timespan: 'hour'   },
+    H4:  { multiplier: 4,  timespan: 'hour'   },
+    D1:  { multiplier: 1,  timespan: 'day'    },
+  }
+  const tf = tfMap[timeframe] || tfMap['H1']
+
+  const m = String(month).padStart(2, '0')
+  const y = String(year)
+  const lastDay = new Date(+y, +month, 0).getDate()
+  const from = `${y}-${m}-01`
+  const to = `${y}-${m}-${String(lastDay).padStart(2, '0')}`
+
+  const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${tf.multiplier}/${tf.timespan}/${from}/${to}?adjusted=true&sort=asc&limit=5000&apiKey=${apiKey}`
 
   try {
     const response = await fetch(url)
-    if (!response.ok) throw new Error(`Dukascopy error: ${response.status}`)
-    const raw = await response.json()
+    const data = await response.json()
 
-    const candles = raw
-      .map(c => ({
-        time: Math.floor(c[0] / 1000),
-        open: parseFloat(c[1].toFixed(5)),
-        high: parseFloat(c[2].toFixed(5)),
-        low:  parseFloat(c[3].toFixed(5)),
-        close:parseFloat(c[4].toFixed(5)),
-        volume: c[5] || 0,
-      }))
-      .filter(c => c.open && c.high && c.low && c.close)
+    if (data.status === 'ERROR' || !data.results?.length) {
+      return res.status(404).json({ error: data.error || 'No data', status: data.status })
+    }
+
+    const candles = data.results.map(c => ({
+      time:   Math.floor(c.t / 1000),
+      open:   parseFloat(c.o.toFixed(5)),
+      high:   parseFloat(c.h.toFixed(5)),
+      low:    parseFloat(c.l.toFixed(5)),
+      close:  parseFloat(c.c.toFixed(5)),
+      volume: c.v || 0,
+    }))
 
     res.setHeader('Cache-Control', 's-maxage=3600')
     return res.status(200).json(candles)
