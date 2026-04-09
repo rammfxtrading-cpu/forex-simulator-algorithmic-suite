@@ -113,7 +113,7 @@ export default function Login() {
         {/* Title */}
         <div style={s.titleWrap}>
           <div style={s.titleMain}>FOREX SIMULATOR</div>
-          <div style={s.titleSub}><em>Powered by R.A.M.M.FX TRADING™</em></div>
+          <div style={s.titleSub}><em>by Algorithmic Suite</em></div>
         </div>
 
         <div style={s.divider} />
