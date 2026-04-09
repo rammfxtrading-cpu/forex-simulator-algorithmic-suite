@@ -93,7 +93,7 @@ export default function Dashboard() {
       <div style={s.sidebar}>
         <div style={s.logoWrap}>
           <div style={{textAlign:'center',padding:'12px 4px 8px'}}>
-            <div style={{fontSize:22,fontWeight:800,color:'#ffffff',letterSpacing:2,lineHeight:1.4,display:'block',width:'100%'}}>FOREX</div>
+            <div style={{fontSize:32,fontWeight:800,color:'#ffffff',letterSpacing:2,lineHeight:1.4,display:'block',width:'100%'}}>FOREX</div>
             <div style={{fontSize:10,fontWeight:600,color:'#ffffff',letterSpacing:7.2,marginBottom:8,display:'block',width:'100%'}}>SIMULATOR</div>
             <div style={{fontSize:8,color:'#ffffff',fontStyle:'italic',opacity:0.6}}>by Algorithmic Suite</div>
           </div>
