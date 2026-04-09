@@ -92,12 +92,10 @@ export default function Dashboard() {
 
       <div style={s.sidebar}>
         <div style={s.logoWrap}>
-          <canvas id="logoCanvas" width="200" height="180" style={{width:200,height:180,display:'block'}}/>
-          <div style={{textAlign:'center',marginTop:-8}}>
-            <div style={{fontSize:13,fontWeight:800,color:'#ffffff',letterSpacing:3,lineHeight:1.3}}>ALGORITHMIC</div>
-            <div style={{fontSize:8,fontWeight:600,color:'#ffffff',letterSpacing:4,marginBottom:3}}>SUITE</div>
-            <div style={{fontSize:6,color:'#6080a0',fontStyle:'italic',letterSpacing:0.5}}>Advanced Indicators for Professional Traders</div>
-            <div style={{fontSize:5,color:'#304050',marginTop:2,letterSpacing:0.5}}>Powered by R.A.M.M.FX TRADING™</div>
+          <div style={{textAlign:'center',padding:'16px 0 8px'}}>
+            <div style={{fontSize:28,fontWeight:800,color:'#ffffff',letterSpacing:2,lineHeight:1.1}}>FOREX</div>
+            <div style={{fontSize:16,fontWeight:600,color:'#ffffff',letterSpacing:6,marginBottom:6}}>SIMULATOR</div>
+            <div style={{fontSize:9,color:'#8090a8',fontStyle:'italic',letterSpacing:0.5}}>by Algorithmic Suite</div>
           </div>
         </div>
         <div style={s.sidebarDivider}/>
