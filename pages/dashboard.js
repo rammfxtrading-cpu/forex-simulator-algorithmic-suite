@@ -92,7 +92,53 @@ export default function Dashboard() {
 
       <div style={s.sidebar}>
         <div style={s.logoWrap}>
-          <img src="/logo-algorithmic.png" alt="Algorithmic Suite" style={s.logo}/>
+          <svg viewBox="0 0 200 200" width="160" height="160" xmlns="http://www.w3.org/2000/svg">
+            {/* Network dots and lines */}
+            <line x1="30" y1="20" x2="80" y2="45" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
+            <line x1="80" y1="45" x2="140" y2="25" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
+            <line x1="140" y1="25" x2="170" y2="60" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
+            <line x1="170" y1="60" x2="160" y2="100" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
+            <line x1="80" y1="45" x2="60" y2="80" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
+            <line x1="140" y1="25" x2="155" y2="55" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.5"/>
+            <line x1="10" y1="70" x2="60" y2="80" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.5"/>
+            <line x1="60" y1="80" x2="100" y2="65" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
+            <line x1="155" y1="55" x2="170" y2="60" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
+            <line x1="20" y1="160" x2="50" y2="140" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.5"/>
+            <line x1="50" y1="140" x2="90" y2="155" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
+            <line x1="150" y1="165" x2="180" y2="145" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.6"/>
+            <line x1="180" y1="145" x2="190" y2="170" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.5"/>
+            <line x1="50" y1="140" x2="30" y2="170" stroke="#1E90FF" strokeWidth="0.5" strokeOpacity="0.4"/>
+            {/* Dots */}
+            <circle cx="30" cy="20" r="2.5" fill="#1E90FF" fillOpacity="0.9"/>
+            <circle cx="80" cy="45" r="3" fill="#1E90FF" fillOpacity="1"/>
+            <circle cx="140" cy="25" r="2" fill="#1E90FF" fillOpacity="0.8"/>
+            <circle cx="170" cy="60" r="3.5" fill="#1E90FF" fillOpacity="1"/>
+            <circle cx="155" cy="55" r="1.5" fill="#1E90FF" fillOpacity="0.7"/>
+            <circle cx="160" cy="100" r="2" fill="#1E90FF" fillOpacity="0.6"/>
+            <circle cx="10" cy="70" r="2" fill="#1E90FF" fillOpacity="0.7"/>
+            <circle cx="60" cy="80" r="2.5" fill="#1E90FF" fillOpacity="0.8"/>
+            <circle cx="100" cy="65" r="1.5" fill="#1E90FF" fillOpacity="0.6"/>
+            <circle cx="20" cy="160" r="3" fill="#1E90FF" fillOpacity="1"/>
+            <circle cx="50" cy="140" r="2.5" fill="#1E90FF" fillOpacity="0.9"/>
+            <circle cx="90" cy="155" r="2" fill="#1E90FF" fillOpacity="0.7"/>
+            <circle cx="30" cy="170" r="1.5" fill="#1E90FF" fillOpacity="0.6"/>
+            <circle cx="150" cy="165" r="3" fill="#1E90FF" fillOpacity="1"/>
+            <circle cx="180" cy="145" r="2.5" fill="#1E90FF" fillOpacity="0.9"/>
+            <circle cx="190" cy="170" r="2" fill="#1E90FF" fillOpacity="0.8"/>
+            <circle cx="5" cy="130" r="1.5" fill="#1E90FF" fillOpacity="0.5"/>
+            <circle cx="195" cy="110" r="1.5" fill="#1E90FF" fillOpacity="0.5"/>
+            {/* RAMMFX box top-left */}
+            <rect x="8" y="30" width="52" height="38" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.7"/>
+            <text x="12" y="48" fontFamily="Montserrat,sans-serif" fontSize="7" fill="white" fillOpacity="0.8" letterSpacing="1">R.A.M.M.FX</text>
+            <text x="14" y="60" fontFamily="Montserrat,sans-serif" fontSize="7" fill="white" fillOpacity="0.8" letterSpacing="2">TRADING</text>
+            {/* Main title */}
+            <text x="100" y="108" fontFamily="Montserrat,sans-serif" fontSize="22" fontWeight="800" fill="white" fillOpacity="0.95" textAnchor="middle" letterSpacing="3">ALGORITHMIC</text>
+            <text x="100" y="126" fontFamily="Montserrat,sans-serif" fontSize="13" fontWeight="600" fill="white" fillOpacity="0.85" textAnchor="middle" letterSpacing="4">SUITE</text>
+            {/* Subtitle */}
+            <text x="100" y="142" fontFamily="Montserrat,sans-serif" fontSize="6.5" fill="white" fillOpacity="0.5" textAnchor="middle" fontStyle="italic">Advanced Indicators for Professional Traders</text>
+            {/* Powered by */}
+            <text x="100" y="188" fontFamily="Montserrat,sans-serif" fontSize="5.5" fill="white" fillOpacity="0.4" textAnchor="middle">Powered by R.A.M.M.FX TRADING™</text>
+          </svg>
         </div>
         <div style={s.sidebarDivider}/>
         <nav style={s.nav}>
@@ -211,7 +257,7 @@ const s = {
   root:{display:'flex',height:'100vh',overflow:'hidden',background:'#000',position:'relative'},
   canvas:{position:'fixed',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0},
   sidebar:{position:'relative',zIndex:1,width:220,flexShrink:0,background:'rgba(2,8,16,0.9)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',padding:'24px 0',backdropFilter:'blur(10px)'},
-  logoWrap:{display:'flex',justifyContent:'center',padding:'0 16px',marginBottom:24},
+  logoWrap:{display:'flex',justifyContent:'center',padding:'0 8px',marginBottom:8},
   logo:{width:130,height:'auto',filter:'drop-shadow(0 0 10px #1E90FF60)',mixBlendMode:'screen'},
   sidebarDivider:{height:1,background:'linear-gradient(90deg,transparent,#1E90FF40,transparent)',marginBottom:16},
   nav:{flex:1,padding:'0 8px',display:'flex',flexDirection:'column',gap:2},
