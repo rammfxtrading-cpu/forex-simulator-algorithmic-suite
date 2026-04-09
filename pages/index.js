@@ -2,18 +2,21 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 
+export const getServerSideProps = () => ({ props: {} })
+
 export default function Login() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [checkingSession, setCheckingSession] = useState(true)
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) router.replace('/dashboard')
-      else setCheckingSession(false)
+      else setChecking(false)
     })
   }, [])
 
@@ -22,227 +25,95 @@ export default function Login() {
     setError('')
     setLoading(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setError('Invalid credentials. Check your email and password.')
-      setLoading(false)
-    } else {
-      router.push('/dashboard')
-    }
+    if (error) { setError('Email o contrasena incorrectos.'); setLoading(false) }
+    else router.push('/dashboard')
   }
 
-  if (checkingSession) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+  if (checking) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#000' }}>
       <div className="spinner" />
+      <style>{`.spinner{width:32px;height:32px;border:2px solid #0a1628;border-top-color:#1E90FF;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
   return (
-    <div style={styles.page}>
-      {/* Background grid */}
-      <div style={styles.grid} />
-
-      {/* Glow orb */}
-      <div style={styles.orb} />
-
-      <div style={styles.card}>
-        {/* Logo / brand */}
-        <div style={styles.logoWrap}>
-          <div style={styles.logoIcon}>
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <polygon points="14,2 26,9 26,19 14,26 2,19 2,9" stroke="#1E90FF" strokeWidth="1.5" fill="#1E90FF11" />
-              <polygon points="14,7 21,11 21,17 14,21 7,17 7,11" stroke="#1E90FF" strokeWidth="1" fill="#1E90FF22" />
-              <circle cx="14" cy="14" r="3" fill="#1E90FF" />
-            </svg>
-          </div>
-          <div>
-            <div style={styles.logoTitle}>ALGORITHMIC SUITE</div>
-            <div style={styles.logoSub}>Forex Simulator</div>
-          </div>
+    <div style={s.page}>
+      <div style={s.blob1} />
+      <div style={s.blob2} />
+      <div style={s.grid} />
+      <div style={s.card}>
+        <div style={s.logoWrap}>
+          <img src="/logo-algorithmic.png" alt="Algorithmic Suite" style={s.logo} />
         </div>
-
-        {/* Divider */}
-        <div style={styles.divider} />
-
-        {/* Headline */}
-        <h1 style={styles.headline}>Welcome back</h1>
-        <p style={styles.subheadline}>Sign in to access your simulator</p>
-
-        {/* Form */}
-        <form onSubmit={handleLogin} style={styles.form}>
-          <div style={styles.fieldWrap}>
-            <label style={styles.label}>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              style={styles.input}
+        <div style={s.divider} />
+        <h1 style={s.title}>Welcome back</h1>
+        <p style={s.sub}>Sign in to your Algorithmic Suite account</p>
+        <form onSubmit={handleLogin} style={s.form}>
+          <div style={s.field}>
+            <label style={s.label}>EMAIL</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com" required style={s.input}
               onFocus={e => e.target.style.borderColor = '#1E90FF'}
-              onBlur={e => e.target.style.borderColor = '#1a2035'}
-            />
+              onBlur={e => e.target.style.borderColor = '#0d1f3c'} />
           </div>
-
-          <div style={styles.fieldWrap}>
-            <label style={styles.label}>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              style={styles.input}
-              onFocus={e => e.target.style.borderColor = '#1E90FF'}
-              onBlur={e => e.target.style.borderColor = '#1a2035'}
-            />
-          </div>
-
-          {error && (
-            <div style={styles.errorBox}>
-              <span style={{ marginRight: 6 }}>⚠</span>{error}
+          <div style={s.field}>
+            <label style={s.label}>PASSWORD</label>
+            <div style={{ position: 'relative' }}>
+              <input type={showPass ? 'text' : 'password'} value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••" required style={{ ...s.input, paddingRight: 42 }}
+                onFocus={e => e.target.style.borderColor = '#1E90FF'}
+                onBlur={e => e.target.style.borderColor = '#0d1f3c'} />
+              <button type="button" onClick={() => setShowPass(!showPass)} style={s.eyeBtn}>
+                {showPass ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a6080" strokeWidth="2">
+                    <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+                    <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a6080" strokeWidth="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                )}
+              </button>
             </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{ ...styles.submitBtn, opacity: loading ? 0.7 : 1 }}
-          >
-            {loading ? 'Signing in…' : 'Sign In'}
+          </div>
+          {error && <div style={s.errorBox}>{error}</div>}
+          <button type="submit" disabled={loading} style={{ ...s.btn, opacity: loading ? 0.7 : 1 }}>
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-
-        {/* Footer */}
-        <p style={styles.footer}>
-          R.A.M.M.FX TRADING™ · Algorithmic Suite
-        </p>
+        <p style={s.footer}>R.A.M.M.FX TRADING — Algorithmic Suite</p>
       </div>
-
       <style>{`
-        .spinner {
-          width: 32px; height: 32px;
-          border: 2px solid #1a2035;
-          border-top-color: #1E90FF;
-          border-radius: 50%;
-          animation: spin .7s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{background:#000}
+        input,button{font-family:'Montserrat',sans-serif}
+        input::placeholder{color:#1a3050}
       `}</style>
     </div>
   )
 }
 
-const styles = {
-  page: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#080c14',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  grid: {
-    position: 'absolute', inset: 0,
-    backgroundImage: `
-      linear-gradient(#1a203520 1px, transparent 1px),
-      linear-gradient(90deg, #1a203520 1px, transparent 1px)
-    `,
-    backgroundSize: '40px 40px',
-    pointerEvents: 'none',
-  },
-  orb: {
-    position: 'absolute',
-    top: '20%', left: '50%',
-    transform: 'translateX(-50%)',
-    width: 500, height: 500,
-    background: 'radial-gradient(circle, #1E90FF12 0%, transparent 70%)',
-    pointerEvents: 'none',
-  },
-  card: {
-    position: 'relative',
-    background: '#0a0f1a',
-    border: '1px solid #1a2035',
-    borderRadius: 16,
-    padding: '40px 44px',
-    width: '100%',
-    maxWidth: 420,
-    boxShadow: '0 0 60px #1E90FF0a, 0 20px 60px #00000060',
-  },
-  logoWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 14,
-    marginBottom: 28,
-  },
-  logoIcon: {
-    width: 48, height: 48,
-    background: '#1E90FF0d',
-    border: '1px solid #1E90FF30',
-    borderRadius: 10,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  },
-  logoTitle: {
-    fontSize: 11, fontWeight: 800, letterSpacing: 2,
-    color: '#1E90FF', lineHeight: 1.2,
-  },
-  logoSub: {
-    fontSize: 13, fontWeight: 500,
-    color: '#c8d0e0', letterSpacing: 0.5,
-  },
-  divider: {
-    height: 1, background: 'linear-gradient(90deg, #1E90FF40, #1a2035, transparent)',
-    marginBottom: 28,
-  },
-  headline: {
-    fontSize: 22, fontWeight: 700, color: '#ffffff',
-    marginBottom: 6,
-  },
-  subheadline: {
-    fontSize: 13, color: '#4a5568', marginBottom: 28,
-  },
-  form: { display: 'flex', flexDirection: 'column', gap: 18 },
-  fieldWrap: { display: 'flex', flexDirection: 'column', gap: 7 },
-  label: { fontSize: 11, fontWeight: 600, color: '#c8d0e0', letterSpacing: 0.5 },
-  input: {
-    background: '#0d1220',
-    border: '1px solid #1a2035',
-    borderRadius: 8,
-    padding: '11px 14px',
-    fontSize: 13,
-    color: '#ffffff',
-    outline: 'none',
-    transition: 'border-color .15s',
-  },
-  errorBox: {
-    background: '#ef444415',
-    border: '1px solid #ef444430',
-    borderRadius: 8,
-    padding: '10px 14px',
-    fontSize: 12,
-    color: '#ef4444',
-    fontWeight: 500,
-  },
-  submitBtn: {
-    background: 'linear-gradient(135deg, #1E90FF, #1060cc)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    padding: '13px',
-    fontSize: 13,
-    fontWeight: 700,
-    cursor: 'pointer',
-    letterSpacing: 0.5,
-    marginTop: 4,
-    transition: 'opacity .15s',
-    boxShadow: '0 4px 20px #1E90FF30',
-  },
-  footer: {
-    marginTop: 28,
-    fontSize: 10,
-    color: '#2a3448',
-    textAlign: 'center',
-    letterSpacing: 1,
-    fontWeight: 600,
-  },
+const s = {
+  page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000', position: 'relative', overflow: 'hidden' },
+  blob1: { position: 'absolute', top: '-10%', left: '30%', width: 600, height: 600, background: 'radial-gradient(circle, #1E90FF18 0%, transparent 65%)', pointerEvents: 'none' },
+  blob2: { position: 'absolute', bottom: '-20%', right: '20%', width: 500, height: 500, background: 'radial-gradient(circle, #1E90FF10 0%, transparent 65%)', pointerEvents: 'none' },
+  grid: { position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(#1E90FF08 1px, transparent 1px), linear-gradient(90deg, #1E90FF08 1px, transparent 1px)', backgroundSize: '50px 50px', pointerEvents: 'none' },
+  card: { position: 'relative', zIndex: 1, background: 'linear-gradient(145deg, #030810, #060d1a)', border: '1px solid #0d1f3c', borderRadius: 16, padding: '40px 44px', width: '100%', maxWidth: 420, boxShadow: '0 0 80px #1E90FF15, 0 0 1px #1E90FF40, 0 30px 80px #00000080' },
+  logoWrap: { display: 'flex', justifyContent: 'center', marginBottom: 24 },
+  logo: { width: 180, height: 'auto', filter: 'drop-shadow(0 0 16px #1E90FF70)' },
+  divider: { height: 1, background: 'linear-gradient(90deg, transparent, #1E90FF40, transparent)', marginBottom: 28 },
+  title: { fontSize: 22, fontWeight: 800, color: '#ffffff', marginBottom: 6, textAlign: 'center' },
+  sub: { fontSize: 12, color: '#2a4060', textAlign: 'center', marginBottom: 28 },
+  form: { display: 'flex', flexDirection: 'column', gap: 16 },
+  field: { display: 'flex', flexDirection: 'column', gap: 7 },
+  label: { fontSize: 10, fontWeight: 700, color: '#1E90FF', letterSpacing: 1.5 },
+  input: { width: '100%', background: '#030810', border: '1px solid #0d1f3c', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#ffffff', outline: 'none', transition: 'border-color .2s' },
+  eyeBtn: { position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' },
+  errorBox: { background: '#ef444410', border: '1px solid #ef444430', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#ef4444', fontWeight: 500 },
+  btn: { background: 'linear-gradient(135deg, #1E90FF, #0060cc)', color: '#fff', border: 'none', borderRadius: 8, padding: '14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.5, marginTop: 4, boxShadow: '0 4px 30px #1E90FF40', transition: 'opacity .15s' },
+  footer: { marginTop: 28, fontSize: 9, color: '#0d1f3c', textAlign: 'center', letterSpacing: 1.5, fontWeight: 700 },
 }
