@@ -101,17 +101,33 @@ export default function Simulator() {
         watermark: { visible: false },
       })
 
-      const candleSeries = chart.addCandlestickSeries({
-        upColor: '#22c55e', downColor: '#ef4444',
-        borderUpColor: '#22c55e', borderDownColor: '#ef4444',
-        wickUpColor: '#22c55e80', wickDownColor: '#ef444480',
-      })
+      // Support both v4 and v5 API
+      const addCandle = chart.addCandlestickSeries || ((opts) => chart.addSeries(lc.CandlestickSeries, opts))
+      const addHisto = chart.addHistogramSeries || ((opts) => chart.addSeries(lc.HistogramSeries, opts))
 
-      const volSeries = chart.addHistogramSeries({
-        priceFormat: { type: 'volume' },
-        priceScaleId: 'vol',
-        color: '#1E90FF30',
-      })
+      const candleSeries = typeof chart.addCandlestickSeries === 'function'
+        ? chart.addCandlestickSeries({
+            upColor: '#22c55e', downColor: '#ef4444',
+            borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+            wickUpColor: '#22c55e80', wickDownColor: '#ef444480',
+          })
+        : chart.addSeries(lc.CandlestickSeries, {
+            upColor: '#22c55e', downColor: '#ef4444',
+            borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+            wickUpColor: '#22c55e80', wickDownColor: '#ef444480',
+          })
+
+      const volSeries = typeof chart.addHistogramSeries === 'function'
+        ? chart.addHistogramSeries({
+            priceFormat: { type: 'volume' },
+            priceScaleId: 'vol',
+            color: '#1E90FF30',
+          })
+        : chart.addSeries(lc.HistogramSeries, {
+            priceFormat: { type: 'volume' },
+            priceScaleId: 'vol',
+            color: '#1E90FF30',
+          })
       chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } })
 
       chartRef.current = chart
