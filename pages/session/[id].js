@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
-import { createChart, CrosshairMode, LineStyle } from 'lightweight-charts'
+import { createChart, CrosshairMode, LineStyle, CandlestickSeries, LineSeries } from 'lightweight-charts'
 import { supabase } from '../../lib/supabase'
 import ReplayEngine, { TIMEFRAMES } from '../../lib/replayEngine'
 
@@ -196,7 +196,7 @@ export default function SessionPage() {
     // the div already holds the LWC canvas). But if not, create it.
     if (!chartRefsMap.current[activePair]) {
       const chart  = createChart(el, makeChartOptions(el.clientWidth, el.clientHeight))
-      const series = chart.addCandlestickSeries({
+      const series = chart.addSeries(CandlestickSeries, {
         upColor:         '#1E90FF',
         downColor:       '#ef5350',
         borderUpColor:   '#1E90FF',
@@ -204,12 +204,12 @@ export default function SessionPage() {
         wickUpColor:     '#1E90FFAA',
         wickDownColor:   '#ef5350AA',
       })
-      const eqSeries = chart.addLineSeries({
+      const eqSeries = chart.addSeries(LineSeries, {
         color:     '#1E90FF66',
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         priceScaleId: 'equity',
-        visible: false,  // hide until we have data
+        visible: false,
       })
       chartRefsMap.current[activePair] = { chart, series, eqSeries, prevCount: 0 }
 
