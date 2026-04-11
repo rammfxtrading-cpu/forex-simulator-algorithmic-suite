@@ -48,7 +48,7 @@ export default async function handler(req, res) {
     const candles = await response.json();
     const aggregated = aggregateCandles(candles, minutes);
 
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
+    res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json(aggregated);
   } catch (err) {
     console.error(err);
