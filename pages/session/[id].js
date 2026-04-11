@@ -316,6 +316,8 @@ export default function SessionPage() {
 
     if (forceFullRedraw || (curr !== prev && curr !== prev + 1)) {
       cr.series.setData(agg)
+      // After full redraw: fit all visible candles then scroll right
+      cr.chart.timeScale().fitContent()
     } else {
       cr.series.update(agg[agg.length - 1])
     }
