@@ -12,8 +12,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [showMenu, setShowMenu] = useState(false)
   const [sessions, setSessions] = useState([])
+  const [trades, setTrades] = useState([])
   const [showNew, setShowNew] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [activeView, setActiveView] = useState('dashboard')
+  const [selectedSession, setSelectedSession] = useState('all')
+  const [hoveredNav, setHoveredNav] = useState(null)
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
 
   useEffect(() => {
@@ -21,6 +25,7 @@ export default function Dashboard() {
       if (!session) { router.replace('/'); return }
       setUser(session.user)
       loadSessions(session.user.id)
+      loadTrades(session.user.id)
       setLoading(false)
     })
   }, [])
@@ -95,6 +100,11 @@ export default function Dashboard() {
     if (data) setSessions(data)
   }
 
+  async function loadTrades(userId) {
+    const { data } = await supabase.from('sim_trades').select('*').eq('user_id', userId).order('opened_at', { ascending: true })
+    if (data) setTrades(data)
+  }
+
   async function createSession() {
     if (!form.name || !form.dateFrom || !form.dateTo) return
     setCreating(true)
@@ -129,6 +139,57 @@ export default function Dashboard() {
     } catch { window.print() }
   }
 
+  // ── ANALYTICS CALCULATIONS ──
+  const filteredTrades = selectedSession === 'all'
+    ? trades
+    : trades.filter(t => t.session_id === selectedSession)
+
+  const closedTrades = filteredTrades.filter(t => t.result && t.result !== 'OPEN')
+  const wins = closedTrades.filter(t => t.result === 'WIN')
+  const losses = closedTrades.filter(t => t.result === 'LOSS')
+  const breakevens = closedTrades.filter(t => t.result === 'BREAKEVEN')
+  const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl || 0), 0)
+  const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length * 100) : 0
+  const avgRR = wins.length > 0 ? wins.reduce((s, t) => s + (t.rr || 0), 0) / wins.length : 0
+  const bestWin = wins.length > 0 ? Math.max(...wins.map(t => t.pnl || 0)) : 0
+  const worstLoss = losses.length > 0 ? Math.min(...losses.map(t => t.pnl || 0)) : 0
+  const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + (t.pnl || 0), 0) / wins.length : 0
+  const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + (t.pnl || 0), 0) / losses.length : 0
+
+  const selSessData = sessions.find(s => s.id === selectedSession)
+  const initialBalance = selectedSession === 'all'
+    ? (sessions.length > 0 ? parseFloat(sessions[0]?.capital || 0) : 0)
+    : parseFloat(selSessData?.capital || 0)
+
+  const equityPoints = (() => {
+    let running = initialBalance
+    return [{ x: 0, y: running }, ...closedTrades.map((t, i) => {
+      running += (t.pnl || 0)
+      return { x: i + 1, y: running }
+    })]
+  })()
+
+  const buildPath = (points) => {
+    if (points.length < 2) return ''
+    const maxY = Math.max(...points.map(p => p.y))
+    const minY = Math.min(...points.map(p => p.y))
+    const rangeY = maxY - minY || 1
+    const W = 800, H = 160
+    return points.map((p, i) => {
+      const x = (p.x / (points.length - 1)) * W
+      const y = H - ((p.y - minY) / rangeY) * (H - 20) - 10
+      return `${i === 0 ? 'M' : 'L'}${x},${y}`
+    }).join(' ')
+  }
+  const equityPath = buildPath(equityPoints)
+
+  const sessionStats = {
+    london: filteredTrades.filter(t => t.session_type === 'london'),
+    new_york: filteredTrades.filter(t => t.session_type === 'new_york'),
+    asia: filteredTrades.filter(t => t.session_type === 'asia'),
+    out: filteredTrades.filter(t => t.session_type === 'out_of_session'),
+  }
+
   if (loading) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}>
       <div className="spinner"/>
@@ -139,6 +200,13 @@ export default function Dashboard() {
   const initials = user?.email?.slice(0,2).toUpperCase()||'FX'
   const username = user?.email?.split('@')[0]||''
   const PAIRS = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','XAU/USD']
+
+  const navItems = [
+    { key: 'dashboard', label: 'Dashboard', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+    { key: 'new', label: 'New Session', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5,3 19,12 5,21"/></svg>, action: () => setShowNew(true) },
+    { key: 'sessions', label: 'Sessions', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg> },
+    { key: 'analytics', label: 'Analytics', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+  ]
 
   return (
     <div style={s.root}>
@@ -155,22 +223,26 @@ export default function Dashboard() {
         </div>
         <div style={s.sidebarDivider}/>
         <nav style={s.nav}>
-          <div style={{...s.navItem,...s.navActive}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            Dashboard
-          </div>
-          <div style={s.navItem} onClick={()=>setShowNew(true)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5,3 19,12 5,21"/></svg>
-            New Session
-          </div>
-          <div style={{...s.navItem,...s.navDisabled}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
-            Sessions <span style={s.soon}>Soon</span>
-          </div>
-          <div style={{...s.navItem,...s.navDisabled}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-            Analytics <span style={s.soon}>Soon</span>
-          </div>
+          {navItems.map(item => {
+            const isActive = activeView === item.key
+            const isHovered = hoveredNav === item.key
+            return (
+              <div
+                key={item.key}
+                style={{
+                  ...s.navItem,
+                  ...(isActive ? s.navActive : {}),
+                  ...(isHovered && !isActive ? s.navHover : {}),
+                }}
+                onClick={() => item.action ? item.action() : setActiveView(item.key)}
+                onMouseEnter={() => setHoveredNav(item.key)}
+                onMouseLeave={() => setHoveredNav(null)}
+              >
+                {item.icon}
+                {item.label}
+              </div>
+            )
+          })}
         </nav>
         <div style={s.userWrap} onClick={()=>setShowMenu(!showMenu)}>
           <div style={s.avatar}>{initials}</div>
@@ -190,107 +262,294 @@ export default function Dashboard() {
       </div>
 
       <div style={s.main}>
-        <div style={s.header}>
-          <div>
-            <h1 style={s.headerTitle}>Dashboard</h1>
-            <p style={s.headerSub}>Welcome back, <span style={{color:'#1E90FF',fontWeight:700}}>{username}</span></p>
+
+        {/* ── DASHBOARD VIEW ── */}
+        {activeView === 'dashboard' && <>
+          <div style={s.header}>
+            <div>
+              <h1 style={s.headerTitle}>Dashboard</h1>
+              <p style={s.headerSub}>Welcome back, <span style={{color:'#1E90FF',fontWeight:700}}>{username}</span></p>
+            </div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <button onClick={handleScreenshot} title="Screenshot" style={s.iconBtn}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              </button>
+              <button onClick={handleFullscreen} title="Fullscreen" style={s.iconBtn}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+              </button>
+              <button style={s.startBtn} onClick={()=>setShowNew(true)}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
+                New Session
+              </button>
+            </div>
           </div>
-          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <button onClick={handleScreenshot} title="Screenshot" style={s.iconBtn}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-            </button>
-            <button onClick={handleFullscreen} title="Fullscreen" style={s.iconBtn}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
-            </button>
+
+          <div style={s.ctaRow}>
+            <div style={{...s.ctaCard,borderColor:'#1E90FF60',background:'linear-gradient(135deg,#030f20,#041a30)'}} onClick={()=>setShowNew(true)}>
+              <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="5,3 19,12 5,21"/></svg>
+              </div>
+              <div style={s.ctaTitle}>Practice Session</div>
+              <div style={s.ctaSub}>Replay historical candles and train your entries candle by candle</div>
+              <div style={s.ctaLink}>Start now →</div>
+            </div>
+            <div style={{...s.ctaCard,...s.ctaOff}}>
+              <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a7aaa" strokeWidth="1.5"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+              </div>
+              <div style={{...s.ctaTitle,color:'#4a6a8a'}}>Backtesting</div>
+              <div style={{...s.ctaSub,color:'#3a5570'}}>Test your strategy on historical data automatically</div>
+              <div style={{fontSize:11,fontWeight:700,color:'#4a6a8a'}}>Coming soon</div>
+            </div>
+            <div style={{...s.ctaCard,...s.ctaOff}}>
+              <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a7aaa" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+              </div>
+              <div style={{...s.ctaTitle,color:'#4a6a8a'}}>Live Mode</div>
+              <div style={{...s.ctaSub,color:'#3a5570'}}>Trade on live market data in real time</div>
+              <div style={{fontSize:11,fontWeight:700,color:'#4a6a8a'}}>Coming soon</div>
+            </div>
+          </div>
+
+          <div style={s.statsRow}>
+            {[
+              {label:'SESSIONS',value:String(sessions.length),color:'#1E90FF',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="5,3 19,12 5,21"/></svg>},
+              {label:'TRADES TAKEN',value:String(trades.length),color:'#22c55e',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>},
+              {label:'WIN RATE',value:trades.length>0?`${(wins.length/closedTrades.length*100||0).toFixed(0)}%`:'—',color:'#f59e0b',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.5"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>},
+              {label:'TOTAL P&L',value:`${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`,color:totalPnl>=0?'#22c55e':'#ef4444',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>},
+            ].map(stat=>(
+              <div key={stat.label} style={s.statCard}>
+                <div style={{...s.statIcon,borderColor:stat.color+'40',background:stat.color+'15'}}>{stat.icon}</div>
+                <div style={{...s.statValue,color:stat.color}}>{stat.value}</div>
+                <div style={s.statLabel}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {sessions.length === 0 ? (
+            <div style={s.emptyCard}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1a3a5c" strokeWidth="1" style={{marginBottom:14}}><polygon points="5,3 19,12 5,21"/></svg>
+              <div style={s.emptyTitle}>No sessions yet</div>
+              <div style={s.emptySub}>Start your first backtesting session to begin tracking your performance</div>
+              <button onClick={()=>setShowNew(true)} style={{marginTop:20,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'12px 28px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF30',fontFamily:'Montserrat,sans-serif'}}>
+                Start first session
+              </button>
+            </div>
+          ) : (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
+              {sessions.map(session => (
+                <div key={session.id} style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:20,backdropFilter:'blur(8px)',display:'flex',flexDirection:'column',gap:10}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
+                    <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
+                  </div>
+                  <div style={{display:'flex',gap:6}}>
+                    <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
+                  </div>
+                  <div style={{fontSize:11,color:'#4a6080'}}>{session.date_from} → {session.date_to}</div>
+                  <div style={{display:'flex',borderTop:'1px solid #0d2040',paddingTop:10}}>
+                    <div style={{flex:1,textAlign:'center'}}>
+                      <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
+                      <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>${Number(session.capital).toLocaleString()}</div>
+                    </div>
+                    <div style={{flex:1,textAlign:'center'}}>
+                      <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>P&L</div>
+                      <div style={{fontSize:13,fontWeight:700,color:(session.balance-session.capital)>=0?'#22c55e':'#ef4444'}}>
+                        {(session.balance-session.capital)>=0?'+':''}${(session.balance-session.capital).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <button onClick={()=>router.push(`/session/${session.id}`)} style={{background:'none',border:'1px solid #1E90FF40',color:'#1E90FF',borderRadius:8,padding:'8px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
+                    Open Session →
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>}
+
+        {/* ── SESSIONS VIEW ── */}
+        {activeView === 'sessions' && <>
+          <div style={s.header}>
+            <div>
+              <h1 style={s.headerTitle}>Sessions</h1>
+              <p style={s.headerSub}>All your backtesting sessions</p>
+            </div>
             <button style={s.startBtn} onClick={()=>setShowNew(true)}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
               New Session
             </button>
           </div>
-        </div>
-
-        <div style={s.ctaRow}>
-          <div style={{...s.ctaCard,borderColor:'#1E90FF60',background:'linear-gradient(135deg,#030f20,#041a30)'}} onClick={()=>setShowNew(true)}>
-            <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="5,3 19,12 5,21"/></svg>
+          {sessions.length === 0 ? (
+            <div style={s.emptyCard}>
+              <div style={s.emptyTitle}>No sessions yet</div>
+              <div style={s.emptySub}>Start your first backtesting session</div>
+              <button onClick={()=>setShowNew(true)} style={{marginTop:20,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'12px 28px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
+                Start first session
+              </button>
             </div>
-            <div style={s.ctaTitle}>Practice Session</div>
-            <div style={s.ctaSub}>Replay historical candles and train your entries candle by candle</div>
-            <div style={s.ctaLink}>Start now →</div>
-          </div>
-          <div style={{...s.ctaCard,...s.ctaOff}}>
-            <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a7aaa" strokeWidth="1.5"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-            </div>
-            <div style={{...s.ctaTitle,color:'#4a6a8a'}}>Backtesting</div>
-            <div style={{...s.ctaSub,color:'#3a5570'}}>Test your strategy on historical data automatically</div>
-            <div style={{fontSize:11,fontWeight:700,color:'#4a6a8a'}}>Coming soon</div>
-          </div>
-          <div style={{...s.ctaCard,...s.ctaOff}}>
-            <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a7aaa" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
-            </div>
-            <div style={{...s.ctaTitle,color:'#4a6a8a'}}>Live Mode</div>
-            <div style={{...s.ctaSub,color:'#3a5570'}}>Trade on live market data in real time</div>
-            <div style={{fontSize:11,fontWeight:700,color:'#4a6a8a'}}>Coming soon</div>
-          </div>
-        </div>
-
-        <div style={s.statsRow}>
-          {[
-            {label:'SESSIONS',value:String(sessions.length),color:'#1E90FF',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="5,3 19,12 5,21"/></svg>},
-            {label:'TRADES TAKEN',value:'0',color:'#22c55e',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>},
-            {label:'WIN RATE',value:'—',color:'#f59e0b',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.5"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>},
-            {label:'TOTAL P&L',value:'$0.00',color:'#1E90FF',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>},
-          ].map(stat=>(
-            <div key={stat.label} style={s.statCard}>
-              <div style={{...s.statIcon,borderColor:stat.color+'40',background:stat.color+'15'}}>{stat.icon}</div>
-              <div style={{...s.statValue,color:stat.color}}>{stat.value}</div>
-              <div style={s.statLabel}>{stat.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {sessions.length === 0 ? (
-          <div style={s.emptyCard}>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1a3a5c" strokeWidth="1" style={{marginBottom:14}}><polygon points="5,3 19,12 5,21"/></svg>
-            <div style={s.emptyTitle}>No sessions yet</div>
-            <div style={s.emptySub}>Start your first backtesting session to begin tracking your performance</div>
-            <button onClick={()=>setShowNew(true)} style={{marginTop:20,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'12px 28px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF30',fontFamily:'Montserrat,sans-serif'}}>
-              Start first session
-            </button>
-          </div>
-        ) : (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
-            {sessions.map(session => (
-              <div key={session.id} style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:20,backdropFilter:'blur(8px)',display:'flex',flexDirection:'column',gap:10}}>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                  <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
-                  <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
-                </div>
-                <div style={{display:'flex',gap:6}}>
-                  <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
-                </div>
-                <div style={{fontSize:11,color:'#4a6080'}}>{session.date_from} → {session.date_to}</div>
-                <div style={{display:'flex',borderTop:'1px solid #0d2040',paddingTop:10}}>
-                  <div style={{flex:1,textAlign:'center'}}>
-                    <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
-                    <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>${Number(session.capital).toLocaleString()}</div>
+          ) : (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
+              {sessions.map(session => (
+                <div key={session.id} style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:20,backdropFilter:'blur(8px)',display:'flex',flexDirection:'column',gap:10}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
+                    <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
-                  <div style={{flex:1,textAlign:'center'}}>
-                    <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>P&L</div>
-                    <div style={{fontSize:13,fontWeight:700,color:(session.balance-session.capital)>=0?'#22c55e':'#ef4444'}}>
-                      {(session.balance-session.capital)>=0?'+':''}${(session.balance-session.capital).toFixed(2)}
+                  <div style={{display:'flex',gap:6}}>
+                    <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
+                  </div>
+                  <div style={{fontSize:11,color:'#4a6080'}}>{session.date_from} → {session.date_to}</div>
+                  <div style={{display:'flex',borderTop:'1px solid #0d2040',paddingTop:10}}>
+                    <div style={{flex:1,textAlign:'center'}}>
+                      <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
+                      <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>${Number(session.capital).toLocaleString()}</div>
+                    </div>
+                    <div style={{flex:1,textAlign:'center'}}>
+                      <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>P&L</div>
+                      <div style={{fontSize:13,fontWeight:700,color:(session.balance-session.capital)>=0?'#22c55e':'#ef4444'}}>
+                        {(session.balance-session.capital)>=0?'+':''}${(session.balance-session.capital).toFixed(2)}
+                      </div>
                     </div>
                   </div>
+                  <button onClick={()=>router.push(`/session/${session.id}`)} style={{background:'none',border:'1px solid #1E90FF40',color:'#1E90FF',borderRadius:8,padding:'8px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
+                    Open Session →
+                  </button>
                 </div>
-                <button onClick={()=>router.push(`/session/${session.id}`)} style={{background:'none',border:'1px solid #1E90FF40',color:'#1E90FF',borderRadius:8,padding:'8px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
-                  Open Session →
-                </button>
-              </div>
-            ))}
+              ))}
+            </div>
+          )}
+        </>}
+
+        {/* ── ANALYTICS VIEW ── */}
+        {activeView === 'analytics' && <>
+          <div style={s.header}>
+            <div>
+              <h1 style={s.headerTitle}>Analytics</h1>
+              <p style={s.headerSub}>Track your backtesting performance</p>
+            </div>
+            <select
+              style={{background:'#030f20',border:'1px solid #0d2040',borderRadius:8,padding:'10px 16px',fontSize:12,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif',cursor:'pointer',minWidth:200}}
+              value={selectedSession}
+              onChange={e=>setSelectedSession(e.target.value)}
+            >
+              <option value="all">All Sessions</option>
+              {sessions.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
           </div>
-        )}
+
+          {closedTrades.length === 0 ? (
+            <div style={s.emptyCard}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1a3a5c" strokeWidth="1" style={{marginBottom:14}}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <div style={s.emptyTitle}>No trades yet</div>
+              <div style={s.emptySub}>Complete backtesting sessions to see your analytics here.</div>
+              <button onClick={()=>setActiveView('dashboard')} style={{marginTop:20,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'12px 28px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
+                Start a Session
+              </button>
+            </div>
+          ) : <>
+            {/* TOP STATS */}
+            <div style={{display:'flex',gap:12,marginBottom:20,flexWrap:'wrap'}}>
+              {[
+                {label:'TOTAL P&L',value:`${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`,color:totalPnl>=0?'#22c55e':'#ef4444'},
+                {label:'WIN RATE',value:`${winRate.toFixed(1)}%`,color:winRate>=50?'#22c55e':'#ef4444'},
+                {label:'TOTAL TRADES',value:closedTrades.length,color:'#1E90FF'},
+                {label:'AVG R:R',value:avgRR.toFixed(2),color:'#f59e0b'},
+                {label:'WINS',value:wins.length,color:'#22c55e'},
+                {label:'LOSSES',value:losses.length,color:'#ef4444'},
+              ].map(stat=>(
+                <div key={stat.label} style={{...s.statCard,flex:'1',minWidth:120}}>
+                  <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1.5,marginBottom:6}}>{stat.label}</div>
+                  <div style={{fontSize:22,fontWeight:800,color:stat.color}}>{stat.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* EQUITY CURVE */}
+            <div style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:'20px 24px',marginBottom:20,backdropFilter:'blur(8px)'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#a0b8d0',letterSpacing:1,marginBottom:12,textTransform:'uppercase'}}>Equity Curve</div>
+              <svg viewBox="0 0 800 160" style={{width:'100%',height:160}} preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#1E90FF" stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor="#1E90FF" stopOpacity="0"/>
+                  </linearGradient>
+                </defs>
+                {equityPath && <>
+                  <path d={`${equityPath} L800,160 L0,160 Z`} fill="url(#eqGrad)"/>
+                  <path d={equityPath} fill="none" stroke="#1E90FF" strokeWidth="2"/>
+                </>}
+              </svg>
+            </div>
+
+            {/* SUMMARY CARDS */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
+              <div style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:'20px 24px',backdropFilter:'blur(8px)'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#22c55e',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Winning Trades</div>
+                {[['Total Winners',wins.length],['Best Win',`$${bestWin.toFixed(2)}`],['Average Win',`$${avgWin.toFixed(2)}`]].map(([label,value])=>(
+                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #0d2040',paddingBottom:10,marginBottom:10}}>
+                    <span style={{fontSize:12,color:'#4a6080'}}>{label}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:'#22c55e'}}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:'20px 24px',backdropFilter:'blur(8px)'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#ef4444',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Losing Trades</div>
+                {[['Total Losers',losses.length],['Worst Loss',`$${worstLoss.toFixed(2)}`],['Average Loss',`$${avgLoss.toFixed(2)}`]].map(([label,value])=>(
+                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #0d2040',paddingBottom:10,marginBottom:10}}>
+                    <span style={{fontSize:12,color:'#4a6080'}}>{label}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:'#ef4444'}}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* DONUT + SESSIONS */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+              <div style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:'20px 24px',backdropFilter:'blur(8px)'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#a0b8d0',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Distribution</div>
+                <div style={{display:'flex',alignItems:'center',gap:32}}>
+                  <svg viewBox="0 0 120 120" style={{width:120,height:120,flexShrink:0}}>
+                    {(()=>{
+                      const total=wins.length+losses.length+breakevens.length||1
+                      const segs=[{val:wins.length/total,color:'#22c55e'},{val:losses.length/total,color:'#ef4444'},{val:breakevens.length/total,color:'#f59e0b'}]
+                      let offset=0
+                      const r=45,cx=60,cy=60,stroke=18,circ=2*Math.PI*r
+                      return segs.map((seg,i)=>{
+                        const dash=seg.val*circ,gap=circ-dash
+                        const el=<circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color} strokeWidth={stroke} strokeDasharray={`${dash} ${gap}`} strokeDashoffset={-offset*circ} style={{transform:'rotate(-90deg)',transformOrigin:'60px 60px'}}/>
+                        offset+=seg.val
+                        return el
+                      })
+                    })()}
+                  </svg>
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {[{label:'Wins',count:wins.length,color:'#22c55e'},{label:'Losses',count:losses.length,color:'#ef4444'},{label:'Breakeven',count:breakevens.length,color:'#f59e0b'}].map(item=>(
+                      <div key={item.label} style={{display:'flex',alignItems:'center',gap:8}}>
+                        <div style={{width:10,height:10,borderRadius:'50%',background:item.color}}/>
+                        <span style={{fontSize:12,color:'#a0b8d0'}}>{item.label}</span>
+                        <span style={{fontSize:12,fontWeight:700,color:'#fff',marginLeft:'auto',paddingLeft:16}}>{item.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:'20px 24px',backdropFilter:'blur(8px)'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#a0b8d0',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Trades by Session</div>
+                {[['London',sessionStats.london.length,'#1E90FF'],['New York',sessionStats.new_york.length,'#f59e0b'],['Asia',sessionStats.asia.length,'#a855f7'],['Out of Session',sessionStats.out.length,'#6b7280']].map(([label,count,color])=>(
+                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #0d2040',paddingBottom:10,marginBottom:10}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:8,height:8,borderRadius:'50%',background:color}}/>
+                      <span style={{fontSize:12,color:'#4a6080'}}>{label}</span>
+                    </div>
+                    <span style={{fontSize:13,fontWeight:700,color}}>{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>}
+        </>}
+
       </div>
 
       {/* NEW SESSION MODAL */}
@@ -332,7 +591,14 @@ export default function Dashboard() {
         </div>
       )}
 
-      <style>{`.spinner{width:32px;height:32px;border:2px solid #0a1628;border-top-color:#1E90FF;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:0.5}`}</style>
+      <style>{`
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{background:#000;overflow:hidden}
+        .spinner{width:32px;height:32px;border:2px solid #0a1628;border-top-color:#1E90FF;border-radius:50%;animation:spin .7s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:0.5}
+        select option{background:#030f20;color:#fff}
+      `}</style>
     </div>
   )
 }
@@ -351,8 +617,7 @@ const s = {
   nav:{flex:1,padding:'0 8px',display:'flex',flexDirection:'column',gap:2},
   navItem:{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,fontSize:12,fontWeight:600,color:'#c0d0e8',cursor:'pointer',transition:'all .15s'},
   navActive:{background:'linear-gradient(135deg,#1E90FF20,#1E90FF08)',color:'#1E90FF',borderLeft:'2px solid #1E90FF'},
-  navDisabled:{opacity:.35,cursor:'default'},
-  soon:{marginLeft:'auto',fontSize:8,fontWeight:700,letterSpacing:1,background:'#0d1f3c',color:'#2a4060',padding:'2px 5px',borderRadius:3},
+  navHover:{background:'rgba(30,144,255,0.06)',color:'#d0e4ff',boxShadow:'inset 0 0 12px rgba(30,144,255,0.08)',backdropFilter:'blur(2px)'},
   userWrap:{position:'relative',display:'flex',alignItems:'center',gap:10,padding:12,margin:'8px',borderRadius:8,background:'rgba(3,15,32,0.8)',border:'1px solid #0d2040',cursor:'pointer'},
   avatar:{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#1E90FF,#0060cc)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 12px #1E90FF50'},
   userInfo:{flex:1,overflow:'hidden'},
