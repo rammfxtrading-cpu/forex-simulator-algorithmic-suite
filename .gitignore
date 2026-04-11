@@ -37,3 +37,4 @@ next-env.d.ts
 
 # Dukascopy data (stored in Supabase)
 /data
+data_m1/
