@@ -181,28 +181,29 @@ export default function SessionPage() {
   const activePairRef = useRef(null)
   useEffect(() => { activePairRef.current = activePair }, [activePair])
 
-  // ── Mount chart on a div ────────────────────────────────────────────────────
+  // ── Mount chart via useEffect (stable, no ref callback re-fire) ────────────
 
-  const mountChart = useCallback(async (pair, el) => {
-    if (!el || chartMap.current[pair]) return
-    divMap.current[pair] = el
+  useEffect(() => {
+    activePairs.forEach(async (pair) => {
+      if (chartMap.current[pair]) return
+      const el = document.getElementById(`chart-${pair.replace('/','')}`)
+      if (!el) return
+      const lc = await import('lightweight-charts')
+      const chart  = lc.createChart(el, chartOpts(el.clientWidth, el.clientHeight))
+      const series = chart.addSeries(lc.CandlestickSeries, {
+        upColor:'#2962FF', downColor:'#ef5350', borderVisible:false,
+        wickUpColor:'#2962FF', wickDownColor:'#ef5350',
+      })
+      chartMap.current[pair] = { chart, series, prevCount:0 }
 
-    // Dynamic import — SSR safe
-    const lc = await import('lightweight-charts')
-    const chart  = lc.createChart(el, chartOpts(el.clientWidth, el.clientHeight))
-    const series = chart.addSeries(lc.CandlestickSeries, {
-      upColor:'#2962FF', downColor:'#ef5350', borderVisible:false,
-      wickUpColor:'#2962FF', wickDownColor:'#ef5350',
+      new ResizeObserver(entries => {
+        const {width,height} = entries[0].contentRect
+        if (chartMap.current[pair]) chart.resize(width, height)
+      }).observe(el)
+
+      loadPair(pair)
     })
-    chartMap.current[pair] = { chart, series, prevCount:0 }
-
-    new ResizeObserver(entries => {
-      const {width,height} = entries[0].contentRect
-      chart.resize(width, height)
-    }).observe(el)
-
-    loadPair(pair)
-  }, [loadPair])
+  }, [activePairs, loadPair])
 
   // ── Render chart ────────────────────────────────────────────────────────────
 
@@ -467,7 +468,7 @@ export default function SessionPage() {
         {activePairs.map(pair=>(
           <div
             key={pair}
-            ref={el=>mountChart(pair,el)}
+            id={`chart-${pair.replace('/','')}`}
             style={{...s.chart, display:pair===activePair?'block':'none'}}
           />
         ))}
