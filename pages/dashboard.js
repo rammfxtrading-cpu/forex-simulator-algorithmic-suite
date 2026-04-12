@@ -463,7 +463,7 @@ export default function Dashboard() {
                 {label:'MAX DRAWDOWN',  value:`-$${maxDrawdown.toFixed(2)}`,                     color:'#ef4444'},
                 {label:'RACHA MAX',     value:`${maxWinStreak}W / ${maxLossStreak}L`,            color:'#a0b8d0'},
               ].map(stat=>(
-                <div key={stat.label} style={{...s.statCard,padding:20,background:'rgba(3,15,32,0.55)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
+                <div key={stat.label} style={{...s.statCard,padding:20,background:'rgba(3,15,32,0.28)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
                   <div style={{fontSize:8,fontWeight:700,color:'#1E90FF',letterSpacing:1.5,marginBottom:8}}>{stat.label}</div>
                   <div style={{fontSize:22,fontWeight:800,color:stat.color}}>{stat.value}</div>
                 </div>
@@ -471,7 +471,7 @@ export default function Dashboard() {
             </div>
 
             {/* EQUITY CURVE */}
-            <div style={{borderRadius:12,padding:'20px 24px',marginBottom:20,background:'rgba(3,15,32,0.55)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
+            <div style={{borderRadius:12,padding:'20px 24px',marginBottom:20,background:'rgba(3,15,32,0.28)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
               <div style={{fontSize:11,fontWeight:700,color:'#a0b8d0',letterSpacing:1,marginBottom:12,textTransform:'uppercase'}}>Equity Curve</div>
               <svg viewBox="0 0 800 160" style={{width:'100%',height:160}} preserveAspectRatio="none">
                 <defs>
@@ -489,7 +489,7 @@ export default function Dashboard() {
 
             {/* SUMMARY CARDS */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
-              <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(3,15,32,0.55)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
+              <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(3,15,32,0.28)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(30,220,120,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Winning Trades</div>
                 {[['Total Winners',wins.length],['Best Win',`$${bestWin.toFixed(2)}`],['Average Win',`$${avgWin.toFixed(2)}`]].map(([label,value])=>(
                   <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(30,144,255,0.2)',paddingBottom:10,marginBottom:10}}>
@@ -498,7 +498,7 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-              <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(3,15,32,0.55)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
+              <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(3,15,32,0.28)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(239,83,80,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Losing Trades</div>
                 {[['Total Losers',losses.length],['Worst Loss',`$${worstLoss.toFixed(2)}`],['Average Loss',`$${avgLoss.toFixed(2)}`]].map(([label,value])=>(
                   <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(30,144,255,0.2)',paddingBottom:10,marginBottom:10}}>
@@ -511,7 +511,7 @@ export default function Dashboard() {
 
             {/* DONUT + SESSIONS */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-              <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(3,15,32,0.55)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
+              <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(3,15,32,0.28)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(30,144,255,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Distribution</div>
                 <div style={{display:'flex',alignItems:'center',gap:32}}>
                   <svg viewBox="0 0 120 120" style={{width:120,height:120,flexShrink:0}}>
@@ -539,7 +539,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(3,15,32,0.55)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
+              <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(3,15,32,0.28)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(30,144,255,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Trades by Session</div>
                 {[['London',sessionStats.london.length,'#1E90FF'],['New York',sessionStats.new_york.length,'#f59e0b'],['Asia',sessionStats.asia.length,'#a855f7'],['Out of Session',sessionStats.out.length,'#6b7280']].map(([label,count,color])=>(
                   <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(30,144,255,0.2)',paddingBottom:10,marginBottom:10}}>
@@ -553,7 +553,7 @@ export default function Dashboard() {
               </div>
             </div>
             {/* JOURNAL TABLE */}
-            <div style={{borderRadius:12,padding:'20px 24px',marginTop:16,background:'rgba(3,15,32,0.55)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
+            <div style={{borderRadius:12,padding:'20px 24px',marginTop:16,background:'rgba(3,15,32,0.28)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'}}>
               <div style={{fontSize:11,fontWeight:700,color:'rgba(30,144,255,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Journal de Operaciones</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
@@ -672,7 +672,7 @@ const s = {
   menuEmail:{padding:'10px 14px',fontSize:10,color:'#2a5070',fontWeight:500},
   menuDivider:{height:1,background:'#0d2040'},
   menuItem:{padding:'10px 14px',fontSize:12,fontWeight:600,cursor:'pointer'},
-  main:{position:'relative',zIndex:1,flex:1,overflowY:'auto',padding:'32px 40px',background:'transparent'},
+  main:{position:'relative',zIndex:1,flex:1,overflowY:'auto',padding:'32px 40px'},
   header:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:32},
   headerTitle:{fontSize:26,fontWeight:800,color:'#ffffff',marginBottom:4},
   headerSub:{fontSize:13,color:'#c0d0e8'},
@@ -690,7 +690,7 @@ const s = {
   statIcon:{width:36,height:36,borderRadius:8,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4},
   statValue:{fontSize:24,fontWeight:800},
   statLabel:{fontSize:9,fontWeight:700,color:'#c0d0e8',letterSpacing:1.5},
-  emptyCard:{borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',background:'rgba(3,15,32,0.55)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'},
+  emptyCard:{borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',background:'rgba(3,15,32,0.28)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)'},
   emptyTitle:{fontSize:16,fontWeight:700,color:'#ffffff',marginBottom:8},
   emptySub:{fontSize:12,color:'#a0b8d0',lineHeight:1.6,maxWidth:380},
 }
