@@ -608,7 +608,9 @@ export default function SessionPage(){
   const openPositions = activePs?.positions??[]
   const allTrades     = Object.values(pairState.current).flatMap(ps=>ps?.trades??[])
   const unrealized    = openPositions.reduce((s,p)=>s+calcPnl(p.side,p.entry,currentPrice??p.entry,p.lots,activePair),0)
-  const realized      = allTrades.reduce((s,t)=>s+(t.pnl??0),0)
+  // Realized = current balance - initial capital (persists across sessions)
+  const initialCapital = session ? parseFloat(session.capital||session.balance||10000) : 10000
+  const realized      = parseFloat((balance - initialCapital).toFixed(2))
   const activeTf      = pairTf[activePair]||'H1'
 
   if(loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}><Spin/></div>
