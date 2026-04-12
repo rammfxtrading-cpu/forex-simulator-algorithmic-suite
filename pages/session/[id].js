@@ -180,7 +180,9 @@ export default function SessionPage(){
       e.preventDefault()
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
-      const price=cr.chart.priceScale('right').coordinateToPrice(e.clientY-rect.top)
+      // LWC v5: coordinateToPrice is on the series
+      let price=null
+      try{ price=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
       if(price==null||isNaN(price)) return
       setCtxMenu({x:e.clientX, y:e.clientY, price:parseFloat(price.toFixed(5)), pair})
       setPreview(null)
