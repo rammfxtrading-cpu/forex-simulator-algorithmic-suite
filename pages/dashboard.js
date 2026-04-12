@@ -471,7 +471,7 @@ export default function Dashboard() {
             </div>
 
             {/* EQUITY CURVE */}
-            <div style={{background:'rgba(30,144,255,0.03)',border:'1px solid rgba(30,144,255,0.28)',borderRadius:16,padding:'20px 24px',marginBottom:20,backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',boxShadow:'0 0 40px rgba(30,144,255,0.07),inset 0 1px 0 rgba(30,144,255,0.2)'}}>
+            <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:16,padding:'20px 24px',marginBottom:20,backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'inset 0 1px 0 rgba(255,255,255,0.12)'}}>
               <div style={{fontSize:11,fontWeight:700,color:'#a0b8d0',letterSpacing:1,marginBottom:12,textTransform:'uppercase'}}>Equity Curve</div>
               <svg viewBox="0 0 800 160" style={{width:'100%',height:160}} preserveAspectRatio="none">
                 <defs>
@@ -489,19 +489,19 @@ export default function Dashboard() {
 
             {/* SUMMARY CARDS */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
-              <div style={{background:'rgba(30,144,255,0.03)',border:'1px solid rgba(30,144,255,0.28)',borderRadius:16,padding:'20px 24px',backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',boxShadow:'0 0 40px rgba(30,144,255,0.06),inset 0 1px 0 rgba(30,144,255,0.2)'}}>
+              <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:16,padding:'20px 24px',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'inset 0 1px 0 rgba(255,255,255,0.12)'}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(30,220,120,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Winning Trades</div>
                 {[['Total Winners',wins.length],['Best Win',`$${bestWin.toFixed(2)}`],['Average Win',`$${avgWin.toFixed(2)}`]].map(([label,value])=>(
-                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(30,144,255,0.1)',paddingBottom:10,marginBottom:10}}>
+                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,0.08)',paddingBottom:10,marginBottom:10}}>
                     <span style={{fontSize:12,color:'rgba(255,255,255,0.5)'}}>{label}</span>
                     <span style={{fontSize:13,fontWeight:700,color:'#22c55e'}}>{value}</span>
                   </div>
                 ))}
               </div>
-              <div style={{background:'rgba(30,144,255,0.03)',border:'1px solid rgba(30,144,255,0.28)',borderRadius:16,padding:'20px 24px',backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',boxShadow:'0 0 40px rgba(30,144,255,0.06),inset 0 1px 0 rgba(30,144,255,0.2)'}}>
+              <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:16,padding:'20px 24px',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'inset 0 1px 0 rgba(255,255,255,0.12)'}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(239,83,80,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Losing Trades</div>
                 {[['Total Losers',losses.length],['Worst Loss',`$${worstLoss.toFixed(2)}`],['Average Loss',`$${avgLoss.toFixed(2)}`]].map(([label,value])=>(
-                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(30,144,255,0.1)',paddingBottom:10,marginBottom:10}}>
+                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,0.08)',paddingBottom:10,marginBottom:10}}>
                     <span style={{fontSize:12,color:'rgba(255,255,255,0.5)'}}>{label}</span>
                     <span style={{fontSize:13,fontWeight:700,color:'#ef4444'}}>{value}</span>
                   </div>
@@ -511,7 +511,7 @@ export default function Dashboard() {
 
             {/* DONUT + SESSIONS */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-              <div style={{background:'rgba(30,144,255,0.03)',border:'1px solid rgba(30,144,255,0.28)',borderRadius:16,padding:'20px 24px',backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',boxShadow:'0 0 40px rgba(30,144,255,0.06),inset 0 1px 0 rgba(30,144,255,0.2)'}}>
+              <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:16,padding:'20px 24px',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'inset 0 1px 0 rgba(255,255,255,0.12)'}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(30,144,255,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Distribution</div>
                 <div style={{display:'flex',alignItems:'center',gap:32}}>
                   <svg viewBox="0 0 120 120" style={{width:120,height:120,flexShrink:0}}>
@@ -539,10 +539,10 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div style={{background:'rgba(30,144,255,0.03)',border:'1px solid rgba(30,144,255,0.28)',borderRadius:16,padding:'20px 24px',backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',boxShadow:'0 0 40px rgba(30,144,255,0.06),inset 0 1px 0 rgba(30,144,255,0.2)'}}>
+              <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:16,padding:'20px 24px',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'inset 0 1px 0 rgba(255,255,255,0.12)'}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(30,144,255,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Trades by Session</div>
                 {[['London',sessionStats.london.length,'#1E90FF'],['New York',sessionStats.new_york.length,'#f59e0b'],['Asia',sessionStats.asia.length,'#a855f7'],['Out of Session',sessionStats.out.length,'#6b7280']].map(([label,count,color])=>(
-                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(30,144,255,0.1)',paddingBottom:10,marginBottom:10}}>
+                  <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,0.08)',paddingBottom:10,marginBottom:10}}>
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
                       <div style={{width:8,height:8,borderRadius:'50%',background:color}}/>
                       <span style={{fontSize:12,color:'rgba(255,255,255,0.5)'}}>{label}</span>
@@ -553,14 +553,14 @@ export default function Dashboard() {
               </div>
             </div>
             {/* JOURNAL TABLE */}
-            <div style={{background:'rgba(30,144,255,0.02)',border:'1px solid rgba(30,144,255,0.22)',borderRadius:16,padding:'20px 24px',marginTop:16,backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',boxShadow:'0 0 40px rgba(30,144,255,0.05),inset 0 1px 0 rgba(30,144,255,0.18)'}}>
+            <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:16,padding:'20px 24px',marginTop:16,backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'inset 0 1px 0 rgba(255,255,255,0.1)'}}>
               <div style={{fontSize:11,fontWeight:700,color:'rgba(30,144,255,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Journal de Operaciones</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
                   <thead>
                     <tr>
                       {['SESIÓN','PAR','DIR','ENTRADA','SALIDA','LOTS','SL','TP','R:R','P&L','RESULTADO'].map(h=>(
-                        <th key={h} style={{padding:'6px 12px',textAlign:'left',color:'rgba(30,144,255,0.8)',fontWeight:700,fontSize:8,letterSpacing:1,borderBottom:'1px solid rgba(30,144,255,0.15)',whiteSpace:'nowrap'}}>{h}</th>
+                        <th key={h} style={{padding:'6px 12px',textAlign:'left',color:'rgba(30,144,255,0.9)',fontWeight:700,fontSize:8,letterSpacing:1,borderBottom:'1px solid rgba(255,255,255,0.08)',whiteSpace:'nowrap'}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -570,7 +570,7 @@ export default function Dashboard() {
                       const pnlColor=t.pnl>0?'#22c55e':t.pnl<0?'#ef4444':'#a0b8d0'
                       const resColor=t.result==='WIN'?'#22c55e':t.result==='LOSS'?'#ef4444':'#a0b8d0'
                       return(
-                        <tr key={i} style={{borderBottom:'1px solid rgba(30,144,255,0.07)'}}>
+                        <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
                           <td style={{padding:'7px 12px',color:'#4a6080',whiteSpace:'nowrap',fontSize:10}}>{sess?.name||'—'}</td>
                           <td style={{padding:'7px 12px',color:'#c0d0e8',fontWeight:700}}>{t.pair}</td>
                           <td style={{padding:'7px 12px',color:t.side==='BUY'?'#1E90FF':'#ef4444',fontWeight:800}}>{t.side}</td>
@@ -690,7 +690,7 @@ const s = {
   statIcon:{width:36,height:36,borderRadius:8,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4},
   statValue:{fontSize:24,fontWeight:800},
   statLabel:{fontSize:9,fontWeight:700,color:'#c0d0e8',letterSpacing:1.5},
-  emptyCard:{background:'rgba(30,144,255,0.03)',border:'1px solid rgba(30,144,255,0.2)',borderRadius:16,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)'},
+  emptyCard:{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:16,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
   emptyTitle:{fontSize:16,fontWeight:700,color:'#ffffff',marginBottom:8},
   emptySub:{fontSize:12,color:'#a0b8d0',lineHeight:1.6,maxWidth:380},
 }
