@@ -186,42 +186,6 @@ export default function SessionPage() {
       })
   }, [id])
 
-  // ── Chart lifecycle: one div per pair, show/hide on tab switch ──────────
-
-  const initChartForPair = useCallback((pair, el) => {
-    if (chartRefsMap.current[pair]) return  // already initialized
-    const chart  = createChart(el, makeChartOptions(el.clientWidth, el.clientHeight))
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor:       '#2962FF',
-      downColor:     '#ef5350',
-      borderVisible: false,
-      wickUpColor:   '#2962FF',
-      wickDownColor: '#ef5350',
-    })
-    const eqSeries = chart.addSeries(LineSeries, {
-      color: '#1E90FF44', lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      priceScaleId: 'equity', visible: false,
-    })
-    chartRefsMap.current[pair] = { chart, series, eqSeries, prevCount: 0 }
-
-    // ResizeObserver per chart div
-    const ro = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect
-      chart.resize(width, height)
-    })
-    ro.observe(el)
-
-    loadPairData(pair)
-  }, [loadPairData])
-
-  // Called by the ref callback on each chart div
-  const setChartDiv = useCallback((pair, el) => {
-    if (!el) return
-    chartDivsRef.current[pair] = el
-    initChartForPair(pair, el)
-  }, [initChartForPair])
-
   // ── Data load ──────────────────────────────────────────────────────────
 
   const loadPairData = useCallback(async (pair) => {
@@ -233,7 +197,7 @@ export default function SessionPage() {
 
     // Replay start = session date_from
     const replayStartTs = sess.date_from
-      ? Math.floor(new Date(session.date_from).getTime() / 1000)
+      ? Math.floor(new Date(sess.date_from).getTime() / 1000)
       : Math.floor(new Date('2023-01-01').getTime() / 1000)
     const toTs = sess.date_to
       ? Math.floor(new Date(sess.date_to + 'T23:59:59').getTime() / 1000)
@@ -312,6 +276,41 @@ export default function SessionPage() {
   useEffect(() => {
     if (session && activePair) loadPairData(activePair)
   }, [session])
+
+  // ── Chart lifecycle: one div per pair, show/hide on tab switch ──────────
+  // Declared AFTER loadPairData to avoid circular dependency
+
+  const initChartForPair = useCallback((pair, el) => {
+    if (chartRefsMap.current[pair]) return
+    const chart  = createChart(el, makeChartOptions(el.clientWidth, el.clientHeight))
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor:       '#2962FF',
+      downColor:     '#ef5350',
+      borderVisible: false,
+      wickUpColor:   '#2962FF',
+      wickDownColor: '#ef5350',
+    })
+    const eqSeries = chart.addSeries(LineSeries, {
+      color: '#1E90FF44', lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      priceScaleId: 'equity', visible: false,
+    })
+    chartRefsMap.current[pair] = { chart, series, eqSeries, prevCount: 0 }
+
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      chart.resize(width, height)
+    })
+    ro.observe(el)
+
+    loadPairData(pair)
+  }, [loadPairData])
+
+  const setChartDiv = useCallback((pair, el) => {
+    if (!el) return
+    chartDivsRef.current[pair] = el
+    initChartForPair(pair, el)
+  }, [initChartForPair])
 
   // ── Chart render ───────────────────────────────────────────────────────
 
