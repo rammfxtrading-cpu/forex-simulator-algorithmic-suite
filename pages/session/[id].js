@@ -244,21 +244,47 @@ export default function SessionPage() {
     if (pairStateRef.current[pair]?.ready) return  // already loaded
 
     const cleanPair = pair.replace('/', '')
-    const year      = session.date_from?.split('-')[0] || '2023'
-    const fromTs    = session.date_from
+
+    // Replay start = session date_from
+    const replayStartTs = session.date_from
       ? Math.floor(new Date(session.date_from).getTime() / 1000)
       : Math.floor(new Date('2023-01-01').getTime() / 1000)
-    const toTs      = session.date_to
+    const toTs = session.date_to
       ? Math.floor(new Date(session.date_to + 'T23:59:59').getTime() / 1000)
       : Math.floor(new Date('2023-12-31T23:59:59').getTime() / 1000)
 
-    try {
-      const res     = await fetch(`/api/candles?pair=${cleanPair}&timeframe=M1&from=${fromTs}&to=${toTs}&year=${year}`)
-      const { candles } = await res.json()
-      if (!candles?.length) return
+    // Context = 6 months before replay start
+    const contextStartTs = replayStartTs - (6 * 30 * 24 * 60 * 60)
+    const contextStartDate = new Date(contextStartTs * 1000)
+    const contextYear = contextStartDate.getFullYear().toString()
+    const replayYear  = new Date(replayStartTs * 1000).getFullYear().toString()
 
+    try {
+      // Fetch context candles (6 months before, may span two years)
+      let contextCandles = []
+      const yearsNeeded = [...new Set([contextYear, replayYear])]
+      for (const yr of yearsNeeded) {
+        const yStart = Math.max(contextStartTs, Math.floor(new Date(`${yr}-01-01`).getTime() / 1000))
+        const yEnd   = yr === replayYear
+          ? toTs
+          : Math.floor(new Date(`${yr}-12-31T23:59:59`).getTime() / 1000)
+        const res = await fetch(`/api/candles?pair=${cleanPair}&timeframe=M1&from=${yStart}&to=${yEnd}&year=${yr}`)
+        const json = await res.json()
+        if (json.candles?.length) contextCandles = contextCandles.concat(json.candles)
+      }
+
+      // Deduplicate and sort by time
+      const seen = new Set()
+      const allCandles = contextCandles
+        .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true })
+        .sort((a, b) => a.time - b.time)
+
+      if (!allCandles.length) return
+
+      // Engine starts at replayStartTs, context candles are already in the array before it
       const engine = new ReplayEngine()
-      engine.load(candles)
+      engine.load(allCandles, null)
+      engine.seekToTime(replayStartTs)  // start replay here
       engine.speed = speed
 
       engine.onTick = () => {
@@ -316,10 +342,11 @@ export default function SessionPage() {
 
     if (forceFullRedraw || (curr !== prev && curr !== prev + 1)) {
       cr.series.setData(agg)
-      // After full redraw: fit all visible candles then scroll right
-      cr.chart.timeScale().fitContent()
+      // Scroll to show last visible candle on the right, never reveal future
+      cr.chart.timeScale().scrollToPosition(5, false)
     } else {
       cr.series.update(agg[agg.length - 1])
+      cr.chart.timeScale().scrollToPosition(5, false)
     }
     cr.prevCount = curr
 
