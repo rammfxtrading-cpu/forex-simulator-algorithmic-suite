@@ -201,12 +201,11 @@ export default function SessionPage() {
     if (!chartRefsMap.current[activePair]) {
       const chart  = createChart(el, makeChartOptions(el.clientWidth, el.clientHeight))
       const series = chart.addSeries(CandlestickSeries, {
-        upColor:         '#1E90FF',
-        downColor:       '#ef5350',
-        borderUpColor:   '#1E90FF',
-        borderDownColor: '#ef5350',
-        wickUpColor:     '#1E90FFAA',
-        wickDownColor:   '#ef5350AA',
+        upColor:             '#2962FF',
+        downColor:           '#ef5350',
+        borderVisible:       false,
+        wickUpColor:         '#2962FF',
+        wickDownColor:       '#ef5350',
       })
       const eqSeries = chart.addSeries(LineSeries, {
         color:     '#1E90FF66',
