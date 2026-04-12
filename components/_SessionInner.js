@@ -342,15 +342,17 @@ export default function SessionPage(){
   },[activePair,currentPrice,currentTime,id])
 
   // Keep refs always pointing to latest functions
-  closePositionRef.current    = closePosition
-  checkSLTPRef.current        = checkSLTP
-  checkLimitOrdersRef.current = checkLimitOrders
+  useEffect(()=>{
+    closePositionRef.current    = closePosition
+    checkSLTPRef.current        = checkSLTP
+    checkLimitOrdersRef.current = checkLimitOrders
+  })
 
   // ── Limit order helpers ──────────────────────────────────────────────────────
 
   // ── Position price lines (entry, SL, TP) ────────────────────────────────────
 
-  const createPositionLines=(posId,pair,pos)=>{
+  function createPositionLines(posId,pair,pos){
     const cr=chartMap.current[pair]; if(!cr?.series) return
     if(!cr.priceLines) cr.priceLines={}
     const isBuy=pos.side==='BUY'
@@ -373,7 +375,7 @@ export default function SessionPage(){
     })
   }
 
-  const removePositionLines=(posId,pair)=>{
+  function removePositionLines(posId,pair){
     const cr=chartMap.current[pair]; if(!cr?.priceLines) return
     ;['_entry','_sl','_tp'].forEach(k=>{
       const key=posId+k
@@ -384,7 +386,7 @@ export default function SessionPage(){
     })
   }
 
-  const updatePositionLine=(posId,pair,type,newPrice,pos)=>{
+  function updatePositionLine(posId,pair,type,newPrice,pos){
     const cr=chartMap.current[pair]; if(!cr?.priceLines) return
     const key=posId+'_'+type
     if(cr.priceLines[key]){
