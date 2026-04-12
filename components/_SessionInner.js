@@ -219,7 +219,7 @@ export default function SessionPage(){
     const lc=await import('lightweight-charts')
     if(chartMap.current[pair]) return
     const chart=lc.createChart(el,chartOpts(el.clientWidth,el.clientHeight))
-    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#ffffff',borderUpColor:'#2962FF',borderDownColor:'#ffffff',wickUpColor:'#2962FF',wickDownColor:'#ffffff',borderVisible:false})
+    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#ffffff',borderUpColor:'#2962FF',borderDownColor:'#ffffff',wickUpColor:'#2962FF',wickDownColor:'#ffffff',borderVisible:false,priceFormat:{type:'price',precision:5,minMove:0.00001}})
     chartMap.current[pair]={chart,series,prevCount:0}
     new ResizeObserver(entries=>{
       const{width,height}=entries[0].contentRect
