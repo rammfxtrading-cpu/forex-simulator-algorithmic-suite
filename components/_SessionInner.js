@@ -112,6 +112,7 @@ export default function SessionPage(){
   const closePositionRef    = useRef(null)
   const checkSLTPRef        = useRef(null)
   const checkLimitOrdersRef = useRef(null)
+  const balanceRef          = useRef(10000)
   // Order modal
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
   const [mounted,     setMounted]     = useState(false)  // SSR guard
@@ -159,14 +160,30 @@ export default function SessionPage(){
   // ── Session load ──────────────────────────────────────────────────────────────
   useEffect(()=>{
     if(!id) return
-    supabase.from('sim_sessions').select('*').eq('id',id).single().then(({data})=>{
+    supabase.from('sim_sessions').select('*').eq('id',id).single().then(async ({data})=>{
       if(!data){setLoading(false);return}
       sessionRef.current=data
       setSession(data)
-      setBalance(parseFloat(data.balance))
+      // Use persisted balance (updated after each trade)
+      const savedBalance = parseFloat(data.balance)
+      setBalance(savedBalance)
+      balanceRef.current = savedBalance
       const p=data.pair||'EUR/USD', tf=data.timeframe||'H1'
       setActivePairs([p]); setActivePair(p)
       const initTf={[p]:tf}; setPairTf(initTf); pairTfRef.current=initTf
+      // Load previous trades for this session to show in journal
+      const { data: prevTrades } = await supabase.from('sim_trades').select('*').eq('session_id',id).order('closed_at',{ascending:true})
+      if(prevTrades?.length){
+        // Put them in pairState so allTrades shows them
+        if(!pairState.current[p]) pairState.current[p]={engine:null,ready:false,positions:[],trades:[],orders:[]}
+        pairState.current[p].trades=[...prevTrades.map(t=>({
+          id:t.id, pair:t.pair, side:t.side, entry:t.entry_price, exit:t.exit_price,
+          lots:t.lots, sl:t.sl, tp:t.tp, slPips:t.sl_pips, tpPips:t.tp_pips,
+          rr:t.rr, rrReal:t.rr_real, pnl:t.pnl, result:t.result, reason:t.exit_reason,
+          openTime:t.opened_at?Math.floor(new Date(t.opened_at).getTime()/1000):null,
+          closeTime:t.closed_at?Math.floor(new Date(t.closed_at).getTime()/1000):null,
+        }))]
+      }
       setLoading(false)
     })
   },[id])
@@ -393,7 +410,7 @@ export default function SessionPage(){
     ps.positions=ps.positions.filter(p=>p.id!==posId)
     ps.trades=[...ps.trades,{...pos,exit:usePrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}]
     removePositionLines(posId,usePair)
-    const newBalance = parseFloat((balance+pnl).toFixed(2))
+    const newBalance = parseFloat((balanceRef.current+pnl).toFixed(2))
     setBalance(newBalance);setTick(t=>t+1)
     if(userIdRef.current){
       try{
@@ -404,7 +421,8 @@ export default function SessionPage(){
     }
   },[activePair,currentPrice,currentTime,id])
 
-  // Keep refs always pointing to latest functions
+  // Keep refs always pointing to latest values/functions
+  balanceRef.current = balance
   useEffect(()=>{
     closePositionRef.current    = closePosition
     checkSLTPRef.current        = checkSLTP
@@ -928,7 +946,7 @@ export default function SessionPage(){
               ps.trades=[...ps.trades,{...pos,lots:lotsToClose,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL'}]
               pos.lots=remaining
               ps.positions=[...ps.positions]
-              const newBal=parseFloat((balance+pnl).toFixed(2))
+              const newBal=parseFloat((balanceRef.current+pnl).toFixed(2))
               setBalance(newBal);setTick(t=>t+1)
               if(userIdRef.current){
                 supabase.from('sim_sessions').update({balance:newBal}).eq('id',id).catch(()=>{})
