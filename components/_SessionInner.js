@@ -329,9 +329,7 @@ export default function SessionPage(){
   },[activePair,currentPrice,currentTime,id])
 
   // Keep refs always pointing to latest functions
-  closePositionRef.current    = closePosition
-  checkSLTPRef.current        = checkSLTP
-  checkLimitOrdersRef.current = checkLimitOrders
+  useEffect(()=>{closePositionRef.current=closePosition;checkSLTPRef.current=checkSLTP;checkLimitOrdersRef.current=checkLimitOrders})
 
   // ── Limit order helpers ──────────────────────────────────────────────────────
 
