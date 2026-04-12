@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic'
-const OrderModal = dynamic(() => import('../../components/OrderModal'), { ssr: false })
+const OrderModal = dynamic(() => import('./OrderModal'), { ssr: false })
 /**
  * pages/session/[id].js
  * Forex Simulator — Algorithmic Suite — R.A.M.M.FX TRADING™
@@ -8,8 +8,8 @@ const OrderModal = dynamic(() => import('../../components/OrderModal'), { ssr: f
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
-import { supabase } from '../../lib/supabase'
-import ReplayEngine from '../../lib/replayEngine'
+import { supabase } from '../lib/supabase'
+import ReplayEngine from '../lib/replayEngine'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
