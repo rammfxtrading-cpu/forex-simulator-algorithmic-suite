@@ -359,55 +359,15 @@ export default function SessionPage(){
   // ── Position price lines (entry, SL, TP) ────────────────────────────────────
 
   function createPositionLines(posId,pair,pos){
-    const cr=chartMap.current[pair]; if(!cr?.series) return
-    if(!cr.priceLines) cr.priceLines={}
-    const isBuy=pos.side==='BUY'
-    const slPnl=-(pos.slPips*pos.lots*10).toFixed(2)
-    const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
-    cr.priceLines[posId+'_entry']=cr.series.createPriceLine({
-      price:pos.entry,color:'rgba(200,200,200,0.5)',
-      lineWidth:1,lineStyle:0,axisLabelVisible:true,
-      title:`${pos.side} ${pos.lots}L @ ${pos.entry.toFixed(5)}`,
-    })
-    cr.priceLines[posId+'_sl']=cr.series.createPriceLine({
-      price:pos.sl,color:'rgba(239,83,80,0.45)',
-      lineWidth:1,lineStyle:2,axisLabelVisible:true,
-      title:`SL  ${slPnl}`,
-    })
-    cr.priceLines[posId+'_tp']=cr.series.createPriceLine({
-      price:pos.tp,color:'rgba(38,166,154,0.45)',
-      lineWidth:1,lineStyle:2,axisLabelVisible:true,
-      title:`TP  ${tpPnl}`,
-    })
+    // Lines are rendered by HTML overlay — no LWC price lines needed
   }
 
   function removePositionLines(posId,pair){
-    const cr=chartMap.current[pair]; if(!cr?.priceLines) return
-    ;['_entry','_sl','_tp'].forEach(k=>{
-      const key=posId+k
-      if(cr.priceLines[key]){
-        try{cr.series.removePriceLine(cr.priceLines[key])}catch{}
-        delete cr.priceLines[key]
-      }
-    })
+    // Lines are rendered by HTML overlay — nothing to remove from LWC
   }
 
   function updatePositionLine(posId,pair,type,newPrice,pos){
-    const cr=chartMap.current[pair]; if(!cr?.priceLines) return
-    const key=posId+'_'+type
-    if(cr.priceLines[key]){
-      try{cr.series.removePriceLine(cr.priceLines[key])}catch{}
-    }
-    const isTp=type==='tp'
-    const mult=pipMult(pair)
-    const pips=Math.abs((newPrice-pos.entry)*mult)
-    const pnl=isTp?'+'+(pips*pos.lots*10).toFixed(2):'-'+(pips*pos.lots*10).toFixed(2)
-    cr.priceLines[key]=cr.series.createPriceLine({
-      price:newPrice,
-      color:isTp?'rgba(38,166,154,0.45)':'rgba(239,83,80,0.45)',
-      lineWidth:1,lineStyle:2,axisLabelVisible:true,
-      title:`${isTp?'TP':'SL'}  ${pnl}`,
-    })
+    // Lines are rendered by HTML overlay — nothing to update in LWC
   }
 
   const previewOrder=useCallback((side, price, pair)=>{
@@ -640,19 +600,25 @@ export default function SessionPage(){
             <span style={s.overlayTxt}>Cargando {activePair}…</span>
           </div>
         )}
-        {/* Line overlay — X close buttons on chart */}
-        {dataReady&&openPositions.length>0&&(
-          <div style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:40}}>
-            <LineOverlay
-              positions={openPositions}
-              chartMap={chartMap}
-              activePair={activePair}
-              currentPrice={currentPrice}
-              pairTfRef={pairTfRef}
-              onClose={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
-            />
-          </div>
-        )}
+        <PositionOverlay
+          positions={openPositions}
+          pendingOrders={pendingOrders}
+          chartMap={chartMap}
+          activePair={activePair}
+          dataReady={dataReady}
+          onClosePos={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
+          onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
+          onDragEnd={(posId,type,newPrice)=>{
+            const ps=pairState.current[activePair]
+            const pos=ps?.positions?.find(p=>p.id===posId)
+            if(!pos) return
+            const pips=Math.abs((newPrice-pos.entry)*pipMult(activePair))
+            if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
+            else{pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
+            ps.positions=[...ps.positions]
+            setTick(t=>t+1)
+          }}
+        />
       </div>
 
       {/* BOTTOM BAR — glass */}
@@ -893,9 +859,7 @@ export default function SessionPage(){
               const cr=chartMap.current[orderModal.pair]
               if(cr?.series){
                 if(!cr.priceLines) cr.priceLines={}
-                cr.priceLines[order.id+'_entry']=cr.series.createPriceLine({price:order.entry,color:'rgba(200,200,200,0.4)',lineWidth:1,lineStyle:0,axisLabelVisible:true,title:`${orderModal.side==='BUY'?'B':'S'}.LIM ${posData.lots}L`})
-                cr.priceLines[order.id+'_sl']=cr.series.createPriceLine({price:posData.sl,color:'rgba(239,83,80,0.35)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:`SL  -$${posData.estLoss}`})
-                cr.priceLines[order.id+'_tp']=cr.series.createPriceLine({price:posData.tp,color:'rgba(38,166,154,0.35)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:`TP  +$${posData.estProfit}`})
+                // Limit order lines rendered by HTML overlay
               }
             } else {
               // Market order
@@ -1109,51 +1073,126 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
   )
 }
 
-// ─── Line Overlay — X buttons on chart lines ─────────────────────────────────
-function LineOverlay({positions, chartMap, activePair, currentPrice, onClose, pairTfRef}){
-  const [lineYs, setLineYs] = useState([])
+// ─── Position Overlay — HTML lines with drag + X close ────────────────────────
+function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd}){
+  const [lines,setLines]=useState([])
+  const dragRef=useRef(null) // {posId,type,startY,startPrice,el}
+  const containerRef=useRef(null)
+
+  // Recalculate line Y positions every 150ms
+  useEffect(()=>{
+    if(!dataReady) return
+    const tick=()=>{
+      const cr=chartMap.current[activePair]; if(!cr?.series) return
+      const all=[]
+      positions.forEach(pos=>{
+        let eY=null,slY=null,tpY=null
+        try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
+        try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
+        try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
+        const slPnl=-(pos.slPips*pos.lots*10).toFixed(2)
+        const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
+        if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:eY, label:`${pos.side} ${pos.lots}L`,color:'rgba(180,180,180,0.6)',draggable:false,closeable:true})
+        if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:slY,label:`SL  ${slPnl}`,             color:'rgba(239,83,80,0.7)',  draggable:true, closeable:false})
+        if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:tpY,label:`TP  ${tpPnl}`,             color:'rgba(38,166,154,0.7)', draggable:true, closeable:false})
+      })
+      ;(pendingOrders||[]).forEach(ord=>{
+        let eY=null,slY=null,tpY=null
+        try{eY =chartMap.current[activePair]?.series?.priceToCoordinate(ord.entry)}catch{}
+        try{slY=chartMap.current[activePair]?.series?.priceToCoordinate(ord.sl)}catch{}
+        try{tpY=chartMap.current[activePair]?.series?.priceToCoordinate(ord.tp)}catch{}
+        const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
+        if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'limit_entry',y:eY, label:`${lbl} ${ord.lots}L`,color:'rgba(200,200,200,0.5)',draggable:false,cancelable:true})
+        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'limit_sl',   y:slY,label:'SL',                  color:'rgba(239,83,80,0.4)', draggable:false,cancelable:false})
+        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'limit_tp',   y:tpY,label:'TP',                  color:'rgba(38,166,154,0.4)',draggable:false,cancelable:false})
+      })
+      setLines(all)
+    }
+    tick()
+    const iv=setInterval(tick,150)
+    return()=>clearInterval(iv)
+  },[positions,pendingOrders,activePair,dataReady])
+
+  const handleMouseDown=(e,line)=>{
+    if(!line.draggable) return
+    e.stopPropagation(); e.preventDefault()
+    const cr=chartMap.current[activePair]; if(!cr?.series) return
+    dragRef.current={posId:line.posId,type:line.type,startY:e.clientY,startPrice:line.type==='sl'?
+      positions.find(p=>p.id===line.posId)?.sl:
+      positions.find(p=>p.id===line.posId)?.tp
+    }
+  }
 
   useEffect(()=>{
-    const cr = chartMap.current[activePair]; if(!cr) return
-    const updateYs = () => {
-      const el = cr.chart.chartElement?.()
+    const onMove=e=>{
+      if(!dragRef.current) return
+      const cr=chartMap.current[activePair]; if(!cr?.series) return
+      const el=cr.chart.chartElement?.()
       if(!el) return
-      const rect = el.getBoundingClientRect?.() || {height:600}
-      const ys = []
-      positions.forEach(pos=>{
-        let slY=null, tpY=null, entryY=null
-        try{ slY    = cr.series.priceToCoordinate(pos.sl) }catch{}
-        try{ tpY    = cr.series.priceToCoordinate(pos.tp) }catch{}
-        try{ entryY = cr.series.priceToCoordinate(pos.entry) }catch{}
-        if(slY!=null)    ys.push({posId:pos.id,type:'sl',   y:slY,   side:pos.side})
-        if(tpY!=null)    ys.push({posId:pos.id,type:'tp',   y:tpY,   side:pos.side})
-        if(entryY!=null) ys.push({posId:pos.id,type:'entry',y:entryY,side:pos.side,lots:pos.lots})
-      })
-      setLineYs(ys)
+      const rect=el.getBoundingClientRect()
+      let newPrice=null
+      try{newPrice=cr.series.coordinateToPrice(e.clientY-rect.top)}catch{}
+      if(newPrice==null||isNaN(newPrice)) return
+      // Update visual immediately
+      setLines(prev=>prev.map(l=>{
+        if(l.posId===dragRef.current.posId&&l.type===dragRef.current.type)
+          return{...l,y:e.clientY-rect.top+rect.top-rect.top}
+        return l
+      }))
     }
-    const interval = setInterval(updateYs, 200)
-    return ()=>clearInterval(interval)
-  },[positions, activePair])
+    const onUp=e=>{
+      if(!dragRef.current) return
+      const cr=chartMap.current[activePair]; if(!cr?.series) return
+      const el=cr.chart.chartElement?.()
+      if(!el) return
+      const rect=el.getBoundingClientRect()
+      let newPrice=null
+      try{newPrice=cr.series.coordinateToPrice(e.clientY-rect.top)}catch{}
+      if(newPrice!=null&&!isNaN(newPrice)){
+        onDragEnd(dragRef.current.posId,dragRef.current.type,newPrice)
+      }
+      dragRef.current=null
+    }
+    window.addEventListener('mousemove',onMove,{passive:true})
+    window.addEventListener('mouseup',onUp)
+    return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
+  },[activePair,onDragEnd])
+
+  if(!dataReady||lines.length===0) return null
 
   return(
-    <>
-      {lineYs.map((l,i)=>(
-        l.type==='entry' ? (
-          <div key={i} style={{position:'absolute',right:52,top:l.y-10,zIndex:50,display:'flex',gap:3,pointerEvents:'auto'}}>
-            <div style={{background:'rgba(2,8,16,0.85)',border:'1px solid #0d2040',borderRadius:3,padding:'1px 6px',fontSize:8,fontWeight:700,color:'#a0b8d0',whiteSpace:'nowrap'}}>
-              {l.side} {l.lots}L
+    <div ref={containerRef} style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:30}}>
+      {lines.map(line=>(
+        <div key={line.id} style={{
+          position:'absolute',left:0,right:0,top:line.y-1,
+          height:1,background:line.color,
+          pointerEvents:'auto',
+          cursor:line.draggable?'ns-resize':'default',
+        }}
+          onMouseDown={e=>handleMouseDown(e,line)}
+        >
+          {/* Label + controls on right side */}
+          <div style={{position:'absolute',right:54,top:-10,display:'flex',gap:4,alignItems:'center',pointerEvents:'auto'}}>
+            <div style={{background:'rgba(2,8,16,0.88)',border:`1px solid ${line.color}`,borderRadius:3,padding:'2px 7px',fontSize:8,fontWeight:700,color:'#c0d0e8',whiteSpace:'nowrap',userSelect:'none'}}>
+              {line.label}
             </div>
-            <button style={{background:'rgba(239,83,80,0.15)',border:'1px solid rgba(239,83,80,0.3)',borderRadius:3,color:'#ef5350',fontSize:10,width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Montserrat',sans-serif"}}
-              onClick={()=>onClose(l.posId)}>✕</button>
+            {line.draggable&&(
+              <div style={{background:'rgba(2,8,16,0.7)',border:`1px solid ${line.color}`,borderRadius:3,padding:'2px 5px',fontSize:8,color:'#4a6080',cursor:'ns-resize',userSelect:'none'}}
+                onMouseDown={e=>handleMouseDown(e,line)}>
+                ⣿
+              </div>
+            )}
+            {line.closeable&&(
+              <button style={{background:'rgba(239,83,80,0.15)',border:'1px solid rgba(239,83,80,0.4)',borderRadius:3,color:'#ef5350',fontSize:10,width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontFamily:"'Montserrat',sans-serif"}}
+                onClick={e=>{e.stopPropagation();onClosePos(line.posId)}}>✕</button>
+            )}
+            {line.cancelable&&(
+              <button style={{background:'rgba(239,83,80,0.12)',border:'1px solid rgba(239,83,80,0.3)',borderRadius:3,color:'#ef5350',fontSize:9,width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontFamily:"'Montserrat',sans-serif"}}
+                onClick={e=>{e.stopPropagation();onCancelOrder(line.ordId)}}>✕</button>
+            )}
           </div>
-        ) : (
-          <div key={i} style={{position:'absolute',right:52,top:l.y-9,zIndex:50,pointerEvents:'none'}}>
-            <div style={{background:'rgba(2,8,16,0.7)',border:`1px solid ${l.type==='sl'?'rgba(239,83,80,0.3)':'rgba(38,166,154,0.3)'}`,borderRadius:3,padding:'1px 5px',fontSize:7,fontWeight:700,color:l.type==='sl'?'rgba(239,83,80,0.8)':'rgba(38,166,154,0.8)',whiteSpace:'nowrap'}}>
-              {l.type==='sl'?'SL':'TP'}
-            </div>
-          </div>
-        )
+        </div>
       ))}
-    </>
+    </div>
   )
 }
