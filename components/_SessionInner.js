@@ -151,7 +151,9 @@ export default function SessionPage(){
       all=all.filter(c=>{if(seen.has(c.time))return false;seen.add(c.time);return true}).sort((a,b)=>a.time-b.time)
       if(!all.length) return
       const engine=new ReplayEngine()
-      engine.load(all); engine.seekToTime(replayTs); engine.speed=speedRef.current
+      // Resume from last saved position if available
+      const resumeTs = sess.last_timestamp || replayTs
+      engine.load(all); engine.seekToTime(resumeTs); engine.speed=speedRef.current
       engine.onTick=()=>{
         updateChart(pair,engine,false)
         checkSLTPRef.current?.(pair,engine)
@@ -291,7 +293,18 @@ export default function SessionPage(){
 
   // ── Replay ────────────────────────────────────────────────────────────────────
   const eng=()=>pairState.current[activePair]?.engine
-  const handlePlayPause=useCallback(()=>{const e=eng();if(!e)return;if(e.isPlaying){e.pause();setIsPlaying(false)}else{e.play();setIsPlaying(true)}},[activePair])
+  const saveProgress=useCallback(async(ts)=>{
+    if(!id||!ts) return
+    try{ await supabase.from('sim_sessions').update({last_timestamp:ts}).eq('id',id) }catch(e){}
+  },[id])
+
+  const handlePlayPause=useCallback(()=>{
+    const e=eng();if(!e)return
+    if(e.isPlaying){
+      e.pause();setIsPlaying(false)
+      saveProgress(e.currentTime)
+    }else{e.play();setIsPlaying(true)}
+  },[activePair,saveProgress])
   const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))},[activePair,updateChart])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
 
@@ -329,7 +342,9 @@ export default function SessionPage(){
   },[activePair,currentPrice,currentTime,id])
 
   // Keep refs always pointing to latest functions
-  useEffect(()=>{closePositionRef.current=closePosition;checkSLTPRef.current=checkSLTP;checkLimitOrdersRef.current=checkLimitOrders})
+  closePositionRef.current    = closePosition
+  checkSLTPRef.current        = checkSLTP
+  checkLimitOrdersRef.current = checkLimitOrders
 
   // ── Limit order helpers ──────────────────────────────────────────────────────
 
@@ -520,6 +535,11 @@ export default function SessionPage(){
   },[handlePlayPause,handleStep])
 
   useEffect(()=>()=>{
+    // Save progress before unmount
+    const e = pairState.current[activePairRef.current]?.engine
+    if(e?.currentTime && id){
+      supabase.from('sim_sessions').update({last_timestamp:e.currentTime}).eq('id',id).then(()=>{})
+    }
     Object.values(pairState.current).forEach(ps=>ps?.engine?.pause())
     Object.values(chartMap.current).forEach(cr=>{try{cr.chart.remove()}catch{}})
   },[])
