@@ -17,7 +17,44 @@ const LOT_PRESETS = [0.01,0.05,0.1,0.25,0.5,1.0]
 const RR_PRESETS  = [1,1.5,2,3]
 const ALL_PAIRS   = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','EUR/GBP','EUR/JPY','GBP/JPY']
 
-function chartOpts(w,h){return{width:w,height:h,layout:{background:{color:'transparent'},textColor:'#a0b8d0',fontFamily:"'Montserrat',sans-serif",fontSize:11},grid:{vertLines:{color:'#0a1628'},horzLines:{color:'#0a1628'}},crosshair:{mode:0,vertLine:{color:'#1E90FF44',labelBackgroundColor:'#1E90FF'},horzLine:{color:'#1E90FF44',labelBackgroundColor:'#1E90FF'}},rightPriceScale:{borderColor:'#0d2040',scaleMargins:{top:0.06,bottom:0.06}},timeScale:{borderColor:'#0d2040',timeVisible:true,secondsVisible:false,rightOffset:12,barSpacing:6,minBarSpacing:0.5,fixLeftEdge:true},handleScroll:{mouseWheel:true,pressedMouseMove:true},handleScale:{axisPressedMouseMove:true,mouseWheel:true,pinch:true}}}
+function chartOpts(w,h){return{
+  width:w,height:h,
+  layout:{
+    background:{color:'#000000'},
+    textColor:'rgba(255,255,255,0.5)',
+    fontFamily:"'Montserrat',sans-serif",
+    fontSize:11,
+  },
+  grid:{
+    vertLines:{color:'rgba(255,255,255,0.04)',style:1},
+    horzLines:{color:'rgba(255,255,255,0.06)',style:1},
+  },
+  crosshair:{
+    mode:0,
+    vertLine:{color:'rgba(255,255,255,0.3)',labelBackgroundColor:'rgba(255,255,255,0.15)',width:1,style:3},
+    horzLine:{color:'rgba(255,255,255,0.3)',labelBackgroundColor:'rgba(40,40,50,0.9)',width:1,style:3},
+  },
+  rightPriceScale:{
+    borderColor:'rgba(255,255,255,0.08)',
+    textColor:'rgba(255,255,255,0.6)',
+    scaleMargins:{top:0.05,bottom:0.05},
+    autoScale:true,
+    mode:0,
+  },
+  timeScale:{
+    borderColor:'rgba(255,255,255,0.08)',
+    textColor:'rgba(255,255,255,0.4)',
+    timeVisible:true,
+    secondsVisible:false,
+    rightOffset:5,
+    barSpacing:8,
+    minBarSpacing:1,
+    fixLeftEdge:false,
+    fixRightEdge:false,
+  },
+  handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
+  handleScale:{axisPressedMouseMove:{time:true,price:true},mouseWheel:true,pinch:true},
+}}
 
 const isJpy    = p=>p?.includes('JPY')
 const pipMult  = p=>isJpy(p)?100:10000
@@ -179,7 +216,7 @@ export default function SessionPage(){
     const lc=await import('lightweight-charts')
     if(chartMap.current[pair]) return
     const chart=lc.createChart(el,chartOpts(el.clientWidth,el.clientHeight))
-    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#ffffff',borderUpColor:'#2962FF',borderDownColor:'#ffffff',wickUpColor:'rgba(41,98,255,0.6)',wickDownColor:'rgba(255,255,255,0.5)',borderVisible:true})
+    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#000000',borderUpColor:'#2962FF',borderDownColor:'rgba(255,255,255,0.8)',wickUpColor:'rgba(41,98,255,0.8)',wickDownColor:'rgba(255,255,255,0.7)',borderVisible:true})
     chartMap.current[pair]={chart,series,prevCount:0}
     new ResizeObserver(entries=>{
       const{width,height}=entries[0].contentRect
