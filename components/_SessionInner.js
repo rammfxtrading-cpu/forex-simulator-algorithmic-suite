@@ -37,11 +37,11 @@ function chartOpts(w,h){return{
   rightPriceScale:{
     borderColor:'rgba(255,255,255,0.1)',
     textColor:'rgba(255,255,255,0.65)',
-    scaleMargins:{top:0.08,bottom:0.08},
+    scaleMargins:{top:0.1,bottom:0.1},
     autoScale:true,
     mode:0,
-    entireTextOnly:false,
     ticksVisible:true,
+    minimumWidth:60,
   },
   timeScale:{
     borderColor:'rgba(255,255,255,0.1)',
@@ -49,8 +49,8 @@ function chartOpts(w,h){return{
     timeVisible:true,
     secondsVisible:false,
     rightOffset:8,
-    barSpacing:10,
-    minBarSpacing:2,
+    barSpacing:12,
+    minBarSpacing:3,
     fixLeftEdge:false,
     fixRightEdge:false,
     ticksVisible:true,
@@ -314,7 +314,7 @@ export default function SessionPage(){
       cr.series.setData(agg)
       if(prev===0){
         cr.chart.timeScale().scrollToPosition(8,false)
-        try{cr.chart.timeScale().applyOptions({barSpacing:10})}catch{}
+        try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
       }
     } else {
       cr.series.update(agg[agg.length-1])
@@ -931,7 +931,7 @@ const s={
   bgCanvas:{position:'fixed',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0},
 
   // Chart fills everything
-  chartWrap:{position:'absolute',inset:0,overflow:'hidden',zIndex:0},
+  chartWrap:{position:'absolute',top:68,bottom:44,left:0,right:0,overflow:'hidden',zIndex:0},
   chart:{position:'absolute',inset:0,width:'100%',height:'100%'},
   overlay:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,background:'rgba(0,0,0,0.7)',zIndex:10},
   overlayTxt:{fontSize:11,color:'rgba(255,255,255,0.4)',fontWeight:700},
@@ -981,7 +981,7 @@ const s={
   togBtn:{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'rgba(255,255,255,0.4)',borderRadius:5,padding:'4px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif",whiteSpace:'nowrap'},
   togOn:{background:'rgba(255,255,255,0.1)',borderColor:'rgba(255,255,255,0.25)',color:'#fff'},
   // Replay pill
-  replayPill:{position:'absolute',top:50,left:'50%',transform:'translateX(-50%)',zIndex:25,display:'flex',alignItems:'center',gap:4,background:'rgba(20,20,24,0.95)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:40,padding:'5px 12px',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'0 4px 20px rgba(0,0,0,0.6)'},
+  replayPill:{position:'absolute',top:76,left:'50%',transform:'translateX(-50%)',zIndex:25,display:'flex',alignItems:'center',gap:4,background:'rgba(20,20,24,0.95)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:40,padding:'5px 12px',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'0 4px 20px rgba(0,0,0,0.6)'},
   pillBtn:{background:'none',border:'none',color:'rgba(255,255,255,0.6)',cursor:'pointer',width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:4,padding:0},
   pillPlay:{background:'#fff',border:'none',color:'#000',width:26,height:26,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,boxShadow:'0 2px 8px rgba(255,255,255,0.2)'},
   pillPause:{background:'rgba(255,255,255,0.8)'},
