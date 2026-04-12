@@ -900,7 +900,7 @@ export default function SessionPage(){
       {ctxMenu&&(
         <>
           <div style={{position:'fixed',inset:0,zIndex:998}} onClick={()=>setCtxMenu(null)}/>
-          <div style={{position:'fixed',left:ctxMenu.x,top:ctxMenu.y,background:'rgba(18,18,20,0.92)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:12,zIndex:999,minWidth:160,overflow:'hidden',boxShadow:'0 8px 40px rgba(0,0,0,0.6)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif"}}>
+          <div style={{position:'fixed',left:ctxMenu.x,top:ctxMenu.y,background:'rgba(4,10,24,0.92)',border:'1px solid rgba(30,144,255,0.35)',borderRadius:12,zIndex:999,minWidth:160,overflow:'hidden',boxShadow:'0 8px 40px rgba(0,0,0,0.6)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif"}}>
             <div style={{padding:'8px 14px 6px',fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.92)',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>{ctxMenu.price.toFixed(5)}</div>
             {ctxMenu.price<(currentPrice||0)&&(
               <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'BUY',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
@@ -1004,7 +1004,7 @@ const s={
   tabDot:{width:4,height:4,borderRadius:'50%',background:'#1E90FF',display:'inline-block'},
   tabClose:{background:'none',border:'none',color:'#ffffff',cursor:'pointer',fontSize:9,padding:'0 2px',fontFamily:"'Montserrat',sans-serif"},
   addBtn:{background:'transparent',border:'1px solid rgba(255,255,255,0.12)',color:'#ffffff',width:22,height:22,borderRadius:4,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Montserrat',sans-serif",flexShrink:0},
-  dropdown:{position:'fixed',top:40,background:'rgba(16,16,18,0.97)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,zIndex:9999,minWidth:130,padding:'4px 0',boxShadow:'0 8px 32px rgba(0,0,0,0.8)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
+  dropdown:{position:'fixed',top:40,background:'rgba(4,10,24,0.97)',border:'1px solid rgba(30,144,255,0.3)',borderRadius:10,zIndex:9999,minWidth:130,padding:'4px 0',boxShadow:'0 8px 32px rgba(0,0,0,0.8)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
   ddItem:{display:'block',width:'100%',background:'none',border:'none',color:'#ffffff',fontSize:11,fontWeight:600,padding:'8px 14px',cursor:'pointer',textAlign:'left',fontFamily:"'Montserrat',sans-serif"},
   statsRow:{display:'flex',alignItems:'center',gap:4,flexShrink:0},
   fullBtn:{background:'transparent',border:'1px solid rgba(255,255,255,0.1)',borderRadius:5,color:'#ffffff',cursor:'pointer',width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',marginLeft:4},
@@ -1050,8 +1050,8 @@ const s={
   balVal:{color:'#ffffff',fontWeight:700,fontWeight:600},
 
   // Panels
-  panel:{position:'absolute',bottom:50,left:0,right:0,background:'rgba(12,12,14,0.97)',borderTop:'1px solid rgba(255,255,255,0.08)',zIndex:100,maxHeight:240,overflowY:'auto',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
-  panelHdr:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 14px',borderBottom:'1px solid rgba(255,255,255,0.06)',position:'sticky',top:0,background:'rgba(12,12,14,0.99)'},
+  panel:{position:'absolute',bottom:50,left:0,right:0,background:'rgba(4,10,24,0.97)',borderTop:'1px solid rgba(30,144,255,0.25)',zIndex:100,maxHeight:240,overflowY:'auto',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
+  panelHdr:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 14px',borderBottom:'1px solid rgba(30,144,255,0.15)',position:'sticky',top:0,background:'rgba(4,10,24,0.99)'},
   panelTitle:{fontSize:9,fontWeight:700,color:'#ffffff',letterSpacing:1.5},
   dangerBtn:{background:'rgba(239,83,80,0.08)',border:'1px solid rgba(239,83,80,0.2)',color:'#ef5350',borderRadius:4,padding:'3px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"},
   tbl:{width:'100%',borderCollapse:'collapse',fontSize:10},
@@ -1101,7 +1101,7 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
   const accentRgb=isBuy?'30,144,255':'239,83,80'
 
   return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,5,20,0.75)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
       <div style={{
         background:'rgba(255,255,255,0.07)',
         border:'1px solid rgba(255,255,255,0.18)',
@@ -1322,7 +1322,7 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
               background:'rgba(3,8,16,0.88)',
               border:`1px solid ${line.color}`,
               borderRadius:3,padding:'2px 7px',
-              fontSize:8,fontWeight:700,color:'#c0d0e8',
+              fontSize:8,fontWeight:700,color:'#ffffff',
               whiteSpace:'nowrap',
             }}>{line.label}</div>
             {line.drag&&(
@@ -1330,7 +1330,7 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
                 background:'rgba(3,8,16,0.7)',
                 border:`1px solid ${line.color}`,
                 borderRadius:3,padding:'1px 4px',
-                fontSize:9,color:'#4a6080',
+                fontSize:9,color:'rgba(255,255,255,0.6)',
                 cursor:'ns-resize',
               }}
                 onMouseDown={e=>onLineMouseDown(e,line)}

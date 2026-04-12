@@ -362,14 +362,14 @@ export default function Dashboard() {
                   <div style={{display:'flex',gap:6}}>
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
                   </div>
-                  <div style={{fontSize:11,color:'#4a6080'}}>{session.date_from} → {session.date_to}</div>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,0.85)'}}>{session.date_from} → {session.date_to}</div>
                   <div style={{display:'flex',borderTop:'1px solid rgba(30,144,255,0.12)',paddingTop:10}}>
                     <div style={{flex:1,textAlign:'center'}}>
-                      <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
+                      <div style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.85)',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
                       <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>${Number(session.capital).toLocaleString()}</div>
                     </div>
                     <div style={{flex:1,textAlign:'center'}}>
-                      <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>P&L</div>
+                      <div style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.85)',letterSpacing:1,marginBottom:3}}>P&L</div>
                       <div style={{fontSize:13,fontWeight:700,color:(session.balance-session.capital)>=0?'#22c55e':'#ef4444'}}>
                         {(session.balance-session.capital)>=0?'+':''}${(session.balance-session.capital).toFixed(2)}
                       </div>
@@ -415,14 +415,14 @@ export default function Dashboard() {
                   <div style={{display:'flex',gap:6}}>
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
                   </div>
-                  <div style={{fontSize:11,color:'#4a6080'}}>{session.date_from} → {session.date_to}</div>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,0.85)'}}>{session.date_from} → {session.date_to}</div>
                   <div style={{display:'flex',borderTop:'1px solid rgba(30,144,255,0.12)',paddingTop:10}}>
                     <div style={{flex:1,textAlign:'center'}}>
-                      <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
+                      <div style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.85)',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
                       <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>${Number(session.capital).toLocaleString()}</div>
                     </div>
                     <div style={{flex:1,textAlign:'center'}}>
-                      <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>P&L</div>
+                      <div style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.85)',letterSpacing:1,marginBottom:3}}>P&L</div>
                       <div style={{fontSize:13,fontWeight:700,color:(session.balance-session.capital)>=0?'#22c55e':'#ef4444'}}>
                         {(session.balance-session.capital)>=0?'+':''}${(session.balance-session.capital).toFixed(2)}
                       </div>
@@ -474,7 +474,7 @@ export default function Dashboard() {
                 {label:'TOTAL TRADES',  value:closedTrades.length,                               color:'#1E90FF'},
                 {label:'R:R PROMEDIO',  value:avgRR.toFixed(2)+'R',                              color:'#f59e0b'},
                 {label:'MAX DRAWDOWN',  value:`-$${maxDrawdown.toFixed(2)}`,                     color:'#ef4444'},
-                {label:'RACHA MAX',     value:`${maxWinStreak}W / ${maxLossStreak}L`,            color:'#a0b8d0'},
+                {label:'RACHA MAX',     value:`${maxWinStreak}W / ${maxLossStreak}L`,            color:'#ffffff'},
               ].map(stat=>(
                 <div key={stat.label} style={{...s.statCard,padding:20,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12}}>
                   <div style={{fontSize:8,fontWeight:700,color:'#1E90FF',letterSpacing:1.5,marginBottom:8}}>{stat.label}</div>
@@ -485,7 +485,7 @@ export default function Dashboard() {
 
             {/* EQUITY CURVE */}
             <div style={{borderRadius:12,padding:'20px 24px',marginBottom:20,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#a0b8d0',letterSpacing:1,marginBottom:12,textTransform:'uppercase'}}>Equity Curve</div>
+              <div style={{fontSize:11,fontWeight:700,color:'#ffffff',letterSpacing:1,marginBottom:12,textTransform:'uppercase'}}>Equity Curve</div>
               <svg viewBox="0 0 800 160" style={{width:'100%',height:160}} preserveAspectRatio="none">
                 <defs>
                   <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
@@ -545,7 +545,7 @@ export default function Dashboard() {
                     {[{label:'Wins',count:wins.length,color:'#22c55e'},{label:'Losses',count:losses.length,color:'#ef4444'},{label:'Breakeven',count:breakevens.length,color:'#f59e0b'}].map(item=>(
                       <div key={item.label} style={{display:'flex',alignItems:'center',gap:8}}>
                         <div style={{width:10,height:10,borderRadius:'50%',background:item.color}}/>
-                        <span style={{fontSize:12,color:'#a0b8d0'}}>{item.label}</span>
+                        <span style={{fontSize:12,color:'#ffffff'}}>{item.label}</span>
                         <span style={{fontSize:12,fontWeight:700,color:'#fff',marginLeft:'auto',paddingLeft:16}}>{item.count}</span>
                       </div>
                     ))}
@@ -584,12 +584,12 @@ export default function Dashboard() {
                       const resColor=t.result==='WIN'?'#22c55e':t.result==='LOSS'?'#ef4444':'#a0b8d0'
                       return(
                         <tr key={i} style={{borderBottom:'1px solid rgba(30,144,255,0.15)'}}>
-                          <td style={{padding:'7px 12px',color:'#4a6080',whiteSpace:'nowrap',fontSize:10}}>{sess?.name||'—'}</td>
-                          <td style={{padding:'7px 12px',color:'#c0d0e8',fontWeight:700}}>{t.pair}</td>
+                          <td style={{padding:'7px 12px',color:'rgba(255,255,255,0.85)',whiteSpace:'nowrap',fontSize:10}}>{sess?.name||'—'}</td>
+                          <td style={{padding:'7px 12px',color:'#ffffff',fontWeight:700}}>{t.pair}</td>
                           <td style={{padding:'7px 12px',color:t.side==='BUY'?'#1E90FF':'#ef4444',fontWeight:800}}>{t.side}</td>
-                          <td style={{padding:'7px 12px',color:'#c0d0e8',fontFamily:'monospace'}}>{parseFloat(t.entry_price||0).toFixed(5)}</td>
-                          <td style={{padding:'7px 12px',color:'#c0d0e8',fontFamily:'monospace'}}>{parseFloat(t.exit_price||0).toFixed(5)}</td>
-                          <td style={{padding:'7px 12px',color:'#c0d0e8'}}>{t.lots}</td>
+                          <td style={{padding:'7px 12px',color:'#ffffff',fontFamily:'monospace'}}>{parseFloat(t.entry_price||0).toFixed(5)}</td>
+                          <td style={{padding:'7px 12px',color:'#ffffff',fontFamily:'monospace'}}>{parseFloat(t.exit_price||0).toFixed(5)}</td>
+                          <td style={{padding:'7px 12px',color:'#ffffff'}}>{t.lots}</td>
                           <td style={{padding:'7px 12px',color:'rgba(239,83,80,0.7)'}}>{t.sl_price?.toFixed(5)||'—'}</td>
                           <td style={{padding:'7px 12px',color:'rgba(30,144,255,0.7)'}}>{t.tp_price?.toFixed(5)||'—'}</td>
                           <td style={{padding:'7px 12px',color:'#f59e0b',fontWeight:700}}>{parseFloat(t.rr||0).toFixed(1)}R</td>
@@ -597,7 +597,7 @@ export default function Dashboard() {
                           <td style={{padding:'7px 12px',fontWeight:700}}>
                             <span style={{color:resColor,background:t.result==='WIN'?'rgba(34,197,94,0.1)':t.result==='LOSS'?'rgba(239,68,68,0.1)':'rgba(160,184,208,0.1)',padding:'2px 8px',borderRadius:4,fontSize:9,letterSpacing:0.5}}>{t.result}</span>
                           </td>
-                          <td style={{padding:'7px 12px',color:'#4a6080',fontSize:9}}>{t.notes||'—'}</td>
+                          <td style={{padding:'7px 12px',color:'rgba(255,255,255,0.85)',fontSize:9}}>{t.notes||'—'}</td>
                         </tr>
                       )
                     })}
@@ -616,7 +616,7 @@ export default function Dashboard() {
           <div style={{background:'#030f20',border:'1px solid #0d2040',borderRadius:16,padding:'28px',width:'100%',maxWidth:520,boxShadow:'0 0 60px #1E90FF10',fontFamily:'Montserrat,sans-serif'}} onClick={e=>e.stopPropagation()}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}}>
               <div style={{fontSize:18,fontWeight:800,color:'#ffffff'}}>New Session</div>
-              <button style={{background:'none',border:'none',color:'#4a6080',cursor:'pointer',fontSize:18,fontFamily:'Montserrat,sans-serif'}} onClick={()=>setShowNew(false)}>✕</button>
+              <button style={{background:'none',border:'none',color:'rgba(255,255,255,0.85)',cursor:'pointer',fontSize:18,fontFamily:'Montserrat,sans-serif'}} onClick={()=>setShowNew(false)}>✕</button>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
               <div style={{gridColumn:'1/-1',display:'flex',flexDirection:'column',gap:7}}>
@@ -673,22 +673,22 @@ const s = {
   logoBy:{fontSize:8,color:'rgba(255,255,255,0.6)',fontStyle:'italic'},
   sidebarDivider:{height:1,background:'linear-gradient(90deg,transparent,#1E90FF50,transparent)',margin:'0 0 12px'},
   nav:{flex:1,padding:'0 8px',display:'flex',flexDirection:'column',gap:2},
-  navItem:{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,fontSize:12,fontWeight:600,color:'#c0d0e8',cursor:'pointer',transition:'all .15s'},
+  navItem:{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,fontSize:12,fontWeight:600,color:'#ffffff',cursor:'pointer',transition:'all .15s'},
   navActive:{background:'linear-gradient(135deg,#1E90FF20,#1E90FF08)',color:'#1E90FF',borderLeft:'2px solid #1E90FF'},
   navHover:{background:'rgba(30,144,255,0.06)',color:'#d0e4ff',boxShadow:'inset 0 0 12px rgba(30,144,255,0.08)',backdropFilter:'blur(2px)'},
   userWrap:{position:'relative',display:'flex',alignItems:'center',gap:10,padding:12,margin:'8px',borderRadius:8,background:'rgba(3,15,32,0.8)',border:'1px solid #0d2040',cursor:'pointer'},
   avatar:{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#1E90FF,#0060cc)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 12px #1E90FF50'},
   userInfo:{flex:1,overflow:'hidden'},
   userName:{fontSize:11,fontWeight:600,color:'#ffffff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},
-  userPlan:{fontSize:9,color:'#2a5070',fontWeight:600,letterSpacing:.5},
+  userPlan:{fontSize:9,color:'rgba(255,255,255,0.85)',fontWeight:600,letterSpacing:.5},
   menu:{position:'absolute',bottom:'110%',left:0,right:0,background:'#030f20',border:'1px solid #0d2040',borderRadius:8,overflow:'hidden',zIndex:100},
-  menuEmail:{padding:'10px 14px',fontSize:10,color:'#2a5070',fontWeight:500},
+  menuEmail:{padding:'10px 14px',fontSize:10,color:'rgba(255,255,255,0.85)',fontWeight:500},
   menuDivider:{height:1,background:'#0d2040'},
   menuItem:{padding:'10px 14px',fontSize:12,fontWeight:600,cursor:'pointer'},
   main:{position:'relative',zIndex:1,flex:1,overflowY:'auto',padding:'32px 40px'},
   header:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:32},
   headerTitle:{fontSize:26,fontWeight:800,color:'#ffffff',marginBottom:4},
-  headerSub:{fontSize:13,color:'#c0d0e8'},
+  headerSub:{fontSize:13,color:'#ffffff'},
   iconBtn:{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:8,padding:'8px',cursor:'pointer',color:'#a0b0c8',display:'flex',alignItems:'center',justifyContent:'center'},
   startBtn:{display:'flex',alignItems:'center',gap:8,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF30',fontFamily:'Montserrat,sans-serif'},
   ctaRow:{display:'flex',gap:16,marginBottom:28},
@@ -696,14 +696,14 @@ const s = {
   ctaOff:{opacity:.7,cursor:'default'},
   ctaIcon:{width:44,height:44,borderRadius:10,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14},
   ctaTitle:{fontSize:14,fontWeight:700,color:'#ffffff',marginBottom:6},
-  ctaSub:{fontSize:11,color:'#a0b8d0',lineHeight:1.5,marginBottom:16},
+  ctaSub:{fontSize:11,color:'#ffffff',lineHeight:1.5,marginBottom:16},
   ctaLink:{fontSize:12,fontWeight:700,color:'#1E90FF'},
   statsRow:{display:'flex',gap:16,marginBottom:28},
   statCard:{flex:1,display:'flex',flexDirection:'column',gap:6,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.15)',borderRadius:12,padding:'16px 20px'},
   statIcon:{width:36,height:36,borderRadius:8,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4},
   statValue:{fontSize:24,fontWeight:800},
-  statLabel:{fontSize:9,fontWeight:700,color:'#c0d0e8',letterSpacing:1.5},
+  statLabel:{fontSize:9,fontWeight:700,color:'#ffffff',letterSpacing:1.5},
   emptyCard:{borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12},
   emptyTitle:{fontSize:16,fontWeight:700,color:'#ffffff',marginBottom:8},
-  emptySub:{fontSize:12,color:'#a0b8d0',lineHeight:1.6,maxWidth:380},
+  emptySub:{fontSize:12,color:'#ffffff',lineHeight:1.6,maxWidth:380},
 }

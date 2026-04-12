@@ -43,9 +43,9 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <div style={{width:8,height:8,borderRadius:'50%',background:accentColor,boxShadow:`0 0 10px ${accentColor}`}}/>
             <span style={{fontSize:14,fontWeight:900,color:'#fff',letterSpacing:0.5}}>{isLimit?(isBuy?'BUY LIMIT':'SELL LIMIT'):(isBuy?'BUY MARKET':'SELL MARKET')}</span>
-            <span style={{fontSize:11,color:'rgba(255,255,255,0.4)',fontWeight:600}}>{pair}</span>
+            <span style={{fontSize:11,color:'rgba(255,255,255,0.75)',fontWeight:600}}>{pair}</span>
           </div>
-          <button onClick={onClose} style={{background:'rgba(0,40,100,0.4)',border:'1px solid rgba(0,120,255,0.3)',borderRadius:8,color:'rgba(255,255,255,0.7)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>✕</button>
+          <button onClick={onClose} style={{background:'rgba(0,40,100,0.4)',border:'1px solid rgba(0,120,255,0.3)',borderRadius:8,color:'rgba(255,255,255,0.9)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>✕</button>
         </div>
 
         <div style={{padding:'16px 22px 20px'}}>
@@ -66,7 +66,7 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
 
           {/* Risk % presets */}
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:8}}>RIESGO DEL BALANCE</div>
+            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.7)',letterSpacing:1.5,marginBottom:8}}>RIESGO DEL BALANCE</div>
             <div style={{display:'flex',gap:4,marginBottom:10,background:'rgba(0,20,60,0.4)',borderRadius:12,padding:4,border:'1px solid rgba(0,120,255,0.2)'}}>
               {RISK_PRESETS.map(r=>(
                 <button key={r} onClick={()=>setRiskPct(r)} style={{
@@ -99,7 +99,7 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
                 <div style={{width:6,height:6,borderRadius:'50%',background:'rgba(30,144,255,0.8)'}}/>
                 <span style={{fontSize:9,fontWeight:800,color:'rgba(30,144,255,0.9)',letterSpacing:1}}>TAKE PROFIT</span>
               </div>
-              <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.3)'}}>R:R {rrRatio}</span>
+              <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.7)'}}>R:R {rrRatio}</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               <Field label="PRECIO" value={fmtP(tp)} readOnly accent="rgba(30,144,255,0.8)"/>
@@ -124,7 +124,7 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
             <div style={{width:36,height:20,borderRadius:10,background:autoBE?accentColor:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',position:'relative',transition:'all .2s'}}>
               <div style={{position:'absolute',top:2,left:autoBE?18:2,width:14,height:14,borderRadius:'50%',background:'#fff',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
             </div>
-            <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:0.5}}>AUTO BREAK-EVEN</span>
+            <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.8)',letterSpacing:0.5}}>AUTO BREAK-EVEN</span>
           </div>
 
           {/* Confirm */}
@@ -147,7 +147,7 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
 function Field({label,value,onChange,readOnly,step,accent}){
   return(
     <div>
-      <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:1.5,marginBottom:5}}>{label}</div>
+      <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.8)',letterSpacing:1.5,marginBottom:5}}>{label}</div>
       <div style={{
         display:'flex',alignItems:'center',
         background:'rgba(255,255,255,0.06)',
