@@ -20,14 +20,14 @@ const ALL_PAIRS   = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD'
 function chartOpts(w,h){return{
   width:w,height:h,
   layout:{
-    background:{color:'#0a0a0a'},
+    background:{color:'#000000'},
     textColor:'rgba(255,255,255,0.55)',
     fontFamily:"'Montserrat',sans-serif",
     fontSize:11,
   },
   grid:{
-    vertLines:{color:'rgba(255,255,255,0.05)',style:0},
-    horzLines:{color:'rgba(255,255,255,0.08)',style:0},
+    vertLines:{color:'rgba(255,255,255,0.03)',style:0},
+    horzLines:{color:'rgba(255,255,255,0.06)',style:0},
   },
   crosshair:{
     mode:0,
@@ -219,7 +219,7 @@ export default function SessionPage(){
     const lc=await import('lightweight-charts')
     if(chartMap.current[pair]) return
     const chart=lc.createChart(el,chartOpts(el.clientWidth,el.clientHeight))
-    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#000000',borderUpColor:'#2962FF',borderDownColor:'rgba(255,255,255,0.8)',wickUpColor:'rgba(41,98,255,0.8)',wickDownColor:'rgba(255,255,255,0.7)',borderVisible:true})
+    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#ffffff',borderUpColor:'#2962FF',borderDownColor:'#ffffff',wickUpColor:'#2962FF',wickDownColor:'#ffffff',borderVisible:false})
     chartMap.current[pair]={chart,series,prevCount:0}
     new ResizeObserver(entries=>{
       const{width,height}=entries[0].contentRect
@@ -674,43 +674,62 @@ export default function SessionPage(){
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
 
-      {/* BOTTOM BAR — replay controls + BUY/SELL */}
+      {/* REPLAY PILL — top center, FX Replay style */}
+      <div style={s.replayPill}>
+        <button style={s.pillBtn} onClick={()=>{const e=pairState.current[activePair]?.engine;if(e){e.seekToTime(sessionRef.current?.date_from?Math.floor(new Date(sessionRef.current.date_from).getTime()/1000):0)}}} title="Al inicio">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="19,20 9,12 19,4"/><line x1="5" y1="4" x2="5" y2="20" stroke="currentColor" strokeWidth="3"/></svg>
+        </button>
+        <button style={s.pillBtn} onClick={handleStep} disabled={!dataReady} title="Paso atrás">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="15,20 5,12 15,4"/></svg>
+        </button>
+        <button style={{...s.pillPlay,...(isPlaying?s.pillPause:{})}} onClick={handlePlayPause} disabled={!dataReady}>
+          {isPlaying
+            ?<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            :<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+          }
+        </button>
+        <button style={s.pillBtn} onClick={handleStep} disabled={!dataReady} title="Paso adelante">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="9,4 19,12 9,20"/></svg>
+        </button>
+        <button style={s.pillBtn} title="Al final">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="4" x2="19" y2="20" stroke="currentColor" strokeWidth="3"/></svg>
+        </button>
+        <div style={s.pillDivider}/>
+        <div style={s.pillProgress}>
+          <div style={{...s.pillProgressFill,width:`${progress}%`}}/>
+        </div>
+        <div style={s.pillDivider}/>
+        <div style={s.speedRow}>
+          {SPEED_OPTS.map(o=>(
+            <button key={o.v} style={{...s.speedBtn,...(speed===o.v?s.speedActive:{})}} onClick={()=>handleSpeed(o.v)}>{o.l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* BOTTOM BAR — BUY/SELL + balance */}
       <div style={s.btmBar}>
-        {/* Replay controls */}
-        <div style={s.replayRow}>
-          <button style={{...s.ctrlBtn,...s.playBtn,...(isPlaying?s.pauseBtn:{})}} onClick={handlePlayPause} disabled={!dataReady}>
-            {isPlaying
-              ?<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-              :<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-            }
-          </button>
-          <button style={s.ctrlBtn} onClick={handleStep} disabled={!dataReady}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-          </button>
-          <div style={s.speedRow}>
-            {SPEED_OPTS.map(o=>(
-              <button key={o.v} style={{...s.speedBtn,...(speed===o.v?s.speedActive:{})}} onClick={()=>handleSpeed(o.v)}>{o.l}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Progress */}
-        <div style={s.progWrap}>
-          <div style={s.progTrack}><div style={{...s.progFill,width:`${progress}%`}}/></div>
-          <span style={s.progLabel}>{progress}%</span>
-        </div>
-
         {/* BUY / SELL */}
         <div style={s.tradeActions}>
           <button style={{...s.buyBtn,...(lastTrade==='BUY'?s.flash:{})}}
             onClick={()=>setOrderModal({side:'BUY',entry:currentPrice,pair:activePair,isLimit:false})} disabled={!dataReady||!currentPrice}>
-            ▲ BUY
+            ▲ Buy
           </button>
           <button style={{...s.sellBtn,...(lastTrade==='SELL'?s.flash:{})}}
             onClick={()=>setOrderModal({side:'SELL',entry:currentPrice,pair:activePair,isLimit:false})} disabled={!dataReady||!currentPrice}>
-            ▼ SELL
+            ▼ Sell
           </button>
         </div>
+
+        <div style={{flex:1}}/>
+
+        {/* Balance info — right side like FX Replay */}
+        <div style={s.balanceRow}>
+          <span style={s.balLbl}>Account Balance: <span style={s.balVal}>${balance.toFixed(2)}</span></span>
+          <span style={s.balLbl}>Realized PnL: <span style={{...s.balVal,color:pnlColor(realized)}}>{fmtPnl(realized)}</span></span>
+          <span style={s.balLbl}>Unrealized PnL: <span style={{...s.balVal,color:pnlColor(unrealized)}}>{fmtPnl(unrealized)}</span></span>
+        </div>
+
+        <div style={s.pillDivider}/>
 
         {/* Panels toggle */}
         <div style={s.toggleRow}>
@@ -961,6 +980,18 @@ const s={
   toggleRow:{display:'flex',gap:4},
   togBtn:{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'rgba(255,255,255,0.4)',borderRadius:5,padding:'4px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif",whiteSpace:'nowrap'},
   togOn:{background:'rgba(255,255,255,0.1)',borderColor:'rgba(255,255,255,0.25)',color:'#fff'},
+  // Replay pill
+  replayPill:{position:'absolute',top:50,left:'50%',transform:'translateX(-50%)',zIndex:25,display:'flex',alignItems:'center',gap:4,background:'rgba(20,20,24,0.95)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:40,padding:'5px 12px',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'0 4px 20px rgba(0,0,0,0.6)'},
+  pillBtn:{background:'none',border:'none',color:'rgba(255,255,255,0.6)',cursor:'pointer',width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:4,padding:0},
+  pillPlay:{background:'#fff',border:'none',color:'#000',width:26,height:26,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,boxShadow:'0 2px 8px rgba(255,255,255,0.2)'},
+  pillPause:{background:'rgba(255,255,255,0.8)'},
+  pillDivider:{width:1,height:16,background:'rgba(255,255,255,0.1)',margin:'0 4px'},
+  pillProgress:{width:100,height:3,background:'rgba(255,255,255,0.1)',borderRadius:2,overflow:'hidden',cursor:'pointer'},
+  pillProgressFill:{height:'100%',background:'#2962FF',borderRadius:2,transition:'width .3s linear'},
+  // Balance row
+  balanceRow:{display:'flex',alignItems:'center',gap:16,flexShrink:0},
+  balLbl:{fontSize:10,color:'rgba(255,255,255,0.4)',fontWeight:500},
+  balVal:{color:'rgba(255,255,255,0.85)',fontWeight:600},
 
   // Panels
   panel:{position:'absolute',bottom:50,left:0,right:0,background:'rgba(12,12,14,0.97)',borderTop:'1px solid rgba(255,255,255,0.08)',zIndex:100,maxHeight:240,overflowY:'auto',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
