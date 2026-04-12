@@ -179,7 +179,7 @@ export default function SessionPage(){
     const lc=await import('lightweight-charts')
     if(chartMap.current[pair]) return
     const chart=lc.createChart(el,chartOpts(el.clientWidth,el.clientHeight))
-    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#1E90FF',downColor:'#ef5350',borderVisible:false,wickUpColor:'#1E90FF99',wickDownColor:'#ef535099'})
+    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#ffffff',borderUpColor:'#2962FF',borderDownColor:'#ffffff',wickUpColor:'rgba(41,98,255,0.6)',wickDownColor:'rgba(255,255,255,0.5)',borderVisible:true})
     chartMap.current[pair]={chart,series,prevCount:0}
     new ResizeObserver(entries=>{
       const{width,height}=entries[0].contentRect
@@ -535,20 +535,58 @@ export default function SessionPage(){
       {/* Constellation background */}
       <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
 
-      {/* TOP BAR — glass */}
+      {/* CHART — full screen */}
+      <div style={s.chartWrap}>
+        {activePairs.map(pair=>(
+          <div key={pair}
+            ref={el=>{if(el&&!chartMap.current[pair])mountPair(pair,el)}}
+            style={{...s.chart,display:pair===activePair?'block':'none'}}
+          />
+        ))}
+        {!dataReady&&(
+          <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
+        )}
+        <PositionOverlay
+          positions={openPositions}
+          pendingOrders={pendingOrders}
+          chartMap={chartMap}
+          activePair={activePair}
+          dataReady={dataReady}
+          onClosePos={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
+          onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
+          onDragEnd={(id,type,newPrice)=>{
+            const ps=pairState.current[activePair]
+            const pos=ps?.positions?.find(p=>p.id===id)
+            if(pos){
+              const pips=Math.abs((newPrice-pos.entry)*pipMult(activePair))
+              if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
+              else if(type==='tp'){pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
+              ps.positions=[...ps.positions];setTick(t=>t+1);return
+            }
+            const ord=ps?.orders?.find(o=>o.id===id)
+            if(ord){
+              const pips=Math.abs((newPrice-ord.entry)*pipMult(activePair))
+              if(type==='lim_e'){const sd=ord.sl-ord.entry,td=ord.tp-ord.entry;ord.entry=newPrice;ord.sl=newPrice+sd;ord.tp=newPrice+td}
+              else if(type==='lim_sl'){ord.sl=newPrice;ord.slPips=parseFloat(pips.toFixed(1))}
+              else if(type==='lim_tp'){ord.tp=newPrice;ord.tpPips=parseFloat(pips.toFixed(1))}
+              ps.orders=[...ps.orders];setTick(t=>t+1)
+            }
+          }}
+        />
+      </div>
+
+      {/* TOP BAR — FX Replay style: session name left, pair tabs center, stats right */}
       <div style={s.topBar}>
+        {/* Left: back + session name */}
         <div style={s.topLeft}>
           <button style={s.iconBtn} onClick={()=>router.push('/dashboard')}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15,18 9,12 15,6"/></svg>
           </button>
           <div style={s.vDiv}/>
-          <div>
-            <div style={s.sessName}>{session?.name||'Sesión'}</div>
-            <div style={s.sessDates}>{session?.date_from} → {session?.date_to}</div>
-          </div>
+          <span style={s.sessName}>{session?.name||'Sesión'}</span>
         </div>
 
-        {/* PAIR TABS */}
+        {/* Center: pair tabs + add */}
         <div style={s.tabRow}>
           {activePairs.map(pair=>(
             <div key={pair} style={{...s.tab,...(pair===activePair?s.tabActive:{})}}>
@@ -571,16 +609,18 @@ export default function SessionPage(){
           </div>
         </div>
 
-        {/* STATS */}
+        {/* Right: balance stats */}
         <div style={s.statsRow}>
-          <Pill label="BALANCE"   val={`$${balance.toFixed(2)}`} color="#fff"/>
-          <Pill label="REALIZADO" val={fmtPnl(realized)}          color={pnlColor(realized)}/>
-          <Pill label="FLOTANTE"  val={fmtPnl(unrealized)}        color={pnlColor(unrealized)}/>
-          <Pill label="TRADES"    val={allTrades.length}           color="#a0b8d0"/>
+          <StatBadge label="Balance" val={`$${balance.toFixed(2)}`} color="#fff"/>
+          <StatBadge label="Realizado" val={fmtPnl(realized)} color={pnlColor(realized)}/>
+          <StatBadge label="Flotante" val={fmtPnl(unrealized)} color={pnlColor(unrealized)}/>
+          <button style={s.fullBtn} onClick={()=>{if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen()}} title="Pantalla completa">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          </button>
         </div>
       </div>
 
-      {/* TF BAR — glass */}
+      {/* TF BAR */}
       <div style={s.tfBar}>
         {TF_LIST.map(tf=>(
           <button key={tf} style={{...s.tfBtn,...(activeTf===tf?s.tfActive:{})}}
@@ -592,79 +632,18 @@ export default function SessionPage(){
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
 
-      {/* CHART AREA */}
-      <div style={s.chartWrap}>
-        {activePairs.map(pair=>(
-          <div key={pair}
-            ref={el=>{if(el&&!chartMap.current[pair])mountPair(pair,el)}}
-            style={{...s.chart,display:pair===activePair?'block':'none'}}
-          />
-        ))}
-        {!dataReady&&(
-          <div style={s.overlay}>
-            <Spin/>
-            <span style={s.overlayTxt}>Cargando {activePair}…</span>
-          </div>
-        )}
-        <PositionOverlay
-          positions={openPositions}
-          pendingOrders={pendingOrders}
-          chartMap={chartMap}
-          activePair={activePair}
-          dataReady={dataReady}
-          onClosePos={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
-          onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
-          onDragEnd={(id,type,newPrice)=>{
-            const ps=pairState.current[activePair]
-            // Check open positions first
-            const pos=ps?.positions?.find(p=>p.id===id)
-            if(pos){
-              // Move SL/TP — lotaje stays fixed, only price moves
-              const pips=Math.abs((newPrice-pos.entry)*pipMult(activePair))
-              if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
-              else if(type==='tp'){pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
-              ps.positions=[...ps.positions]
-              setTick(t=>t+1)
-              return
-            }
-            // Check pending orders
-            const ord=ps?.orders?.find(o=>o.id===id)
-            if(ord){
-              const pips=Math.abs((newPrice-ord.entry)*pipMult(activePair))
-              if(type==='lim_e'){
-                // Move entry — recalculate SL/TP relative to new entry
-                const slDiff=ord.sl-ord.entry
-                const tpDiff=ord.tp-ord.entry
-                ord.entry=newPrice
-                ord.sl=newPrice+slDiff
-                ord.tp=newPrice+tpDiff
-              } else if(type==='lim_sl'){
-                ord.sl=newPrice
-                ord.slPips=parseFloat(pips.toFixed(1))
-              } else if(type==='lim_tp'){
-                ord.tp=newPrice
-                ord.tpPips=parseFloat(pips.toFixed(1))
-              }
-              ps.orders=[...ps.orders]
-              setTick(t=>t+1)
-            }
-          }}
-        />
-      </div>
-
-      {/* BOTTOM BAR — glass */}
+      {/* BOTTOM BAR — replay controls + BUY/SELL */}
       <div style={s.btmBar}>
-
-        {/* Replay */}
+        {/* Replay controls */}
         <div style={s.replayRow}>
           <button style={{...s.ctrlBtn,...s.playBtn,...(isPlaying?s.pauseBtn:{})}} onClick={handlePlayPause} disabled={!dataReady}>
             {isPlaying
-              ?<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-              :<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+              ?<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              :<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
             }
           </button>
           <button style={s.ctrlBtn} onClick={handleStep} disabled={!dataReady}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
           </button>
           <div style={s.speedRow}>
             {SPEED_OPTS.map(o=>(
@@ -673,56 +652,45 @@ export default function SessionPage(){
           </div>
         </div>
 
-        {/* Progress bar */}
+        {/* Progress */}
         <div style={s.progWrap}>
           <div style={s.progTrack}><div style={{...s.progFill,width:`${progress}%`}}/></div>
           <span style={s.progLabel}>{progress}%</span>
         </div>
 
-        {/* Trade panel */}
-        <div style={s.tradeRow}>
-          <ParamGroup label="LOTS" presets={LOT_PRESETS} active={lots} onSelect={setLots}
-            input={<input style={s.numIn} type="number" step="0.01" min="0.01" value={lots} onChange={e=>setLots(Math.max(0.01,parseFloat(e.target.value)||0.01))}/>}/>
-          <ParamGroup label="SL pips" presets={[10,20,30,50]} active={slPips} onSelect={setSlPips}
-            input={<input style={s.numIn} type="number" step="1" min="1" value={slPips} onChange={e=>setSlPips(Math.max(1,parseInt(e.target.value)||1))}/>}/>
-          <ParamGroup label="R:R" presets={RR_PRESETS} active={rr} onSelect={setRr}/>
-          <div style={s.rrHint}>
-            <span style={s.paramLbl}>TP</span>
-            <span style={{fontSize:10,color:'#1E90FF',fontWeight:700}}>{tpPips}p</span>
-          </div>
-
-          <button style={{...s.tradeBtn,background:'linear-gradient(135deg,#1E90FF,#0060cc)',boxShadow:'0 4px 16px #1E90FF30',...(lastTrade==='BUY'?s.flash:{})}}
+        {/* BUY / SELL */}
+        <div style={s.tradeActions}>
+          <button style={{...s.buyBtn,...(lastTrade==='BUY'?s.flash:{})}}
             onClick={()=>setOrderModal({side:'BUY',entry:currentPrice,pair:activePair,isLimit:false})} disabled={!dataReady||!currentPrice}>
-            <span>▲ BUY</span>
-            {currentPrice&&<span style={s.tradePx}>{fmtPx(currentPrice,activePair)}</span>}
+            ▲ BUY
           </button>
-          <button style={{...s.tradeBtn,background:'linear-gradient(135deg,#ef5350,#b71c1c)',boxShadow:'0 4px 16px #ef535030',...(lastTrade==='SELL'?s.flash:{})}}
+          <button style={{...s.sellBtn,...(lastTrade==='SELL'?s.flash:{})}}
             onClick={()=>setOrderModal({side:'SELL',entry:currentPrice,pair:activePair,isLimit:false})} disabled={!dataReady||!currentPrice}>
-            <span>▼ SELL</span>
-            {currentPrice&&<span style={s.tradePx}>{fmtPx(currentPrice,activePair)}</span>}
+            ▼ SELL
           </button>
+        </div>
 
-          <div style={s.toggleRow}>
-            {openPositions.length>0&&(
-              <button style={{...s.togBtn,...(showPos?s.togOn:{})}} onClick={()=>{setShowPos(v=>!v);setShowTrades(false);setShowOrders(false)}}>
-                {openPositions.length} POS
-              </button>
-            )}
-            {pendingOrders.length>0&&(
-              <button style={{...s.togBtn,...(showOrders?s.togOn:{})}} onClick={()=>{setShowOrders(v=>!v);setShowPos(false);setShowTrades(false)}}>
-                {pendingOrders.length} LIMIT
-              </button>
-            )}
-            {allTrades.length>0&&(
-              <button style={{...s.togBtn,...(showTrades?s.togOn:{})}} onClick={()=>{setShowTrades(v=>!v);setShowPos(false);setShowOrders(false)}}>
-                {allTrades.length} TRADES
-              </button>
-            )}
-          </div>
+        {/* Panels toggle */}
+        <div style={s.toggleRow}>
+          {openPositions.length>0&&(
+            <button style={{...s.togBtn,...(showPos?s.togOn:{})}} onClick={()=>{setShowPos(v=>!v);setShowTrades(false);setShowOrders(false)}}>
+              {openPositions.length} POS
+            </button>
+          )}
+          {pendingOrders.length>0&&(
+            <button style={{...s.togBtn,...(showOrders?s.togOn:{})}} onClick={()=>{setShowOrders(v=>!v);setShowPos(false);setShowTrades(false)}}>
+              {pendingOrders.length} LIMIT
+            </button>
+          )}
+          {allTrades.length>0&&(
+            <button style={{...s.togBtn,...(showTrades?s.togOn:{})}} onClick={()=>{setShowTrades(v=>!v);setShowPos(false);setShowOrders(false)}}>
+              {allTrades.length} TRADES
+            </button>
+          )}
         </div>
       </div>
 
-      {/* POSITIONS PANEL — glass */}
+      {/* POSITIONS PANEL */}
       {showPos&&openPositions.length>0&&(
         <div style={s.panel}>
           <div style={s.panelHdr}>
@@ -744,8 +712,8 @@ export default function SessionPage(){
                       <td style={{...s.td,color:pos.side==='BUY'?'#1E90FF':'#ef5350',fontWeight:800}}>{pos.side}</td>
                       <td style={s.td}>{fmtPx(pos.entry,pos.pair)}</td>
                       <td style={s.td}>{fmtPx(currentPrice,pos.pair)}</td>
-                      <td style={{...s.td,color:'#ef535066'}}>{fmtPx(pos.sl,pos.pair)}</td>
-                      <td style={{...s.td,color:'#1E90FF66'}}>{fmtPx(pos.tp,pos.pair)}</td>
+                      <td style={{...s.td,color:'rgba(239,83,80,0.7)'}}>{fmtPx(pos.sl,pos.pair)}</td>
+                      <td style={{...s.td,color:'rgba(38,166,154,0.7)'}}>{fmtPx(pos.tp,pos.pair)}</td>
                       <td style={s.td}>{pos.lots}</td>
                       <td style={{...s.td,color:pnlColor(pnl),fontWeight:700}}>{fmtPnl(pnl)}</td>
                       <td style={s.td}><button style={s.closeBtn} onClick={()=>setCloseModal({posId:pos.id,pair:activePair,pos})}>✕</button></td>
@@ -758,93 +726,7 @@ export default function SessionPage(){
         </div>
       )}
 
-      {/* TRADES JOURNAL — glass */}
-      {showTrades&&allTrades.length>0&&(
-        <div style={s.panel}>
-          <div style={s.panelHdr}>
-            <span style={s.panelTitle}>JOURNAL</span>
-            <button style={s.iconBtn} onClick={()=>setShowTrades(false)}>✕</button>
-          </div>
-          <div style={{overflowX:'auto'}}>
-            <table style={s.tbl}>
-              <thead><tr>{['PAR','DIR','ENTRY','EXIT','LOTS','SL','TP','R:R','P&L','RESULT','RAZÓN'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
-              <tbody>
-                {allTrades.map((t,i)=>(
-                  <tr key={i} style={s.tblRow}>
-                    <td style={s.td}>{t.pair}</td>
-                    <td style={{...s.td,color:t.side==='BUY'?'#1E90FF':'#ef5350',fontWeight:800}}>{t.side}</td>
-                    <td style={s.td}>{fmtPx(t.entry,t.pair)}</td>
-                    <td style={s.td}>{fmtPx(t.exit,t.pair)}</td>
-                    <td style={s.td}>{t.lots}</td>
-                    <td style={s.td}>{t.slPips}</td>
-                    <td style={s.td}>{t.tpPips}</td>
-                    <td style={s.td}>{t.rrReal}R</td>
-                    <td style={{...s.td,color:pnlColor(t.pnl),fontWeight:700}}>{fmtPnl(t.pnl)}</td>
-                    <td style={{...s.td,color:t.result==='WIN'?'#1E90FF':t.result==='LOSS'?'#ef5350':'#a0b8d0',fontWeight:700}}>{t.result}</td>
-                    <td style={{...s.td,color:'#2a5070'}}>{t.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* CONTEXT MENU */}
-      {ctxMenu&&(
-        <>
-          <div style={{position:'fixed',inset:0,zIndex:998}} onClick={()=>setCtxMenu(null)}/>
-          <div style={{position:'fixed',left:ctxMenu.x,top:ctxMenu.y,background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:16,boxShadow:'0 8px 40px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.25)',backdropFilter:'blur(40px) saturate(220%)',WebkitBackdropFilter:'blur(40px) saturate(220%)',zIndex:999,minWidth:170,overflow:'hidden',fontFamily:"'Montserrat',sans-serif"}}>
-            <div style={{padding:'7px 12px',fontSize:8,fontWeight:700,color:'#2a5070',letterSpacing:1,borderBottom:'1px solid #0d2040'}}>
-              {ctxMenu.price.toFixed(5)}
-            </div>
-            {ctxMenu.price<(currentPrice||0)&&(
-              <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'BUY',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
-                <span style={{color:'rgba(30,144,255,0.8)',fontWeight:700}}>Buy Limit</span>
-                <span style={{color:'#2a5070',fontSize:8}}>{ctxMenu.price.toFixed(5)}</span>
-              </button>
-            )}
-            {ctxMenu.price>(currentPrice||0)&&(
-              <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'SELL',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
-                <span style={{color:'rgba(239,83,80,0.8)',fontWeight:700}}>Sell Limit</span>
-                <span style={{color:'#2a5070',fontSize:8}}>{ctxMenu.price.toFixed(5)}</span>
-              </button>
-            )}
-            <button style={{...s.ctxItem,borderTop:'1px solid #0d2040'}} onClick={()=>setCtxMenu(null)}>
-              <span style={{color:'#2a5070',fontSize:10}}>Cerrar</span>
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* ORDER PREVIEW — confirm before placing */}
-      {preview&&(
-        <div style={{position:'fixed',bottom:58,right:12,zIndex:200,background:'rgba(2,8,16,0.95)',border:'1px solid #0d2040',borderRadius:10,padding:'14px 16px',width:220,backdropFilter:'blur(12px)',fontFamily:"'Montserrat',sans-serif",boxShadow:'0 8px 32px #000000CC'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-            <span style={{fontSize:10,fontWeight:800,color:preview.side==='BUY_LIMIT'?'rgba(30,144,255,0.9)':'rgba(239,83,80,0.9)'}}>
-              {preview.side==='BUY_LIMIT'?'Buy Limit':'Sell Limit'}
-            </span>
-            <span style={{fontSize:9,color:'#4a6080'}}>{preview.entry.toFixed(5)}</span>
-          </div>
-          <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:14}}>
-            <PreviewRow label="SL" pips={preview.slPips} color="rgba(239,83,80,0.7)"
-              pnl={-(preview.slPips*preview.lots*10).toFixed(2)}
-              onChange={v=>updatePreviewSl(Math.max(1,parseInt(v)||1))}/>
-            <PreviewRow label="TP" pips={preview.tpPips} color="rgba(38,166,154,0.7)"
-              pnl={'+'+(preview.tpPips*preview.lots*10).toFixed(2)}
-              onChange={v=>updatePreviewTp(Math.max(1,parseInt(v)||1))}/>
-            <div style={{display:'flex',justifyContent:'space-between',fontSize:8,color:'#2a5070'}}>
-              <span>R:R</span><span style={{color:'#4a6080',fontWeight:700}}>{preview.rr}R</span>
-            </div>
-          </div>
-          <div style={{display:'flex',gap:6}}>
-            <button onClick={cancelPreview} style={{flex:1,background:'none',border:'1px solid #0d2040',color:'#2a5070',borderRadius:5,padding:'6px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>Cancelar</button>
-            <button onClick={confirmLimitOrder} style={{flex:2,background:'rgba(30,144,255,0.15)',border:'1px solid rgba(30,144,255,0.3)',color:'#1E90FF',borderRadius:5,padding:'6px',fontSize:9,fontWeight:800,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>Confirmar orden</button>
-          </div>
-        </div>
-      )}
-
-      {/* PENDING ORDERS PANEL */}
+      {/* PENDING ORDERS */}
       {showOrders&&pendingOrders.length>0&&(
         <div style={s.panel}>
           <div style={s.panelHdr}>
@@ -858,7 +740,7 @@ export default function SessionPage(){
                 {pendingOrders.map(o=>(
                   <tr key={o.id} style={s.tblRow}>
                     <td style={s.td}>{o.pair}</td>
-                    <td style={{...s.td,color:o.side==='BUY_LIMIT'?'rgba(30,144,255,0.8)':'rgba(239,83,80,0.8)',fontWeight:700}}>{o.side==='BUY_LIMIT'?'Buy Limit':'Sell Limit'}</td>
+                    <td style={{...s.td,color:o.side==='BUY_LIMIT'?'#1E90FF':'#ef5350',fontWeight:700}}>{o.side==='BUY_LIMIT'?'Buy Limit':'Sell Limit'}</td>
                     <td style={s.td}>{fmtPx(o.entry,o.pair)}</td>
                     <td style={{...s.td,color:'rgba(239,83,80,0.6)'}}>{fmtPx(o.sl,o.pair)}</td>
                     <td style={{...s.td,color:'rgba(38,166,154,0.6)'}}>{fmtPx(o.tp,o.pair)}</td>
@@ -872,28 +754,72 @@ export default function SessionPage(){
         </div>
       )}
 
-      {/* ORDER MODAL — only render client-side */}
-      {mounted&&orderModal&&(
-        <OrderModal
-          modal={orderModal}
-          balance={balance}
-          currentPrice={currentPrice}
+      {/* TRADES JOURNAL */}
+      {showTrades&&allTrades.length>0&&(
+        <div style={s.panel}>
+          <div style={s.panelHdr}>
+            <span style={s.panelTitle}>JOURNAL</span>
+            <button style={s.iconBtn} onClick={()=>setShowTrades(false)}>✕</button>
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={s.tbl}>
+              <thead><tr>{['PAR','DIR','ENTRY','EXIT','LOTS','R:R','P&L','RESULT'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {allTrades.map((t,i)=>(
+                  <tr key={i} style={s.tblRow}>
+                    <td style={s.td}>{t.pair}</td>
+                    <td style={{...s.td,color:t.side==='BUY'?'#1E90FF':'#ef5350',fontWeight:800}}>{t.side}</td>
+                    <td style={s.td}>{fmtPx(t.entry,t.pair)}</td>
+                    <td style={s.td}>{fmtPx(t.exit,t.pair)}</td>
+                    <td style={s.td}>{t.lots}</td>
+                    <td style={s.td}>{t.rrReal}R</td>
+                    <td style={{...s.td,color:pnlColor(t.pnl),fontWeight:700}}>{fmtPnl(t.pnl)}</td>
+                    <td style={{...s.td,color:t.result==='WIN'?'#1E90FF':t.result==='LOSS'?'#ef5350':'#a0b8d0',fontWeight:700}}>{t.result}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* CONTEXT MENU */}
+      {ctxMenu&&(
+        <>
+          <div style={{position:'fixed',inset:0,zIndex:998}} onClick={()=>setCtxMenu(null)}/>
+          <div style={{position:'fixed',left:ctxMenu.x,top:ctxMenu.y,background:'rgba(18,18,20,0.92)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:12,zIndex:999,minWidth:160,overflow:'hidden',boxShadow:'0 8px 40px rgba(0,0,0,0.6)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif"}}>
+            <div style={{padding:'8px 14px 6px',fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.35)',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>{ctxMenu.price.toFixed(5)}</div>
+            {ctxMenu.price<(currentPrice||0)&&(
+              <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'BUY',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
+                <span style={{color:'#4da6ff'}}>▲ Buy Limit</span>
+                <span style={{color:'rgba(255,255,255,0.3)',fontSize:9}}>{ctxMenu.price.toFixed(5)}</span>
+              </button>
+            )}
+            {ctxMenu.price>(currentPrice||0)&&(
+              <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'SELL',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
+                <span style={{color:'#ff6b6b'}}>▼ Sell Limit</span>
+                <span style={{color:'rgba(255,255,255,0.3)',fontSize:9}}>{ctxMenu.price.toFixed(5)}</span>
+              </button>
+            )}
+            <button style={{...s.ctxItem,borderTop:'1px solid rgba(255,255,255,0.06)'}} onClick={()=>setCtxMenu(null)}>
+              <span style={{color:'rgba(255,255,255,0.3)'}}>Cerrar</span>
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ORDER MODAL */}
+      {orderModal&&(
+        <OrderModal modal={orderModal} balance={balance} currentPrice={currentPrice}
           onClose={()=>setOrderModal(null)}
           onConfirm={(posData)=>{
             if(orderModal.isLimit){
-              // Place limit order
-              const ps=pairState.current[orderModal.pair]
-              if(!ps){if(!pairState.current[orderModal.pair])pairState.current[orderModal.pair]={engine:null,ready:false,positions:[],trades:[],orders:[]}}
-              if(!pairState.current[orderModal.pair].orders) pairState.current[orderModal.pair].orders=[]
+              const ps=pairState.current[orderModal.pair]||{engine:null,ready:false,positions:[],trades:[],orders:[]}
+              pairState.current[orderModal.pair]=ps
+              if(!ps.orders) ps.orders=[]
               const order={...posData,id:`L${Date.now()}`,pair:orderModal.pair,side:orderModal.side==='BUY'?'BUY_LIMIT':'SELL_LIMIT',entry:orderModal.entry,createdTime:currentTime}
-              pairState.current[orderModal.pair].orders=[...pairState.current[orderModal.pair].orders,order]
-              const cr=chartMap.current[orderModal.pair]
-              if(cr?.series){
-                if(!cr.priceLines) cr.priceLines={}
-                // Limit order lines rendered by HTML overlay
-              }
+              ps.orders=[...ps.orders,order]
             } else {
-              // Market order
               const ps=pairState.current[orderModal.pair]; if(!ps) return
               const posId=`${Date.now()}`
               const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime}
@@ -906,11 +832,9 @@ export default function SessionPage(){
         />
       )}
 
-      {/* CLOSE POSITION MODAL */}
+      {/* CLOSE MODAL */}
       {closeModal&&(
-        <CloseModal
-          modal={closeModal}
-          currentPrice={currentPrice}
+        <CloseModal modal={closeModal} currentPrice={currentPrice}
           onClose={()=>setCloseModal(null)}
           onConfirm={(lotsToClose)=>{
             const ps=pairState.current[closeModal.pair]
@@ -920,16 +844,13 @@ export default function SessionPage(){
             const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
             const rrReal=pos.slPips>0?pnl/(pos.slPips*lotsToClose*10):0
             if(lotsToClose>=pos.lots){
-              // Full close
               closePosition(pos.id,'MANUAL',closeModal.pair,currentPrice)
             } else {
-              // Partial close
               const remaining=parseFloat((pos.lots-lotsToClose).toFixed(2))
               ps.trades=[...ps.trades,{...pos,lots:lotsToClose,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL'}]
               pos.lots=remaining
               ps.positions=[...ps.positions]
-              setBalance(b=>b+pnl)
-              setTick(t=>t+1)
+              setBalance(b=>b+pnl);setTick(t=>t+1)
             }
             setCloseModal(null)
           }}
@@ -941,388 +862,96 @@ export default function SessionPage(){
   )
 }
 
-function Pill({label,val,color}){
-  return(
-    <div style={{display:'flex',flexDirection:'column',gap:0,padding:'0 10px',borderLeft:'1px solid #0d2040'}}>
-      <span style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1}}>{label}</span>
-      <span style={{fontSize:10,fontWeight:800,color}}>{val}</span>
-    </div>
-  )
-}
-
-function ParamGroup({label,presets,active,onSelect,input}){
-  return(
-    <div style={{display:'flex',flexDirection:'column',gap:2}}>
-      <span style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1}}>{label}</span>
-      <div style={{display:'flex',gap:2,alignItems:'center'}}>
-        {presets.map(p=>(
-          <button key={p} style={{background:active===p?'rgba(30,144,255,0.15)':'rgba(3,8,16,0.6)',border:active===p?'1px solid #1E90FF66':'1px solid #0d2040',color:active===p?'#1E90FF':'#4a6080',fontSize:9,fontWeight:700,padding:'2px 5px',borderRadius:4,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}} onClick={()=>onSelect(p)}>{p}</button>
-        ))}
-        {input}
-      </div>
-    </div>
-  )
-}
-
-function PreviewRow({label,pips,color,pnl,onChange}){
-  return(
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-      <span style={{fontSize:8,fontWeight:700,color,letterSpacing:0.5,width:20}}>{label}</span>
-      <div style={{display:'flex',alignItems:'center',gap:4}}>
-        <input type="number" min="1" value={pips} onChange={e=>onChange(e.target.value)}
-          style={{width:44,background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',color:'#c0d0e8',borderRadius:3,padding:'2px 4px',fontSize:9,fontWeight:700,textAlign:'center',outline:'none',fontFamily:"'Montserrat',sans-serif"}}/>
-        <span style={{fontSize:8,color:'#2a5070'}}>pips</span>
-      </div>
-      <span style={{fontSize:9,fontWeight:700,color,minWidth:50,textAlign:'right'}}>{pnl}</span>
-    </div>
-  )
-}
-
-function Spin(){
-  return<><div className="sp"/><style>{`.sp{width:24px;height:24px;border:2px solid #0d2040;border-top-color:#1E90FF;border-radius:50%;animation:sp .6s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}`}</style></>
-}
-
-
 const glass='rgba(2,8,16,0.75)'
-const glassBorder='1px solid #0d2040'
+const glassBorder='1px solid rgba(255,255,255,0.1)'
 
 const s={
-  root:{display:'block',height:'100vh',background:'#000',fontFamily:"'Montserrat',sans-serif",overflow:'hidden',color:'#a0b8d0',position:'relative'},
+  root:{display:'block',height:'100vh',background:'#000',fontFamily:"'Montserrat',sans-serif",overflow:'hidden',color:'#fff',position:'relative'},
   bgCanvas:{position:'fixed',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0},
-  topBar:{position:'absolute',top:0,left:0,right:0,zIndex:10,height:42,background:'rgba(8,12,20,0.65)',backdropFilter:'blur(32px) saturate(180%) brightness(1.06)',WebkitBackdropFilter:'blur(32px) saturate(180%) brightness(1.06)',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',padding:'0 10px',gap:8},
-  topLeft:{display:'flex',alignItems:'center',gap:8,flexShrink:0},
-  vDiv:{width:1,height:18,background:'#0d2040'},
-  sessName:{fontSize:10,fontWeight:800,color:'#fff',letterSpacing:0.4},
-  sessDates:{fontSize:8,color:'#2a5070',letterSpacing:0.2},
-  tabRow:{display:'flex',alignItems:'center',gap:3,flex:1,overflow:'visible',minWidth:0},
-  tab:{display:'flex',alignItems:'center',gap:4,padding:'4px 10px',borderRadius:'6px 6px 0 0',border:'1px solid rgba(255,255,255,0.08)',borderBottom:'none',background:'rgba(255,255,255,0.04)',flexShrink:0,cursor:'pointer'},
-  tabActive:{background:'rgba(30,144,255,0.12)',borderColor:'rgba(30,144,255,0.4)',boxShadow:'inset 0 1px 0 rgba(30,144,255,0.2)'},
-  tabLabel:{fontSize:10,fontWeight:700,color:'#c0d0e8',letterSpacing:0.3,display:'flex',alignItems:'center',gap:4},
-  tabDot:{width:5,height:5,borderRadius:'50%',background:'#1E90FF',display:'inline-block'},
-  tabClose:{background:'none',border:'none',color:'#2a5070',cursor:'pointer',fontSize:9,padding:'0 2px',fontFamily:"'Montserrat',sans-serif"},
-  addBtn:{background:'rgba(3,8,16,0.8)',border:glassBorder,color:'#4a6080',width:24,height:24,borderRadius:4,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Montserrat',sans-serif",flexShrink:0},
-  dropdown:{position:'fixed',top:42,background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:16,boxShadow:'0 8px 40px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.25)',backdropFilter:'blur(40px) saturate(220%)',WebkitBackdropFilter:'blur(40px) saturate(220%)',zIndex:9999,minWidth:130,padding:'4px 0'},
-  ddItem:{display:'block',width:'100%',background:'none',border:'none',color:'#c0d0e8',fontSize:11,fontWeight:700,padding:'7px 14px',cursor:'pointer',textAlign:'left',fontFamily:"'Montserrat',sans-serif",letterSpacing:0.3},
-  statsRow:{display:'flex',alignItems:'center',flexShrink:0},
-  tfBar:{position:'absolute',top:42,left:0,right:0,zIndex:10,height:30,background:'rgba(8,12,20,0.65)',backdropFilter:'blur(32px) saturate(180%) brightness(1.06)',WebkitBackdropFilter:'blur(32px) saturate(180%) brightness(1.06)',borderBottom:'1px solid rgba(255,255,255,0.06)',display:'flex',alignItems:'center',padding:'0 10px',gap:2},
-  tfBtn:{background:'none',border:'none',color:'#2a5070',fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"},
-  tfActive:{background:'rgba(30,144,255,0.12)',color:'#1E90FF',border:'1px solid #1E90FF30'},
-  tsBadge:{fontSize:9,color:'#4a6080',fontWeight:600,padding:'2px 8px',background:'rgba(3,8,16,0.6)',borderRadius:4,border:glassBorder},
-  pxBadge:{fontSize:12,color:'#1E90FF',fontWeight:800,padding:'2px 10px',background:'rgba(30,144,255,0.08)',borderRadius:4,border:'1px solid #1E90FF30',marginLeft:6,letterSpacing:0.5},
+
+  // Chart fills everything
   chartWrap:{position:'absolute',inset:0,overflow:'hidden',zIndex:0},
   chart:{position:'absolute',inset:0,width:'100%',height:'100%'},
-  overlay:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,background:'rgba(0,0,0,0.7)',backdropFilter:'blur(4px)',zIndex:10},
-  overlayTxt:{fontSize:11,color:'#4a6080',fontWeight:700,letterSpacing:0.5},
-  btmBar:{position:'absolute',bottom:0,left:0,right:0,zIndex:10,height:54,background:'rgba(8,12,20,0.65)',backdropFilter:'blur(32px) saturate(180%) brightness(1.06)',WebkitBackdropFilter:'blur(32px) saturate(180%) brightness(1.06)',borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',padding:'0 10px',gap:12},
+  overlay:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,background:'rgba(0,0,0,0.7)',zIndex:10},
+  overlayTxt:{fontSize:11,color:'rgba(255,255,255,0.4)',fontWeight:700},
+
+  // Top bar — floating
+  topBar:{position:'absolute',top:0,left:0,right:0,zIndex:20,height:40,background:'rgba(10,10,12,0.85)',borderBottom:'1px solid rgba(255,255,255,0.07)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',display:'flex',alignItems:'center',padding:'0 12px',gap:8},
+  topLeft:{display:'flex',alignItems:'center',gap:8,flexShrink:0},
+  vDiv:{width:1,height:16,background:'rgba(255,255,255,0.1)'},
+  sessName:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.9)',letterSpacing:0.3},
+  tabRow:{display:'flex',alignItems:'center',gap:2,flex:1,overflow:'visible',minWidth:0},
+  tab:{display:'flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:6,background:'transparent',flexShrink:0,cursor:'pointer',border:'1px solid transparent'},
+  tabActive:{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)'},
+  tabLabel:{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.7)',letterSpacing:0.2,display:'flex',alignItems:'center',gap:4},
+  tabDot:{width:4,height:4,borderRadius:'50%',background:'#1E90FF',display:'inline-block'},
+  tabClose:{background:'none',border:'none',color:'rgba(255,255,255,0.3)',cursor:'pointer',fontSize:9,padding:'0 2px',fontFamily:"'Montserrat',sans-serif"},
+  addBtn:{background:'transparent',border:'1px solid rgba(255,255,255,0.12)',color:'rgba(255,255,255,0.4)',width:22,height:22,borderRadius:4,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Montserrat',sans-serif",flexShrink:0},
+  dropdown:{position:'fixed',top:40,background:'rgba(16,16,18,0.97)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,zIndex:9999,minWidth:130,padding:'4px 0',boxShadow:'0 8px 32px rgba(0,0,0,0.8)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
+  ddItem:{display:'block',width:'100%',background:'none',border:'none',color:'rgba(255,255,255,0.8)',fontSize:11,fontWeight:600,padding:'8px 14px',cursor:'pointer',textAlign:'left',fontFamily:"'Montserrat',sans-serif"},
+  statsRow:{display:'flex',alignItems:'center',gap:4,flexShrink:0},
+  fullBtn:{background:'transparent',border:'1px solid rgba(255,255,255,0.1)',borderRadius:5,color:'rgba(255,255,255,0.4)',cursor:'pointer',width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',marginLeft:4},
+
+  // TF bar
+  tfBar:{position:'absolute',top:40,left:0,right:0,zIndex:20,height:28,background:'rgba(10,10,12,0.75)',borderBottom:'1px solid rgba(255,255,255,0.05)',backdropFilter:'blur(16px)',WebkitBackdropFilter:'blur(16px)',display:'flex',alignItems:'center',padding:'0 12px',gap:2},
+  tfBtn:{background:'none',border:'none',color:'rgba(255,255,255,0.35)',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"},
+  tfActive:{background:'rgba(255,255,255,0.1)',color:'rgba(255,255,255,0.9)'},
+  tsBadge:{fontSize:9,color:'rgba(255,255,255,0.3)',fontWeight:600,padding:'2px 8px',background:'rgba(255,255,255,0.04)',borderRadius:4},
+  pxBadge:{fontSize:12,color:'#fff',fontWeight:800,padding:'2px 10px',background:'rgba(255,255,255,0.08)',borderRadius:4,marginLeft:6},
+
+  // Bottom bar
+  btmBar:{position:'absolute',bottom:0,left:0,right:0,zIndex:20,height:50,background:'rgba(10,10,12,0.85)',borderTop:'1px solid rgba(255,255,255,0.07)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',display:'flex',alignItems:'center',padding:'0 14px',gap:12},
   replayRow:{display:'flex',alignItems:'center',gap:4,flexShrink:0},
-  ctrlBtn:{background:'rgba(3,8,16,0.8)',border:glassBorder,color:'#a0b8d0',width:26,height:26,borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'},
-  playBtn:{background:'linear-gradient(135deg,#1E90FF,#0060cc)',border:'none',color:'#fff',width:32,height:32,borderRadius:'50%',boxShadow:'0 4px 16px #1E90FF40'},
-  pauseBtn:{background:'rgba(30,144,255,0.6)',boxShadow:'none'},
-  speedRow:{display:'flex',gap:1,marginLeft:4},
-  speedBtn:{background:'none',border:'none',color:'#2a5070',fontSize:9,fontWeight:700,padding:'3px 6px',cursor:'pointer',borderRadius:3,fontFamily:"'Montserrat',sans-serif"},
-  speedActive:{background:'rgba(30,144,255,0.12)',color:'#1E90FF'},
+  ctrlBtn:{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',color:'rgba(255,255,255,0.7)',width:26,height:26,borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'},
+  playBtn:{background:'#fff',border:'none',color:'#000',width:30,height:30,borderRadius:'50%',boxShadow:'none'},
+  pauseBtn:{background:'rgba(255,255,255,0.6)'},
+  speedRow:{display:'flex',gap:0,marginLeft:4},
+  speedBtn:{background:'none',border:'none',color:'rgba(255,255,255,0.3)',fontSize:9,fontWeight:700,padding:'3px 5px',cursor:'pointer',borderRadius:3,fontFamily:"'Montserrat',sans-serif"},
+  speedActive:{color:'rgba(255,255,255,0.9)',background:'rgba(255,255,255,0.08)'},
   progWrap:{flex:1,display:'flex',alignItems:'center',gap:8,minWidth:60},
-  progTrack:{flex:1,height:3,background:'#0d2040',borderRadius:2,overflow:'hidden'},
-  progFill:{height:'100%',background:'linear-gradient(90deg,#1E90FF,#00aaff)',borderRadius:2,transition:'width .3s linear'},
-  progLabel:{fontSize:8,color:'#2a5070',fontWeight:700,width:28,textAlign:'right',flexShrink:0},
-  tradeRow:{display:'flex',alignItems:'center',gap:8,flexShrink:0},
-  paramLbl:{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1},
-  rrHint:{display:'flex',flexDirection:'column',gap:2,alignItems:'center'},
-  numIn:{background:'rgba(3,8,16,0.8)',border:glassBorder,color:'#fff',width:46,height:22,textAlign:'center',fontSize:10,fontWeight:700,borderRadius:4,outline:'none',fontFamily:"'Montserrat',sans-serif"},
-  tradeBtn:{border:'none',color:'#fff',borderRadius:6,padding:'5px 14px',fontSize:10,fontWeight:800,cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1,fontFamily:"'Montserrat',sans-serif",lineHeight:1.2},
-  tradePx:{fontSize:7,fontWeight:600,opacity:0.75},
-  flash:{transform:'scale(0.93)',opacity:0.8},
+  progTrack:{flex:1,height:2,background:'rgba(255,255,255,0.1)',borderRadius:2,overflow:'hidden'},
+  progFill:{height:'100%',background:'rgba(255,255,255,0.6)',borderRadius:2,transition:'width .3s linear'},
+  progLabel:{fontSize:8,color:'rgba(255,255,255,0.3)',fontWeight:700,width:28,textAlign:'right',flexShrink:0},
+  tradeActions:{display:'flex',gap:6,flexShrink:0},
+  buyBtn:{background:'#2962FF',border:'none',color:'#fff',borderRadius:6,padding:'6px 18px',fontSize:11,fontWeight:800,cursor:'pointer',fontFamily:"'Montserrat',sans-serif",letterSpacing:0.5},
+  sellBtn:{background:'#ef5350',border:'none',color:'#fff',borderRadius:6,padding:'6px 18px',fontSize:11,fontWeight:800,cursor:'pointer',fontFamily:"'Montserrat',sans-serif",letterSpacing:0.5},
+  flash:{transform:'scale(0.94)',opacity:0.8},
   toggleRow:{display:'flex',gap:4},
-  togBtn:{background:'rgba(3,8,16,0.8)',border:glassBorder,color:'#4a6080',borderRadius:6,padding:'4px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif",whiteSpace:'nowrap'},
-  togOn:{background:'rgba(30,144,255,0.12)',borderColor:'#1E90FF44',color:'#1E90FF'},
-  panel:{position:'absolute',bottom:54,left:0,right:0,background:'rgba(255,255,255,0.06)',borderTop:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(40px) saturate(200%) brightness(1.05)',WebkitBackdropFilter:'blur(40px) saturate(200%) brightness(1.05)',boxShadow:'0 -4px 40px rgba(0,0,0,0.3)',zIndex:100,maxHeight:260,overflowY:'auto'},
-  panelHdr:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',position:'sticky',top:0,background:'rgba(8,14,24,0.75)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
-  panelTitle:{fontSize:9,fontWeight:800,color:'#fff',letterSpacing:1.5},
-  dangerBtn:{background:'rgba(239,83,80,0.08)',border:'1px solid rgba(239,83,80,0.3)',color:'#ef5350',borderRadius:4,padding:'3px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"},
+  togBtn:{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'rgba(255,255,255,0.4)',borderRadius:5,padding:'4px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif",whiteSpace:'nowrap'},
+  togOn:{background:'rgba(255,255,255,0.1)',borderColor:'rgba(255,255,255,0.25)',color:'#fff'},
+
+  // Panels
+  panel:{position:'absolute',bottom:50,left:0,right:0,background:'rgba(12,12,14,0.97)',borderTop:'1px solid rgba(255,255,255,0.08)',zIndex:100,maxHeight:240,overflowY:'auto',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
+  panelHdr:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 14px',borderBottom:'1px solid rgba(255,255,255,0.06)',position:'sticky',top:0,background:'rgba(12,12,14,0.99)'},
+  panelTitle:{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:1.5},
+  dangerBtn:{background:'rgba(239,83,80,0.08)',border:'1px solid rgba(239,83,80,0.2)',color:'#ef5350',borderRadius:4,padding:'3px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"},
   tbl:{width:'100%',borderCollapse:'collapse',fontSize:10},
-  tblRow:{borderBottom:'1px solid #030f20'},
-  th:{padding:'4px 12px',textAlign:'left',color:'#1E90FF',fontWeight:700,fontSize:8,letterSpacing:1,whiteSpace:'nowrap',borderBottom:'1px solid #0d2040'},
-  td:{padding:'6px 12px',color:'#c0d0e8',whiteSpace:'nowrap'},
-  closeBtn:{background:'none',border:'none',color:'#2a5070',cursor:'pointer',fontSize:11,padding:'0 2px',fontFamily:"'Montserrat',sans-serif"},
-  ctxItem:{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',background:'none',border:'none',color:'#c0d0e8',fontSize:10,fontWeight:700,padding:'9px 14px',cursor:'pointer',fontFamily:"'Montserrat',sans-serif",gap:16},
-  iconBtn:{background:'rgba(3,8,16,0.8)',border:glassBorder,borderRadius:6,padding:'5px 7px',cursor:'pointer',color:'#4a6080',display:'flex',alignItems:'center',fontFamily:"'Montserrat',sans-serif"},
+  tblRow:{borderBottom:'1px solid rgba(255,255,255,0.04)'},
+  th:{padding:'4px 12px',textAlign:'left',color:'rgba(255,255,255,0.3)',fontWeight:600,fontSize:8,letterSpacing:1,whiteSpace:'nowrap'},
+  td:{padding:'6px 12px',color:'rgba(255,255,255,0.75)',whiteSpace:'nowrap'},
+  closeBtn:{background:'none',border:'none',color:'rgba(255,255,255,0.25)',cursor:'pointer',fontSize:11,padding:'0 2px',fontFamily:"'Montserrat',sans-serif"},
+  ctxItem:{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',background:'none',border:'none',color:'rgba(255,255,255,0.8)',fontSize:11,fontWeight:600,padding:'9px 14px',cursor:'pointer',fontFamily:"'Montserrat',sans-serif",gap:16},
+  iconBtn:{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:5,padding:'4px 7px',cursor:'pointer',color:'rgba(255,255,255,0.5)',display:'flex',alignItems:'center',fontFamily:"'Montserrat',sans-serif"},
 }
 
 const css=`
   *{box-sizing:border-box;margin:0;padding:0}
   body{overflow:hidden;background:#000}
   input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{opacity:0}
-  button:not(:disabled):hover{opacity:0.82}
+  button:not(:disabled):hover{filter:brightness(1.15)}
   button:disabled{opacity:0.3;cursor:not-allowed!important}
+  .sp{width:24px;height:24px;border:2px solid rgba(255,255,255,0.1);border-top-color:rgba(255,255,255,0.6);border-radius:50%;animation:sp .6s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
 `
 
-// ─── Close / Partial Close Modal ─────────────────────────────────────────────
-function CloseModal({modal,currentPrice,onClose,onConfirm}){
-  const {pos,pair}=modal
-  const isBuy=pos.side==='BUY'
-  const isJpy=pair?.includes('JPY')
-  const PRESETS=[25,50,75,100]
-  const [pct,setPct]=useState(100)
-  const lotsToClose=parseFloat((pos.lots*pct/100).toFixed(2))
-  const estPnl=calcPnl(pos.side,pos.entry,currentPrice||pos.entry,lotsToClose,pair)
-  const fmtP=p=>p?.toFixed(isJpy?3:5)??'—'
-  const isProfit=estPnl>=0
-  const pnlColor=isProfit?'rgba(38,166,154,0.95)':'rgba(239,83,80,0.95)'
-  const accentColor=isBuy?'#1E90FF':'#ef5350'
-  const accentRgb=isBuy?'30,144,255':'239,83,80'
 
+function Spin(){ return <div className="sp"/> }
+
+function StatBadge({label,val,color}){
   return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
-      <div style={{
-        background:'rgba(255,255,255,0.07)',
-        border:'1px solid rgba(255,255,255,0.18)',
-        borderRadius:24,width:380,
-        boxShadow:'0 32px 80px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.25)',
-        backdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
-        WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
-        overflow:'hidden',
-      }} onClick={e=>e.stopPropagation()}>
-
-        {/* Header */}
-        <div style={{padding:'18px 22px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <div style={{width:8,height:8,borderRadius:'50%',background:accentColor,boxShadow:`0 0 10px ${accentColor}`}}/>
-            <span style={{fontSize:14,fontWeight:900,color:'#fff'}}>{pos.side} — {pair}</span>
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:6}}>
-            <span style={{fontSize:9,color:'rgba(255,255,255,0.3)',fontWeight:600}}>{pos.lots}L @ {fmtP(pos.entry)}</span>
-            <button onClick={onClose} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:8,color:'rgba(255,255,255,0.5)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>✕</button>
-          </div>
-        </div>
-
-        <div style={{padding:'16px 22px 20px'}}>
-
-          {/* P&L big */}
-          <div style={{
-            background:isProfit?'rgba(38,166,154,0.08)':'rgba(239,83,80,0.08)',
-            border:`1px solid ${isProfit?'rgba(38,166,154,0.2)':'rgba(239,83,80,0.2)'}`,
-            borderRadius:16,padding:'16px',textAlign:'center',marginBottom:16,
-          }}>
-            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:6}}>P&L ESTIMADO</div>
-            <div style={{fontSize:28,fontWeight:900,color:pnlColor,letterSpacing:-1}}>{estPnl>=0?'+':''}{estPnl.toFixed(2)}</div>
-            <div style={{fontSize:8,color:'rgba(255,255,255,0.3)',marginTop:4}}>precio actual: {fmtP(currentPrice)}</div>
-          </div>
-
-          {/* % presets */}
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:8}}>PORCENTAJE A CERRAR</div>
-            <div style={{display:'flex',gap:4,background:'rgba(255,255,255,0.04)',borderRadius:12,padding:4,marginBottom:10}}>
-              {PRESETS.map(p=>(
-                <button key={p} onClick={()=>setPct(p)} style={{
-                  flex:1,padding:'7px 0',borderRadius:9,border:'none',
-                  background:pct===p?accentColor:'transparent',
-                  color:pct===p?'#fff':'rgba(255,255,255,0.4)',
-                  fontSize:11,fontWeight:800,cursor:'pointer',
-                  fontFamily:"'Montserrat',sans-serif",
-                  boxShadow:pct===p?`0 2px 12px rgba(${accentRgb},0.4)`:'none',
-                }}>{p}%</button>
-              ))}
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              <div>
-                <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:5}}>LOTS A CERRAR</div>
-                <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'0 12px',height:36}}>
-                  <span style={{fontSize:13,fontWeight:700,color:'#fff'}}>{lotsToClose}</span>
-                </div>
-              </div>
-              <div>
-                <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:5}}>RESTANTES</div>
-                <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'0 12px',height:36}}>
-                  <span style={{fontSize:13,fontWeight:700,color:'rgba(255,255,255,0.5)'}}>{Math.max(0,parseFloat((pos.lots-lotsToClose).toFixed(2)))}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Confirm */}
-          <button onClick={()=>onConfirm(lotsToClose)} style={{
-            width:'100%',
-            background:isProfit
-              ?'linear-gradient(135deg,rgba(38,166,154,0.9),rgba(20,110,100,0.9))'
-              :'linear-gradient(135deg,rgba(239,83,80,0.9),rgba(150,30,30,0.9))',
-            border:'none',borderRadius:14,padding:'14px',
-            fontSize:13,fontWeight:900,color:'#fff',cursor:'pointer',
-            fontFamily:"'Montserrat',sans-serif",
-            boxShadow:isProfit?'0 4px 24px rgba(38,166,154,0.3)':'0 4px 24px rgba(239,83,80,0.3)',
-            inset:'0 1px 0 rgba(255,255,255,0.2)',
-          }}>
-            {pct===100?'Cerrar posición':'Cerrar parcial'} · {estPnl>=0?'+':''}{estPnl.toFixed(2)}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Position Overlay — HTML lines with reliable drag ────────────────────────
-function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd}){
-  const [lines,    setLines]    = useState([])
-  const dragState = useRef(null) // {posId, type, active:bool}
-  const chartElRef = useRef(null)
-
-  // Get chart DOM element once
-  useEffect(()=>{
-    const cr = chartMap.current[activePair]
-    if(cr?.chart) {
-      try{ chartElRef.current = cr.chart.chartElement() }catch{}
-    }
-  },[activePair, dataReady])
-
-  // Update line Y positions every 100ms
-  useEffect(()=>{
-    if(!dataReady) return
-    const update=()=>{
-      const cr=chartMap.current[activePair]; if(!cr?.series) return
-      const all=[]
-      positions.forEach(pos=>{
-        let eY=null,slY=null,tpY=null
-        try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
-        try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
-        try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
-        const slPnl=(-(pos.slPips*pos.lots*10)).toFixed(2)
-        const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
-        if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
-        if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
-        if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(38,166,154,0.65)', drag:true, close:false})
-      })
-      ;(pendingOrders||[]).forEach(ord=>{
-        const cr2=chartMap.current[activePair]
-        let eY=null,slY=null,tpY=null
-        try{eY =cr2?.series?.priceToCoordinate(ord.entry)}catch{}
-        try{slY=cr2?.series?.priceToCoordinate(ord.sl)}catch{}
-        try{tpY=cr2?.series?.priceToCoordinate(ord.tp)}catch{}
-        const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
-        if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.55)',drag:true, cancel:true})
-        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL',                   color:'rgba(239,83,80,0.5)',  drag:true, cancel:false})
-        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP',                   color:'rgba(38,166,154,0.5)', drag:true, cancel:false})
-      })
-      // Don't update if dragging — keeps line under cursor
-      if(!dragState.current?.active) setLines(all)
-    }
-    update()
-    const iv=setInterval(update,100)
-    return()=>clearInterval(iv)
-  },[positions,pendingOrders,activePair,dataReady])
-
-  // Drag handlers
-  const onLineMouseDown=(e,line)=>{
-    if(!line.drag) return
-    e.stopPropagation()
-    e.preventDefault()
-    // Use ordId for limit orders, posId for open positions
-    dragState.current={posId:line.ordId||line.posId,type:line.type,active:true}
-  }
-
-  useEffect(()=>{
-    const onMove=e=>{
-      if(!dragState.current?.active) return
-      const cr=chartMap.current[activePair]; if(!cr?.series) return
-      const el=chartElRef.current||cr.chart.chartElement?.()
-      if(!el) return
-      const rect=el.getBoundingClientRect()
-      const y=e.clientY-rect.top
-      let price=null
-      try{price=cr.series.coordinateToPrice(y)}catch{}
-      if(price==null||isNaN(price)) return
-      // Move line visually during drag
-      const ds=dragState.current; if(!ds) return
-      setLines(prev=>prev.map(l=>{
-        const id=l.ordId||l.posId
-        return id===ds.posId&&l.type===ds.type
-          ? {...l,y:Math.round(y)}
-          : l
-      }))
-    }
-    const onUp=e=>{
-      if(!dragState.current?.active) return
-      const cr=chartMap.current[activePair]; if(!cr?.series) return
-      const el=chartElRef.current||cr.chart.chartElement?.()
-      if(el){
-        const rect=el.getBoundingClientRect()
-        const y=e.clientY-rect.top
-        let price=null
-        try{price=cr.series.coordinateToPrice(y)}catch{}
-        if(price!=null&&!isNaN(price)){
-          onDragEnd(dragState.current.posId,dragState.current.type,price)
-        }
-      }
-      dragState.current=null
-    }
-    window.addEventListener('mousemove',onMove)
-    window.addEventListener('mouseup',onUp)
-    return()=>{
-      window.removeEventListener('mousemove',onMove)
-      window.removeEventListener('mouseup',onUp)
-    }
-  },[activePair,onDragEnd])
-
-  if(!dataReady||lines.length===0) return null
-
-  return(
-    <div style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:5,overflow:'hidden'}}>
-      {lines.map(line=>(
-        <div key={line.id} style={{
-          position:'absolute',
-          left:0,right:0,
-          top:line.y-10,
-          height:20,
-          pointerEvents:'auto',
-          cursor:line.drag?'ns-resize':'default',
-          userSelect:'none',
-        }}
-          onMouseDown={e=>onLineMouseDown(e,line)}
-        >
-          {/* Visible line */}
-          <div style={{
-            position:'absolute',left:0,right:0,
-            top:'50%',transform:'translateY(-50%)',
-            height:1,background:line.color,
-          }}/>
-          {/* Label + buttons */}
-          <div style={{
-            position:'absolute',right:56,top:'50%',transform:'translateY(-50%)',
-            display:'flex',gap:4,alignItems:'center',
-          }}>
-            <div style={{
-              background:'rgba(3,8,16,0.88)',
-              border:`1px solid ${line.color}`,
-              borderRadius:3,padding:'2px 7px',
-              fontSize:8,fontWeight:700,color:'#c0d0e8',
-              whiteSpace:'nowrap',
-            }}>{line.label}</div>
-            {line.drag&&(
-              <div style={{
-                background:'rgba(3,8,16,0.7)',
-                border:`1px solid ${line.color}`,
-                borderRadius:3,padding:'1px 4px',
-                fontSize:9,color:'#4a6080',
-                cursor:'ns-resize',
-              }}
-                onMouseDown={e=>onLineMouseDown(e,line)}
-              >⠿</div>
-            )}
-            {line.close&&(
-              <button
-                style={{background:'rgba(239,83,80,0.12)',border:'1px solid rgba(239,83,80,0.35)',borderRadius:3,color:'#ef5350',width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontSize:11,fontFamily:"'Montserrat',sans-serif"}}
-                onMouseDown={e=>e.stopPropagation()}
-                onClick={e=>{e.stopPropagation();onClosePos(line.posId)}}
-              >✕</button>
-            )}
-            {line.cancel&&(
-              <button
-                style={{background:'rgba(239,83,80,0.1)',border:'1px solid rgba(239,83,80,0.3)',borderRadius:3,color:'#ef5350',width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontSize:11,fontFamily:"'Montserrat',sans-serif"}}
-                onMouseDown={e=>e.stopPropagation()}
-                onClick={e=>{e.stopPropagation();onCancelOrder(line.ordId)}}
-              >✕</button>
-            )}
-          </div>
-        </div>
-      ))}
+    <div style={{display:'flex',flexDirection:'column',padding:'0 10px',borderLeft:'1px solid rgba(255,255,255,0.07)'}}>
+      <span style={{fontSize:7,fontWeight:600,color:'rgba(255,255,255,0.3)',letterSpacing:0.8}}>{label}</span>
+      <span style={{fontSize:10,fontWeight:700,color:color||'#fff'}}>{val}</span>
     </div>
   )
 }
