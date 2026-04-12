@@ -184,25 +184,27 @@ export default function SessionPage() {
   // ── Mount chart via useEffect (stable, no ref callback re-fire) ────────────
 
   useEffect(() => {
-    activePairs.forEach(async (pair) => {
-      if (chartMap.current[pair]) return
-      const el = document.getElementById(`chart-${pair.replace('/','')}`)
-      if (!el) return
-      const lc = await import('lightweight-charts')
-      const chart  = lc.createChart(el, chartOpts(el.clientWidth, el.clientHeight))
-      const series = chart.addSeries(lc.CandlestickSeries, {
-        upColor:'#2962FF', downColor:'#ef5350', borderVisible:false,
-        wickUpColor:'#2962FF', wickDownColor:'#ef5350',
+    const t = setTimeout(() => {
+      activePairs.forEach(async (pair) => {
+        if (chartMap.current[pair]) return
+        const el = document.getElementById(`chart-${pair.replace('/','')}`)
+        if (!el) return
+        const lc = await import('lightweight-charts')
+        if (chartMap.current[pair]) return // mounted while awaiting
+        const chart  = lc.createChart(el, chartOpts(el.clientWidth, el.clientHeight))
+        const series = chart.addSeries(lc.CandlestickSeries, {
+          upColor:'#2962FF', downColor:'#ef5350', borderVisible:false,
+          wickUpColor:'#2962FF', wickDownColor:'#ef5350',
+        })
+        chartMap.current[pair] = { chart, series, prevCount:0 }
+        new ResizeObserver(entries => {
+          const {width,height} = entries[0].contentRect
+          if (chartMap.current[pair]) chart.resize(width, height)
+        }).observe(el)
+        loadPair(pair)
       })
-      chartMap.current[pair] = { chart, series, prevCount:0 }
-
-      new ResizeObserver(entries => {
-        const {width,height} = entries[0].contentRect
-        if (chartMap.current[pair]) chart.resize(width, height)
-      }).observe(el)
-
-      loadPair(pair)
-    })
+    }, 60)
+    return () => clearTimeout(t)
   }, [activePairs, loadPair])
 
   // ── Render chart ────────────────────────────────────────────────────────────
