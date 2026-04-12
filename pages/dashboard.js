@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 
@@ -140,80 +140,58 @@ export default function Dashboard() {
   }
 
   // ── ANALYTICS CALCULATIONS ──
-  const filteredTrades = selectedSession === 'all'
-    ? trades
-    : trades.filter(t => t.session_id === selectedSession)
+  const metrics = useMemo(() => {
+    const filtered = selectedSession === 'all' ? trades : trades.filter(t => t.session_id === selectedSession)
+    const closed = filtered.filter(t => t.result && t.result !== 'OPEN')
+    const w = closed.filter(t => t.result === 'WIN')
+    const l = closed.filter(t => t.result === 'LOSS')
+    const be = closed.filter(t => t.result === 'BREAKEVEN')
+    const totalPnl = closed.reduce((s, t) => s + (t.pnl || 0), 0)
+    const winRate = closed.length > 0 ? (w.length / closed.length * 100) : 0
+    const avgRR = closed.length > 0 ? closed.reduce((s, t) => s + (t.rr_real || t.rr || 0), 0) / closed.length : 0
+    const bestWin = w.length > 0 ? Math.max(...w.map(t => t.pnl || 0)) : 0
+    const worstLoss = l.length > 0 ? Math.min(...l.map(t => t.pnl || 0)) : 0
+    const avgWin = w.length > 0 ? w.reduce((s, t) => s + (t.pnl || 0), 0) / w.length : 0
+    const avgLoss = l.length > 0 ? l.reduce((s, t) => s + (t.pnl || 0), 0) / l.length : 0
+    const grossProfit = w.reduce((s, t) => s + (t.pnl || 0), 0)
+    const grossLoss = Math.abs(l.reduce((s, t) => s + (t.pnl || 0), 0))
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999 : 0
+    const expectancy = closed.length > 0 ? (winRate/100 * avgWin) + ((1 - winRate/100) * avgLoss) : 0
+    const selSess = sessions.find(s => s.id === selectedSession)
+    const initialBalance = selectedSession === 'all'
+      ? (sessions.length > 0 ? parseFloat(sessions[0]?.capital || 0) : 0)
+      : parseFloat(selSess?.capital || 0)
+    // Drawdown
+    let ddPeak = initialBalance, maxDD = 0, ddRun = initialBalance
+    closed.forEach(t => { ddRun += (t.pnl||0); if(ddRun>ddPeak)ddPeak=ddRun; const dd=ddPeak-ddRun; if(dd>maxDD)maxDD=dd })
+    // Streaks
+    let maxW=0,maxL=0,curW=0,curL=0
+    closed.forEach(t => { if(t.result==='WIN'){curW++;curL=0;if(curW>maxW)maxW=curW}else if(t.result==='LOSS'){curL++;curW=0;if(curL>maxL)maxL=curL} })
+    // Equity curve
+    let eqRun = initialBalance
+    const eqPoints = [{ x:0, y:eqRun }, ...closed.map((t,i) => { eqRun+=(t.pnl||0); return {x:i+1,y:eqRun} })]
+    const buildPath = (pts) => {
+      if(pts.length<2) return ''
+      const maxY=Math.max(...pts.map(p=>p.y)), minY=Math.min(...pts.map(p=>p.y)), rng=maxY-minY||1
+      return pts.map((p,i)=>{const x=(p.x/(pts.length-1))*800;const y=160-((p.y-minY)/rng)*140-10;return`${i===0?'M':'L'}${x},${y}`}).join(' ')
+    }
+    return {
+      filteredTrades:filtered, closedTrades:closed, wins:w, losses:l, breakevens:be,
+      totalPnl, winRate, avgRR, bestWin, worstLoss, avgWin, avgLoss,
+      profitFactor, expectancy, maxDrawdown:maxDD, maxWinStreak:maxW, maxLossStreak:maxL,
+      initialBalance, equityPath:buildPath(eqPoints),
+      sessionStats:{
+        london:filtered.filter(t=>t.session_type==='london'),
+        new_york:filtered.filter(t=>t.session_type==='new_york'),
+        asia:filtered.filter(t=>t.session_type==='asia'),
+        out:filtered.filter(t=>t.session_type==='out_of_session'),
+      }
+    }
+  }, [trades, sessions, selectedSession])
 
-  const closedTrades = filteredTrades.filter(t => t.result && t.result !== 'OPEN')
-  const wins = closedTrades.filter(t => t.result === 'WIN')
-  const losses = closedTrades.filter(t => t.result === 'LOSS')
-  const breakevens = closedTrades.filter(t => t.result === 'BREAKEVEN')
-  const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl || 0), 0)
-  const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length * 100) : 0
-  const avgRR = closedTrades.length > 0 ? closedTrades.reduce((s, t) => s + (t.rr_real || t.rr || 0), 0) / closedTrades.length : 0
-  const bestWin = wins.length > 0 ? Math.max(...wins.map(t => t.pnl || 0)) : 0
-  const worstLoss = losses.length > 0 ? Math.min(...losses.map(t => t.pnl || 0)) : 0
-  const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + (t.pnl || 0), 0) / wins.length : 0
-  const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + (t.pnl || 0), 0) / losses.length : 0
-
-  // Advanced metrics
-  const grossProfit = wins.reduce((s, t) => s + (t.pnl || 0), 0)
-  const grossLoss = Math.abs(losses.reduce((s, t) => s + (t.pnl || 0), 0))
-  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0
-  const expectancy = closedTrades.length > 0
-    ? (winRate/100 * avgWin) + ((1 - winRate/100) * avgLoss)
-    : 0
-
-  // Max drawdown
-  let _ddPeak = initialBalance, _maxDD = 0, _ddRun = initialBalance
-  closedTrades.forEach(t => {
-    _ddRun += (t.pnl || 0)
-    if (_ddRun > _ddPeak) _ddPeak = _ddRun
-    const dd = _ddPeak - _ddRun
-    if (dd > _maxDD) _maxDD = dd
-  })
-  const maxDrawdown = _maxDD
-
-  // Win/loss streaks
-  let _maxW = 0, _maxL = 0, _curW = 0, _curL = 0
-  closedTrades.forEach(t => {
-    if (t.result === 'WIN') { _curW++; _curL = 0; if (_curW > _maxW) _maxW = _curW }
-    else if (t.result === 'LOSS') { _curL++; _curW = 0; if (_curL > _maxL) _maxL = _curL }
-  })
-  const maxWinStreak = _maxW
-  const maxLossStreak = _maxL
-
-  const selSessData = sessions.find(s => s.id === selectedSession)
-  const initialBalance = selectedSession === 'all'
-    ? (sessions.length > 0 ? parseFloat(sessions[0]?.capital || 0) : 0)
-    : parseFloat(selSessData?.capital || 0)
-
-  let _eqRun = initialBalance
-  const equityPoints = [{ x: 0, y: _eqRun }, ...closedTrades.map((t, i) => {
-    _eqRun += (t.pnl || 0)
-    return { x: i + 1, y: _eqRun }
-  })]
-
-  const buildPath = (points) => {
-    if (points.length < 2) return ''
-    const maxY = Math.max(...points.map(p => p.y))
-    const minY = Math.min(...points.map(p => p.y))
-    const rangeY = maxY - minY || 1
-    const W = 800, H = 160
-    return points.map((p, i) => {
-      const x = (p.x / (points.length - 1)) * W
-      const y = H - ((p.y - minY) / rangeY) * (H - 20) - 10
-      return `${i === 0 ? 'M' : 'L'}${x},${y}`
-    }).join(' ')
-  }
-  const equityPath = buildPath(equityPoints)
-
-  const sessionStats = {
-    london: filteredTrades.filter(t => t.session_type === 'london'),
-    new_york: filteredTrades.filter(t => t.session_type === 'new_york'),
-    asia: filteredTrades.filter(t => t.session_type === 'asia'),
-    out: filteredTrades.filter(t => t.session_type === 'out_of_session'),
-  }
+  const { filteredTrades, closedTrades, wins, losses, breakevens, totalPnl, winRate, avgRR,
+    bestWin, worstLoss, avgWin, avgLoss, profitFactor, expectancy, maxDrawdown,
+    maxWinStreak, maxLossStreak, initialBalance, equityPath, sessionStats } = metrics
 
   if (loading) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}>
