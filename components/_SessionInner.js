@@ -674,28 +674,19 @@ export default function SessionPage(){
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
 
-      {/* REPLAY PILL — top center, FX Replay style */}
+      {/* REPLAY PILL — top center, iOS rectangular glass */}
       <div style={s.replayPill}>
-        <button style={s.pillBtn} onClick={()=>{const e=pairState.current[activePair]?.engine;if(e){e.seekToTime(sessionRef.current?.date_from?Math.floor(new Date(sessionRef.current.date_from).getTime()/1000):0)}}} title="Al inicio">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="19,20 9,12 19,4"/><line x1="5" y1="4" x2="5" y2="20" stroke="currentColor" strokeWidth="3"/></svg>
-        </button>
-        <button style={s.pillBtn} onClick={handleStep} disabled={!dataReady} title="Paso atrás">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="15,20 5,12 15,4"/></svg>
-        </button>
         <button style={{...s.pillPlay,...(isPlaying?s.pillPause:{})}} onClick={handlePlayPause} disabled={!dataReady}>
           {isPlaying
-            ?<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-            :<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+            ?<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="4" height="16"/><rect x="15" y="4" width="4" height="16"/></svg>
+            :<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
           }
         </button>
-        <button style={s.pillBtn} onClick={handleStep} disabled={!dataReady} title="Paso adelante">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="9,4 19,12 9,20"/></svg>
-        </button>
-        <button style={s.pillBtn} title="Al final">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="4" x2="19" y2="20" stroke="currentColor" strokeWidth="3"/></svg>
+        <button style={s.pillBtn} onClick={handleStep} disabled={!dataReady} title="Avanzar vela">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="3" height="16"/></svg>
         </button>
         <div style={s.pillDivider}/>
-        <div style={s.pillProgress}>
+        <div style={s.pillProgress} title={`${progress}%`}>
           <div style={{...s.pillProgressFill,width:`${progress}%`}}/>
         </div>
         <div style={s.pillDivider}/>
@@ -981,10 +972,10 @@ const s={
   togBtn:{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'rgba(255,255,255,0.4)',borderRadius:5,padding:'4px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif",whiteSpace:'nowrap'},
   togOn:{background:'rgba(255,255,255,0.1)',borderColor:'rgba(255,255,255,0.25)',color:'#fff'},
   // Replay pill
-  replayPill:{position:'absolute',top:76,left:'50%',transform:'translateX(-50%)',zIndex:25,display:'flex',alignItems:'center',gap:4,background:'rgba(20,20,24,0.95)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:40,padding:'5px 12px',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',boxShadow:'0 4px 20px rgba(0,0,0,0.6)'},
-  pillBtn:{background:'none',border:'none',color:'rgba(255,255,255,0.6)',cursor:'pointer',width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:4,padding:0},
-  pillPlay:{background:'#fff',border:'none',color:'#000',width:26,height:26,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,boxShadow:'0 2px 8px rgba(255,255,255,0.2)'},
-  pillPause:{background:'rgba(255,255,255,0.8)'},
+  replayPill:{position:'absolute',top:76,left:'50%',transform:'translateX(-50%)',zIndex:25,display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.18)',borderRadius:12,padding:'6px 14px',backdropFilter:'blur(40px) saturate(180%)',WebkitBackdropFilter:'blur(40px) saturate(180%)',boxShadow:'0 4px 24px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.15)'},
+  pillBtn:{background:'rgba(255,255,255,0.06)',border:'none',color:'rgba(255,255,255,0.7)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:7,padding:0},
+  pillPlay:{background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.25)',color:'#fff',width:32,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0},
+  pillPause:{background:'rgba(255,255,255,0.1)',borderColor:'rgba(255,255,255,0.2)'},
   pillDivider:{width:1,height:16,background:'rgba(255,255,255,0.1)',margin:'0 4px'},
   pillProgress:{width:100,height:3,background:'rgba(255,255,255,0.1)',borderRadius:2,overflow:'hidden',cursor:'pointer'},
   pillProgressFill:{height:'100%',background:'#2962FF',borderRadius:2,transition:'width .3s linear'},
