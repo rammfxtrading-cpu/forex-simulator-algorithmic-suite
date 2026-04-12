@@ -57,9 +57,11 @@ export default function Dashboard() {
         grd.addColorStop(0,`rgba(0,120,255,${0.3*pulse})`)
         grd.addColorStop(1,'rgba(0,0,0,0)')
         ctx.beginPath();ctx.arc(n.x,n.y,n.r*5,0,Math.PI*2);ctx.fillStyle=grd;ctx.fill()
-        // White star core
+        // Star core — alternate white and light blue
         ctx.beginPath();ctx.arc(n.x,n.y,n.r*(0.6+pulse*0.5),0,Math.PI*2)
-        ctx.fillStyle=`rgba(255,255,255,${0.75+pulse*0.25})`;ctx.fill()
+        const isBlue = n.pulse > Math.PI
+        ctx.fillStyle=isBlue?`rgba(150,210,255,${0.8+pulse*0.2})`:`rgba(255,255,255,${0.85+pulse*0.15})`
+        ctx.fill()
         n.x+=n.vx;n.y+=n.vy
         if(n.x<0||n.x>canvas.width)n.vx*=-1
         if(n.y<0||n.y>canvas.height)n.vy*=-1
@@ -352,7 +354,7 @@ export default function Dashboard() {
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
               {sessions.map(session => (
-                <div key={session.id} style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:20,backdropFilter:'blur(8px)',display:'flex',flexDirection:'column',gap:10}}>
+                <div key={session.id} style={background:'rgba(0,20,60,0.35)',border:'1px solid rgba(0,120,255,0.5)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
                     <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
@@ -361,7 +363,7 @@ export default function Dashboard() {
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
                   </div>
                   <div style={{fontSize:11,color:'#4a6080'}}>{session.date_from} → {session.date_to}</div>
-                  <div style={{display:'flex',borderTop:'1px solid #0d2040',paddingTop:10}}>
+                  <div style={{display:'flex',borderTop:'1px solid rgba(0,120,255,0.25)',paddingTop:10}}>
                     <div style={{flex:1,textAlign:'center'}}>
                       <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
                       <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>${Number(session.capital).toLocaleString()}</div>
@@ -405,7 +407,7 @@ export default function Dashboard() {
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
               {sessions.map(session => (
-                <div key={session.id} style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:20,backdropFilter:'blur(8px)',display:'flex',flexDirection:'column',gap:10}}>
+                <div key={session.id} style={background:'rgba(0,20,60,0.35)',border:'1px solid rgba(0,120,255,0.5)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
                     <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
@@ -414,7 +416,7 @@ export default function Dashboard() {
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
                   </div>
                   <div style={{fontSize:11,color:'#4a6080'}}>{session.date_from} → {session.date_to}</div>
-                  <div style={{display:'flex',borderTop:'1px solid #0d2040',paddingTop:10}}>
+                  <div style={{display:'flex',borderTop:'1px solid rgba(0,120,255,0.25)',paddingTop:10}}>
                     <div style={{flex:1,textAlign:'center'}}>
                       <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:3}}>CAPITAL</div>
                       <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>${Number(session.capital).toLocaleString()}</div>
@@ -690,14 +692,14 @@ const s = {
   iconBtn:{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:8,padding:'8px',cursor:'pointer',color:'#a0b0c8',display:'flex',alignItems:'center',justifyContent:'center'},
   startBtn:{display:'flex',alignItems:'center',gap:8,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF30',fontFamily:'Montserrat,sans-serif'},
   ctaRow:{display:'flex',gap:16,marginBottom:28},
-  ctaCard:{flex:1,background:'#030810',border:'1px solid #0d2040',borderRadius:12,padding:'24px 20px',cursor:'pointer',transition:'all .2s'},
+  ctaCard:{flex:1,background:'rgba(0,20,60,0.35)',border:'1px solid rgba(0,120,255,0.5)',borderRadius:12,padding:'24px 20px',cursor:'pointer',transition:'all .2s'},
   ctaOff:{opacity:.7,cursor:'default'},
   ctaIcon:{width:44,height:44,borderRadius:10,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14},
   ctaTitle:{fontSize:14,fontWeight:700,color:'#ffffff',marginBottom:6},
   ctaSub:{fontSize:11,color:'#a0b8d0',lineHeight:1.5,marginBottom:16},
   ctaLink:{fontSize:12,fontWeight:700,color:'#1E90FF'},
   statsRow:{display:'flex',gap:16,marginBottom:28},
-  statCard:{flex:1,display:'flex',flexDirection:'column',gap:6},
+  statCard:{flex:1,display:'flex',flexDirection:'column',gap:6,background:'rgba(0,20,60,0.35)',border:'1px solid rgba(0,120,255,0.5)',borderRadius:12,padding:'16px 20px'},
   statIcon:{width:36,height:36,borderRadius:8,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4},
   statValue:{fontSize:24,fontWeight:800},
   statLabel:{fontSize:9,fontWeight:700,color:'#c0d0e8',letterSpacing:1.5},
