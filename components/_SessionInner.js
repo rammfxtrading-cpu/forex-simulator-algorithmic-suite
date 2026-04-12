@@ -270,8 +270,14 @@ export default function SessionPage(){
     const tf=pairTfRef.current[pair]||'H1'
     const agg=engine.getAggregated(tf); if(!agg.length) return
     const prev=cr.prevCount,curr=agg.length
-    if(full||(curr!==prev&&curr!==prev+1)){cr.series.setData(agg);cr.chart.timeScale().scrollToPosition(5,false)}
-    else{cr.series.update(agg[agg.length-1]);cr.chart.timeScale().scrollToPosition(5,false)}
+    if(full||(curr!==prev&&curr!==prev+1)){
+      cr.series.setData(agg)
+      // Only auto-scroll on initial load (when prev was 0), not during replay
+      if(prev===0) cr.chart.timeScale().scrollToPosition(5,false)
+    } else {
+      cr.series.update(agg[agg.length-1])
+      // Never auto-scroll during replay — let user navigate freely
+    }
     cr.prevCount=curr
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
   },[])
@@ -1073,16 +1079,24 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
   )
 }
 
-// ─── Position Overlay — HTML lines with drag + X close ────────────────────────
+// ─── Position Overlay — HTML lines with reliable drag ────────────────────────
 function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd}){
-  const [lines,setLines]=useState([])
-  const dragRef=useRef(null) // {posId,type,startY,startPrice,el}
-  const containerRef=useRef(null)
+  const [lines,    setLines]    = useState([])
+  const dragState = useRef(null) // {posId, type, active:bool}
+  const chartElRef = useRef(null)
 
-  // Recalculate line Y positions every 150ms
+  // Get chart DOM element once
+  useEffect(()=>{
+    const cr = chartMap.current[activePair]
+    if(cr?.chart) {
+      try{ chartElRef.current = cr.chart.chartElement() }catch{}
+    }
+  },[activePair, dataReady])
+
+  // Update line Y positions every 100ms
   useEffect(()=>{
     if(!dataReady) return
-    const tick=()=>{
+    const update=()=>{
       const cr=chartMap.current[activePair]; if(!cr?.series) return
       const all=[]
       positions.forEach(pos=>{
@@ -1090,110 +1104,138 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
         try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
         try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
         try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
-        const slPnl=-(pos.slPips*pos.lots*10).toFixed(2)
+        const slPnl=(-(pos.slPips*pos.lots*10)).toFixed(2)
         const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
-        if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:eY, label:`${pos.side} ${pos.lots}L`,color:'rgba(180,180,180,0.6)',draggable:false,closeable:true})
-        if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:slY,label:`SL  ${slPnl}`,             color:'rgba(239,83,80,0.7)',  draggable:true, closeable:false})
-        if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:tpY,label:`TP  ${tpPnl}`,             color:'rgba(38,166,154,0.7)', draggable:true, closeable:false})
+        if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
+        if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
+        if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(38,166,154,0.65)', drag:true, close:false})
       })
       ;(pendingOrders||[]).forEach(ord=>{
+        const cr2=chartMap.current[activePair]
         let eY=null,slY=null,tpY=null
-        try{eY =chartMap.current[activePair]?.series?.priceToCoordinate(ord.entry)}catch{}
-        try{slY=chartMap.current[activePair]?.series?.priceToCoordinate(ord.sl)}catch{}
-        try{tpY=chartMap.current[activePair]?.series?.priceToCoordinate(ord.tp)}catch{}
+        try{eY =cr2?.series?.priceToCoordinate(ord.entry)}catch{}
+        try{slY=cr2?.series?.priceToCoordinate(ord.sl)}catch{}
+        try{tpY=cr2?.series?.priceToCoordinate(ord.tp)}catch{}
         const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
-        if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'limit_entry',y:eY, label:`${lbl} ${ord.lots}L`,color:'rgba(200,200,200,0.5)',draggable:false,cancelable:true})
-        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'limit_sl',   y:slY,label:'SL',                  color:'rgba(239,83,80,0.4)', draggable:false,cancelable:false})
-        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'limit_tp',   y:tpY,label:'TP',                  color:'rgba(38,166,154,0.4)',draggable:false,cancelable:false})
+        if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.45)',drag:false,cancel:true})
+        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL',                   color:'rgba(239,83,80,0.35)', drag:false,cancel:false})
+        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP',                   color:'rgba(38,166,154,0.35)',drag:false,cancel:false})
       })
-      setLines(all)
+      // Don't update if dragging — keeps line under cursor
+      if(!dragState.current?.active) setLines(all)
     }
-    tick()
-    const iv=setInterval(tick,150)
+    update()
+    const iv=setInterval(update,100)
     return()=>clearInterval(iv)
   },[positions,pendingOrders,activePair,dataReady])
 
-  const handleMouseDown=(e,line)=>{
-    if(!line.draggable) return
-    e.stopPropagation(); e.preventDefault()
-    const cr=chartMap.current[activePair]; if(!cr?.series) return
-    dragRef.current={posId:line.posId,type:line.type,startY:e.clientY,startPrice:line.type==='sl'?
-      positions.find(p=>p.id===line.posId)?.sl:
-      positions.find(p=>p.id===line.posId)?.tp
-    }
+  // Drag handlers
+  const onLineMouseDown=(e,line)=>{
+    if(!line.drag) return
+    e.stopPropagation()
+    e.preventDefault()
+    dragState.current={posId:line.posId,type:line.type,active:true}
   }
 
   useEffect(()=>{
     const onMove=e=>{
-      if(!dragRef.current) return
+      if(!dragState.current?.active) return
       const cr=chartMap.current[activePair]; if(!cr?.series) return
-      const el=cr.chart.chartElement?.()
+      const el=chartElRef.current||cr.chart.chartElement?.()
       if(!el) return
       const rect=el.getBoundingClientRect()
-      let newPrice=null
-      try{newPrice=cr.series.coordinateToPrice(e.clientY-rect.top)}catch{}
-      if(newPrice==null||isNaN(newPrice)) return
-      // Update visual immediately during drag
-      setLines(prev=>prev.map(l=>{
-        if(l.posId===dragRef.current?.posId&&l.type===dragRef.current?.type)
-          return{...l,y:e.clientY-rect.top}
-        return l
-      }))
+      const y=e.clientY-rect.top
+      let price=null
+      try{price=cr.series.coordinateToPrice(y)}catch{}
+      if(price==null||isNaN(price)) return
+      // Move line visually during drag
+      setLines(prev=>prev.map(l=>
+        l.posId===dragState.current.posId&&l.type===dragState.current.type
+          ? {...l,y:Math.round(y)}
+          : l
+      ))
     }
     const onUp=e=>{
-      if(!dragRef.current) return
+      if(!dragState.current?.active) return
       const cr=chartMap.current[activePair]; if(!cr?.series) return
-      const el=cr.chart.chartElement?.()
-      if(!el) return
-      const rect=el.getBoundingClientRect()
-      let newPrice=null
-      try{newPrice=cr.series.coordinateToPrice(e.clientY-rect.top)}catch{}
-      if(newPrice!=null&&!isNaN(newPrice)){
-        onDragEnd(dragRef.current.posId,dragRef.current.type,newPrice)
+      const el=chartElRef.current||cr.chart.chartElement?.()
+      if(el){
+        const rect=el.getBoundingClientRect()
+        const y=e.clientY-rect.top
+        let price=null
+        try{price=cr.series.coordinateToPrice(y)}catch{}
+        if(price!=null&&!isNaN(price)){
+          onDragEnd(dragState.current.posId,dragState.current.type,price)
+        }
       }
-      dragRef.current=null
+      dragState.current=null
     }
-    window.addEventListener('mousemove',onMove,{passive:true})
+    window.addEventListener('mousemove',onMove)
     window.addEventListener('mouseup',onUp)
-    return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
+    return()=>{
+      window.removeEventListener('mousemove',onMove)
+      window.removeEventListener('mouseup',onUp)
+    }
   },[activePair,onDragEnd])
 
   if(!dataReady||lines.length===0) return null
 
   return(
-    <div ref={containerRef} style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:30}}>
+    <div style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:30,overflow:'hidden'}}>
       {lines.map(line=>(
         <div key={line.id} style={{
-          position:'absolute',left:0,right:0,
-          top:Math.round(line.y)-10,
-          height:line.draggable?20:2,
-          background:line.draggable?'transparent':line.color,
+          position:'absolute',
+          left:0,right:0,
+          top:line.y-10,
+          height:20,
           pointerEvents:'auto',
-          cursor:line.draggable?'ns-resize':'default',
-          display:'flex',alignItems:'center',
+          cursor:line.drag?'ns-resize':'default',
+          userSelect:'none',
         }}
-          onMouseDown={e=>handleMouseDown(e,line)}
+          onMouseDown={e=>onLineMouseDown(e,line)}
         >
-          {/* Visible line inside the larger hit area */}
-          {line.draggable&&<div style={{position:'absolute',left:0,right:0,top:'50%',height:1,background:line.color,transform:'translateY(-50%)'}}/>}
-          {/* Label + controls on right side */}
-          <div style={{position:'absolute',right:54,top:-10,display:'flex',gap:4,alignItems:'center',pointerEvents:'auto'}}>
-            <div style={{background:'rgba(2,8,16,0.88)',border:`1px solid ${line.color}`,borderRadius:3,padding:'2px 7px',fontSize:8,fontWeight:700,color:'#c0d0e8',whiteSpace:'nowrap',userSelect:'none'}}>
-              {line.label}
-            </div>
-            {line.draggable&&(
-              <div style={{background:'rgba(2,8,16,0.7)',border:`1px solid ${line.color}`,borderRadius:3,padding:'2px 5px',fontSize:8,color:'#4a6080',cursor:'ns-resize',userSelect:'none'}}
-                onMouseDown={e=>handleMouseDown(e,line)}>
-                ⣿
-              </div>
+          {/* Visible line */}
+          <div style={{
+            position:'absolute',left:0,right:0,
+            top:'50%',transform:'translateY(-50%)',
+            height:1,background:line.color,
+          }}/>
+          {/* Label + buttons */}
+          <div style={{
+            position:'absolute',right:56,top:'50%',transform:'translateY(-50%)',
+            display:'flex',gap:4,alignItems:'center',
+          }}>
+            <div style={{
+              background:'rgba(3,8,16,0.88)',
+              border:`1px solid ${line.color}`,
+              borderRadius:3,padding:'2px 7px',
+              fontSize:8,fontWeight:700,color:'#c0d0e8',
+              whiteSpace:'nowrap',
+            }}>{line.label}</div>
+            {line.drag&&(
+              <div style={{
+                background:'rgba(3,8,16,0.7)',
+                border:`1px solid ${line.color}`,
+                borderRadius:3,padding:'1px 4px',
+                fontSize:9,color:'#4a6080',
+                cursor:'ns-resize',
+              }}
+                onMouseDown={e=>onLineMouseDown(e,line)}
+              >⠿</div>
             )}
-            {line.closeable&&(
-              <button style={{background:'rgba(239,83,80,0.15)',border:'1px solid rgba(239,83,80,0.4)',borderRadius:3,color:'#ef5350',fontSize:10,width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontFamily:"'Montserrat',sans-serif"}}
-                onClick={e=>{e.stopPropagation();onClosePos(line.posId)}}>✕</button>
+            {line.close&&(
+              <button
+                style={{background:'rgba(239,83,80,0.12)',border:'1px solid rgba(239,83,80,0.35)',borderRadius:3,color:'#ef5350',width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontSize:11,fontFamily:"'Montserrat',sans-serif"}}
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>{e.stopPropagation();onClosePos(line.posId)}}
+              >✕</button>
             )}
-            {line.cancelable&&(
-              <button style={{background:'rgba(239,83,80,0.12)',border:'1px solid rgba(239,83,80,0.3)',borderRadius:3,color:'#ef5350',fontSize:9,width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontFamily:"'Montserrat',sans-serif"}}
-                onClick={e=>{e.stopPropagation();onCancelOrder(line.ordId)}}>✕</button>
+            {line.cancel&&(
+              <button
+                style={{background:'rgba(239,83,80,0.1)',border:'1px solid rgba(239,83,80,0.3)',borderRadius:3,color:'#ef5350',width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontSize:11,fontFamily:"'Montserrat',sans-serif"}}
+                onMouseDown={e=>e.stopPropagation()}
+                onClick={e=>{e.stopPropagation();onCancelOrder(line.ordId)}}
+              >✕</button>
             )}
           </div>
         </div>
