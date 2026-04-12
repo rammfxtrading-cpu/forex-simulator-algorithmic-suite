@@ -197,45 +197,44 @@ export default function SessionPage(){
       setPreview(null)
     })
 
-    // Drag SL/TP lines
-    el.addEventListener('mousedown', e=>{
+    // Drag SL/TP — use capture phase on canvas to intercept LWC events
+    const getCanvas=()=>el.querySelector('canvas')||el
+
+    const onMouseDown=e=>{
       if(e.button!==0) return
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
       let clickPrice=null
       try{ clickPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
       if(clickPrice==null||isNaN(clickPrice)) return
-      // Find if click is near a SL or TP line of any open position
       const ps=pairState.current[pair]; if(!ps?.positions?.length) return
-      // Use 10 pip threshold for easy dragging
-      const pipSz = pair?.includes('JPY') ? 0.01 : 0.0001
-      const threshold = pipSz * 10
+      const pipSz=pair?.includes('JPY')?0.01:0.0001
+      const threshold=pipSz*12
       for(const pos of ps.positions){
         if(Math.abs(clickPrice-pos.sl)<threshold){
           draggingRef.current={posId:pos.id,pair,type:'sl',pos:{...pos}}
-          el.style.cursor='ns-resize'
-          e.preventDefault(); e.stopPropagation(); return
+          e.stopPropagation(); e.preventDefault(); return
         }
         if(Math.abs(clickPrice-pos.tp)<threshold){
           draggingRef.current={posId:pos.id,pair,type:'tp',pos:{...pos}}
-          el.style.cursor='ns-resize'
-          e.preventDefault(); e.stopPropagation(); return
+          e.stopPropagation(); e.preventDefault(); return
         }
       }
-    })
+    }
+    // Use capture:true so we get the event before LWC
+    el.addEventListener('mousedown', onMouseDown, {capture:true})
 
-    el.addEventListener('mousemove', e=>{
+    // mousemove and mouseup on window so drag works even if mouse leaves chart
+    const onMouseMove=e=>{
       if(!draggingRef.current||draggingRef.current.pair!==pair) return
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
       let newPrice=null
       try{ newPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
       if(newPrice==null||isNaN(newPrice)) return
-      const{posId,type,pos}=draggingRef.current
-      updatePositionLine(posId,pair,type,newPrice,pos)
-    })
-
-    el.addEventListener('mouseup', e=>{
+      updatePositionLine(draggingRef.current.posId,pair,draggingRef.current.type,newPrice,draggingRef.current.pos)
+    }
+    const onMouseUp=e=>{
       if(!draggingRef.current||draggingRef.current.pair!==pair) return
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
@@ -247,18 +246,19 @@ export default function SessionPage(){
         if(ps?.positions){
           const pos=ps.positions.find(x=>x.id===posId)
           if(pos){
-            const mult=pipMult(p)
-            const pips=Math.abs((newPrice-pos.entry)*mult)
+            const pips=Math.abs((newPrice-pos.entry)*pipMult(p))
             if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
             else{pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
-            ps.positions=[...ps.positions] // trigger reactivity
+            updatePositionLine(posId,p,type,newPrice,pos)
+            ps.positions=[...ps.positions]
             setTick(t=>t+1)
           }
         }
       }
       draggingRef.current=null
-      el.style.cursor='default'
-    })
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
 
     loadPair(pair)
   }
@@ -638,6 +638,19 @@ export default function SessionPage(){
           <div style={s.overlay}>
             <Spin/>
             <span style={s.overlayTxt}>Cargando {activePair}…</span>
+          </div>
+        )}
+        {/* Line overlay — X close buttons on chart */}
+        {dataReady&&openPositions.length>0&&(
+          <div style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:40}}>
+            <LineOverlay
+              positions={openPositions}
+              chartMap={chartMap}
+              activePair={activePair}
+              currentPrice={currentPrice}
+              pairTfRef={pairTfRef}
+              onClose={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
+            />
           </div>
         )}
       </div>
@@ -1093,5 +1106,54 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
         </div>
       </div>
     </div>
+  )
+}
+
+// ─── Line Overlay — X buttons on chart lines ─────────────────────────────────
+function LineOverlay({positions, chartMap, activePair, currentPrice, onClose, pairTfRef}){
+  const [lineYs, setLineYs] = useState([])
+
+  useEffect(()=>{
+    const cr = chartMap.current[activePair]; if(!cr) return
+    const updateYs = () => {
+      const el = cr.chart.chartElement?.()
+      if(!el) return
+      const rect = el.getBoundingClientRect?.() || {height:600}
+      const ys = []
+      positions.forEach(pos=>{
+        let slY=null, tpY=null, entryY=null
+        try{ slY    = cr.series.priceToCoordinate(pos.sl) }catch{}
+        try{ tpY    = cr.series.priceToCoordinate(pos.tp) }catch{}
+        try{ entryY = cr.series.priceToCoordinate(pos.entry) }catch{}
+        if(slY!=null)    ys.push({posId:pos.id,type:'sl',   y:slY,   side:pos.side})
+        if(tpY!=null)    ys.push({posId:pos.id,type:'tp',   y:tpY,   side:pos.side})
+        if(entryY!=null) ys.push({posId:pos.id,type:'entry',y:entryY,side:pos.side,lots:pos.lots})
+      })
+      setLineYs(ys)
+    }
+    const interval = setInterval(updateYs, 200)
+    return ()=>clearInterval(interval)
+  },[positions, activePair])
+
+  return(
+    <>
+      {lineYs.map((l,i)=>(
+        l.type==='entry' ? (
+          <div key={i} style={{position:'absolute',right:52,top:l.y-10,zIndex:50,display:'flex',gap:3,pointerEvents:'auto'}}>
+            <div style={{background:'rgba(2,8,16,0.85)',border:'1px solid #0d2040',borderRadius:3,padding:'1px 6px',fontSize:8,fontWeight:700,color:'#a0b8d0',whiteSpace:'nowrap'}}>
+              {l.side} {l.lots}L
+            </div>
+            <button style={{background:'rgba(239,83,80,0.15)',border:'1px solid rgba(239,83,80,0.3)',borderRadius:3,color:'#ef5350',fontSize:10,width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Montserrat',sans-serif"}}
+              onClick={()=>onClose(l.posId)}>✕</button>
+          </div>
+        ) : (
+          <div key={i} style={{position:'absolute',right:52,top:l.y-9,zIndex:50,pointerEvents:'none'}}>
+            <div style={{background:'rgba(2,8,16,0.7)',border:`1px solid ${l.type==='sl'?'rgba(239,83,80,0.3)':'rgba(38,166,154,0.3)'}`,borderRadius:3,padding:'1px 5px',fontSize:7,fontWeight:700,color:l.type==='sl'?'rgba(239,83,80,0.8)':'rgba(38,166,154,0.8)',whiteSpace:'nowrap'}}>
+              {l.type==='sl'?'SL':'TP'}
+            </div>
+          </div>
+        )
+      ))}
+    </>
   )
 }
