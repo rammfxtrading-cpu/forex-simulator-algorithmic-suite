@@ -139,6 +139,7 @@ export default function SessionPage() {
 
   // Per-pair TF selection
   const [pairTf, setPairTf] = useState({})  // { 'EUR/USD': 'H1', ... }
+  const pairTfRef = useRef({})              // mirror for use inside callbacks
 
   // ── Trading state (per active pair) ────────────────────────────────────
   const [balance,       setBalance]       = useState(10000)
@@ -333,7 +334,8 @@ export default function SessionPage() {
     const cr = chartRefsMap.current[pair]
     if (!cr || !engine) return
 
-    const tf = pairTf[pair] || 'H1'
+    // Use ref to avoid stale closure when TF changes
+    const tf = pairTfRef.current[pair] || pairTf[pair] || 'H1'
     const agg = engine.getAggregated(tf)
     if (!agg.length) return
 
@@ -356,8 +358,9 @@ export default function SessionPage() {
     }
   }, [pairTf, activePair])
 
-  // Re-render on TF change
+  // Re-render on TF change — keep ref in sync too
   useEffect(() => {
+    pairTfRef.current = pairTf
     if (activePair) {
       const ps = pairStateRef.current[activePair]
       if (ps?.engine) {
