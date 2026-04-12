@@ -105,6 +105,8 @@ export default function SessionPage(){
   // Pending order preview (before confirm)
   const [preview,     setPreview]     = useState(null)  // {pair,side,entry,sl,tp,lots,slPips,tpPips}
   const [ctxMenu,     setCtxMenu]     = useState(null)  // {x,y,price,pair}
+  const [pillPos,     setPillPos]     = useState({x:null,y:null})  // draggable pill
+  const pillDragRef   = useRef(null)
   const [closeModal,  setCloseModal]  = useState(null)  // {posId,pair,pos}
   const draggingRef      = useRef(null)  // {posId,pair,type:'sl'|'tp',pos}
   const closePositionRef    = useRef(null)
@@ -674,8 +676,28 @@ export default function SessionPage(){
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
 
-      {/* REPLAY PILL — top center, iOS rectangular glass */}
-      <div style={s.replayPill}>
+      {/* REPLAY PILL — draggable, liquid glass */}
+      <div
+        style={{...s.replayPill,
+          ...(pillPos.x!=null?{left:pillPos.x,top:pillPos.y,transform:'none'}:{})
+        }}
+        onMouseDown={e=>{
+          if(e.target.tagName==='BUTTON'||e.target.closest('button')) return
+          const rect=e.currentTarget.getBoundingClientRect()
+          pillDragRef.current={offX:e.clientX-rect.left,offY:e.clientY-rect.top}
+          const onMove=ev=>{
+            setPillPos({x:ev.clientX-pillDragRef.current.offX,y:ev.clientY-pillDragRef.current.offY})
+          }
+          const onUp=()=>{
+            pillDragRef.current=null
+            window.removeEventListener('mousemove',onMove)
+            window.removeEventListener('mouseup',onUp)
+          }
+          window.addEventListener('mousemove',onMove)
+          window.addEventListener('mouseup',onUp)
+          e.preventDefault()
+        }}
+      >
         <button style={{...s.pillPlay,...(isPlaying?s.pillPause:{})}} onClick={handlePlayPause} disabled={!dataReady}>
           {isPlaying
             ?<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="4" height="16"/><rect x="15" y="4" width="4" height="16"/></svg>
@@ -972,7 +994,7 @@ const s={
   togBtn:{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',color:'rgba(255,255,255,0.4)',borderRadius:5,padding:'4px 10px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif",whiteSpace:'nowrap'},
   togOn:{background:'rgba(255,255,255,0.1)',borderColor:'rgba(255,255,255,0.25)',color:'#fff'},
   // Replay pill
-  replayPill:{position:'absolute',top:76,left:'50%',transform:'translateX(-50%)',zIndex:25,display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.18)',borderRadius:12,padding:'6px 14px',backdropFilter:'blur(40px) saturate(180%)',WebkitBackdropFilter:'blur(40px) saturate(180%)',boxShadow:'0 4px 24px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.15)'},
+  replayPill:{position:'absolute',top:76,left:'50%',transform:'translateX(-50%)',zIndex:25,display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.22)',borderRadius:12,padding:'6px 14px',cursor:'grab',userSelect:'none',backdropFilter:'blur(40px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.1)',boxShadow:'0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.3),inset 0 -1px 0 rgba(0,0,0,0.1),0 0 0 0.5px rgba(255,255,255,0.1)'},
   pillBtn:{background:'rgba(255,255,255,0.06)',border:'none',color:'rgba(255,255,255,0.7)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:7,padding:0},
   pillPlay:{background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.25)',color:'#fff',width:32,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0},
   pillPause:{background:'rgba(255,255,255,0.1)',borderColor:'rgba(255,255,255,0.2)'},
