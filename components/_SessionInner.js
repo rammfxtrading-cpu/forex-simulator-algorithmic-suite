@@ -876,7 +876,7 @@ export default function SessionPage(){
       )}
 
       {/* CLOSE POSITION MODAL */}
-      {closeModal&&mounted&&(
+      {closeModal&&(
         <CloseModal
           modal={closeModal}
           currentPrice={currentPrice}
@@ -1133,10 +1133,10 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
       let newPrice=null
       try{newPrice=cr.series.coordinateToPrice(e.clientY-rect.top)}catch{}
       if(newPrice==null||isNaN(newPrice)) return
-      // Update visual immediately
+      // Update visual immediately during drag
       setLines(prev=>prev.map(l=>{
-        if(l.posId===dragRef.current.posId&&l.type===dragRef.current.type)
-          return{...l,y:e.clientY-rect.top+rect.top-rect.top}
+        if(l.posId===dragRef.current?.posId&&l.type===dragRef.current?.type)
+          return{...l,y:e.clientY-rect.top}
         return l
       }))
     }
@@ -1164,13 +1164,18 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
     <div ref={containerRef} style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:30}}>
       {lines.map(line=>(
         <div key={line.id} style={{
-          position:'absolute',left:0,right:0,top:line.y-1,
-          height:1,background:line.color,
+          position:'absolute',left:0,right:0,
+          top:Math.round(line.y)-10,
+          height:line.draggable?20:2,
+          background:line.draggable?'transparent':line.color,
           pointerEvents:'auto',
           cursor:line.draggable?'ns-resize':'default',
+          display:'flex',alignItems:'center',
         }}
           onMouseDown={e=>handleMouseDown(e,line)}
         >
+          {/* Visible line inside the larger hit area */}
+          {line.draggable&&<div style={{position:'absolute',left:0,right:0,top:'50%',height:1,background:line.color,transform:'translateY(-50%)'}}/>}
           {/* Label + controls on right side */}
           <div style={{position:'absolute',right:54,top:-10,display:'flex',gap:4,alignItems:'center',pointerEvents:'auto'}}>
             <div style={{background:'rgba(2,8,16,0.88)',border:`1px solid ${line.color}`,borderRadius:3,padding:'2px 7px',fontSize:8,fontWeight:700,color:'#c0d0e8',whiteSpace:'nowrap',userSelect:'none'}}>
