@@ -20,37 +20,40 @@ const ALL_PAIRS   = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD'
 function chartOpts(w,h){return{
   width:w,height:h,
   layout:{
-    background:{color:'#000000'},
-    textColor:'rgba(255,255,255,0.5)',
+    background:{color:'#0a0a0a'},
+    textColor:'rgba(255,255,255,0.55)',
     fontFamily:"'Montserrat',sans-serif",
     fontSize:11,
   },
   grid:{
-    vertLines:{color:'rgba(255,255,255,0.04)',style:1},
-    horzLines:{color:'rgba(255,255,255,0.06)',style:1},
+    vertLines:{color:'rgba(255,255,255,0.05)',style:0},
+    horzLines:{color:'rgba(255,255,255,0.08)',style:0},
   },
   crosshair:{
     mode:0,
-    vertLine:{color:'rgba(255,255,255,0.3)',labelBackgroundColor:'rgba(255,255,255,0.15)',width:1,style:3},
-    horzLine:{color:'rgba(255,255,255,0.3)',labelBackgroundColor:'rgba(40,40,50,0.9)',width:1,style:3},
+    vertLine:{color:'rgba(255,255,255,0.4)',labelBackgroundColor:'#1a1a2e',width:1,style:2},
+    horzLine:{color:'rgba(255,255,255,0.4)',labelBackgroundColor:'#1a1a2e',width:1,style:2},
   },
   rightPriceScale:{
-    borderColor:'rgba(255,255,255,0.08)',
-    textColor:'rgba(255,255,255,0.6)',
-    scaleMargins:{top:0.05,bottom:0.05},
+    borderColor:'rgba(255,255,255,0.1)',
+    textColor:'rgba(255,255,255,0.65)',
+    scaleMargins:{top:0.08,bottom:0.08},
     autoScale:true,
     mode:0,
+    entireTextOnly:false,
+    ticksVisible:true,
   },
   timeScale:{
-    borderColor:'rgba(255,255,255,0.08)',
-    textColor:'rgba(255,255,255,0.4)',
+    borderColor:'rgba(255,255,255,0.1)',
+    textColor:'rgba(255,255,255,0.5)',
     timeVisible:true,
     secondsVisible:false,
-    rightOffset:5,
-    barSpacing:8,
-    minBarSpacing:1,
+    rightOffset:8,
+    barSpacing:10,
+    minBarSpacing:2,
     fixLeftEdge:false,
     fixRightEdge:false,
+    ticksVisible:true,
   },
   handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
   handleScale:{axisPressedMouseMove:{time:true,price:true},mouseWheel:true,pinch:true},
@@ -309,8 +312,10 @@ export default function SessionPage(){
     const prev=cr.prevCount,curr=agg.length
     if(full||(curr!==prev&&curr!==prev+1)){
       cr.series.setData(agg)
-      // Only auto-scroll on initial load (when prev was 0), not during replay
-      if(prev===0) cr.chart.timeScale().scrollToPosition(5,false)
+      if(prev===0){
+        cr.chart.timeScale().scrollToPosition(8,false)
+        try{cr.chart.timeScale().applyOptions({barSpacing:10})}catch{}
+      }
     } else {
       cr.series.update(agg[agg.length-1])
       // Never auto-scroll during replay — let user navigate freely
