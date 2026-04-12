@@ -305,18 +305,21 @@ export default function SessionPage(){
     setLastTrade(side);setTimeout(()=>setLastTrade(null),700);setTick(t=>t+1)
   },[currentPrice,activePair,lots,slPips,tpPips,rr,currentTime])
 
-  const closePosition=useCallback(async(posId,reason='MANUAL')=>{
-    const ps=pairState.current[activePair];if(!ps||!currentPrice) return
+  // closePosition accepts optional pair+exitPrice for use from engine.onTick
+  const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride)=>{
+    const usePair=pairOverride||activePair
+    const usePrice=exitPriceOverride||currentPrice
+    const ps=pairState.current[usePair];if(!ps||!usePrice) return
     const pos=ps.positions.find(p=>p.id===posId);if(!pos) return
-    const pnl=calcPnl(pos.side,pos.entry,currentPrice,pos.lots,activePair)
+    const pnl=calcPnl(pos.side,pos.entry,usePrice,pos.lots,usePair)
     const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
     const rrReal=pos.slPips>0?pnl/(pos.slPips*pos.lots*10):0
     ps.positions=ps.positions.filter(p=>p.id!==posId)
-    ps.trades=[...ps.trades,{...pos,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}]
-    removePositionLines(posId,activePair)
+    ps.trades=[...ps.trades,{...pos,exit:usePrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}]
+    removePositionLines(posId,usePair)
     setBalance(b=>b+pnl);setTick(t=>t+1)
     if(userIdRef.current){
-      try{await supabase.from('sim_trades').insert({user_id:userIdRef.current,session_id:id,pair:pos.pair,side:pos.side,lots:pos.lots,entry_price:pos.entry,exit_price:currentPrice,sl:pos.sl,tp:pos.tp,sl_pips:pos.slPips,tp_pips:pos.tpPips,rr:pos.rr,rr_real:parseFloat(rrReal.toFixed(2)),pnl,result,exit_reason:reason,opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():null,closed_at:currentTime?new Date(currentTime*1000).toISOString():null})}catch(e){console.error(e)}
+      try{await supabase.from('sim_trades').insert({user_id:userIdRef.current,session_id:id,pair:pos.pair,side:pos.side,lots:pos.lots,entry_price:pos.entry,exit_price:usePrice,sl:pos.sl,tp:pos.tp,sl_pips:pos.slPips,tp_pips:pos.tpPips,rr:pos.rr,rr_real:parseFloat(rrReal.toFixed(2)),pnl,result,exit_reason:reason,opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():null,closed_at:currentTime?new Date(currentTime*1000).toISOString():null})}catch(e){console.error(e)}
     }
   },[activePair,currentPrice,currentTime,id])
 
@@ -442,12 +445,18 @@ export default function SessionPage(){
   const checkSLTP=useCallback((pair,engine)=>{
     const ps=pairState.current[pair];if(!ps?.positions?.length) return
     const agg=engine.getAggregated(pairTfRef.current[pair]||'H1')
-    const price=agg.slice(-1)[0]?.close;if(!price) return
+    const candle=agg[agg.length-1];if(!candle) return
+    // Use high/low to check hits (not just close)
+    const{high,low,close}=candle
+    const toClose=[]
     ps.positions.forEach(pos=>{
-      const hitTp=pos.side==='BUY'?price>=pos.tp:price<=pos.tp
-      const hitSl=pos.side==='BUY'?price<=pos.sl:price>=pos.sl
-      if(hitTp)closePosition(pos.id,'TP');else if(hitSl)closePosition(pos.id,'SL')
+      const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
+      const hitSl=pos.side==='BUY'?low<=pos.sl:high>=pos.sl
+      if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp})
+      else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl})
     })
+    // Close outside forEach to avoid mutation during iteration
+    toClose.forEach(({id,reason,price})=>closePosition(id,reason,pair,price))
   },[closePosition])
 
   const checkLimitOrders=useCallback((pair,engine)=>{
@@ -469,10 +478,10 @@ export default function SessionPage(){
       // Open position and create its price lines
       const side=order.side==='BUY_LIMIT'?'BUY':'SELL'
       if(!ps.positions) ps.positions=[]
-      const posId=`P${Date.now()}`
+      const posId=`P${Date.now()}-${Math.random().toString(36).slice(2,5)}`
       const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:engine.currentTime}
       ps.positions=[...ps.positions,newPos]
-      createPositionLines(posId,pair,newPos)
+      setTimeout(()=>createPositionLines(posId,pair,newPos),50)
     })
     if(executed.length){
       ps.orders=ps.orders.filter(o=>!executed.includes(o.id))
