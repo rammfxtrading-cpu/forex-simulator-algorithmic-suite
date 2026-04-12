@@ -165,39 +165,34 @@ export default function Dashboard() {
     : 0
 
   // Max drawdown
-  const maxDrawdown = (() => {
-    let peak = initialBalance, maxDD = 0, running = initialBalance
-    closedTrades.forEach(t => {
-      running += (t.pnl || 0)
-      if (running > peak) peak = running
-      const dd = peak - running
-      if (dd > maxDD) maxDD = dd
-    })
-    return maxDD
-  })()
+  let _ddPeak = initialBalance, _maxDD = 0, _ddRun = initialBalance
+  closedTrades.forEach(t => {
+    _ddRun += (t.pnl || 0)
+    if (_ddRun > _ddPeak) _ddPeak = _ddRun
+    const dd = _ddPeak - _ddRun
+    if (dd > _maxDD) _maxDD = dd
+  })
+  const maxDrawdown = _maxDD
 
   // Win/loss streaks
-  const { maxWinStreak, maxLossStreak } = (() => {
-    let maxW = 0, maxL = 0, curW = 0, curL = 0
-    closedTrades.forEach(t => {
-      if (t.result === 'WIN') { curW++; curL = 0; if (curW > maxW) maxW = curW }
-      else if (t.result === 'LOSS') { curL++; curW = 0; if (curL > maxL) maxL = curL }
-    })
-    return { maxWinStreak: maxW, maxLossStreak: maxL }
-  })()
+  let _maxW = 0, _maxL = 0, _curW = 0, _curL = 0
+  closedTrades.forEach(t => {
+    if (t.result === 'WIN') { _curW++; _curL = 0; if (_curW > _maxW) _maxW = _curW }
+    else if (t.result === 'LOSS') { _curL++; _curW = 0; if (_curL > _maxL) _maxL = _curL }
+  })
+  const maxWinStreak = _maxW
+  const maxLossStreak = _maxL
 
   const selSessData = sessions.find(s => s.id === selectedSession)
   const initialBalance = selectedSession === 'all'
     ? (sessions.length > 0 ? parseFloat(sessions[0]?.capital || 0) : 0)
     : parseFloat(selSessData?.capital || 0)
 
-  const equityPoints = (() => {
-    let running = initialBalance
-    return [{ x: 0, y: running }, ...closedTrades.map((t, i) => {
-      running += (t.pnl || 0)
-      return { x: i + 1, y: running }
-    })]
-  })()
+  let _eqRun = initialBalance
+  const equityPoints = [{ x: 0, y: _eqRun }, ...closedTrades.map((t, i) => {
+    _eqRun += (t.pnl || 0)
+    return { x: i + 1, y: _eqRun }
+  })]
 
   const buildPath = (points) => {
     if (points.length < 2) return ''
