@@ -1175,9 +1175,10 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
       try{price=cr.series.coordinateToPrice(y)}catch{}
       if(price==null||isNaN(price)) return
       // Move line visually during drag
+      const ds=dragState.current; if(!ds) return
       setLines(prev=>prev.map(l=>{
         const id=l.ordId||l.posId
-        return id===dragState.current.posId&&l.type===dragState.current.type
+        return id===ds.posId&&l.type===ds.type
           ? {...l,y:Math.round(y)}
           : l
       }))
