@@ -354,7 +354,7 @@ export default function Dashboard() {
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
               {sessions.map(session => (
-                <div key={session.id} style={background:'rgba(0,20,60,0.35)',border:'1px solid rgba(0,120,255,0.5)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}>
+                <div key={session.id} style={{background:'rgba(0,20,60,0.35)',border:'1px solid rgba(0,120,255,0.5)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
                     <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
@@ -407,7 +407,7 @@ export default function Dashboard() {
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
               {sessions.map(session => (
-                <div key={session.id} style={background:'rgba(0,20,60,0.35)',border:'1px solid rgba(0,120,255,0.5)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}>
+                <div key={session.id} style={{background:'rgba(0,20,60,0.35)',border:'1px solid rgba(0,120,255,0.5)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
                     <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
