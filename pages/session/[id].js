@@ -1,7 +1,7 @@
 import dynamic from 'next/dynamic'
 
 const SessionInner = dynamic(
-  () => import('../../components/SessionInner'),
+  () => import('../../components/_SessionInner'),
   { ssr: false, loading: () => null }
 )
 
