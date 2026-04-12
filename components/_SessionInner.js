@@ -65,6 +65,7 @@ export default function SessionPage(){
   // Pending order preview (before confirm)
   const [preview,     setPreview]     = useState(null)  // {pair,side,entry,sl,tp,lots,slPips,tpPips}
   const [ctxMenu,     setCtxMenu]     = useState(null)  // {x,y,price,pair}
+  const [closeModal,  setCloseModal]  = useState(null)  // {posId,pair,pos}
   const draggingRef      = useRef(null)  // {posId,pair,type:'sl'|'tp',pos}
   const closePositionRef    = useRef(null)
   const checkSLTPRef        = useRef(null)
@@ -206,15 +207,19 @@ export default function SessionPage(){
       if(clickPrice==null||isNaN(clickPrice)) return
       // Find if click is near a SL or TP line of any open position
       const ps=pairState.current[pair]; if(!ps?.positions?.length) return
-      const threshold=clickPrice*0.0003 // ~3 pips tolerance
+      // Use 10 pip threshold for easy dragging
+      const pipSz = pair?.includes('JPY') ? 0.01 : 0.0001
+      const threshold = pipSz * 10
       for(const pos of ps.positions){
         if(Math.abs(clickPrice-pos.sl)<threshold){
           draggingRef.current={posId:pos.id,pair,type:'sl',pos:{...pos}}
-          e.preventDefault(); return
+          el.style.cursor='ns-resize'
+          e.preventDefault(); e.stopPropagation(); return
         }
         if(Math.abs(clickPrice-pos.tp)<threshold){
           draggingRef.current={posId:pos.id,pair,type:'tp',pos:{...pos}}
-          e.preventDefault(); return
+          el.style.cursor='ns-resize'
+          e.preventDefault(); e.stopPropagation(); return
         }
       }
     })
@@ -252,6 +257,7 @@ export default function SessionPage(){
         }
       }
       draggingRef.current=null
+      el.style.cursor='default'
     })
 
     loadPair(pair)
@@ -732,7 +738,7 @@ export default function SessionPage(){
                       <td style={{...s.td,color:'#1E90FF66'}}>{fmtPx(pos.tp,pos.pair)}</td>
                       <td style={s.td}>{pos.lots}</td>
                       <td style={{...s.td,color:pnlColor(pnl),fontWeight:700}}>{fmtPnl(pnl)}</td>
-                      <td style={s.td}><button style={s.closeBtn} onClick={()=>closePosition(pos.id)}>✕</button></td>
+                      <td style={s.td}><button style={s.closeBtn} onClick={()=>setCloseModal({posId:pos.id,pair:activePair,pos})}>✕</button></td>
                     </tr>
                   )
                 })}
@@ -892,6 +898,36 @@ export default function SessionPage(){
         />
       )}
 
+      {/* CLOSE POSITION MODAL */}
+      {closeModal&&mounted&&(
+        <CloseModal
+          modal={closeModal}
+          currentPrice={currentPrice}
+          onClose={()=>setCloseModal(null)}
+          onConfirm={(lotsToClose)=>{
+            const ps=pairState.current[closeModal.pair]
+            const pos=ps?.positions?.find(p=>p.id===closeModal.posId)
+            if(!pos||!currentPrice) return
+            const pnl=calcPnl(pos.side,pos.entry,currentPrice,lotsToClose,closeModal.pair)
+            const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
+            const rrReal=pos.slPips>0?pnl/(pos.slPips*lotsToClose*10):0
+            if(lotsToClose>=pos.lots){
+              // Full close
+              closePosition(pos.id,'MANUAL',closeModal.pair,currentPrice)
+            } else {
+              // Partial close
+              const remaining=parseFloat((pos.lots-lotsToClose).toFixed(2))
+              ps.trades=[...ps.trades,{...pos,lots:lotsToClose,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL'}]
+              pos.lots=remaining
+              ps.positions=[...ps.positions]
+              setBalance(b=>b+pnl)
+              setTick(t=>t+1)
+            }
+            setCloseModal(null)
+          }}
+        />
+      )}
+
       <style>{css}</style>
     </div>
   )
@@ -1011,3 +1047,51 @@ const css=`
   button:not(:disabled):hover{opacity:0.82}
   button:disabled{opacity:0.3;cursor:not-allowed!important}
 `
+
+// ─── Close / Partial Close Modal ─────────────────────────────────────────────
+function CloseModal({modal,currentPrice,onClose,onConfirm}){
+  const {pos,pair}=modal
+  const isBuy=pos.side==='BUY'
+  const isJpyPair=pair?.includes('JPY')
+  const PRESETS=[25,50,75,100]
+  const [pct,setPct]=useState(100)
+  const lotsToClose=parseFloat((pos.lots*pct/100).toFixed(2))
+  const estPnl=calcPnl(pos.side,pos.entry,currentPrice||pos.entry,lotsToClose,pair)
+  const fmtP=(p)=>p?.toFixed(isJpyPair?3:5)??'—'
+  const pnlCol=estPnl>=0?'rgba(38,166,154,0.9)':'rgba(239,83,80,0.9)'
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
+      <div style={{background:'#030f20',border:'1px solid #0d2040',borderRadius:14,width:380,boxShadow:'0 20px 60px #000000CC',overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
+        <div style={{background:isBuy?'rgba(30,144,255,0.1)':'rgba(239,83,80,0.1)',borderBottom:'1px solid #0d2040',padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div>
+            <span style={{fontSize:13,fontWeight:800,color:isBuy?'#1E90FF':'#ef5350'}}>{pos.side} — {pair}</span>
+            <div style={{fontSize:9,color:'#4a6080',marginTop:2}}>Entrada: {fmtP(pos.entry)} · {pos.lots} Lots</div>
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'#4a6080',cursor:'pointer',fontSize:16}}>✕</button>
+        </div>
+        <div style={{padding:'20px'}}>
+          <div style={{background:estPnl>=0?'rgba(38,166,154,0.07)':'rgba(239,83,80,0.07)',border:`1px solid ${estPnl>=0?'rgba(38,166,154,0.2)':'rgba(239,83,80,0.2)'}`,borderRadius:8,padding:'12px',textAlign:'center',marginBottom:18}}>
+            <div style={{fontSize:9,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>P&L ESTIMADO</div>
+            <div style={{fontSize:20,fontWeight:800,color:pnlCol}}>{estPnl>=0?'+':''}{estPnl.toFixed(2)}</div>
+            <div style={{fontSize:8,color:'#2a5070',marginTop:2}}>precio actual: {fmtP(currentPrice)}</div>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:8,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:8}}>PORCENTAJE A CERRAR</div>
+            <div style={{display:'flex',gap:6,marginBottom:10}}>
+              {PRESETS.map(p=>(
+                <button key={p} style={{flex:1,padding:'7px 0',borderRadius:6,border:pct===p?'1px solid rgba(30,144,255,0.5)':'1px solid #0d2040',background:pct===p?'rgba(30,144,255,0.12)':'rgba(3,8,16,0.6)',color:pct===p?'#1E90FF':'#4a6080',fontSize:10,fontWeight:800,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}} onClick={()=>setPct(p)}>{p}%</button>
+              ))}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              <div><div style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>LOTS A CERRAR</div><div style={{display:'flex',alignItems:'center',background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:6,padding:'0 10px',height:34}}><span style={{fontSize:11,fontWeight:700,color:'#c0d0e8'}}>{lotsToClose}</span></div></div>
+              <div><div style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>LOTS RESTANTES</div><div style={{display:'flex',alignItems:'center',background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:6,padding:'0 10px',height:34}}><span style={{fontSize:11,fontWeight:700,color:'#c0d0e8'}}>{Math.max(0,parseFloat((pos.lots-lotsToClose).toFixed(2)))}</span></div></div>
+            </div>
+          </div>
+          <button onClick={()=>onConfirm(lotsToClose)} style={{width:'100%',background:estPnl>=0?'linear-gradient(135deg,rgba(38,166,154,0.8),rgba(20,100,90,0.8))':'linear-gradient(135deg,rgba(239,83,80,0.8),rgba(150,40,40,0.8))',border:'none',borderRadius:8,padding:'12px',fontSize:12,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>
+            {pct===100?'Cerrar posición':'Cerrar parcial'} · {estPnl>=0?'+':''}{estPnl.toFixed(2)}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
