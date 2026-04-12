@@ -65,7 +65,8 @@ function makeChartOptions(w, h) {
       timeVisible:  true,
       secondsVisible: false,
       rightOffset:  12,
-      barSpacing:   8,
+      barSpacing:   6,
+      minBarSpacing: 0.5,
       fixLeftEdge:  true,
       lockVisibleTimeRangeOnResize: true,
     },
@@ -116,6 +117,7 @@ export default function SessionPage() {
 
   // ── Session / auth ──────────────────────────────────────────────────────
   const [session,   setSession]   = useState(null)
+  const sessionRef  = useRef(null)
   const [loading,   setLoading]   = useState(true)
   const [userId,    setUserId]    = useState(null)
 
@@ -173,6 +175,7 @@ export default function SessionPage() {
       .then(({ data }) => {
         if (!data) { setLoading(false); return }
         setSession(data)
+        sessionRef.current = data
         setBalance(parseFloat(data.balance))
         const primaryPair = data.pair || 'EUR/USD'
         const initTf = data.timeframe || 'H1'
@@ -241,17 +244,18 @@ export default function SessionPage() {
   // ── Data load ──────────────────────────────────────────────────────────
 
   const loadPairData = useCallback(async (pair) => {
-    if (!session) return
+    const sess = sessionRef.current
+    if (!sess) return
     if (pairStateRef.current[pair]?.ready) return  // already loaded
 
     const cleanPair = pair.replace('/', '')
 
     // Replay start = session date_from
-    const replayStartTs = session.date_from
+    const replayStartTs = sess.date_from
       ? Math.floor(new Date(session.date_from).getTime() / 1000)
       : Math.floor(new Date('2023-01-01').getTime() / 1000)
-    const toTs = session.date_to
-      ? Math.floor(new Date(session.date_to + 'T23:59:59').getTime() / 1000)
+    const toTs = sess.date_to
+      ? Math.floor(new Date(sess.date_to + 'T23:59:59').getTime() / 1000)
       : Math.floor(new Date('2023-12-31T23:59:59').getTime() / 1000)
 
     // Context = 6 months before replay start
