@@ -34,7 +34,7 @@ function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',fontFamily:"'Montserrat',sans-serif"}}
       onClick={onClose}>
-      <div style={{background:'rgba(8,14,26,0.55)',border:'1px solid rgba(255,255,255,0.13)',borderRadius:18,width:440,boxShadow:'0 20px 60px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.12)',overflow:'hidden',backdropFilter:'blur(32px) saturate(200%)',WebkitBackdropFilter:'blur(32px) saturate(200%)'}}
+      <div style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:22,boxShadow:'0 20px 60px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.3),inset 0 -1px 0 rgba(255,255,255,0.05)',backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',width:440,overflow:'hidden'}}
         onClick={e=>e.stopPropagation()}>
 
         {/* Header */}
@@ -133,7 +133,7 @@ function Field({label,icon,value,onChange,readOnly,step,color}){
   return(
     <div>
       <div style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>{label}</div>
-      <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'0 10px',height:34}}>
+      <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.18)',borderRadius:10,padding:'0 10px',height:34}}>
         <span style={{fontSize:10,color:'#2a5070',marginRight:6,flexShrink:0}}>{icon}</span>
         <input
           type="number" step={step||"any"} value={value} readOnly={readOnly}
