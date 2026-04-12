@@ -183,29 +183,27 @@ export default function SessionPage() {
 
   // ── Mount chart via useEffect (stable, no ref callback re-fire) ────────────
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      activePairs.forEach(async (pair) => {
-        if (chartMap.current[pair]) return
-        const el = document.getElementById(`chart-${pair.replace('/','')}`)
-        if (!el) return
-        const lc = await import('lightweight-charts')
-        if (chartMap.current[pair]) return // mounted while awaiting
-        const chart  = lc.createChart(el, chartOpts(el.clientWidth, el.clientHeight))
-        const series = chart.addSeries(lc.CandlestickSeries, {
-          upColor:'#2962FF', downColor:'#ef5350', borderVisible:false,
-          wickUpColor:'#2962FF', wickDownColor:'#ef5350',
-        })
-        chartMap.current[pair] = { chart, series, prevCount:0 }
-        new ResizeObserver(entries => {
-          const {width,height} = entries[0].contentRect
-          if (chartMap.current[pair]) chart.resize(width, height)
-        }).observe(el)
-        loadPair(pair)
-      })
-    }, 60)
-    return () => clearTimeout(t)
-  }, [activePairs, loadPair])
+  // mountPair: stable function stored in ref so JSX ref callback never changes
+  const mountPairRef = useRef(null)
+  mountPairRef.current = async (pair, el) => {
+    if (chartMap.current[pair]) return
+    const lc = await import('lightweight-charts')
+    if (chartMap.current[pair]) return
+    const chart  = lc.createChart(el, chartOpts(el.clientWidth, el.clientHeight))
+    const series = chart.addSeries(lc.CandlestickSeries, {
+      upColor:'#2962FF', downColor:'#ef5350', borderVisible:false,
+      wickUpColor:'#2962FF', wickDownColor:'#ef5350',
+    })
+    chartMap.current[pair] = { chart, series, prevCount:0 }
+    new ResizeObserver(entries => {
+      const {width,height} = entries[0].contentRect
+      if (chartMap.current[pair]) chart.resize(width, height)
+    }).observe(el)
+    loadPair(pair)
+  }
+  const mountPair = useCallback((pair, el) => {
+    mountPairRef.current(pair, el)
+  }, [])
 
   // ── Render chart ────────────────────────────────────────────────────────────
 
@@ -470,7 +468,12 @@ export default function SessionPage() {
         {activePairs.map(pair=>(
           <div
             key={pair}
-            id={`chart-${pair.replace('/','')}`}
+            ref={el=>{
+              if(el && !chartMap.current[pair]) {
+                divMap.current[pair]=el
+                mountPair(pair,el)
+              }
+            }}
             style={{...s.chart, display:pair===activePair?'block':'none'}}
           />
         ))}
