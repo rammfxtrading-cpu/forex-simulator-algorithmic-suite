@@ -128,10 +128,10 @@ export default function SessionPage() {
   const [addingPair,   setAddingPair]   = useState(false) // dropdown open
 
   // Per-pair data: Map<pair, { engine, candles, ready, tf, positions, closedTrades }>
-  const pairStateRef = useRef({})  // mutable, not reactive
-  const chartContainerRef = useRef(null)
-  // Per-pair chart refs: Map<pair, { chart, series, prevCount }>
-  const chartRefsMap = useRef({})
+  const pairStateRef  = useRef({})   // mutable, not reactive
+  const chartDivsRef  = useRef({})   // { pair: domElement }
+  const chartRefsMap  = useRef({})   // { pair: { chart, series, eqSeries, prevCount } }
+  const chartWrapRef  = useRef(null) // outer wrapper div
 
   // ── Replay state (reflect active pair's engine) ─────────────────────────
   const [isPlaying,   setIsPlaying]   = useState(false)
@@ -186,59 +186,41 @@ export default function SessionPage() {
       })
   }, [id])
 
-  // ── Chart lifecycle: mount/unmount on tab switch ───────────────────────
+  // ── Chart lifecycle: one div per pair, show/hide on tab switch ──────────
 
-  // We keep ONE chart container div; when pair changes we destroy old chart
-  // and create new one (or restore from map if already initialized)
+  const initChartForPair = useCallback((pair, el) => {
+    if (chartRefsMap.current[pair]) return  // already initialized
+    const chart  = createChart(el, makeChartOptions(el.clientWidth, el.clientHeight))
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor:       '#2962FF',
+      downColor:     '#ef5350',
+      borderVisible: false,
+      wickUpColor:   '#2962FF',
+      wickDownColor: '#ef5350',
+    })
+    const eqSeries = chart.addSeries(LineSeries, {
+      color: '#1E90FF44', lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      priceScaleId: 'equity', visible: false,
+    })
+    chartRefsMap.current[pair] = { chart, series, eqSeries, prevCount: 0 }
 
-  useEffect(() => {
-    if (!activePair || !chartContainerRef.current) return
-
-    const el = chartContainerRef.current
-
-    // If chart already exists for this pair, just re-attach (nothing to do —
-    // the div already holds the LWC canvas). But if not, create it.
-    if (!chartRefsMap.current[activePair]) {
-      const chart  = createChart(el, makeChartOptions(el.clientWidth, el.clientHeight))
-      const series = chart.addSeries(CandlestickSeries, {
-        upColor:             '#2962FF',
-        downColor:           '#ef5350',
-        borderVisible:       false,
-        wickUpColor:         '#2962FF',
-        wickDownColor:       '#ef5350',
-      })
-      const eqSeries = chart.addSeries(LineSeries, {
-        color:     '#1E90FF66',
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        priceScaleId: 'equity',
-        visible: false,
-      })
-      chartRefsMap.current[activePair] = { chart, series, eqSeries, prevCount: 0 }
-
-      // Trigger data load for this pair
-      loadPairData(activePair)
-    } else {
-      // Chart existed — just re-render with current engine state
-      const ps = pairStateRef.current[activePair]
-      if (ps?.engine) renderChart(activePair, ps.engine, true)
-    }
-
-    // ResizeObserver
+    // ResizeObserver per chart div
     const ro = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect
-      const cr = chartRefsMap.current[activePair]
-      if (cr) cr.chart.resize(width, height)
+      chart.resize(width, height)
     })
     ro.observe(el)
 
-    return () => {
-      ro.disconnect()
-      // Note: we do NOT destroy the chart on unmount here —
-      // we preserve it so switching back to a tab is instant.
-      // Charts are only destroyed when the pair tab is closed.
-    }
-  }, [activePair])
+    loadPairData(pair)
+  }, [loadPairData])
+
+  // Called by the ref callback on each chart div
+  const setChartDiv = useCallback((pair, el) => {
+    if (!el) return
+    chartDivsRef.current[pair] = el
+    initChartForPair(pair, el)
+  }, [initChartForPair])
 
   // ── Data load ──────────────────────────────────────────────────────────
 
@@ -711,8 +693,14 @@ export default function SessionPage() {
       </div>
 
       {/* ── CHART ──────────────────────────────────────────────────── */}
-      <div style={s.chartWrap}>
-        <div ref={chartContainerRef} style={s.chart}/>
+      <div ref={chartWrapRef} style={s.chartWrap}>
+        {activePairs.map(pair => (
+          <div
+            key={pair}
+            ref={el => setChartDiv(pair, el)}
+            style={{ ...s.chart, display: pair === activePair ? 'block' : 'none' }}
+          />
+        ))}
         {!dataReady && (
           <div style={s.chartOverlay}>
             <Spinner />
