@@ -65,7 +65,10 @@ export default function SessionPage(){
   // Pending order preview (before confirm)
   const [preview,     setPreview]     = useState(null)  // {pair,side,entry,sl,tp,lots,slPips,tpPips}
   const [ctxMenu,     setCtxMenu]     = useState(null)  // {x,y,price,pair}
-  const draggingRef   = useRef(null)  // {posId,pair,type:'sl'|'tp',pos}
+  const draggingRef      = useRef(null)  // {posId,pair,type:'sl'|'tp',pos}
+  const closePositionRef    = useRef(null)
+  const checkSLTPRef        = useRef(null)
+  const checkLimitOrdersRef = useRef(null)
   // Order modal
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
 
@@ -149,8 +152,8 @@ export default function SessionPage(){
       engine.load(all); engine.seekToTime(replayTs); engine.speed=speedRef.current
       engine.onTick=()=>{
         updateChart(pair,engine,false)
-        checkSLTP(pair,engine)
-        checkLimitOrders(pair,engine)
+        checkSLTPRef.current?.(pair,engine)
+        checkLimitOrdersRef.current?.(pair,engine)
         if(pair===activePairRef.current){setCurrentTime(engine.currentTime);setProgress(Math.round(engine.progress*100))}
       }
       engine.onEnd=()=>{if(pair===activePairRef.current)setIsPlaying(false)}
@@ -323,6 +326,11 @@ export default function SessionPage(){
     }
   },[activePair,currentPrice,currentTime,id])
 
+  // Keep refs always pointing to latest functions
+  closePositionRef.current    = closePosition
+  checkSLTPRef.current        = checkSLTP
+  checkLimitOrdersRef.current = checkLimitOrders
+
   // ── Limit order helpers ──────────────────────────────────────────────────────
 
   // ── Position price lines (entry, SL, TP) ────────────────────────────────────
@@ -456,8 +464,8 @@ export default function SessionPage(){
       else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl})
     })
     // Close outside forEach to avoid mutation during iteration
-    toClose.forEach(({id,reason,price})=>closePosition(id,reason,pair,price))
-  },[closePosition])
+    toClose.forEach(({id,reason,price})=>closePositionRef.current(id,reason,pair,price))
+  },[])
 
   const checkLimitOrders=useCallback((pair,engine)=>{
     const ps=pairState.current[pair]; if(!ps?.orders?.length) return
