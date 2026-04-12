@@ -1,127 +1,141 @@
 import { useState } from 'react'
 
-// ─── Order Modal (FX Replay style) ───────────────────────────────────────────
-function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
+// ─── Order Modal — Fintech / Algorithmic Suite ────────────────────────────────
+export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
   const {side,entry,pair,isLimit}=modal
   const isBuy=side==='BUY'
-  const isJpyPair=pair?.includes('JPY')
-  const mult=isJpyPair?100:10000
-
+  const isJpy=pair?.includes('JPY')
+  const mult=isJpy?100:10000
   const RISK_PRESETS=[0.3,0.5,0.7,1,2,3]
-  const [riskPct,   setRiskPct]   = useState(1)
-  const [slPips,    setSlPips]    = useState(10)
-  const [tpPips,    setTpPips]    = useState(20)
-  const [autoBE,    setAutoBE]    = useState(false)
+  const [riskPct,setRiskPct]=useState(1)
+  const [slPips,setSlPips]=useState(10)
+  const [tpPips,setTpPips]=useState(20)
+  const [autoBE,setAutoBE]=useState(false)
 
-  // Calculations
-  const riskAmt   = parseFloat((balance * riskPct / 100).toFixed(2))
-  const pipVal    = 10  // $10 per pip per standard lot
-  const lots      = slPips>0 ? parseFloat((riskAmt/(slPips*pipVal)).toFixed(2)) : 0.01
-  const estLoss   = (slPips*lots*pipVal).toFixed(2)
-  const estProfit = (tpPips*lots*pipVal).toFixed(2)
-  const rrRatio   = slPips>0 ? (tpPips/slPips).toFixed(1) : 0
-
+  const riskAmt=parseFloat((balance*riskPct/100).toFixed(2))
+  const pipVal=10
+  const lots=slPips>0?parseFloat((riskAmt/(slPips*pipVal)).toFixed(2)):0.01
+  const estLoss=(slPips*lots*pipVal).toFixed(2)
+  const estProfit=(tpPips*lots*pipVal).toFixed(2)
+  const rrRatio=slPips>0?(tpPips/slPips).toFixed(1):0
   const pipSz=1/mult
-  const sl=isBuy ? entry-slPips*pipSz : entry+slPips*pipSz
-  const tp=isBuy ? entry+tpPips*pipSz : entry-tpPips*pipSz
-
-  const fmtP=(p)=>p?.toFixed(isJpyPair?3:5)??'—'
-
-  const handleConfirm=()=>{
-    onConfirm({lots,sl,tp,slPips,tpPips,rr:parseFloat(rrRatio),estLoss,estProfit,riskPct,riskAmt})
-  }
+  const sl=isBuy?entry-slPips*pipSz:entry+slPips*pipSz
+  const tp=isBuy?entry+tpPips*pipSz:entry-tpPips*pipSz
+  const fmtP=p=>p?.toFixed(isJpy?3:5)??'—'
+  const accentColor=isBuy?'#1E90FF':'#ef5350'
+  const accentRgb=isBuy?'30,144,255':'239,83,80'
 
   return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',fontFamily:"'Montserrat',sans-serif"}}
-      onClick={onClose}>
-      <div style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:22,boxShadow:'0 20px 60px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.3),inset 0 -1px 0 rgba(255,255,255,0.05)',backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',width:440,overflow:'hidden'}}
-        onClick={e=>e.stopPropagation()}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
+      <div style={{
+        background:'rgba(255,255,255,0.07)',
+        border:'1px solid rgba(255,255,255,0.18)',
+        borderRadius:24,width:420,
+        boxShadow:`0 32px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(${accentRgb},0.15),inset 0 1px 0 rgba(255,255,255,0.25)`,
+        backdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
+        WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
+        overflow:'hidden',
+      }} onClick={e=>e.stopPropagation()}>
 
         {/* Header */}
-        <div style={{background:isBuy?'rgba(30,144,255,0.12)':'rgba(239,83,80,0.12)',borderBottom:'1px solid #0d2040',padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <span style={{fontSize:13,fontWeight:800,color:isBuy?'#1E90FF':'#ef5350',letterSpacing:0.5}}>
-            {isLimit?(isBuy?'Buy Limit':'Sell Limit'):(isBuy?'Buy Market':'Sell Market')}
-          </span>
-          <button onClick={onClose} style={{background:'none',border:'none',color:'#4a6080',cursor:'pointer',fontSize:16,fontFamily:"'Montserrat',sans-serif"}}>✕</button>
+        <div style={{padding:'18px 22px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:accentColor,boxShadow:`0 0 10px ${accentColor}`}}/>
+            <span style={{fontSize:14,fontWeight:900,color:'#fff',letterSpacing:0.5}}>{isLimit?(isBuy?'BUY LIMIT':'SELL LIMIT'):(isBuy?'BUY MARKET':'SELL MARKET')}</span>
+            <span style={{fontSize:11,color:'rgba(255,255,255,0.4)',fontWeight:600}}>{pair}</span>
+          </div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:8,color:'rgba(255,255,255,0.5)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>✕</button>
         </div>
 
-        <div style={{padding:'20px'}}>
+        <div style={{padding:'16px 22px 20px'}}>
 
-          {/* Estimated P&L */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:18}}>
-            <div style={{background:'rgba(239,83,80,0.07)',border:'1px solid rgba(239,83,80,0.2)',borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
-              <div style={{fontSize:8,fontWeight:700,color:'rgba(239,83,80,0.6)',letterSpacing:1,marginBottom:3}}>PÉRDIDA ESTIMADA</div>
-              <div style={{fontSize:16,fontWeight:800,color:'rgba(239,83,80,0.9)'}}>-${estLoss}</div>
+          {/* P&L estimado — big numbers */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
+            <div style={{background:'rgba(239,83,80,0.08)',border:'1px solid rgba(239,83,80,0.2)',borderRadius:14,padding:'12px 14px',position:'relative',overflow:'hidden'}}>
+              <div style={{position:'absolute',inset:0,background:'linear-gradient(135deg,rgba(239,83,80,0.05),transparent)',borderRadius:14}}/>
+              <div style={{fontSize:8,fontWeight:700,color:'rgba(239,83,80,0.6)',letterSpacing:1.5,marginBottom:4}}>PÉRDIDA MÁX</div>
+              <div style={{fontSize:20,fontWeight:900,color:'rgba(239,83,80,0.95)',letterSpacing:-0.5}}>-${estLoss}</div>
             </div>
-            <div style={{background:'rgba(38,166,154,0.07)',border:'1px solid rgba(38,166,154,0.2)',borderRadius:8,padding:'10px 14px',textAlign:'center'}}>
-              <div style={{fontSize:8,fontWeight:700,color:'rgba(38,166,154,0.6)',letterSpacing:1,marginBottom:3}}>GANANCIA ESTIMADA</div>
-              <div style={{fontSize:16,fontWeight:800,color:'rgba(38,166,154,0.9)'}}>+${estProfit}</div>
+            <div style={{background:'rgba(38,166,154,0.08)',border:'1px solid rgba(38,166,154,0.2)',borderRadius:14,padding:'12px 14px',position:'relative',overflow:'hidden'}}>
+              <div style={{position:'absolute',inset:0,background:'linear-gradient(135deg,rgba(38,166,154,0.05),transparent)',borderRadius:14}}/>
+              <div style={{fontSize:8,fontWeight:700,color:'rgba(38,166,154,0.6)',letterSpacing:1.5,marginBottom:4}}>GANANCIA MÁX</div>
+              <div style={{fontSize:20,fontWeight:900,color:'rgba(38,166,154,0.95)',letterSpacing:-0.5}}>+${estProfit}</div>
             </div>
           </div>
 
           {/* Risk % presets */}
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:8,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:6}}>RIESGO % DEL BALANCE</div>
-            <div style={{display:'flex',gap:4,marginBottom:8}}>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:8}}>RIESGO DEL BALANCE</div>
+            <div style={{display:'flex',gap:4,marginBottom:10,background:'rgba(255,255,255,0.04)',borderRadius:12,padding:4}}>
               {RISK_PRESETS.map(r=>(
-                <button key={r}
-                  style={{flex:1,padding:'5px 0',borderRadius:5,border:riskPct===r?'1px solid rgba(30,144,255,0.5)':'1px solid #0d2040',background:riskPct===r?'rgba(30,144,255,0.2)':'rgba(255,255,255,0.04)',color:riskPct===r?'#1E90FF':'#6080a0',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}
-                  onClick={()=>setRiskPct(r)}>{r}%</button>
+                <button key={r} onClick={()=>setRiskPct(r)} style={{
+                  flex:1,padding:'6px 0',borderRadius:9,border:'none',
+                  background:riskPct===r?accentColor:'transparent',
+                  color:riskPct===r?'#fff':'rgba(255,255,255,0.4)',
+                  fontSize:10,fontWeight:800,cursor:'pointer',
+                  fontFamily:"'Montserrat',sans-serif",
+                  boxShadow:riskPct===r?`0 2px 12px rgba(${accentRgb},0.4)`:'none',
+                  transition:'all .15s',
+                }}>{r}%</button>
               ))}
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              <Field label="RIESGO %" icon="%" value={riskPct} onChange={v=>setRiskPct(Math.max(0.01,Math.min(100,parseFloat(v)||1)))} step="0.1"/>
-              <Field label="RIESGO $" icon="$" value={riskAmt} readOnly/>
+              <Field label="RIESGO %" value={riskPct} onChange={v=>setRiskPct(Math.max(0.01,parseFloat(v)||1))} step="0.1" accent={accentColor}/>
+              <Field label="RIESGO $" value={riskAmt} readOnly accent={accentColor}/>
             </div>
           </div>
 
-          {/* Position size & Entry */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
-            <Field label="TAMAÑO (LOTS)" icon="⬡" value={lots} readOnly/>
-            <Field label="ENTRADA" icon="⊙" value={fmtP(entry)} readOnly/>
+          {/* Size & Entry */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
+            <Field label="LOTS" value={lots} readOnly accent={accentColor}/>
+            <Field label="ENTRADA" value={fmtP(entry)} readOnly accent={accentColor}/>
           </div>
 
           {/* TP */}
-          <div style={{marginBottom:12}}>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
-              <div style={{width:12,height:12,borderRadius:2,background:'rgba(38,166,154,0.5)',border:'1px solid rgba(38,166,154,0.6)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                <div style={{width:6,height:6,background:'rgba(38,166,154,0.9)',borderRadius:1}}/>
+          <div style={{background:'rgba(38,166,154,0.06)',border:'1px solid rgba(38,166,154,0.15)',borderRadius:14,padding:'12px 14px',marginBottom:8}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <div style={{width:6,height:6,borderRadius:'50%',background:'rgba(38,166,154,0.8)'}}/>
+                <span style={{fontSize:9,fontWeight:800,color:'rgba(38,166,154,0.9)',letterSpacing:1}}>TAKE PROFIT</span>
               </div>
-              <span style={{fontSize:9,fontWeight:700,color:'rgba(38,166,154,0.8)',letterSpacing:0.5}}>TAKE PROFIT</span>
-              <span style={{fontSize:8,color:'rgba(38,166,154,0.5)',marginLeft:'auto'}}>R:R {rrRatio}</span>
+              <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.3)'}}>R:R {rrRatio}</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              <Field label="PRECIO" icon="⊙" value={fmtP(tp)} readOnly color="rgba(38,166,154,0.7)"/>
-              <Field label="PIPS" icon="≡" value={tpPips} onChange={v=>setTpPips(Math.max(1,parseInt(v)||1))} step="1"/>
+              <Field label="PRECIO" value={fmtP(tp)} readOnly accent="rgba(38,166,154,0.8)"/>
+              <Field label="PIPS" value={tpPips} onChange={v=>setTpPips(Math.max(1,parseInt(v)||1))} step="1" accent="rgba(38,166,154,0.8)"/>
             </div>
           </div>
 
           {/* SL */}
-          <div style={{marginBottom:16}}>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
-              <div style={{width:12,height:12,borderRadius:2,background:'rgba(239,83,80,0.5)',border:'1px solid rgba(239,83,80,0.6)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                <div style={{width:6,height:6,background:'rgba(239,83,80,0.9)',borderRadius:1}}/>
-              </div>
-              <span style={{fontSize:9,fontWeight:700,color:'rgba(239,83,80,0.8)',letterSpacing:0.5}}>STOP LOSS</span>
+          <div style={{background:'rgba(239,83,80,0.06)',border:'1px solid rgba(239,83,80,0.15)',borderRadius:14,padding:'12px 14px',marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+              <div style={{width:6,height:6,borderRadius:'50%',background:'rgba(239,83,80,0.8)'}}/>
+              <span style={{fontSize:9,fontWeight:800,color:'rgba(239,83,80,0.9)',letterSpacing:1}}>STOP LOSS</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              <Field label="PRECIO" icon="⊙" value={fmtP(sl)} readOnly color="rgba(239,83,80,0.7)"/>
-              <Field label="PIPS" icon="≡" value={slPips} onChange={v=>setSlPips(Math.max(1,parseInt(v)||1))} step="1"/>
+              <Field label="PRECIO" value={fmtP(sl)} readOnly accent="rgba(239,83,80,0.8)"/>
+              <Field label="PIPS" value={slPips} onChange={v=>setSlPips(Math.max(1,parseInt(v)||1))} step="1" accent="rgba(239,83,80,0.8)"/>
             </div>
           </div>
 
           {/* Auto BE */}
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:18,cursor:'pointer'}} onClick={()=>setAutoBE(v=>!v)}>
-            <div style={{width:14,height:14,borderRadius:3,border:'1px solid #0d2040',background:autoBE?'rgba(30,144,255,0.3)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>
-              {autoBE&&<span style={{color:'#1E90FF',fontSize:10,lineHeight:1}}>✓</span>}
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,cursor:'pointer'}} onClick={()=>setAutoBE(v=>!v)}>
+            <div style={{width:36,height:20,borderRadius:10,background:autoBE?accentColor:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',position:'relative',transition:'all .2s'}}>
+              <div style={{position:'absolute',top:2,left:autoBE?18:2,width:14,height:14,borderRadius:'50%',background:'#fff',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
             </div>
-            <span style={{fontSize:9,fontWeight:600,color:'#4a6080'}}>Auto Break-Even</span>
+            <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:0.5}}>AUTO BREAK-EVEN</span>
           </div>
 
-          {/* Confirm button */}
-          <button onClick={handleConfirm}
-            style={{width:'100%',background:isBuy?'linear-gradient(135deg,#1E90FF,#0060cc)':'linear-gradient(135deg,#ef5350,#b71c1c)',border:'none',borderRadius:8,padding:'12px',fontSize:12,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:"'Montserrat',sans-serif",boxShadow:isBuy?'0 4px 20px rgba(30,144,255,0.3)':'0 4px 20px rgba(239,83,80,0.3)',letterSpacing:0.5}}>
-            {isLimit?(isBuy?'Colocar Buy Limit':'Colocar Sell Limit'):(isBuy?'Ejecutar Buy':'Ejecutar Sell')}
+          {/* Confirm */}
+          <button onClick={()=>onConfirm({lots,sl,tp,slPips,tpPips,rr:parseFloat(rrRatio),estLoss,estProfit,riskPct,riskAmt})} style={{
+            width:'100%',
+            background:`linear-gradient(135deg,${accentColor},${isBuy?'#0050aa':'#aa1010'})`,
+            border:'none',borderRadius:14,padding:'14px',
+            fontSize:13,fontWeight:900,color:'#fff',cursor:'pointer',
+            fontFamily:"'Montserrat',sans-serif",letterSpacing:0.5,
+            boxShadow:`0 4px 24px rgba(${accentRgb},0.4),inset 0 1px 0 rgba(255,255,255,0.2)`,
+          }}>
+            {isLimit?(isBuy?'▲  Colocar Buy Limit':'▼  Colocar Sell Limit'):(isBuy?'▲  Ejecutar Buy':'▼  Ejecutar Sell')}
           </button>
         </div>
       </div>
@@ -129,20 +143,21 @@ function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
   )
 }
 
-function Field({label,icon,value,onChange,readOnly,step,color}){
+function Field({label,value,onChange,readOnly,step,accent}){
   return(
     <div>
-      <div style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>{label}</div>
-      <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.18)',borderRadius:10,padding:'0 10px',height:34}}>
-        <span style={{fontSize:10,color:'#2a5070',marginRight:6,flexShrink:0}}>{icon}</span>
-        <input
-          type="number" step={step||"any"} value={value} readOnly={readOnly}
+      <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:5}}>{label}</div>
+      <div style={{
+        display:'flex',alignItems:'center',
+        background:'rgba(255,255,255,0.06)',
+        border:`1px solid ${readOnly?'rgba(255,255,255,0.08)':accent||'rgba(255,255,255,0.15)'}`,
+        borderRadius:10,padding:'0 12px',height:36,
+      }}>
+        <input type="number" step={step||'any'} value={value} readOnly={readOnly}
           onChange={e=>onChange&&onChange(e.target.value)}
-          style={{flex:1,background:'none',border:'none',color:color||'#c0d0e8',fontSize:11,fontWeight:700,outline:'none',fontFamily:"'Montserrat',sans-serif",cursor:readOnly?'default':'text'}}
+          style={{flex:1,background:'none',border:'none',color:'#fff',fontSize:12,fontWeight:700,outline:'none',fontFamily:"'Montserrat',sans-serif",cursor:readOnly?'default':'text'}}
         />
       </div>
     </div>
   )
 }
-
-export default OrderModal

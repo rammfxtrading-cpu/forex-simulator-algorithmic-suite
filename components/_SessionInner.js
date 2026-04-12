@@ -1060,42 +1060,97 @@ const css=`
 function CloseModal({modal,currentPrice,onClose,onConfirm}){
   const {pos,pair}=modal
   const isBuy=pos.side==='BUY'
-  const isJpyPair=pair?.includes('JPY')
+  const isJpy=pair?.includes('JPY')
   const PRESETS=[25,50,75,100]
   const [pct,setPct]=useState(100)
   const lotsToClose=parseFloat((pos.lots*pct/100).toFixed(2))
   const estPnl=calcPnl(pos.side,pos.entry,currentPrice||pos.entry,lotsToClose,pair)
-  const fmtP=(p)=>p?.toFixed(isJpyPair?3:5)??'—'
-  const pnlCol=estPnl>=0?'rgba(38,166,154,0.9)':'rgba(239,83,80,0.9)'
+  const fmtP=p=>p?.toFixed(isJpy?3:5)??'—'
+  const isProfit=estPnl>=0
+  const pnlColor=isProfit?'rgba(38,166,154,0.95)':'rgba(239,83,80,0.95)'
+  const accentColor=isBuy?'#1E90FF':'#ef5350'
+  const accentRgb=isBuy?'30,144,255':'239,83,80'
+
   return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
-      <div style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:22,boxShadow:'0 20px 60px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.3),inset 0 -1px 0 rgba(255,255,255,0.05)',backdropFilter:'blur(40px) saturate(250%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(250%) brightness(1.1)',width:380,overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
-        <div style={{background:isBuy?'rgba(30,144,255,0.1)':'rgba(239,83,80,0.1)',borderBottom:'1px solid #0d2040',padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <div>
-            <span style={{fontSize:13,fontWeight:800,color:isBuy?'#1E90FF':'#ef5350'}}>{pos.side} — {pair}</span>
-            <div style={{fontSize:9,color:'#4a6080',marginTop:2}}>Entrada: {fmtP(pos.entry)} · {pos.lots} Lots</div>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
+      <div style={{
+        background:'rgba(255,255,255,0.07)',
+        border:'1px solid rgba(255,255,255,0.18)',
+        borderRadius:24,width:380,
+        boxShadow:'0 32px 80px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.25)',
+        backdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
+        WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
+        overflow:'hidden',
+      }} onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{padding:'18px 22px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:accentColor,boxShadow:`0 0 10px ${accentColor}`}}/>
+            <span style={{fontSize:14,fontWeight:900,color:'#fff'}}>{pos.side} — {pair}</span>
           </div>
-          <button onClick={onClose} style={{background:'none',border:'none',color:'#4a6080',cursor:'pointer',fontSize:16}}>✕</button>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.3)',fontWeight:600}}>{pos.lots}L @ {fmtP(pos.entry)}</span>
+            <button onClick={onClose} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:8,color:'rgba(255,255,255,0.5)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>✕</button>
+          </div>
         </div>
-        <div style={{padding:'20px'}}>
-          <div style={{background:estPnl>=0?'rgba(38,166,154,0.07)':'rgba(239,83,80,0.07)',border:`1px solid ${estPnl>=0?'rgba(38,166,154,0.2)':'rgba(239,83,80,0.2)'}`,borderRadius:8,padding:'12px',textAlign:'center',marginBottom:18}}>
-            <div style={{fontSize:9,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>P&L ESTIMADO</div>
-            <div style={{fontSize:20,fontWeight:800,color:pnlCol}}>{estPnl>=0?'+':''}{estPnl.toFixed(2)}</div>
-            <div style={{fontSize:8,color:'#2a5070',marginTop:2}}>precio actual: {fmtP(currentPrice)}</div>
+
+        <div style={{padding:'16px 22px 20px'}}>
+
+          {/* P&L big */}
+          <div style={{
+            background:isProfit?'rgba(38,166,154,0.08)':'rgba(239,83,80,0.08)',
+            border:`1px solid ${isProfit?'rgba(38,166,154,0.2)':'rgba(239,83,80,0.2)'}`,
+            borderRadius:16,padding:'16px',textAlign:'center',marginBottom:16,
+          }}>
+            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:6}}>P&L ESTIMADO</div>
+            <div style={{fontSize:28,fontWeight:900,color:pnlColor,letterSpacing:-1}}>{estPnl>=0?'+':''}{estPnl.toFixed(2)}</div>
+            <div style={{fontSize:8,color:'rgba(255,255,255,0.3)',marginTop:4}}>precio actual: {fmtP(currentPrice)}</div>
           </div>
+
+          {/* % presets */}
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:8,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:8}}>PORCENTAJE A CERRAR</div>
-            <div style={{display:'flex',gap:6,marginBottom:10}}>
+            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:8}}>PORCENTAJE A CERRAR</div>
+            <div style={{display:'flex',gap:4,background:'rgba(255,255,255,0.04)',borderRadius:12,padding:4,marginBottom:10}}>
               {PRESETS.map(p=>(
-                <button key={p} style={{flex:1,padding:'7px 0',borderRadius:6,border:pct===p?'1px solid rgba(30,144,255,0.5)':'1px solid #0d2040',background:pct===p?'rgba(30,144,255,0.12)':'rgba(3,8,16,0.6)',color:pct===p?'#1E90FF':'#4a6080',fontSize:10,fontWeight:800,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}} onClick={()=>setPct(p)}>{p}%</button>
+                <button key={p} onClick={()=>setPct(p)} style={{
+                  flex:1,padding:'7px 0',borderRadius:9,border:'none',
+                  background:pct===p?accentColor:'transparent',
+                  color:pct===p?'#fff':'rgba(255,255,255,0.4)',
+                  fontSize:11,fontWeight:800,cursor:'pointer',
+                  fontFamily:"'Montserrat',sans-serif",
+                  boxShadow:pct===p?`0 2px 12px rgba(${accentRgb},0.4)`:'none',
+                }}>{p}%</button>
               ))}
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              <div><div style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>LOTS A CERRAR</div><div style={{display:'flex',alignItems:'center',background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:6,padding:'0 10px',height:34}}><span style={{fontSize:11,fontWeight:700,color:'#c0d0e8'}}>{lotsToClose}</span></div></div>
-              <div><div style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>LOTS RESTANTES</div><div style={{display:'flex',alignItems:'center',background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:6,padding:'0 10px',height:34}}><span style={{fontSize:11,fontWeight:700,color:'#c0d0e8'}}>{Math.max(0,parseFloat((pos.lots-lotsToClose).toFixed(2)))}</span></div></div>
+              <div>
+                <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:5}}>LOTS A CERRAR</div>
+                <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'0 12px',height:36}}>
+                  <span style={{fontSize:13,fontWeight:700,color:'#fff'}}>{lotsToClose}</span>
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:5}}>RESTANTES</div>
+                <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'0 12px',height:36}}>
+                  <span style={{fontSize:13,fontWeight:700,color:'rgba(255,255,255,0.5)'}}>{Math.max(0,parseFloat((pos.lots-lotsToClose).toFixed(2)))}</span>
+                </div>
+              </div>
             </div>
           </div>
-          <button onClick={()=>onConfirm(lotsToClose)} style={{width:'100%',background:estPnl>=0?'linear-gradient(135deg,rgba(38,166,154,0.8),rgba(20,100,90,0.8))':'linear-gradient(135deg,rgba(239,83,80,0.8),rgba(150,40,40,0.8))',border:'none',borderRadius:8,padding:'12px',fontSize:12,fontWeight:800,color:'#fff',cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>
+
+          {/* Confirm */}
+          <button onClick={()=>onConfirm(lotsToClose)} style={{
+            width:'100%',
+            background:isProfit
+              ?'linear-gradient(135deg,rgba(38,166,154,0.9),rgba(20,110,100,0.9))'
+              :'linear-gradient(135deg,rgba(239,83,80,0.9),rgba(150,30,30,0.9))',
+            border:'none',borderRadius:14,padding:'14px',
+            fontSize:13,fontWeight:900,color:'#fff',cursor:'pointer',
+            fontFamily:"'Montserrat',sans-serif",
+            boxShadow:isProfit?'0 4px 24px rgba(38,166,154,0.3)':'0 4px 24px rgba(239,83,80,0.3)',
+            inset:'0 1px 0 rgba(255,255,255,0.2)',
+          }}>
             {pct===100?'Cerrar posición':'Cerrar parcial'} · {estPnl>=0?'+':''}{estPnl.toFixed(2)}
           </button>
         </div>
