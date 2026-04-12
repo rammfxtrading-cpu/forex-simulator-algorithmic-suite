@@ -34,7 +34,7 @@ function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)',fontFamily:"'Montserrat',sans-serif"}}
       onClick={onClose}>
-      <div style={{background:'#030f20',border:'1px solid #0d2040',borderRadius:14,width:440,boxShadow:'0 20px 60px #000000CC',overflow:'hidden'}}
+      <div style={{background:'rgba(8,14,26,0.55)',border:'1px solid rgba(255,255,255,0.13)',borderRadius:18,width:440,boxShadow:'0 20px 60px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.12)',overflow:'hidden',backdropFilter:'blur(32px) saturate(200%)',WebkitBackdropFilter:'blur(32px) saturate(200%)'}}
         onClick={e=>e.stopPropagation()}>
 
         {/* Header */}
@@ -65,7 +65,7 @@ function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
             <div style={{display:'flex',gap:4,marginBottom:8}}>
               {RISK_PRESETS.map(r=>(
                 <button key={r}
-                  style={{flex:1,padding:'5px 0',borderRadius:5,border:riskPct===r?'1px solid rgba(30,144,255,0.5)':'1px solid #0d2040',background:riskPct===r?'rgba(30,144,255,0.12)':'rgba(3,8,16,0.6)',color:riskPct===r?'#1E90FF':'#4a6080',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}
+                  style={{flex:1,padding:'5px 0',borderRadius:5,border:riskPct===r?'1px solid rgba(30,144,255,0.5)':'1px solid #0d2040',background:riskPct===r?'rgba(30,144,255,0.2)':'rgba(255,255,255,0.04)',color:riskPct===r?'#1E90FF':'#6080a0',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}
                   onClick={()=>setRiskPct(r)}>{r}%</button>
               ))}
             </div>
@@ -133,7 +133,7 @@ function Field({label,icon,value,onChange,readOnly,step,color}){
   return(
     <div>
       <div style={{fontSize:7,fontWeight:700,color:'#2a5070',letterSpacing:1,marginBottom:4}}>{label}</div>
-      <div style={{display:'flex',alignItems:'center',background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:6,padding:'0 10px',height:34}}>
+      <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:8,padding:'0 10px',height:34}}>
         <span style={{fontSize:10,color:'#2a5070',marginRight:6,flexShrink:0}}>{icon}</span>
         <input
           type="number" step={step||"any"} value={value} readOnly={readOnly}
