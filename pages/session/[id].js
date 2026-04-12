@@ -65,7 +65,7 @@ export default function SessionPage(){
   // Pending order preview (before confirm)
   const [preview,     setPreview]     = useState(null)  // {pair,side,entry,sl,tp,lots,slPips,tpPips}
   const [ctxMenu,     setCtxMenu]     = useState(null)  // {x,y,price,pair}
-  const draggingRef   = useRef(null)  // {type:'sl'|'tp', startY, startPrice}
+  const draggingRef   = useRef(null)  // {posId,pair,type:'sl'|'tp',pos}
 
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
@@ -180,12 +180,69 @@ export default function SessionPage(){
       e.preventDefault()
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
-      // LWC v5: coordinateToPrice is on the series
       let price=null
       try{ price=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
       if(price==null||isNaN(price)) return
       setCtxMenu({x:e.clientX, y:e.clientY, price:parseFloat(price.toFixed(5)), pair})
       setPreview(null)
+    })
+
+    // Drag SL/TP lines
+    el.addEventListener('mousedown', e=>{
+      if(e.button!==0) return
+      const cr=chartMap.current[pair]; if(!cr) return
+      const rect=el.getBoundingClientRect()
+      let clickPrice=null
+      try{ clickPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
+      if(clickPrice==null||isNaN(clickPrice)) return
+      // Find if click is near a SL or TP line of any open position
+      const ps=pairState.current[pair]; if(!ps?.positions?.length) return
+      const threshold=clickPrice*0.0003 // ~3 pips tolerance
+      for(const pos of ps.positions){
+        if(Math.abs(clickPrice-pos.sl)<threshold){
+          draggingRef.current={posId:pos.id,pair,type:'sl',pos:{...pos}}
+          e.preventDefault(); return
+        }
+        if(Math.abs(clickPrice-pos.tp)<threshold){
+          draggingRef.current={posId:pos.id,pair,type:'tp',pos:{...pos}}
+          e.preventDefault(); return
+        }
+      }
+    })
+
+    el.addEventListener('mousemove', e=>{
+      if(!draggingRef.current||draggingRef.current.pair!==pair) return
+      const cr=chartMap.current[pair]; if(!cr) return
+      const rect=el.getBoundingClientRect()
+      let newPrice=null
+      try{ newPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
+      if(newPrice==null||isNaN(newPrice)) return
+      const{posId,type,pos}=draggingRef.current
+      updatePositionLine(posId,pair,type,newPrice,pos)
+    })
+
+    el.addEventListener('mouseup', e=>{
+      if(!draggingRef.current||draggingRef.current.pair!==pair) return
+      const cr=chartMap.current[pair]; if(!cr) return
+      const rect=el.getBoundingClientRect()
+      let newPrice=null
+      try{ newPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
+      if(newPrice!=null&&!isNaN(newPrice)){
+        const{posId,pair:p,type}=draggingRef.current
+        const ps=pairState.current[p]
+        if(ps?.positions){
+          const pos=ps.positions.find(x=>x.id===posId)
+          if(pos){
+            const mult=pipMult(p)
+            const pips=Math.abs((newPrice-pos.entry)*mult)
+            if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
+            else{pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
+            ps.positions=[...ps.positions] // trigger reactivity
+            setTick(t=>t+1)
+          }
+        }
+      }
+      draggingRef.current=null
     })
 
     loadPair(pair)
@@ -239,7 +296,10 @@ export default function SessionPage(){
     const pipSz=1/pipMult(activePair)
     const sl=side==='BUY'?currentPrice-slPips*pipSz:currentPrice+slPips*pipSz
     const tp=side==='BUY'?currentPrice+tpPips*pipSz:currentPrice-tpPips*pipSz
-    ps.positions=[...ps.positions,{id:`${Date.now()}`,pair:activePair,side,entry:currentPrice,sl,tp,lots,slPips,tpPips,rr,openTime:currentTime}]
+    const posId=`${Date.now()}`
+    const newPos={id:posId,pair:activePair,side,entry:currentPrice,sl,tp,lots,slPips,tpPips,rr,openTime:currentTime}
+    ps.positions=[...ps.positions,newPos]
+    createPositionLines(posId,activePair,newPos)
     setLastTrade(side);setTimeout(()=>setLastTrade(null),700);setTick(t=>t+1)
   },[currentPrice,activePair,lots,slPips,tpPips,rr,currentTime])
 
@@ -251,6 +311,7 @@ export default function SessionPage(){
     const rrReal=pos.slPips>0?pnl/(pos.slPips*pos.lots*10):0
     ps.positions=ps.positions.filter(p=>p.id!==posId)
     ps.trades=[...ps.trades,{...pos,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}]
+    removePositionLines(posId,activePair)
     setBalance(b=>b+pnl);setTick(t=>t+1)
     if(userIdRef.current){
       try{await supabase.from('sim_trades').insert({user_id:userIdRef.current,session_id:id,pair:pos.pair,side:pos.side,lots:pos.lots,entry_price:pos.entry,exit_price:currentPrice,sl:pos.sl,tp:pos.tp,sl_pips:pos.slPips,tp_pips:pos.tpPips,rr:pos.rr,rr_real:parseFloat(rrReal.toFixed(2)),pnl,result,exit_reason:reason,opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():null,closed_at:currentTime?new Date(currentTime*1000).toISOString():null})}catch(e){console.error(e)}
@@ -258,6 +319,60 @@ export default function SessionPage(){
   },[activePair,currentPrice,currentTime,id])
 
   // ── Limit order helpers ──────────────────────────────────────────────────────
+
+  // ── Position price lines (entry, SL, TP) ────────────────────────────────────
+
+  const createPositionLines=(posId,pair,pos)=>{
+    const cr=chartMap.current[pair]; if(!cr?.series) return
+    if(!cr.priceLines) cr.priceLines={}
+    const isBuy=pos.side==='BUY'
+    const slPnl=-(pos.slPips*pos.lots*10).toFixed(2)
+    const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
+    cr.priceLines[posId+'_entry']=cr.series.createPriceLine({
+      price:pos.entry,color:'rgba(200,200,200,0.5)',
+      lineWidth:1,lineStyle:0,axisLabelVisible:true,
+      title:`${pos.side} ${pos.lots}L @ ${pos.entry.toFixed(5)}`,
+    })
+    cr.priceLines[posId+'_sl']=cr.series.createPriceLine({
+      price:pos.sl,color:'rgba(239,83,80,0.45)',
+      lineWidth:1,lineStyle:2,axisLabelVisible:true,
+      title:`SL  ${slPnl}`,
+    })
+    cr.priceLines[posId+'_tp']=cr.series.createPriceLine({
+      price:pos.tp,color:'rgba(38,166,154,0.45)',
+      lineWidth:1,lineStyle:2,axisLabelVisible:true,
+      title:`TP  ${tpPnl}`,
+    })
+  }
+
+  const removePositionLines=(posId,pair)=>{
+    const cr=chartMap.current[pair]; if(!cr?.priceLines) return
+    ;['_entry','_sl','_tp'].forEach(k=>{
+      const key=posId+k
+      if(cr.priceLines[key]){
+        try{cr.series.removePriceLine(cr.priceLines[key])}catch{}
+        delete cr.priceLines[key]
+      }
+    })
+  }
+
+  const updatePositionLine=(posId,pair,type,newPrice,pos)=>{
+    const cr=chartMap.current[pair]; if(!cr?.priceLines) return
+    const key=posId+'_'+type
+    if(cr.priceLines[key]){
+      try{cr.series.removePriceLine(cr.priceLines[key])}catch{}
+    }
+    const isTp=type==='tp'
+    const mult=pipMult(pair)
+    const pips=Math.abs((newPrice-pos.entry)*mult)
+    const pnl=isTp?'+'+(pips*pos.lots*10).toFixed(2):'-'+(pips*pos.lots*10).toFixed(2)
+    cr.priceLines[key]=cr.series.createPriceLine({
+      price:newPrice,
+      color:isTp?'rgba(38,166,154,0.45)':'rgba(239,83,80,0.45)',
+      lineWidth:1,lineStyle:2,axisLabelVisible:true,
+      title:`${isTp?'TP':'SL'}  ${pnl}`,
+    })
+  }
 
   const previewOrder=useCallback((side, price, pair)=>{
     setCtxMenu(null)
@@ -349,10 +464,13 @@ export default function SessionPage(){
           if(cr.priceLines[order.id+k]){try{cr.series.removePriceLine(cr.priceLines[order.id+k])}catch{};delete cr.priceLines[order.id+k]}
         })
       }
-      // Open position
+      // Open position and create its price lines
       const side=order.side==='BUY_LIMIT'?'BUY':'SELL'
       if(!ps.positions) ps.positions=[]
-      ps.positions=[...ps.positions,{id:`P${Date.now()}`,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:engine.currentTime}]
+      const posId=`P${Date.now()}`
+      const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:engine.currentTime}
+      ps.positions=[...ps.positions,newPos]
+      createPositionLines(posId,pair,newPos)
     })
     if(executed.length){
       ps.orders=ps.orders.filter(o=>!executed.includes(o.id))
