@@ -150,11 +150,41 @@ export default function Dashboard() {
   const breakevens = closedTrades.filter(t => t.result === 'BREAKEVEN')
   const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl || 0), 0)
   const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length * 100) : 0
-  const avgRR = wins.length > 0 ? wins.reduce((s, t) => s + (t.rr || 0), 0) / wins.length : 0
+  const avgRR = closedTrades.length > 0 ? closedTrades.reduce((s, t) => s + (t.rr_real || t.rr || 0), 0) / closedTrades.length : 0
   const bestWin = wins.length > 0 ? Math.max(...wins.map(t => t.pnl || 0)) : 0
   const worstLoss = losses.length > 0 ? Math.min(...losses.map(t => t.pnl || 0)) : 0
   const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + (t.pnl || 0), 0) / wins.length : 0
   const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + (t.pnl || 0), 0) / losses.length : 0
+
+  // Advanced metrics
+  const grossProfit = wins.reduce((s, t) => s + (t.pnl || 0), 0)
+  const grossLoss = Math.abs(losses.reduce((s, t) => s + (t.pnl || 0), 0))
+  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0
+  const expectancy = closedTrades.length > 0
+    ? (winRate/100 * avgWin) + ((1 - winRate/100) * avgLoss)
+    : 0
+
+  // Max drawdown
+  const maxDrawdown = (() => {
+    let peak = initialBalance, maxDD = 0, running = initialBalance
+    closedTrades.forEach(t => {
+      running += (t.pnl || 0)
+      if (running > peak) peak = running
+      const dd = peak - running
+      if (dd > maxDD) maxDD = dd
+    })
+    return maxDD
+  })()
+
+  // Win/loss streaks
+  const { maxWinStreak, maxLossStreak } = (() => {
+    let maxW = 0, maxL = 0, curW = 0, curL = 0
+    closedTrades.forEach(t => {
+      if (t.result === 'WIN') { curW++; curL = 0; if (curW > maxW) maxW = curW }
+      else if (t.result === 'LOSS') { curL++; curW = 0; if (curL > maxL) maxL = curL }
+    })
+    return { maxWinStreak: maxW, maxLossStreak: maxL }
+  })()
 
   const selSessData = sessions.find(s => s.id === selectedSession)
   const initialBalance = selectedSession === 'all'
@@ -448,19 +478,21 @@ export default function Dashboard() {
               </button>
             </div>
           ) : <>
-            {/* TOP STATS */}
-            <div style={{display:'flex',gap:12,marginBottom:20,flexWrap:'wrap'}}>
+            {/* TOP STATS — 8 cards */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
               {[
-                {label:'TOTAL P&L',value:`${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`,color:totalPnl>=0?'#22c55e':'#ef4444'},
-                {label:'WIN RATE',value:`${winRate.toFixed(1)}%`,color:winRate>=50?'#22c55e':'#ef4444'},
-                {label:'TOTAL TRADES',value:closedTrades.length,color:'#1E90FF'},
-                {label:'AVG R:R',value:avgRR.toFixed(2),color:'#f59e0b'},
-                {label:'WINS',value:wins.length,color:'#22c55e'},
-                {label:'LOSSES',value:losses.length,color:'#ef4444'},
+                {label:'TOTAL P&L',     value:`${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`,  color:totalPnl>=0?'#22c55e':'#ef4444'},
+                {label:'WIN RATE',      value:`${winRate.toFixed(1)}%`,                          color:winRate>=50?'#22c55e':'#ef4444'},
+                {label:'PROFIT FACTOR', value:profitFactor===Infinity?'∞':profitFactor.toFixed(2), color:profitFactor>=1?'#22c55e':'#ef4444'},
+                {label:'EXPECTATIVA',   value:`${expectancy>=0?'+':''}$${expectancy.toFixed(2)}`,color:expectancy>=0?'#22c55e':'#ef4444'},
+                {label:'TOTAL TRADES',  value:closedTrades.length,                               color:'#1E90FF'},
+                {label:'R:R PROMEDIO',  value:avgRR.toFixed(2)+'R',                              color:'#f59e0b'},
+                {label:'MAX DRAWDOWN',  value:`-$${maxDrawdown.toFixed(2)}`,                     color:'#ef4444'},
+                {label:'RACHA MAX',     value:`${maxWinStreak}W / ${maxLossStreak}L`,            color:'#a0b8d0'},
               ].map(stat=>(
-                <div key={stat.label} style={{...s.statCard,flex:'1',minWidth:120}}>
-                  <div style={{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1.5,marginBottom:6}}>{stat.label}</div>
-                  <div style={{fontSize:22,fontWeight:800,color:stat.color}}>{stat.value}</div>
+                <div key={stat.label} style={{...s.statCard}}>
+                  <div style={{fontSize:8,fontWeight:700,color:'#4a6080',letterSpacing:1.5,marginBottom:6}}>{stat.label}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:stat.color}}>{stat.value}</div>
                 </div>
               ))}
             </div>
@@ -545,6 +577,46 @@ export default function Dashboard() {
                     <span style={{fontSize:13,fontWeight:700,color}}>{count}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+            {/* JOURNAL TABLE */}
+            <div style={{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:12,padding:'20px 24px',marginTop:16,backdropFilter:'blur(8px)'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#a0b8d0',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Journal de Operaciones</div>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                  <thead>
+                    <tr>
+                      {['SESIÓN','PAR','DIR','ENTRADA','SALIDA','LOTS','SL','TP','R:R','P&L','RESULTADO','RAZÓN'].map(h=>(
+                        <th key={h} style={{padding:'6px 12px',textAlign:'left',color:'#1E90FF',fontWeight:700,fontSize:8,letterSpacing:1,borderBottom:'1px solid #0d2040',whiteSpace:'nowrap'}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {closedTrades.slice().reverse().map((t,i)=>{
+                      const sess=sessions.find(s=>s.id===t.session_id)
+                      const pnlColor=t.pnl>0?'#22c55e':t.pnl<0?'#ef4444':'#a0b8d0'
+                      const resColor=t.result==='WIN'?'#22c55e':t.result==='LOSS'?'#ef4444':'#a0b8d0'
+                      return(
+                        <tr key={i} style={{borderBottom:'1px solid rgba(13,32,64,0.5)'}}>
+                          <td style={{padding:'7px 12px',color:'#4a6080',whiteSpace:'nowrap',fontSize:10}}>{sess?.name||'—'}</td>
+                          <td style={{padding:'7px 12px',color:'#c0d0e8',fontWeight:700}}>{t.pair}</td>
+                          <td style={{padding:'7px 12px',color:t.side==='BUY'?'#1E90FF':'#ef4444',fontWeight:800}}>{t.side}</td>
+                          <td style={{padding:'7px 12px',color:'#c0d0e8',fontFamily:'monospace'}}>{parseFloat(t.entry_price||0).toFixed(5)}</td>
+                          <td style={{padding:'7px 12px',color:'#c0d0e8',fontFamily:'monospace'}}>{parseFloat(t.exit_price||0).toFixed(5)}</td>
+                          <td style={{padding:'7px 12px',color:'#c0d0e8'}}>{t.lots}</td>
+                          <td style={{padding:'7px 12px',color:'rgba(239,83,80,0.7)'}}>{t.sl_pips}p</td>
+                          <td style={{padding:'7px 12px',color:'rgba(30,144,255,0.7)'}}>{t.tp_pips}p</td>
+                          <td style={{padding:'7px 12px',color:'#f59e0b',fontWeight:700}}>{parseFloat(t.rr_real||t.rr||0).toFixed(1)}R</td>
+                          <td style={{padding:'7px 12px',color:pnlColor,fontWeight:700}}>{t.pnl>=0?'+':''}{parseFloat(t.pnl||0).toFixed(2)}</td>
+                          <td style={{padding:'7px 12px',fontWeight:700}}>
+                            <span style={{color:resColor,background:t.result==='WIN'?'rgba(34,197,94,0.1)':t.result==='LOSS'?'rgba(239,68,68,0.1)':'rgba(160,184,208,0.1)',padding:'2px 8px',borderRadius:4,fontSize:9,letterSpacing:0.5}}>{t.result}</span>
+                          </td>
+                          <td style={{padding:'7px 12px',color:'#4a6080',fontSize:9}}>{t.exit_reason}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </>}
