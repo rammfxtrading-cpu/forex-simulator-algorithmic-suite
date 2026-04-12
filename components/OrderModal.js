@@ -56,10 +56,10 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
               <div style={{fontSize:8,fontWeight:700,color:'rgba(239,83,80,0.6)',letterSpacing:1.5,marginBottom:4}}>PÉRDIDA MÁX</div>
               <div style={{fontSize:20,fontWeight:900,color:'rgba(239,83,80,0.95)',letterSpacing:-0.5}}>-${estLoss}</div>
             </div>
-            <div style={{background:'rgba(38,166,154,0.08)',border:'1px solid rgba(38,166,154,0.2)',borderRadius:14,padding:'12px 14px',position:'relative',overflow:'hidden'}}>
-              <div style={{position:'absolute',inset:0,background:'linear-gradient(135deg,rgba(38,166,154,0.05),transparent)',borderRadius:14}}/>
-              <div style={{fontSize:8,fontWeight:700,color:'rgba(38,166,154,0.6)',letterSpacing:1.5,marginBottom:4}}>GANANCIA MÁX</div>
-              <div style={{fontSize:20,fontWeight:900,color:'rgba(38,166,154,0.95)',letterSpacing:-0.5}}>+${estProfit}</div>
+            <div style={{background:'rgba(30,144,255,0.08)',border:'1px solid rgba(30,144,255,0.2)',borderRadius:14,padding:'12px 14px',position:'relative',overflow:'hidden'}}>
+              <div style={{position:'absolute',inset:0,background:'linear-gradient(135deg,rgba(30,144,255,0.05),transparent)',borderRadius:14}}/>
+              <div style={{fontSize:8,fontWeight:700,color:'rgba(30,144,255,0.6)',letterSpacing:1.5,marginBottom:4}}>GANANCIA MÁX</div>
+              <div style={{fontSize:20,fontWeight:900,color:'rgba(30,144,255,0.95)',letterSpacing:-0.5}}>+${estProfit}</div>
             </div>
           </div>
 
@@ -92,17 +92,17 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
           </div>
 
           {/* TP */}
-          <div style={{background:'rgba(38,166,154,0.06)',border:'1px solid rgba(38,166,154,0.15)',borderRadius:14,padding:'12px 14px',marginBottom:8}}>
+          <div style={{background:'rgba(30,144,255,0.06)',border:'1px solid rgba(30,144,255,0.15)',borderRadius:14,padding:'12px 14px',marginBottom:8}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <div style={{width:6,height:6,borderRadius:'50%',background:'rgba(38,166,154,0.8)'}}/>
-                <span style={{fontSize:9,fontWeight:800,color:'rgba(38,166,154,0.9)',letterSpacing:1}}>TAKE PROFIT</span>
+                <div style={{width:6,height:6,borderRadius:'50%',background:'rgba(30,144,255,0.8)'}}/>
+                <span style={{fontSize:9,fontWeight:800,color:'rgba(30,144,255,0.9)',letterSpacing:1}}>TAKE PROFIT</span>
               </div>
               <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.3)'}}>R:R {rrRatio}</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              <Field label="PRECIO" value={fmtP(tp)} readOnly accent="rgba(38,166,154,0.8)"/>
-              <Field label="PIPS" value={tpPips} onChange={v=>setTpPips(Math.max(1,parseInt(v)||1))} step="1" accent="rgba(38,166,154,0.8)"/>
+              <Field label="PRECIO" value={fmtP(tp)} readOnly accent="rgba(30,144,255,0.8)"/>
+              <Field label="PIPS" value={tpPips} onChange={v=>setTpPips(Math.max(1,parseInt(v)||1))} step="1" accent="rgba(30,144,255,0.8)"/>
             </div>
           </div>
 

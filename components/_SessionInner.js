@@ -441,7 +441,7 @@ export default function SessionPage(){
       if(!cr.priceLines) cr.priceLines={}
       cr.priceLines[order.id+'_entry']=cr.series.createPriceLine({price:order.entry,color:'rgba(180,180,180,0.5)',lineWidth:1,lineStyle:0,axisLabelVisible:true,title:`${order.side==='BUY_LIMIT'?'B':'S'}.LIM ${order.lots}L`})
       cr.priceLines[order.id+'_sl']=cr.series.createPriceLine({price:order.sl,color:'rgba(239,83,80,0.4)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:`SL`})
-      cr.priceLines[order.id+'_tp']=cr.series.createPriceLine({price:order.tp,color:'rgba(38,166,154,0.4)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:`TP`})
+      cr.priceLines[order.id+'_tp']=cr.series.createPriceLine({price:order.tp,color:'rgba(30,144,255,0.4)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:`TP`})
     }
     setPreview(null)
     setTick(t=>t+1)
@@ -787,7 +787,7 @@ export default function SessionPage(){
                       <td style={s.td}>{fmtPx(pos.entry,pos.pair)}</td>
                       <td style={s.td}>{fmtPx(currentPrice,pos.pair)}</td>
                       <td style={{...s.td,color:'rgba(239,83,80,0.7)'}}>{fmtPx(pos.sl,pos.pair)}</td>
-                      <td style={{...s.td,color:'rgba(38,166,154,0.7)'}}>{fmtPx(pos.tp,pos.pair)}</td>
+                      <td style={{...s.td,color:'rgba(30,144,255,0.7)'}}>{fmtPx(pos.tp,pos.pair)}</td>
                       <td style={s.td}>{pos.lots}</td>
                       <td style={{...s.td,color:pnlColor(pnl),fontWeight:700}}>{fmtPnl(pnl)}</td>
                       <td style={s.td}><button style={s.closeBtn} onClick={()=>setCloseModal({posId:pos.id,pair:activePair,pos})}>✕</button></td>
@@ -817,7 +817,7 @@ export default function SessionPage(){
                     <td style={{...s.td,color:o.side==='BUY_LIMIT'?'#1E90FF':'#ef5350',fontWeight:700}}>{o.side==='BUY_LIMIT'?'Buy Limit':'Sell Limit'}</td>
                     <td style={s.td}>{fmtPx(o.entry,o.pair)}</td>
                     <td style={{...s.td,color:'rgba(239,83,80,0.6)'}}>{fmtPx(o.sl,o.pair)}</td>
-                    <td style={{...s.td,color:'rgba(38,166,154,0.6)'}}>{fmtPx(o.tp,o.pair)}</td>
+                    <td style={{...s.td,color:'rgba(30,144,255,0.6)'}}>{fmtPx(o.tp,o.pair)}</td>
                     <td style={s.td}>{o.lots}</td>
                     <td style={s.td}><button style={s.closeBtn} onClick={()=>cancelLimitOrder(o.id,o.pair)}>✕</button></td>
                   </tr>
@@ -1053,7 +1053,7 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
   const estPnl=calcPnl(pos.side,pos.entry,currentPrice||pos.entry,lotsToClose,pair)
   const fmtP=p=>p?.toFixed(isJpy?3:5)??'—'
   const isProfit=estPnl>=0
-  const pnlColor=isProfit?'rgba(38,166,154,0.95)':'rgba(239,83,80,0.95)'
+  const pnlColor=isProfit?'rgba(30,144,255,0.95)':'rgba(239,83,80,0.95)'
   const accentColor=isBuy?'#1E90FF':'#ef5350'
   const accentRgb=isBuy?'30,144,255':'239,83,80'
 
@@ -1085,8 +1085,8 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
 
           {/* P&L big */}
           <div style={{
-            background:isProfit?'rgba(38,166,154,0.08)':'rgba(239,83,80,0.08)',
-            border:`1px solid ${isProfit?'rgba(38,166,154,0.2)':'rgba(239,83,80,0.2)'}`,
+            background:isProfit?'rgba(30,144,255,0.08)':'rgba(239,83,80,0.08)',
+            border:`1px solid ${isProfit?'rgba(30,144,255,0.2)':'rgba(239,83,80,0.2)'}`,
             borderRadius:16,padding:'16px',textAlign:'center',marginBottom:16,
           }}>
             <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:6}}>P&L ESTIMADO</div>
@@ -1129,12 +1129,12 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
           <button onClick={()=>onConfirm(lotsToClose)} style={{
             width:'100%',
             background:isProfit
-              ?'linear-gradient(135deg,rgba(38,166,154,0.9),rgba(20,110,100,0.9))'
+              ?'linear-gradient(135deg,rgba(30,144,255,0.9),rgba(20,110,100,0.9))'
               :'linear-gradient(135deg,rgba(239,83,80,0.9),rgba(150,30,30,0.9))',
             border:'none',borderRadius:14,padding:'14px',
             fontSize:13,fontWeight:900,color:'#fff',cursor:'pointer',
             fontFamily:"'Montserrat',sans-serif",
-            boxShadow:isProfit?'0 4px 24px rgba(38,166,154,0.3)':'0 4px 24px rgba(239,83,80,0.3)',
+            boxShadow:isProfit?'0 4px 24px rgba(30,144,255,0.3)':'0 4px 24px rgba(239,83,80,0.3)',
             inset:'0 1px 0 rgba(255,255,255,0.2)',
           }}>
             {pct===100?'Cerrar posición':'Cerrar parcial'} · {estPnl>=0?'+':''}{estPnl.toFixed(2)}
@@ -1175,7 +1175,7 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
         const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
         if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
         if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
-        if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(38,166,154,0.65)', drag:true, close:false})
+        if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(30,144,255,0.65)', drag:true, close:false})
       })
       ;(pendingOrders||[]).forEach(ord=>{
         const cr2=chartMap.current[activePair]
@@ -1186,7 +1186,7 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
         const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
         if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.55)',drag:true, cancel:true})
         if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL',                   color:'rgba(239,83,80,0.5)',  drag:true, cancel:false})
-        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP',                   color:'rgba(38,166,154,0.5)', drag:true, cancel:false})
+        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP',                   color:'rgba(30,144,255,0.5)', drag:true, cancel:false})
       })
       // Don't update if dragging — keeps line under cursor
       if(!dragState.current?.active) setLines(all)
