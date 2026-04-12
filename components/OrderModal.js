@@ -146,7 +146,7 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
 function Field({label,value,onChange,readOnly,step,accent}){
   return(
     <div>
-      <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:5}}>{label}</div>
+      <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:1.5,marginBottom:5}}>{label}</div>
       <div style={{
         display:'flex',alignItems:'center',
         background:'rgba(255,255,255,0.06)',
@@ -155,7 +155,7 @@ function Field({label,value,onChange,readOnly,step,accent}){
       }}>
         <input type="number" step={step||'any'} value={value} readOnly={readOnly}
           onChange={e=>onChange&&onChange(e.target.value)}
-          style={{flex:1,background:'none',border:'none',color:'#fff',fontSize:12,fontWeight:700,outline:'none',fontFamily:"'Montserrat',sans-serif",cursor:readOnly?'default':'text'}}
+          style={{flex:1,background:'none',border:'none',color:'rgba(255,255,255,0.92)',fontSize:12,fontWeight:700,outline:'none',fontFamily:"'Montserrat',sans-serif",cursor:readOnly?'default':'text'}}
         />
       </div>
     </div>
