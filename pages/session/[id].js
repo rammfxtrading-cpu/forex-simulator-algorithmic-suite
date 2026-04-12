@@ -398,17 +398,7 @@ export default function SessionPage() {
     setProgress(Math.round(engine.progress * 100))
   }, [activePair, renderChart])
 
-  const handleStepBack = useCallback(() => {
-    const engine = getEngine()
-    if (!engine) return
-    const target = Math.max(engine.candles[0]?.time, engine.currentTime - 5 * 60)
-    engine.seekToTime(target)
-    const cr = chartRefsMap.current[activePair]
-    if (cr) cr.prevCount = 0
-    renderChart(activePair, engine, true)
-    setCurrentTime(engine.currentTime)
-    setProgress(Math.round(engine.progress * 100))
-  }, [activePair, renderChart])
+  // handleStepBack removed — no going back in a real backtest
 
   const handleReset = useCallback(() => {
     const engine = getEngine()
@@ -430,19 +420,7 @@ export default function SessionPage() {
     })
   }, [])
 
-  const handleScrub = useCallback((e) => {
-    const engine = getEngine()
-    if (!engine) return
-    const fraction = parseFloat(e.target.value) / 100
-    engine.pause()
-    engine.seekToProgress(fraction)
-    setIsPlaying(false)
-    const cr = chartRefsMap.current[activePair]
-    if (cr) cr.prevCount = 0
-    renderChart(activePair, engine, true)
-    setCurrentTime(engine.currentTime)
-    setProgress(Math.round(engine.progress * 100))
-  }, [activePair, renderChart])
+  // handleScrub removed — scrubber is read-only progress bar
 
   // ── Multi-pair tab management ──────────────────────────────────────────
 
@@ -623,11 +601,10 @@ export default function SessionPage() {
       if (e.target.tagName === 'INPUT') return
       if (e.code === 'Space') { e.preventDefault(); handlePlayPause() }
       if (e.code === 'ArrowRight') handleStep(1)
-      if (e.code === 'ArrowLeft')  handleStepBack()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [handlePlayPause, handleStep, handleStepBack])
+  }, [handlePlayPause, handleStep])
 
   // ── Cleanup on unmount ────────────────────────────────────────────────
 
@@ -746,17 +723,7 @@ export default function SessionPage() {
 
         {/* Replay controls */}
         <div style={s.replayGroup}>
-          <button style={s.ctrlBtn} onClick={handleReset} title="Reset (R)">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="1,4 1,10 7,10"/>
-              <path d="M3.51,15a9,9 0 1,0,.49-4.5"/>
-            </svg>
-          </button>
-          <button style={s.ctrlBtn} onClick={handleStepBack} title="−5 M1 (←)">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polygon points="19,20 9,12 19,4"/><line x1="5" y1="19" x2="5" y2="5"/>
-            </svg>
-          </button>
+{/* Reset and step-back removed — forward only */}
           <button
             style={{ ...s.ctrlBtn, ...s.playBtn, ...(isPlaying ? s.pauseStyle : {}) }}
             onClick={handlePlayPause}
@@ -787,8 +754,10 @@ export default function SessionPage() {
 
         {/* Scrubber */}
         <div style={s.scrubWrap}>
-          <input type="range" min={0} max={100} value={progress}
-            onChange={handleScrub} style={s.scrubber} disabled={!dataReady}/>
+          {/* Read-only progress bar — no scrubbing in backtest */}
+          <div style={s.progressTrack}>
+            <div style={{ ...s.progressFill, width: `${progress}%` }}/>
+          </div>
           <span style={s.scrubLabel}>{progress}%</span>
         </div>
 
@@ -1052,6 +1021,8 @@ const s = {
   // Scrubber
   scrubWrap:    { flex:1, display:'flex', alignItems:'center', gap:6, minWidth:60 },
   scrubber:     { flex:1, accentColor:'#1E90FF', cursor:'pointer' },
+  progressTrack:{ flex:1, height:3, background:'#1a1e27', borderRadius:2, overflow:'hidden' },
+  progressFill: { height:'100%', background:'#1E90FF', borderRadius:2, transition:'width .3s linear' },
   scrubLabel:   { fontSize:8, color:'#2d3548', fontWeight:700, width:28, textAlign:'right', flexShrink:0 },
 
   // Trade group
