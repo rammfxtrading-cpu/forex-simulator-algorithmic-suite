@@ -4,7 +4,7 @@
  * Diseño unificado con Dashboard — red animada + cristal
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabase'
 import ReplayEngine from '../../lib/replayEngine'
@@ -924,10 +924,10 @@ function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
   const mult=isJpyPair?100:10000
 
   const RISK_PRESETS=[0.3,0.5,0.7,1,2,3]
-  const [riskPct,   setRiskPct]   = React.useState(1)
-  const [slPips,    setSlPips]    = React.useState(10)
-  const [tpPips,    setTpPips]    = React.useState(20)
-  const [autoBE,    setAutoBE]    = React.useState(false)
+  const [riskPct,   setRiskPct]   = useState(1)
+  const [slPips,    setSlPips]    = useState(10)
+  const [tpPips,    setTpPips]    = useState(20)
+  const [autoBE,    setAutoBE]    = useState(false)
 
   // Calculations
   const riskAmt   = parseFloat((balance * riskPct / 100).toFixed(2))
