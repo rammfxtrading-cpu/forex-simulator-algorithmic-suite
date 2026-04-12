@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
-import { createChart, CrosshairMode, LineStyle, CandlestickSeries, LineSeries } from 'lightweight-charts'
+// lightweight-charts loaded dynamically in useEffect (SSR-safe)
 import { supabase } from '../../lib/supabase'
 import ReplayEngine, { TIMEFRAMES } from '../../lib/replayEngine'
 
@@ -52,7 +52,7 @@ function makeChartOptions(w, h) {
       horzLines: { color: '#0d1017' },
     },
     crosshair: {
-      mode: CrosshairMode.Normal,
+      mode: 1, // CrosshairMode.Normal
       vertLine: { color: '#1E90FF44', labelBackgroundColor: '#1E90FF' },
       horzLine: { color: '#1E90FF44', labelBackgroundColor: '#1E90FF' },
     },
@@ -280,19 +280,21 @@ export default function SessionPage() {
   // ── Chart lifecycle: one div per pair, show/hide on tab switch ──────────
   // Declared AFTER loadPairData to avoid circular dependency
 
-  const initChartForPair = useCallback((pair, el) => {
+  const initChartForPair = useCallback(async (pair, el) => {
     if (chartRefsMap.current[pair]) return
-    const chart  = createChart(el, makeChartOptions(el.clientWidth, el.clientHeight))
-    const series = chart.addSeries(CandlestickSeries, {
+    // Dynamic import — never runs on SSR, fixes "cannot access before init"
+    const lc = await import('lightweight-charts')
+    const chart  = lc.createChart(el, makeChartOptions(el.clientWidth, el.clientHeight))
+    const series = chart.addSeries(lc.CandlestickSeries, {
       upColor:       '#2962FF',
       downColor:     '#ef5350',
       borderVisible: false,
       wickUpColor:   '#2962FF',
       wickDownColor: '#ef5350',
     })
-    const eqSeries = chart.addSeries(LineSeries, {
+    const eqSeries = chart.addSeries(lc.LineSeries, {
       color: '#1E90FF44', lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
+      lineStyle: 1,
       priceScaleId: 'equity', visible: false,
     })
     chartRefsMap.current[pair] = { chart, series, eqSeries, prevCount: 0 }
