@@ -359,6 +359,8 @@ export default function SessionPage(){
     if(e.isPlaying){
       e.pause();setIsPlaying(false)
       saveProgress(e.currentTime)
+      // Also save balance on pause
+      if(userIdRef.current) supabase.from('sim_sessions').update({balance,last_timestamp:e.currentTime}).eq('id',id).catch(()=>{})
     }else{e.play();setIsPlaying(true)}
   },[activePair,saveProgress])
   const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))},[activePair,updateChart])
@@ -391,9 +393,14 @@ export default function SessionPage(){
     ps.positions=ps.positions.filter(p=>p.id!==posId)
     ps.trades=[...ps.trades,{...pos,exit:usePrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}]
     removePositionLines(posId,usePair)
-    setBalance(b=>b+pnl);setTick(t=>t+1)
+    const newBalance = parseFloat((balance+pnl).toFixed(2))
+    setBalance(newBalance);setTick(t=>t+1)
     if(userIdRef.current){
-      try{await supabase.from('sim_trades').insert({user_id:userIdRef.current,session_id:id,pair:pos.pair,side:pos.side,lots:pos.lots,entry_price:pos.entry,exit_price:usePrice,sl:pos.sl,tp:pos.tp,sl_pips:pos.slPips,tp_pips:pos.tpPips,rr:pos.rr,rr_real:parseFloat(rrReal.toFixed(2)),pnl,result,exit_reason:reason,opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():null,closed_at:currentTime?new Date(currentTime*1000).toISOString():null})}catch(e){console.error(e)}
+      try{
+        await supabase.from('sim_trades').insert({user_id:userIdRef.current,session_id:id,pair:pos.pair,side:pos.side,lots:pos.lots,entry_price:pos.entry,exit_price:usePrice,sl:pos.sl,tp:pos.tp,sl_pips:pos.slPips,tp_pips:pos.tpPips,rr:pos.rr,rr_real:parseFloat(rrReal.toFixed(2)),pnl,result,exit_reason:reason,opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():null,closed_at:currentTime?new Date(currentTime*1000).toISOString():null})
+        // Persist balance and timestamp
+        await supabase.from('sim_sessions').update({balance:newBalance,last_timestamp:currentTime}).eq('id',id)
+      }catch(e){console.error(e)}
     }
   },[activePair,currentPrice,currentTime,id])
 
@@ -921,7 +928,11 @@ export default function SessionPage(){
               ps.trades=[...ps.trades,{...pos,lots:lotsToClose,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL'}]
               pos.lots=remaining
               ps.positions=[...ps.positions]
-              setBalance(b=>b+pnl);setTick(t=>t+1)
+              const newBal=parseFloat((balance+pnl).toFixed(2))
+              setBalance(newBal);setTick(t=>t+1)
+              if(userIdRef.current){
+                supabase.from('sim_sessions').update({balance:newBal}).eq('id',id).catch(()=>{})
+              }
             }
             setCloseModal(null)
           }}
