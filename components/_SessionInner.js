@@ -178,8 +178,8 @@ export default function SessionPage(){
         if(!pairState.current[p]) pairState.current[p]={engine:null,ready:false,positions:[],trades:[],orders:[]}
         pairState.current[p].trades=[...prevTrades.map(t=>({
           id:t.id, pair:t.pair, side:t.side, entry:t.entry_price, exit:t.exit_price,
-          lots:t.lots, sl:t.sl, tp:t.tp, slPips:t.sl_pips, tpPips:t.tp_pips,
-          rr:t.rr, rrReal:t.rr_real, pnl:t.pnl, result:t.result, reason:t.exit_reason,
+          lots:t.lots, sl:t.sl_price, tp:t.tp_price,
+          rr:t.rr, rrReal:t.rr, pnl:t.pnl, result:t.result, reason:'—',
           openTime:t.opened_at?Math.floor(new Date(t.opened_at).getTime()/1000):null,
           closeTime:t.closed_at?Math.floor(new Date(t.closed_at).getTime()/1000):null,
         }))]
@@ -422,15 +422,11 @@ export default function SessionPage(){
           lots:parseFloat(pos.lots)||0.01,
           entry_price:parseFloat(pos.entry)||0,
           exit_price:parseFloat(usePrice)||0,
-          sl:parseFloat(pos.sl)||0,
-          tp:parseFloat(pos.tp)||0,
-          sl_pips:parseFloat(pos.slPips)||0,
-          tp_pips:parseFloat(pos.tpPips)||0,
-          rr:parseFloat(pos.rr)||0,
-          rr_real:parseFloat(rrReal.toFixed(2)),
+          sl_price:parseFloat(pos.sl)||0,
+          tp_price:parseFloat(pos.tp)||0,
+          rr:parseFloat(rrReal.toFixed(2)),
           pnl:parseFloat(pnl.toFixed(2)),
           result,
-          exit_reason:reason,
           opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():new Date().toISOString(),
           closed_at:currentTime?new Date(currentTime*1000).toISOString():new Date().toISOString(),
         })

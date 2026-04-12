@@ -148,7 +148,7 @@ export default function Dashboard() {
     const be = closed.filter(t => t.result === 'BREAKEVEN')
     const totalPnl = closed.reduce((s, t) => s + (t.pnl || 0), 0)
     const winRate = closed.length > 0 ? (w.length / closed.length * 100) : 0
-    const avgRR = closed.length > 0 ? closed.reduce((s, t) => s + (t.rr_real || t.rr || 0), 0) / closed.length : 0
+    const avgRR = closed.length > 0 ? closed.reduce((s, t) => s + (t.rr || 0), 0) / closed.length : 0
     const bestWin = w.length > 0 ? Math.max(...w.map(t => t.pnl || 0)) : 0
     const worstLoss = l.length > 0 ? Math.min(...l.map(t => t.pnl || 0)) : 0
     const avgWin = w.length > 0 ? w.reduce((s, t) => s + (t.pnl || 0), 0) / w.length : 0
@@ -559,7 +559,7 @@ export default function Dashboard() {
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
                   <thead>
                     <tr>
-                      {['SESIÓN','PAR','DIR','ENTRADA','SALIDA','LOTS','SL','TP','R:R','P&L','RESULTADO','RAZÓN'].map(h=>(
+                      {['SESIÓN','PAR','DIR','ENTRADA','SALIDA','LOTS','SL','TP','R:R','P&L','RESULTADO'].map(h=>(
                         <th key={h} style={{padding:'6px 12px',textAlign:'left',color:'#1E90FF',fontWeight:700,fontSize:8,letterSpacing:1,borderBottom:'1px solid #0d2040',whiteSpace:'nowrap'}}>{h}</th>
                       ))}
                     </tr>
@@ -577,14 +577,14 @@ export default function Dashboard() {
                           <td style={{padding:'7px 12px',color:'#c0d0e8',fontFamily:'monospace'}}>{parseFloat(t.entry_price||0).toFixed(5)}</td>
                           <td style={{padding:'7px 12px',color:'#c0d0e8',fontFamily:'monospace'}}>{parseFloat(t.exit_price||0).toFixed(5)}</td>
                           <td style={{padding:'7px 12px',color:'#c0d0e8'}}>{t.lots}</td>
-                          <td style={{padding:'7px 12px',color:'rgba(239,83,80,0.7)'}}>{t.sl_pips}p</td>
-                          <td style={{padding:'7px 12px',color:'rgba(30,144,255,0.7)'}}>{t.tp_pips}p</td>
-                          <td style={{padding:'7px 12px',color:'#f59e0b',fontWeight:700}}>{parseFloat(t.rr_real||t.rr||0).toFixed(1)}R</td>
+                          <td style={{padding:'7px 12px',color:'rgba(239,83,80,0.7)'}}>{t.sl_price?.toFixed(5)||'—'}</td>
+                          <td style={{padding:'7px 12px',color:'rgba(30,144,255,0.7)'}}>{t.tp_price?.toFixed(5)||'—'}</td>
+                          <td style={{padding:'7px 12px',color:'#f59e0b',fontWeight:700}}>{parseFloat(t.rr||0).toFixed(1)}R</td>
                           <td style={{padding:'7px 12px',color:pnlColor,fontWeight:700}}>{t.pnl>=0?'+':''}{parseFloat(t.pnl||0).toFixed(2)}</td>
                           <td style={{padding:'7px 12px',fontWeight:700}}>
                             <span style={{color:resColor,background:t.result==='WIN'?'rgba(34,197,94,0.1)':t.result==='LOSS'?'rgba(239,68,68,0.1)':'rgba(160,184,208,0.1)',padding:'2px 8px',borderRadius:4,fontSize:9,letterSpacing:0.5}}>{t.result}</span>
                           </td>
-                          <td style={{padding:'7px 12px',color:'#4a6080',fontSize:9}}>{t.exit_reason}</td>
+                          <td style={{padding:'7px 12px',color:'#4a6080',fontSize:9}}>{t.notes||'—'}</td>
                         </tr>
                       )
                     })}
