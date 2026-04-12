@@ -614,15 +614,40 @@ export default function SessionPage(){
           dataReady={dataReady}
           onClosePos={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
           onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
-          onDragEnd={(posId,type,newPrice)=>{
+          onDragEnd={(id,type,newPrice)=>{
             const ps=pairState.current[activePair]
-            const pos=ps?.positions?.find(p=>p.id===posId)
-            if(!pos) return
-            const pips=Math.abs((newPrice-pos.entry)*pipMult(activePair))
-            if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
-            else{pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
-            ps.positions=[...ps.positions]
-            setTick(t=>t+1)
+            // Check open positions first
+            const pos=ps?.positions?.find(p=>p.id===id)
+            if(pos){
+              // Move SL/TP — lotaje stays fixed, only price moves
+              const pips=Math.abs((newPrice-pos.entry)*pipMult(activePair))
+              if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
+              else if(type==='tp'){pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
+              ps.positions=[...ps.positions]
+              setTick(t=>t+1)
+              return
+            }
+            // Check pending orders
+            const ord=ps?.orders?.find(o=>o.id===id)
+            if(ord){
+              const pips=Math.abs((newPrice-ord.entry)*pipMult(activePair))
+              if(type==='lim_e'){
+                // Move entry — recalculate SL/TP relative to new entry
+                const slDiff=ord.sl-ord.entry
+                const tpDiff=ord.tp-ord.entry
+                ord.entry=newPrice
+                ord.sl=newPrice+slDiff
+                ord.tp=newPrice+tpDiff
+              } else if(type==='lim_sl'){
+                ord.sl=newPrice
+                ord.slPips=parseFloat(pips.toFixed(1))
+              } else if(type==='lim_tp'){
+                ord.tp=newPrice
+                ord.tpPips=parseFloat(pips.toFixed(1))
+              }
+              ps.orders=[...ps.orders]
+              setTick(t=>t+1)
+            }
           }}
         />
       </div>
@@ -1117,9 +1142,9 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
         try{slY=cr2?.series?.priceToCoordinate(ord.sl)}catch{}
         try{tpY=cr2?.series?.priceToCoordinate(ord.tp)}catch{}
         const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
-        if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.45)',drag:false,cancel:true})
-        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL',                   color:'rgba(239,83,80,0.35)', drag:false,cancel:false})
-        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP',                   color:'rgba(38,166,154,0.35)',drag:false,cancel:false})
+        if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.55)',drag:true, cancel:true})
+        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL',                   color:'rgba(239,83,80,0.5)',  drag:true, cancel:false})
+        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP',                   color:'rgba(38,166,154,0.5)', drag:true, cancel:false})
       })
       // Don't update if dragging — keeps line under cursor
       if(!dragState.current?.active) setLines(all)
@@ -1134,7 +1159,8 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
     if(!line.drag) return
     e.stopPropagation()
     e.preventDefault()
-    dragState.current={posId:line.posId,type:line.type,active:true}
+    // Use ordId for limit orders, posId for open positions
+    dragState.current={posId:line.ordId||line.posId,type:line.type,active:true}
   }
 
   useEffect(()=>{
@@ -1149,11 +1175,12 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
       try{price=cr.series.coordinateToPrice(y)}catch{}
       if(price==null||isNaN(price)) return
       // Move line visually during drag
-      setLines(prev=>prev.map(l=>
-        l.posId===dragState.current.posId&&l.type===dragState.current.type
+      setLines(prev=>prev.map(l=>{
+        const id=l.ordId||l.posId
+        return id===dragState.current.posId&&l.type===dragState.current.type
           ? {...l,y:Math.round(y)}
           : l
-      ))
+      }))
     }
     const onUp=e=>{
       if(!dragState.current?.active) return
