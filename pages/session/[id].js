@@ -15,7 +15,7 @@ const LOT_PRESETS = [0.01,0.05,0.1,0.25,0.5,1.0]
 const RR_PRESETS  = [1,1.5,2,3]
 const ALL_PAIRS   = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','EUR/GBP','EUR/JPY','GBP/JPY']
 
-function chartOpts(w,h){return{width:w,height:h,layout:{background:{color:'transparent'},textColor:'#a0b8d0',fontFamily:"'Montserrat',sans-serif",fontSize:11},grid:{vertLines:{color:'#0a1628'},horzLines:{color:'#0a1628'}},crosshair:{mode:1,vertLine:{color:'#1E90FF44',labelBackgroundColor:'#1E90FF'},horzLine:{color:'#1E90FF44',labelBackgroundColor:'#1E90FF'}},rightPriceScale:{borderColor:'#0d2040',scaleMargins:{top:0.06,bottom:0.06}},timeScale:{borderColor:'#0d2040',timeVisible:true,secondsVisible:false,rightOffset:12,barSpacing:6,minBarSpacing:0.5,fixLeftEdge:true},handleScroll:{mouseWheel:true,pressedMouseMove:true},handleScale:{axisPressedMouseMove:true,mouseWheel:true,pinch:true}}}
+function chartOpts(w,h){return{width:w,height:h,layout:{background:{color:'transparent'},textColor:'#a0b8d0',fontFamily:"'Montserrat',sans-serif",fontSize:11},grid:{vertLines:{color:'#0a1628'},horzLines:{color:'#0a1628'}},crosshair:{mode:0,vertLine:{color:'#1E90FF44',labelBackgroundColor:'#1E90FF'},horzLine:{color:'#1E90FF44',labelBackgroundColor:'#1E90FF'}},rightPriceScale:{borderColor:'#0d2040',scaleMargins:{top:0.06,bottom:0.06}},timeScale:{borderColor:'#0d2040',timeVisible:true,secondsVisible:false,rightOffset:12,barSpacing:6,minBarSpacing:0.5,fixLeftEdge:true},handleScroll:{mouseWheel:true,pressedMouseMove:true},handleScale:{axisPressedMouseMove:true,mouseWheel:true,pinch:true}}}
 
 const isJpy    = p=>p?.includes('JPY')
 const pipMult  = p=>isJpy(p)?100:10000
@@ -59,8 +59,13 @@ export default function SessionPage(){
   const [rr,          setRr]          = useState(2)
   const [showPos,     setShowPos]     = useState(false)
   const [showTrades,  setShowTrades]  = useState(false)
+  const [showOrders,  setShowOrders]  = useState(false)
   const [lastTrade,   setLastTrade]   = useState(null)
   const [tick,        setTick]        = useState(0)
+  // Pending order preview (before confirm)
+  const [preview,     setPreview]     = useState(null)  // {pair,side,entry,sl,tp,lots,slPips,tpPips}
+  const [ctxMenu,     setCtxMenu]     = useState(null)  // {x,y,price,pair}
+  const draggingRef   = useRef(null)  // {type:'sl'|'tp', startY, startPrice}
 
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
@@ -143,6 +148,7 @@ export default function SessionPage(){
       engine.onTick=()=>{
         updateChart(pair,engine,false)
         checkSLTP(pair,engine)
+        checkLimitOrders(pair,engine)
         if(pair===activePairRef.current){setCurrentTime(engine.currentTime);setProgress(Math.round(engine.progress*100))}
       }
       engine.onEnd=()=>{if(pair===activePairRef.current)setIsPlaying(false)}
@@ -169,6 +175,17 @@ export default function SessionPage(){
       const{width,height}=entries[0].contentRect
       if(chartMap.current[pair]) chart.resize(width,height)
     }).observe(el)
+
+    el.addEventListener('contextmenu', e=>{
+      e.preventDefault()
+      const cr=chartMap.current[pair]; if(!cr) return
+      const rect=el.getBoundingClientRect()
+      const price=cr.chart.priceScale('right').coordinateToPrice(e.clientY-rect.top)
+      if(price==null||isNaN(price)) return
+      setCtxMenu({x:e.clientX, y:e.clientY, price:parseFloat(price.toFixed(5)), pair})
+      setPreview(null)
+    })
+
     loadPair(pair)
   }
   const mountPair=useCallback((pair,el)=>{mountPairRef.current(pair,el)},[])
@@ -238,6 +255,71 @@ export default function SessionPage(){
     }
   },[activePair,currentPrice,currentTime,id])
 
+  // ── Limit order helpers ──────────────────────────────────────────────────────
+
+  const previewOrder=useCallback((side, price, pair)=>{
+    setCtxMenu(null)
+    const mult=pipMult(pair), pipSz=1/mult
+    const defaultSl=10, defaultTp=30
+    const sl=side==='BUY_LIMIT' ? price-defaultSl*pipSz : price+defaultSl*pipSz
+    const tp=side==='BUY_LIMIT' ? price+defaultTp*pipSz : price-defaultTp*pipSz
+    setPreview({pair,side,entry:price,sl,tp,lots,slPips:defaultSl,tpPips:defaultTp,rr:3})
+  },[lots])
+
+  const confirmLimitOrder=useCallback(()=>{
+    if(!preview) return
+    const ps=pairState.current[preview.pair]; if(!ps) return
+    if(!ps.orders) ps.orders=[]
+    const order={...preview, id:`L${Date.now()}`, createdTime:currentTime}
+    ps.orders=[...ps.orders, order]
+    // Price lines — subtle colors
+    const cr=chartMap.current[preview.pair]
+    if(cr?.series){
+      if(!cr.priceLines) cr.priceLines={}
+      cr.priceLines[order.id+'_entry']=cr.series.createPriceLine({price:order.entry,color:'rgba(180,180,180,0.5)',lineWidth:1,lineStyle:0,axisLabelVisible:true,title:`${order.side==='BUY_LIMIT'?'B':'S'}.LIM ${order.lots}L`})
+      cr.priceLines[order.id+'_sl']=cr.series.createPriceLine({price:order.sl,color:'rgba(239,83,80,0.4)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:`SL`})
+      cr.priceLines[order.id+'_tp']=cr.series.createPriceLine({price:order.tp,color:'rgba(38,166,154,0.4)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:`TP`})
+    }
+    setPreview(null)
+    setTick(t=>t+1)
+  },[preview,currentTime])
+
+  const cancelPreview=useCallback(()=>setPreview(null),[])
+
+  const cancelLimitOrder=useCallback((orderId,pair)=>{
+    const ps=pairState.current[pair]; if(!ps?.orders) return
+    ps.orders=ps.orders.filter(o=>o.id!==orderId)
+    const cr=chartMap.current[pair]
+    if(cr?.priceLines){
+      ['_entry','_sl','_tp'].forEach(k=>{
+        if(cr.priceLines[orderId+k]){
+          try{cr.series.removePriceLine(cr.priceLines[orderId+k])}catch{}
+          delete cr.priceLines[orderId+k]
+        }
+      })
+    }
+    setTick(t=>t+1)
+  },[])
+
+  // Update preview SL/TP pips when dragged
+  const updatePreviewSl=useCallback((pips)=>{
+    setPreview(prev=>{
+      if(!prev) return prev
+      const mult=pipMult(prev.pair), pipSz=1/mult
+      const sl=prev.side==='BUY_LIMIT' ? prev.entry-pips*pipSz : prev.entry+pips*pipSz
+      return{...prev,sl,slPips:pips}
+    })
+  },[])
+
+  const updatePreviewTp=useCallback((pips)=>{
+    setPreview(prev=>{
+      if(!prev) return prev
+      const mult=pipMult(prev.pair), pipSz=1/mult
+      const tp=prev.side==='BUY_LIMIT' ? prev.entry+pips*pipSz : prev.entry-pips*pipSz
+      return{...prev,tp,tpPips:pips,rr:parseFloat((pips/prev.slPips).toFixed(1))}
+    })
+  },[])
+
   const checkSLTP=useCallback((pair,engine)=>{
     const ps=pairState.current[pair];if(!ps?.positions?.length) return
     const agg=engine.getAggregated(pairTfRef.current[pair]||'H1')
@@ -248,6 +330,33 @@ export default function SessionPage(){
       if(hitTp)closePosition(pos.id,'TP');else if(hitSl)closePosition(pos.id,'SL')
     })
   },[closePosition])
+
+  const checkLimitOrders=useCallback((pair,engine)=>{
+    const ps=pairState.current[pair]; if(!ps?.orders?.length) return
+    const agg=engine.getAggregated(pairTfRef.current[pair]||'H1')
+    const candle=agg[agg.length-1]; if(!candle) return
+    const executed=[]
+    ps.orders.forEach(order=>{
+      const hit=(order.side==='BUY_LIMIT'&&candle.low<=order.entry)||(order.side==='SELL_LIMIT'&&candle.high>=order.entry)
+      if(!hit) return
+      executed.push(order.id)
+      // Remove price lines
+      const cr=chartMap.current[pair]
+      if(cr?.priceLines){
+        ['_entry','_sl','_tp'].forEach(k=>{
+          if(cr.priceLines[order.id+k]){try{cr.series.removePriceLine(cr.priceLines[order.id+k])}catch{};delete cr.priceLines[order.id+k]}
+        })
+      }
+      // Open position
+      const side=order.side==='BUY_LIMIT'?'BUY':'SELL'
+      if(!ps.positions) ps.positions=[]
+      ps.positions=[...ps.positions,{id:`P${Date.now()}`,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:engine.currentTime}]
+    })
+    if(executed.length){
+      ps.orders=ps.orders.filter(o=>!executed.includes(o.id))
+      setTick(t=>t+1)
+    }
+  },[])
 
   // ── Multi-pair ────────────────────────────────────────────────────────────────
   const addPair=useCallback((pair)=>{
@@ -278,6 +387,7 @@ export default function SessionPage(){
 
   // ── Computed ──────────────────────────────────────────────────────────────────
   const activePs      = pairState.current[activePair]
+  const pendingOrders = activePs?.orders??[]
   const openPositions = activePs?.positions??[]
   const allTrades     = Object.values(pairState.current).flatMap(ps=>ps?.trades??[])
   const unrealized    = openPositions.reduce((s,p)=>s+calcPnl(p.side,p.entry,currentPrice??p.entry,p.lots,activePair),0)
@@ -417,12 +527,17 @@ export default function SessionPage(){
 
           <div style={s.toggleRow}>
             {openPositions.length>0&&(
-              <button style={{...s.togBtn,...(showPos?s.togOn:{})}} onClick={()=>{setShowPos(v=>!v);setShowTrades(false)}}>
+              <button style={{...s.togBtn,...(showPos?s.togOn:{})}} onClick={()=>{setShowPos(v=>!v);setShowTrades(false);setShowOrders(false)}}>
                 {openPositions.length} POS
               </button>
             )}
+            {pendingOrders.length>0&&(
+              <button style={{...s.togBtn,...(showOrders?s.togOn:{})}} onClick={()=>{setShowOrders(v=>!v);setShowPos(false);setShowTrades(false)}}>
+                {pendingOrders.length} LIMIT
+              </button>
+            )}
             {allTrades.length>0&&(
-              <button style={{...s.togBtn,...(showTrades?s.togOn:{})}} onClick={()=>{setShowTrades(v=>!v);setShowPos(false)}}>
+              <button style={{...s.togBtn,...(showTrades?s.togOn:{})}} onClick={()=>{setShowTrades(v=>!v);setShowPos(false);setShowOrders(false)}}>
                 {allTrades.length} TRADES
               </button>
             )}
@@ -498,6 +613,88 @@ export default function SessionPage(){
         </div>
       )}
 
+      {/* CONTEXT MENU */}
+      {ctxMenu&&(
+        <>
+          <div style={{position:'fixed',inset:0,zIndex:998}} onClick={()=>setCtxMenu(null)}/>
+          <div style={{position:'fixed',left:ctxMenu.x,top:ctxMenu.y,background:'rgba(2,8,16,0.96)',border:'1px solid #0d2040',borderRadius:8,zIndex:999,minWidth:170,overflow:'hidden',boxShadow:'0 12px 40px #000000EE',backdropFilter:'blur(12px)',fontFamily:"'Montserrat',sans-serif"}}>
+            <div style={{padding:'7px 12px',fontSize:8,fontWeight:700,color:'#2a5070',letterSpacing:1,borderBottom:'1px solid #0d2040'}}>
+              {ctxMenu.price.toFixed(5)}
+            </div>
+            {ctxMenu.price<(currentPrice||0)&&(
+              <button style={s.ctxItem} onClick={()=>previewOrder('BUY_LIMIT',ctxMenu.price,ctxMenu.pair)}>
+                <span style={{color:'rgba(30,144,255,0.8)',fontWeight:700}}>Buy Limit</span>
+                <span style={{color:'#2a5070',fontSize:8}}>{ctxMenu.price.toFixed(5)}</span>
+              </button>
+            )}
+            {ctxMenu.price>(currentPrice||0)&&(
+              <button style={s.ctxItem} onClick={()=>previewOrder('SELL_LIMIT',ctxMenu.price,ctxMenu.pair)}>
+                <span style={{color:'rgba(239,83,80,0.8)',fontWeight:700}}>Sell Limit</span>
+                <span style={{color:'#2a5070',fontSize:8}}>{ctxMenu.price.toFixed(5)}</span>
+              </button>
+            )}
+            <button style={{...s.ctxItem,borderTop:'1px solid #0d2040'}} onClick={()=>setCtxMenu(null)}>
+              <span style={{color:'#2a5070',fontSize:10}}>Cerrar</span>
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ORDER PREVIEW — confirm before placing */}
+      {preview&&(
+        <div style={{position:'fixed',bottom:58,right:12,zIndex:200,background:'rgba(2,8,16,0.95)',border:'1px solid #0d2040',borderRadius:10,padding:'14px 16px',width:220,backdropFilter:'blur(12px)',fontFamily:"'Montserrat',sans-serif",boxShadow:'0 8px 32px #000000CC'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <span style={{fontSize:10,fontWeight:800,color:preview.side==='BUY_LIMIT'?'rgba(30,144,255,0.9)':'rgba(239,83,80,0.9)'}}>
+              {preview.side==='BUY_LIMIT'?'Buy Limit':'Sell Limit'}
+            </span>
+            <span style={{fontSize:9,color:'#4a6080'}}>{preview.entry.toFixed(5)}</span>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:14}}>
+            <PreviewRow label="SL" pips={preview.slPips} color="rgba(239,83,80,0.7)"
+              pnl={-(preview.slPips*preview.lots*10).toFixed(2)}
+              onChange={v=>updatePreviewSl(Math.max(1,parseInt(v)||1))}/>
+            <PreviewRow label="TP" pips={preview.tpPips} color="rgba(38,166,154,0.7)"
+              pnl={'+'+(preview.tpPips*preview.lots*10).toFixed(2)}
+              onChange={v=>updatePreviewTp(Math.max(1,parseInt(v)||1))}/>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:8,color:'#2a5070'}}>
+              <span>R:R</span><span style={{color:'#4a6080',fontWeight:700}}>{preview.rr}R</span>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={cancelPreview} style={{flex:1,background:'none',border:'1px solid #0d2040',color:'#2a5070',borderRadius:5,padding:'6px',fontSize:9,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>Cancelar</button>
+            <button onClick={confirmLimitOrder} style={{flex:2,background:'rgba(30,144,255,0.15)',border:'1px solid rgba(30,144,255,0.3)',color:'#1E90FF',borderRadius:5,padding:'6px',fontSize:9,fontWeight:800,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>Confirmar orden</button>
+          </div>
+        </div>
+      )}
+
+      {/* PENDING ORDERS PANEL */}
+      {showOrders&&pendingOrders.length>0&&(
+        <div style={s.panel}>
+          <div style={s.panelHdr}>
+            <span style={s.panelTitle}>ÓRDENES LÍMITE</span>
+            <button style={s.iconBtn} onClick={()=>setShowOrders(false)}>✕</button>
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={s.tbl}>
+              <thead><tr>{['PAR','TIPO','ENTRADA','SL','TP','LOTS',''].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {pendingOrders.map(o=>(
+                  <tr key={o.id} style={s.tblRow}>
+                    <td style={s.td}>{o.pair}</td>
+                    <td style={{...s.td,color:o.side==='BUY_LIMIT'?'rgba(30,144,255,0.8)':'rgba(239,83,80,0.8)',fontWeight:700}}>{o.side==='BUY_LIMIT'?'Buy Limit':'Sell Limit'}</td>
+                    <td style={s.td}>{fmtPx(o.entry,o.pair)}</td>
+                    <td style={{...s.td,color:'rgba(239,83,80,0.6)'}}>{fmtPx(o.sl,o.pair)}</td>
+                    <td style={{...s.td,color:'rgba(38,166,154,0.6)'}}>{fmtPx(o.tp,o.pair)}</td>
+                    <td style={s.td}>{o.lots}</td>
+                    <td style={s.td}><button style={s.closeBtn} onClick={()=>cancelLimitOrder(o.id,o.pair)}>✕</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <style>{css}</style>
     </div>
   )
@@ -522,6 +719,20 @@ function ParamGroup({label,presets,active,onSelect,input}){
         ))}
         {input}
       </div>
+    </div>
+  )
+}
+
+function PreviewRow({label,pips,color,pnl,onChange}){
+  return(
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <span style={{fontSize:8,fontWeight:700,color,letterSpacing:0.5,width:20}}>{label}</span>
+      <div style={{display:'flex',alignItems:'center',gap:4}}>
+        <input type="number" min="1" value={pips} onChange={e=>onChange(e.target.value)}
+          style={{width:44,background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',color:'#c0d0e8',borderRadius:3,padding:'2px 4px',fontSize:9,fontWeight:700,textAlign:'center',outline:'none',fontFamily:"'Montserrat',sans-serif"}}/>
+        <span style={{fontSize:8,color:'#2a5070'}}>pips</span>
+      </div>
+      <span style={{fontSize:9,fontWeight:700,color,minWidth:50,textAlign:'right'}}>{pnl}</span>
     </div>
   )
 }
@@ -591,6 +802,7 @@ const s={
   th:{padding:'4px 12px',textAlign:'left',color:'#1E90FF',fontWeight:700,fontSize:8,letterSpacing:1,whiteSpace:'nowrap',borderBottom:'1px solid #0d2040'},
   td:{padding:'6px 12px',color:'#c0d0e8',whiteSpace:'nowrap'},
   closeBtn:{background:'none',border:'none',color:'#2a5070',cursor:'pointer',fontSize:11,padding:'0 2px',fontFamily:"'Montserrat',sans-serif"},
+  ctxItem:{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',background:'none',border:'none',color:'#c0d0e8',fontSize:10,fontWeight:700,padding:'9px 14px',cursor:'pointer',fontFamily:"'Montserrat',sans-serif",gap:16},
   iconBtn:{background:'rgba(3,8,16,0.8)',border:glassBorder,borderRadius:6,padding:'5px 7px',cursor:'pointer',color:'#4a6080',display:'flex',alignItems:'center',fontFamily:"'Montserrat',sans-serif"},
 }
 
