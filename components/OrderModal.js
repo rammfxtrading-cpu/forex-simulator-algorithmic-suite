@@ -28,9 +28,10 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
       <div style={{
-        background:'rgba(255,255,255,0.07)',
-        border:'1px solid rgba(255,255,255,0.18)',
+        background:'rgba(0,20,60,0.55)',
+        border:'1px solid rgba(0,120,255,0.5)',
         borderRadius:24,width:420,
+        backdropFilter:'blur(32px)',WebkitBackdropFilter:'blur(32px)',
         boxShadow:`0 32px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(${accentRgb},0.15),inset 0 1px 0 rgba(255,255,255,0.25)`,
         backdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
         WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
@@ -38,13 +39,13 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
       }} onClick={e=>e.stopPropagation()}>
 
         {/* Header */}
-        <div style={{padding:'18px 22px 14px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{padding:'18px 22px 14px',borderBottom:'1px solid rgba(0,120,255,0.2)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <div style={{width:8,height:8,borderRadius:'50%',background:accentColor,boxShadow:`0 0 10px ${accentColor}`}}/>
             <span style={{fontSize:14,fontWeight:900,color:'#fff',letterSpacing:0.5}}>{isLimit?(isBuy?'BUY LIMIT':'SELL LIMIT'):(isBuy?'BUY MARKET':'SELL MARKET')}</span>
             <span style={{fontSize:11,color:'rgba(255,255,255,0.4)',fontWeight:600}}>{pair}</span>
           </div>
-          <button onClick={onClose} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:8,color:'rgba(255,255,255,0.5)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>✕</button>
+          <button onClick={onClose} style={{background:'rgba(0,40,100,0.4)',border:'1px solid rgba(0,120,255,0.3)',borderRadius:8,color:'rgba(255,255,255,0.7)',cursor:'pointer',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>✕</button>
         </div>
 
         <div style={{padding:'16px 22px 20px'}}>
@@ -66,7 +67,7 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
           {/* Risk % presets */}
           <div style={{marginBottom:14}}>
             <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:8}}>RIESGO DEL BALANCE</div>
-            <div style={{display:'flex',gap:4,marginBottom:10,background:'rgba(255,255,255,0.04)',borderRadius:12,padding:4}}>
+            <div style={{display:'flex',gap:4,marginBottom:10,background:'rgba(0,20,60,0.4)',borderRadius:12,padding:4,border:'1px solid rgba(0,120,255,0.2)'}}>
               {RISK_PRESETS.map(r=>(
                 <button key={r} onClick={()=>setRiskPct(r)} style={{
                   flex:1,padding:'6px 0',borderRadius:9,border:'none',
