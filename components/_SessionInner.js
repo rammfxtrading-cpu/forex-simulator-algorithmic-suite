@@ -23,7 +23,7 @@ function chartOpts(w,h){return{
     background:{color:'#000000'},
     textColor:'#ffffff',
     fontFamily:"'Montserrat',sans-serif",
-    fontSize:11,
+    fontSize:13,
   },
   grid:{
     vertLines:{color:'rgba(255,255,255,0.03)',style:0},
@@ -653,11 +653,8 @@ export default function SessionPage(){
           </div>
         </div>
 
-        {/* Right: balance stats */}
-        <div style={s.statsRow}>
-          <StatBadge label="Balance" val={`$${balance.toFixed(2)}`} color="#fff"/>
-          <StatBadge label="Realizado" val={fmtPnl(realized)} color={pnlColor(realized)}/>
-          <StatBadge label="Flotante" val={fmtPnl(unrealized)} color={pnlColor(unrealized)}/>
+        {/* Right: fullscreen only */}
+        <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
           <button style={s.fullBtn} onClick={()=>{if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen()}} title="Pantalla completa">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
