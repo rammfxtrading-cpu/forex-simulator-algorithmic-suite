@@ -151,10 +151,10 @@ class LineToolTrendLinePaneView extends LineToolPaneView {
             const hAlign = (options.text.box?.alignment?.horizontal || 'center').toLowerCase();
             let cx, cy;
             if (hAlign === 'left') {
-                cx = pt0.x;
+                cx = pt0.x + estimatedHalfW;
                 cy = pt0.y;
             } else if (hAlign === 'right') {
-                cx = pt1.x;
+                cx = pt1.x - estimatedHalfW;
                 cy = pt1.y;
             } else {
                 cx = (pt0.x + pt1.x) / 2;
@@ -164,7 +164,6 @@ class LineToolTrendLinePaneView extends LineToolPaneView {
         }
         this._segmentRenderer.setData({
             points: segmentPoints,
-            textGap,
             textGap,
             line: lineOptions,
             toolDefaultHoverCursor: options.defaultHoverCursor,
