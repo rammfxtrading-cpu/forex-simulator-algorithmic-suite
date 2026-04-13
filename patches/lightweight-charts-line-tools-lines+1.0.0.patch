@@ -1,0 +1,27 @@
+diff --git a/node_modules/lightweight-charts-line-tools-lines/dist/lightweight-charts-line-tools-lines.js b/node_modules/lightweight-charts-line-tools-lines/dist/lightweight-charts-line-tools-lines.js
+index 4405568..68b73bf 100644
+--- a/node_modules/lightweight-charts-line-tools-lines/dist/lightweight-charts-line-tools-lines.js
++++ b/node_modules/lightweight-charts-line-tools-lines/dist/lightweight-charts-line-tools-lines.js
+@@ -140,8 +140,22 @@ class LineToolTrendLinePaneView extends LineToolPaneView {
+          * - `toolDefault...`: We pass the cursor styles (e.g., 'pointer') so the renderer's internal
+          *   hit-test can suggest the correct cursor to the chart when hovering over the line.
+          */
++        // Calculate text gap if text has a value
++        let textGap = null;
++        if (options.text && options.text.value) {
++            // Estimate text width based on font size and text length
++            const fontSize = options.text.font?.size || 12;
++            const textLen = options.text.value.length;
++            const estimatedHalfW = (fontSize * 0.55 * textLen) / 2 + 1;
++            // Get midpoint of the segment
++            const [pt0, pt1] = this._points;
++            const cx = (pt0.x + pt1.x) / 2;
++            const cy = (pt0.y + pt1.y) / 2;
++            textGap = { cx, cy, halfW: estimatedHalfW, halfH: fontSize / 2 };
++        }
+         this._segmentRenderer.setData({
+             points: segmentPoints,
++            textGap,
+             line: lineOptions,
+             toolDefaultHoverCursor: options.defaultHoverCursor,
+             toolDefaultDragCursor: options.defaultDragCursor,

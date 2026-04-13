@@ -1,0 +1,37 @@
+diff --git a/node_modules/lightweight-charts-line-tools-core/dist/lightweight-charts-line-tools-core.js b/node_modules/lightweight-charts-line-tools-core/dist/lightweight-charts-line-tools-core.js
+index a356582..e408a95 100644
+--- a/node_modules/lightweight-charts-line-tools-core/dist/lightweight-charts-line-tools-core.js
++++ b/node_modules/lightweight-charts-line-tools-core/dist/lightweight-charts-line-tools-core.js
+@@ -7089,7 +7089,31 @@ class SegmentRenderer {
+                 const [start, end] = extendedClippedSegment; // Safe destructuring as it's not a Point
+                 // Use generic drawLine, which correctly picks solid/dashed
+                 // drawVerticalLine and drawHorizontalLine do not take style, they are low-level pixel operations
+-                if (start.x === end.x) {
++                // TEXT GAP: if textGap provided, draw two segments with a gap
++                if (this._data.textGap) {
++                    const g = this._data.textGap;
++                    const gL = g.cx - g.halfW - 1;
++                    const gR = g.cx + g.halfW + 1;
++                    const dxL = end.x - start.x;
++                    if (Math.abs(dxL) > 0.1) {
++                        const t1 = (gL - start.x) / dxL;
++                        const t2 = (gR - start.x) / dxL;
++                        if (t1 > 0.01) {
++                            const p1x = start.x + t1*dxL;
++                            const p1y = start.y + t1*(end.y-start.y);
++                            drawLine(ctx, start.x, start.y, p1x, p1y, lineStyle);
++                        }
++                        if (t2 < 0.99) {
++                            const p2x = start.x + t2*dxL;
++                            const p2y = start.y + t2*(end.y-start.y);
++                            drawLine(ctx, p2x, p2y, end.x, end.y, lineStyle);
++                        }
++                    } else {
++                        // Vertical/horizontal fallback
++                        if (start.x === end.x) drawVerticalLine(ctx, start.x, start.y, end.y);
++                        else drawHorizontalLine(ctx, start.y, start.x, end.x);
++                    }
++                } else if (start.x === end.x) {
+                     drawVerticalLine(ctx, start.x, start.y, end.y);
+                 }
+                 else if (start.y === end.y) {
