@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
+import DrawingToolbar, { DrawingCanvas } from './DrawingToolbar'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -115,7 +116,9 @@ export default function SessionPage(){
   const balanceRef          = useRef(10000)
   // Order modal
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
-  const [mounted,     setMounted]     = useState(false)  // SSR guard
+  const [mounted,     setMounted]     = useState(false)
+  const [activeTool,  setActiveTool]  = useState('cursor')
+  const [drawings,    setDrawings]    = useState([])  // SSR guard
 
   useEffect(()=>{setMounted(true)},[])
   useEffect(()=>{activePairRef.current=activePair},[activePair])
@@ -588,7 +591,8 @@ export default function SessionPage(){
 
   // ── Keyboard ──────────────────────────────────────────────────────────────────
   useEffect(()=>{
-    const onKey=e=>{if(e.target.tagName==='INPUT')return;if(e.code==='Space'){e.preventDefault();handlePlayPause()}if(e.code==='ArrowRight')handleStep()}
+    const onKey=e=>{if(e.target.tagName==='INPUT')return;if(e.code==='Space'){e.preventDefault();handlePlayPause()}if(e.code==='ArrowRight')handleStep()
+    if(e.code==='Escape')setActiveTool('cursor')}
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)
   },[handlePlayPause,handleStep])
 
@@ -640,6 +644,14 @@ export default function SessionPage(){
           dataReady={dataReady}
           onClosePos={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
           onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
+        />
+        <DrawingCanvas
+          activeTool={activeTool}
+          chartMap={chartMap}
+          activePair={activePair}
+          dataReady={dataReady}
+          drawings={drawings}
+          setDrawings={setDrawings}
           onDragEnd={(id,type,newPrice)=>{
             const ps=pairState.current[activePair]
             const pos=ps?.positions?.find(p=>p.id===id)
@@ -660,6 +672,13 @@ export default function SessionPage(){
           }}
         />
       </div>
+
+      <DrawingToolbar
+        activeTool={activeTool}
+        onToolChange={(tool)=>setActiveTool(tool)}
+        onClear={()=>setDrawings([])}
+        drawingCount={drawings.length}
+      />
 
       {/* TOP BAR — FX Replay style: session name left, pair tabs center, stats right */}
       <div style={s.topBar}>
