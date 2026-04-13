@@ -73,6 +73,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
   const pluginRef       = useRef(null)
   const [toolConfigs, setToolConfigs] = useState({ ...DEFAULT_CFG })
   const cfgRef          = useRef({ ...DEFAULT_CFG })
+  const pausePollRef    = useRef(false)
 
   useEffect(() => { cfgRef.current = toolConfigs }, [toolConfigs])
 
@@ -133,11 +134,9 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
         options: buildOptions(toolKey, cfg),
         points: [],
       })
-      // Re-select after apply (plugin deselects automatically)
-      try {
-        const tool = p._tools?.get?.(toolId)
-        if (tool) tool.setSelected(true)
-      } catch {}
+      // Pause polling so config pill stays visible after apply
+      pausePollRef.current = true
+      setTimeout(() => { pausePollRef.current = false }, 1500)
     } catch (e) { console.error('applyToTool:', e) }
   }, [])
 
