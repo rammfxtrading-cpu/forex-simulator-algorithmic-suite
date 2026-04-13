@@ -164,7 +164,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
 
       <div style={DIV}/>
 
-      {/* Texto */}
+      {/* Texto — no para Path */}
       <div style={{position:'relative'}}>
         <button title="Texto" style={btn(showText)} onClick={()=>setShowText(v=>!v)}><TextIcon/></button>
         {showText&&(
