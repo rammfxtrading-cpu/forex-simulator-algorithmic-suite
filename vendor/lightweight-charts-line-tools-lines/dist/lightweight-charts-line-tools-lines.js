@@ -162,19 +162,6 @@ class LineToolTrendLinePaneView extends LineToolPaneView {
             }
             textGap = { cx, cy, halfW: estimatedHalfW, halfH: fontSize / 2 };
         }
-        let textGap = null;
-        if (options.text && options.text.value) {
-            const fontSize = options.text.font?.size || 12;
-            const textLen = options.text.value.length;
-            const estimatedHalfW = (fontSize * 0.55 * textLen) / 2 + 1;
-            const [pt0, pt1] = this._points;
-            const hAlign = (options.text.box?.alignment?.horizontal || 'center').toLowerCase();
-            let cx, cy;
-            if (hAlign === 'left') { cx = pt0.x; cy = pt0.y; }
-            else if (hAlign === 'right') { cx = pt1.x; cy = pt1.y; }
-            else { cx = (pt0.x + pt1.x) / 2; cy = (pt0.y + pt1.y) / 2; }
-            textGap = { cx, cy, halfW: estimatedHalfW, halfH: fontSize / 2 };
-        }
         this._segmentRenderer.setData({
             points: segmentPoints,
             textGap,
