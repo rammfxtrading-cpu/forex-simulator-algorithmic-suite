@@ -58,12 +58,12 @@ function buildText(cfg) {
   if (!cfg.label) return { value: '' }
   return {
     value: cfg.label,
-    font: { family: 'Montserrat, sans-serif', color: cfg.color, size: cfg.fontSize || 12, bold: false, italic: false },
+    font: { family: 'Montserrat, sans-serif', color: cfg.textColor || cfg.color, size: cfg.fontSize || 12, bold: false, italic: false },
     box: {
       scale: 1, angle: 0,
       alignment: { vertical: cfg.textV || 'middle', horizontal: cfg.textH || 'center' },
       padding: { x: 3, y: 0 },
-      background: { color: '#000000', inflation: { x: 3, y: 3 } },
+      background: { color: 'rgba(0,0,0,0)', inflation: { x: 3, y: 3 } },
       border: { color: 'transparent', width: 0, style: 0, radius: 0, highlight: false },
     },
   }

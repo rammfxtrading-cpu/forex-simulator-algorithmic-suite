@@ -172,6 +172,14 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
             <div style={{position:'fixed',inset:0,zIndex:299}} onClick={()=>setShowText(false)}/>
             <div style={{position:'absolute',bottom:36,left:'50%',transform:'translateX(-50%)',zIndex:300,background:'rgba(4,10,24,0.97)',border:'1px solid rgba(30,144,255,0.3)',borderRadius:10,padding:'10px',width:240,boxShadow:'0 4px 24px rgba(0,0,0,0.6)',fontFamily:"'Montserrat',sans-serif"}}>
               <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1.5,marginBottom:6}}>ETIQUETA</div>
+              <div style={{display:'flex',gap:6,marginBottom:8,alignItems:'center'}}>
+                <label style={{display:'flex',alignItems:'center',gap:4,fontSize:9,color:'rgba(255,255,255,0.5)'}}>
+                  Color texto
+                  <span style={{width:18,height:18,borderRadius:3,border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',background:cfg.textColor||cfg.color||'#ffffff',overflow:'hidden',cursor:'pointer'}}>
+                    <input type="color" value={cfg.textColor||cfg.color||'#ffffff'} onChange={e=>apply({textColor:e.target.value})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+                  </span>
+                </label>
+              </div>
               <input value={label} onChange={e=>setLabel(e.target.value)}
                 onKeyDown={e=>{if(e.key==='Enter'){apply({label});setShowText(false)}if(e.key==='Escape')setShowText(false)}}
                 placeholder="Escribe aquí..." autoFocus
