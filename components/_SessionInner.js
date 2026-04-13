@@ -152,11 +152,10 @@ export default function SessionPage(){
         const sel=getSelected()
         if(sel&&sel.length>0){
           const t=sel[0]
-          console.log('SELECTED TOOL:', JSON.stringify(t))
           if(t?.id){setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
         }
         else{setSelectedTool(prev=>prev?null:prev)}
-      }catch(e){console.log('getSelected error:',e)}
+      }catch{}
     },300)
     return()=>clearInterval(iv)
   },[dataReady,activePair])

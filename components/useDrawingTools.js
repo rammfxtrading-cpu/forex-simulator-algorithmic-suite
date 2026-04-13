@@ -125,9 +125,14 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
 
   // Apply to a specific tool ID immediately
   const applyToTool = useCallback((toolId, toolKey, cfg) => {
-    const p = pluginRef.current; if (!p || !toolId) return
+    const p = pluginRef.current; if (!p || !toolId || !toolKey) return
     try {
-      p.applyLineToolOptions({ id: toolId, options: buildOptions(toolKey, cfg) })
+      p.applyLineToolOptions({
+        id: toolId,
+        toolType: toolKey,
+        options: buildOptions(toolKey, cfg),
+        points: [],
+      })
     } catch (e) { console.error('applyToTool:', e) }
   }, [])
 
