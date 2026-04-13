@@ -7092,24 +7092,26 @@ class SegmentRenderer {
                 // TEXT GAP: if textGap provided, draw two segments with a gap
                 if (this._data.textGap) {
                     const g = this._data.textGap;
-                    const gL = g.cx - g.halfW - 1;
-                    const gR = g.cx + g.halfW + 1;
+                    const PAD = 1.5;
+                    const gL = g.cx - g.halfW - PAD;
+                    const gR = g.cx + g.halfW + PAD;
                     const dxL = end.x - start.x;
                     if (Math.abs(dxL) > 0.1) {
                         const t1 = (gL - start.x) / dxL;
                         const t2 = (gR - start.x) / dxL;
-                        if (t1 > 0.01) {
+                        // First segment: start -> gap (only if gap is not at the very start)
+                        if (t1 > 0.001) {
                             const p1x = start.x + t1*dxL;
                             const p1y = start.y + t1*(end.y-start.y);
                             drawLine(ctx, start.x, start.y, p1x, p1y, lineStyle);
                         }
-                        if (t2 < 0.99) {
+                        // Second segment: gap -> end (only if gap is not at the very end)
+                        if (t2 < 0.999) {
                             const p2x = start.x + t2*dxL;
                             const p2y = start.y + t2*(end.y-start.y);
                             drawLine(ctx, p2x, p2y, end.x, end.y, lineStyle);
                         }
                     } else {
-                        // Vertical/horizontal fallback
                         if (start.x === end.x) drawVerticalLine(ctx, start.x, start.y, end.y);
                         else drawHorizontalLine(ctx, start.y, start.x, end.x);
                     }
