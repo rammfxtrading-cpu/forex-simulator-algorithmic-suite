@@ -61,9 +61,9 @@ function buildText(cfg) {
     font: { family: 'Montserrat, sans-serif', color: cfg.color, size: cfg.fontSize || 12, bold: false, italic: false },
     box: {
       scale: 1, angle: 0,
-      alignment: { vertical: cfg.textV || 'bottom', horizontal: cfg.textH || 'center' },
-      padding: { x: 4, y: 2 },
-      background: { color: 'rgba(0,0,0,0)', inflation: { x: 0, y: 0 } },
+      alignment: { vertical: cfg.textV || 'middle', horizontal: cfg.textH || 'center' },
+      padding: { x: 6, y: 0 },
+      background: { color: '#000000', inflation: { x: 6, y: 2 } },
       border: { color: 'transparent', width: 0, style: 0, radius: 0, highlight: false },
     },
   }

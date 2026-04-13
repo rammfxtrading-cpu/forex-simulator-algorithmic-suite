@@ -159,7 +159,7 @@ export default function SessionPage(){
           if(t?.id){setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
         } else {
           noSelCount++
-          if(noSelCount>5) setSelectedTool(prev=>prev?null:prev)
+          if(noSelCount>10) setSelectedTool(prev=>prev?null:prev)
         }
       }catch{}
     },300)
