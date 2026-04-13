@@ -5,7 +5,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 
 const DEFAULT_CFG = {
   TrendLine:         { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
-  HorizontalLine:    { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
+  Path:              { color: '#ffffff', width: 1, style: 0 },
   HorizontalRay:     { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
   Rectangle:         { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.15)', label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
   FibRetracement:    { color: '#2962FF', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 10, textV: 'middle', textH: 'left' },
@@ -47,6 +47,13 @@ function buildText(cfg) {
 
 function buildOptions(toolKey, cfg) {
   const base = { visible: true, editable: true }
+
+  if (toolKey === 'Path') {
+    return {
+      ...base,
+      line: { color: cfg.color || '#ffffff', width: cfg.width || 1, style: cfg.style || 0 },
+    }
+  }
 
   if (toolKey === 'Rectangle') {
     return {
@@ -112,13 +119,14 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
     try {
       const { createLineToolsPlugin }                                            = await import('lightweight-charts-line-tools-core')
       const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
+      const { LineToolPath } = await import('lightweight-charts-line-tools-path')
       const { LineToolRectangle }                                                = await import('lightweight-charts-line-tools-rectangle')
       const { LineToolFibRetracement }                                           = await import('lightweight-charts-line-tools-fib-retracement')
       const { LineToolLongShortPosition }                                        = await import('lightweight-charts-line-tools-long-short-position')
 
       const plugin = createLineToolsPlugin(cr.chart, cr.series)
       plugin.registerLineTool('TrendLine',         LineToolTrendLine)
-      plugin.registerLineTool('HorizontalLine',    LineToolHorizontalLine)
+      plugin.registerLineTool('Path',              LineToolPath)
       plugin.registerLineTool('HorizontalRay',     LineToolHorizontalRay)
       plugin.registerLineTool('Rectangle',         LineToolRectangle)
       plugin.registerLineTool('FibRetracement',    LineToolFibRetracement)

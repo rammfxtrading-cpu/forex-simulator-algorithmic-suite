@@ -11,7 +11,7 @@ import { useState, useRef, useEffect } from 'react'
 const TOOLS = [
   { id: 'cursor',           label: 'Cursor',             icon: CursorIcon,   toolKey: null },
   { id: 'TrendLine',        label: 'Línea de tendencia', icon: TrendIcon,    toolKey: 'TrendLine' },
-  { id: 'HorizontalLine',   label: 'Línea horizontal',   icon: HLineIcon,    toolKey: 'HorizontalLine' },
+  { id: 'Path',             label: 'Path',               icon: PathIcon,     toolKey: 'Path' },
   { id: 'Rectangle',        label: 'Rectángulo',         icon: RectIcon,     toolKey: 'Rectangle' },
   { id: 'FibRetracement',   label: 'Fibonacci',          icon: FibIcon,      toolKey: 'FibRetracement' },
   { id: 'LongShortPosition',label: 'Long / Short',       icon: PosIcon,      toolKey: 'LongShortPosition' },
@@ -268,6 +268,7 @@ function HLineIcon()    { return <svg width="13" height="13" viewBox="0 0 24 24"
 function RectIcon()     { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" fill="none"><rect x="3" y="6" width="18" height="12" rx="1"/></svg> }
 function FibIcon()      { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" fill="none"><line x1="2" y1="4" x2="22" y2="4"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="13" x2="22" y2="13"/><line x1="2" y1="17" x2="22" y2="17"/><line x1="2" y1="21" x2="22" y2="21"/></svg> }
 function PosIcon()      { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="8" rx="1" stroke="#26a69a"/><rect x="3" y="13" width="18" height="8" rx="1" stroke="#ef5350"/></svg> }
+function PathIcon()     { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><path d="M3 17 C6 17 6 7 9 7 C12 7 12 17 15 17 C18 17 18 7 21 7"/></svg> }
 function TemplateIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/></svg> }
 function TrashIcon()    { return <svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14H6L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4h6v2"/></svg> }
 function TextIcon()     { return <svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><polyline points="4,7 4,4 20,4 20,7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg> }
