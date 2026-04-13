@@ -133,6 +133,11 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
         options: buildOptions(toolKey, cfg),
         points: [],
       })
+      // Re-select after apply (plugin deselects automatically)
+      try {
+        const tool = p._tools?.get?.(toolId)
+        if (tool) tool.setSelected(true)
+      } catch {}
     } catch (e) { console.error('applyToTool:', e) }
   }, [])
 
