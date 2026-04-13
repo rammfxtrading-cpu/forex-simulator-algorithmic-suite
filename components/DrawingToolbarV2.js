@@ -122,7 +122,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
   const hasRect=toolKey==='Rectangle'||toolKey==='FibRetracement'
 
   return (
-    <div style={{...PILL,position:'fixed',cursor:'grab',zIndex:200,...(pos.x!=null?{left:pos.x,top:pos.y}:{right:80,top:80})}} onMouseDown={onMD}>
+    <div style={{...PILL,position:'fixed',cursor:'grab',zIndex:200,...(pos.x!=null?{left:pos.x,top:pos.y}:{right:80,top:80})}} onMouseDown={onMD} onClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()}>
 
       {/* Color línea */}
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
