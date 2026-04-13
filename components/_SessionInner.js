@@ -149,14 +149,18 @@ export default function SessionPage(){
     onDoubleClick((event)=>{
       try{setSelectedTool({id:event?.toolId,toolType:event?.toolType});if(event?.toolType)setActiveToolKey(event.toolType)}catch{}
     })
+    let noSelCount=0
     const iv=setInterval(()=>{
       try{
         const sel=getSelected()
         if(sel&&sel.length>0){
+          noSelCount=0
           const t=sel[0]
           if(t?.id){setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
+        } else {
+          noSelCount++
+          if(noSelCount>5) setSelectedTool(prev=>prev?null:prev)
         }
-        // keep selectedTool visible until user dismisses
       }catch{}
     },300)
     return()=>clearInterval(iv)
