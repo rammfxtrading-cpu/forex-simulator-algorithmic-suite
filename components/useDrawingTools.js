@@ -16,7 +16,7 @@ function buildText(cfg) {
   if (!cfg.label) return { value: '' }
   return {
     value: cfg.label,
-    alignment: 1, // TextAlignment.Center
+    alignment: 'center',
     font: {
       family: 'Montserrat, sans-serif',
       color: cfg.textColor || cfg.color || '#ffffff',
