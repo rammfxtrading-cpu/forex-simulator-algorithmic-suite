@@ -35,7 +35,7 @@ function buildText(cfg) {
       maxHeight: 0,
       shadow: { blur: 0, color: 'transparent', offset: { x: 0, y: 0 } },
       // Transparent bg so line shows through but text is readable
-      background: { color: '#000000', inflation: { x: 1, y: 1 } },
+      background: { color: 'rgba(0,0,0,0)', inflation: { x: 0, y: 0 } },
       border: { color: 'transparent', width: 0, radius: 0, highlight: false, style: 0 },
     },
     padding: 0,
