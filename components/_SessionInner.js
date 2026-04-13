@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
-import DrawingToolbarV2, { DrawingConfigPill } from './DrawingToolbarV2'
+import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import { useDrawingTools } from './useDrawingTools'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
@@ -122,8 +122,10 @@ export default function SessionPage(){
   const [drawingCount,  setDrawingCount]  = useState(0)
   const [selectedTool,  setSelectedTool]  = useState(null)
   const [templates,     setTemplates]     = useState([])
+  const [drawingCtxMenu, setDrawingCtxMenu] = useState(null)  // {x,y}
+  const [activeToolKey,  setActiveToolKey]  = useState(null)
 
-  const { pluginRef, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick } = useDrawingTools({
+  const { pluginRef, toolConfigs, updateToolConfig, applyToSelected, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
@@ -672,7 +674,7 @@ export default function SessionPage(){
 
       <DrawingToolbarV2
         activeTool={activeTool}
-        onToolChange={(id)=>{setActiveTool(id);if(id==='cursor')setSelectedTool(null)}}
+        onToolChange={(id)=>{setActiveTool(id);setActiveToolKey(id==='cursor'?null:id);if(id==='cursor')setSelectedTool(null)}}
         onAddTool={(toolKey)=>addTool(toolKey)}
         onRemoveSelected={removeSelected}
         onRemoveAll={()=>{removeAll();setDrawingCount(0)}}
@@ -687,13 +689,20 @@ export default function SessionPage(){
       />
       <DrawingConfigPill
         selectedTool={selectedTool}
-        onUpdate={(opts)=>{
-          if(!selectedTool?.id||!pluginRef.current)return
-          try{pluginRef.current.applyLineToolOptions({id:selectedTool.id,options:{line:{color:opts.color,width:opts.width},body:{background:{color:opts.fillColor}}}})}catch(e){}
+        toolKey={activeToolKey}
+        toolConfig={activeToolKey?toolConfigs[activeToolKey]:null}
+        onUpdate={(newCfg)=>{
+          if(activeToolKey){updateToolConfig(activeToolKey,newCfg)}
+          if(selectedTool?.id&&activeToolKey){applyToSelected(selectedTool.id,activeToolKey,newCfg)}
         }}
         onDelete={()=>{removeSelected();setSelectedTool(null)}}
-        onLock={()=>setSelectedTool(null)}
         onDeselect={()=>setSelectedTool(null)}
+      />
+      <DrawingContextMenu
+        x={drawingCtxMenu?.x}
+        y={drawingCtxMenu?.y}
+        onDelete={()=>{removeSelected();setSelectedTool(null)}}
+        onClose={()=>setDrawingCtxMenu(null)}
       />
 
       {/* TOP BAR — FX Replay style: session name left, pair tabs center, stats right */}
