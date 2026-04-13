@@ -137,13 +137,24 @@ export default function SessionPage(){
   // Drawing tools events
   useEffect(()=>{
     if(!dataReady) return
-    onAfterEdit(()=>setDrawingCount(c=>c+1))
-    onDoubleClick((event)=>{
+    onAfterEdit(()=>{
+      setDrawingCount(c=>c+1)
       try{
-        const data=JSON.parse(pluginRef.current?.getLineToolByID?.(event?.toolId)||'{}')
-        setSelectedTool({id:event?.toolId,...data})
+        const sel=getSelected()
+        if(sel&&sel.length>0){const t=sel[0];setSelectedTool({id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
       }catch{}
     })
+    onDoubleClick((event)=>{
+      try{setSelectedTool({id:event?.toolId,toolType:event?.toolType});if(event?.toolType)setActiveToolKey(event.toolType)}catch{}
+    })
+    const iv=setInterval(()=>{
+      try{
+        const sel=getSelected()
+        if(sel&&sel.length>0){const t=sel[0];if(t?.id){setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}}
+        else{setSelectedTool(prev=>prev?null:prev)}
+      }catch{}
+    },300)
+    return()=>clearInterval(iv)
   },[dataReady,activePair])
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
