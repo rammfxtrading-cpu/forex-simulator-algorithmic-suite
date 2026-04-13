@@ -155,8 +155,11 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
   const applyToTool = useCallback((toolId, toolKey, cfg) => {
     const p = pluginRef.current; if (!p || !toolId || !toolKey) return
     try {
+      // getLineToolByID returns JSON array: [{id, toolType, points, options}]
       const json = p.getLineToolByID(toolId)
-      const points = json ? (JSON.parse(json).points || []) : []
+      const arr = JSON.parse(json)
+      const points = arr?.[0]?.points || []
+      if (!points.length) { console.warn('applyToTool: no points found for', toolId); return }
       p.createOrUpdateLineTool(toolKey, points, buildOptions(toolKey, cfg), toolId)
     } catch (e) { console.error('applyToTool:', e) }
   }, [])
