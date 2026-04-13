@@ -1,22 +1,48 @@
 /**
- * useDrawingTools.js v3 — estructura de opciones correcta
+ * useDrawingTools.js v4 — estructuras de opciones correctas por herramienta
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
 
-// LineStyle numbers
-export const LS = { SOLID: 0, DOTTED: 1, DASHED: 2, LARGE_DASHED: 3, SPARSE_DOTTED: 4 }
-
-// BoxVerticalAlignment / BoxHorizontalAlignment strings
-export const VA = { Top: 'top', Middle: 'middle', Bottom: 'bottom' }
-export const HA = { Left: 'left', Center: 'center', Right: 'right' }
-
 const DEFAULT_CFG = {
-  TrendLine:         { color: '#ffffff', width: 1, style: 0, label: '', fontSize: 12, textV: 'bottom', textH: 'center' },
-  HorizontalLine:    { color: '#ffffff', width: 1, style: 0, label: '', fontSize: 12, textV: 'bottom', textH: 'center' },
-  HorizontalRay:     { color: '#ffffff', width: 1, style: 0, label: '', fontSize: 12, textV: 'bottom', textH: 'center' },
-  Rectangle:         { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.15)', label: '', fontSize: 12, textV: 'middle', textH: 'center' },
-  FibRetracement:    { color: '#2962FF', width: 1, style: 0, label: '', fontSize: 10, textV: 'bottom', textH: 'left' },
-  LongShortPosition: { color: '#26a69a', width: 1, style: 0, label: '', fontSize: 12, textV: 'middle', textH: 'center' },
+  TrendLine:         { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
+  HorizontalLine:    { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
+  HorizontalRay:     { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
+  Rectangle:         { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.15)', label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
+  FibRetracement:    { color: '#2962FF', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 10, textV: 'middle', textH: 'left' },
+  LongShortPosition: { color: '#26a69a', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
+}
+
+function buildText(cfg) {
+  if (!cfg.label) return { value: '' }
+  return {
+    value: cfg.label,
+    alignment: 1, // TextAlignment.Center
+    font: {
+      family: 'Montserrat, sans-serif',
+      color: cfg.textColor || cfg.color || '#ffffff',
+      size: cfg.fontSize || 12,
+      bold: false,
+      italic: false,
+    },
+    box: {
+      scale: 1,
+      angle: 0,
+      alignment: {
+        vertical: cfg.textV || 'middle',
+        horizontal: cfg.textH || 'center',
+      },
+      padding: { x: 3, y: 0 },
+      maxHeight: 0,
+      shadow: { blur: 0, color: 'transparent', offset: { x: 0, y: 0 } },
+      // Transparent bg so line shows through but text is readable
+      background: { color: 'rgba(0,0,0,0)', inflation: { x: 3, y: 2 } },
+      border: { color: 'transparent', width: 0, radius: 0, highlight: false, style: 0 },
+    },
+    padding: 0,
+    wordWrapWidth: 0,
+    forceTextAlign: false,
+    forceCalculateMaxLineWidth: false,
+  }
 }
 
 function buildOptions(toolKey, cfg) {
@@ -25,8 +51,11 @@ function buildOptions(toolKey, cfg) {
   if (toolKey === 'Rectangle') {
     return {
       ...base,
-      background: { color: cfg.fillColor || 'rgba(41,98,255,0.15)' },
-      border: { color: cfg.color, width: cfg.width, style: cfg.style, radius: 0 },
+      rectangle: {
+        extend: { left: false, right: false },
+        background: { color: cfg.fillColor || 'rgba(41,98,255,0.15)' },
+        border: { radius: 0, width: cfg.width || 1, style: cfg.style || 0, color: cfg.color || '#2962FF' },
+      },
       text: buildText(cfg),
     }
   }
@@ -34,46 +63,45 @@ function buildOptions(toolKey, cfg) {
   if (toolKey === 'FibRetracement') {
     return {
       ...base,
-      line: { color: cfg.color, width: cfg.width, style: cfg.style },
-      // Keep default levels but override colors
+      line: { width: cfg.width || 1, style: cfg.style || 0 },
+      levels: [
+        { color: cfg.color || '#2962FF', coeff: 0,     opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 0.236, opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 0.382, opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 0.5,   opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 0.618, opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 0.65,  opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 0.702, opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 0.786, opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 1,     opacity: 0 },
+      ],
     }
   }
 
   if (toolKey === 'LongShortPosition') {
     return {
       ...base,
-      line: { color: cfg.color, width: cfg.width, style: cfg.style },
+      line: { color: cfg.color || '#26a69a', width: cfg.width || 1, style: cfg.style || 0 },
     }
   }
 
   // TrendLine, HorizontalLine, HorizontalRay
   return {
     ...base,
-    line: { color: cfg.color, width: cfg.width, style: cfg.style, extend: { left: false, right: false } },
+    line: {
+      color: cfg.color || '#ffffff',
+      width: cfg.width || 1,
+      style: cfg.style || 0,
+      extend: { left: false, right: false },
+    },
     text: buildText(cfg),
   }
 }
 
-function buildText(cfg) {
-  if (!cfg.label) return { value: '' }
-  return {
-    value: cfg.label,
-    font: { family: 'Montserrat, sans-serif', color: cfg.textColor || cfg.color, size: cfg.fontSize || 12, bold: false, italic: false },
-    box: {
-      scale: 1, angle: 0,
-      alignment: { vertical: cfg.textV || 'middle', horizontal: cfg.textH || 'center' },
-      padding: { x: 3, y: 0 },
-      background: { color: 'rgba(0,0,0,0)', inflation: { x: 3, y: 3 } },
-      border: { color: 'transparent', width: 0, style: 0, radius: 0, highlight: false },
-    },
-  }
-}
-
 export function useDrawingTools({ chartMap, activePair, dataReady }) {
-  const pluginRef       = useRef(null)
+  const pluginRef      = useRef(null)
   const [toolConfigs, setToolConfigs] = useState({ ...DEFAULT_CFG })
-  const cfgRef          = useRef({ ...DEFAULT_CFG })
-  const pausePollRef    = useRef(false)
+  const cfgRef         = useRef({ ...DEFAULT_CFG })
 
   useEffect(() => { cfgRef.current = toolConfigs }, [toolConfigs])
 
@@ -82,11 +110,11 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
     const cr = chartMap.current[activePair]
     if (!cr?.chart || !cr?.series || pluginRef.current) return
     try {
-      const { createLineToolsPlugin }                                          = await import('lightweight-charts-line-tools-core')
+      const { createLineToolsPlugin }                                            = await import('lightweight-charts-line-tools-core')
       const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
-      const { LineToolRectangle }                                              = await import('lightweight-charts-line-tools-rectangle')
-      const { LineToolFibRetracement }                                         = await import('lightweight-charts-line-tools-fib-retracement')
-      const { LineToolLongShortPosition }                                      = await import('lightweight-charts-line-tools-long-short-position')
+      const { LineToolRectangle }                                                = await import('lightweight-charts-line-tools-rectangle')
+      const { LineToolFibRetracement }                                           = await import('lightweight-charts-line-tools-fib-retracement')
+      const { LineToolLongShortPosition }                                        = await import('lightweight-charts-line-tools-long-short-position')
 
       const plugin = createLineToolsPlugin(cr.chart, cr.series)
       plugin.registerLineTool('TrendLine',         LineToolTrendLine)
@@ -124,19 +152,12 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
     setToolConfigs(prev => ({ ...prev, [toolKey]: { ...prev[toolKey], ...patch } }))
   }, [])
 
-  // Apply to a specific tool ID immediately
   const applyToTool = useCallback((toolId, toolKey, cfg) => {
     const p = pluginRef.current; if (!p || !toolId || !toolKey) return
     try {
-      p.applyLineToolOptions({
-        id: toolId,
-        toolType: toolKey,
-        options: buildOptions(toolKey, cfg),
-
-      })
-      // Pause polling so config pill stays visible after apply
-      pausePollRef.current = true
-      setTimeout(() => { pausePollRef.current = false }, 1500)
+      const json = p.getLineToolByID(toolId)
+      const points = json ? (JSON.parse(json).points || []) : []
+      p.createOrUpdateLineTool(toolKey, points, buildOptions(toolKey, cfg), toolId)
     } catch (e) { console.error('applyToTool:', e) }
   }, [])
 

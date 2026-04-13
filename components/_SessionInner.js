@@ -655,7 +655,8 @@ export default function SessionPage(){
   // ── Keyboard ──────────────────────────────────────────────────────────────────
   useEffect(()=>{
     const onKey=e=>{if(e.target.tagName==='INPUT')return;if(e.code==='Space'){e.preventDefault();handlePlayPause()}if(e.code==='ArrowRight')handleStep()
-    if(e.code==='Escape')setActiveTool('cursor')}
+    if(e.code==='Escape')setActiveTool('cursor')
+    if(e.code==='Delete'||e.code==='Backspace')setSelectedTool(null)}
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)
   },[handlePlayPause,handleStep])
 
@@ -716,7 +717,7 @@ export default function SessionPage(){
         onToolChange={(id)=>{setActiveTool(id);setActiveToolKey(id==='cursor'?null:id);if(id==='cursor')setSelectedTool(null)}}
         onAddTool={(toolKey)=>addTool(toolKey)}
         onRemoveSelected={removeSelected}
-        onRemoveAll={()=>{removeAll();setDrawingCount(0)}}
+        onRemoveAll={()=>{removeAll();setDrawingCount(0);setSelectedTool(null)}}
         drawingCount={drawingCount}
         templates={templates}
         onSaveTemplate={async(name)=>{
