@@ -62,8 +62,8 @@ function buildText(cfg) {
     box: {
       scale: 1, angle: 0,
       alignment: { vertical: cfg.textV || 'middle', horizontal: cfg.textH || 'center' },
-      padding: { x: 6, y: 0 },
-      background: { color: '#000000', inflation: { x: 6, y: 2 } },
+      padding: { x: 3, y: 0 },
+      background: { color: '#000000', inflation: { x: 3, y: 3 } },
       border: { color: 'transparent', width: 0, style: 0, radius: 0, highlight: false },
     },
   }
