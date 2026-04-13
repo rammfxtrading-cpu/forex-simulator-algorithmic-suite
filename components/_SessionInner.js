@@ -10,7 +10,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
-import DrawingToolbar, { DrawingCanvas } from './DrawingToolbar'
+import DrawingToolbarV2, { DrawingConfigPill } from './DrawingToolbarV2'
+import { useDrawingTools } from './useDrawingTools'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -117,10 +118,31 @@ export default function SessionPage(){
   // Order modal
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
   const [mounted,     setMounted]     = useState(false)
-  const [activeTool,  setActiveTool]  = useState('cursor')
-  const [drawings,    setDrawings]    = useState([])  // SSR guard
+  const [activeTool,    setActiveTool]    = useState('cursor')
+  const [drawingCount,  setDrawingCount]  = useState(0)
+  const [selectedTool,  setSelectedTool]  = useState(null)
+  const [templates,     setTemplates]     = useState([])
+
+  const { pluginRef, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick } = useDrawingTools({
+    chartMap,
+    activePair,
+    dataReady,
+  })
+  
 
   useEffect(()=>{setMounted(true)},[])
+
+  // Drawing tools events
+  useEffect(()=>{
+    if(!dataReady) return
+    onAfterEdit(()=>setDrawingCount(c=>c+1))
+    onDoubleClick((event)=>{
+      try{
+        const data=JSON.parse(pluginRef.current?.getLineToolByID?.(event?.toolId)||'{}')
+        setSelectedTool({id:event?.toolId,...data})
+      }catch{}
+    })
+  },[dataReady,activePair])
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
 
@@ -645,39 +667,33 @@ export default function SessionPage(){
           onClosePos={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
           onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
         />
-        <DrawingCanvas
-          activeTool={activeTool}
-          chartMap={chartMap}
-          activePair={activePair}
-          dataReady={dataReady}
-          drawings={drawings}
-          setDrawings={setDrawings}
-          onDragEnd={(id,type,newPrice)=>{
-            const ps=pairState.current[activePair]
-            const pos=ps?.positions?.find(p=>p.id===id)
-            if(pos){
-              const pips=Math.abs((newPrice-pos.entry)*pipMult(activePair))
-              if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
-              else if(type==='tp'){pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
-              ps.positions=[...ps.positions];setTick(t=>t+1);return
-            }
-            const ord=ps?.orders?.find(o=>o.id===id)
-            if(ord){
-              const pips=Math.abs((newPrice-ord.entry)*pipMult(activePair))
-              if(type==='lim_e'){const sd=ord.sl-ord.entry,td=ord.tp-ord.entry;ord.entry=newPrice;ord.sl=newPrice+sd;ord.tp=newPrice+td}
-              else if(type==='lim_sl'){ord.sl=newPrice;ord.slPips=parseFloat(pips.toFixed(1))}
-              else if(type==='lim_tp'){ord.tp=newPrice;ord.tpPips=parseFloat(pips.toFixed(1))}
-              ps.orders=[...ps.orders];setTick(t=>t+1)
-            }
-          }}
-        />
+
       </div>
 
-      <DrawingToolbar
+      <DrawingToolbarV2
         activeTool={activeTool}
-        onToolChange={(tool)=>setActiveTool(tool)}
-        onClear={()=>setDrawings([])}
-        drawingCount={drawings.length}
+        onToolChange={(id)=>{setActiveTool(id);if(id==='cursor')setSelectedTool(null)}}
+        onAddTool={(toolKey)=>addTool(toolKey)}
+        onRemoveSelected={removeSelected}
+        onRemoveAll={()=>{removeAll();setDrawingCount(0)}}
+        drawingCount={drawingCount}
+        templates={templates}
+        onSaveTemplate={async(name)=>{
+          const json=exportTools();if(!json||!userIdRef.current)return
+          const{data}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,data:json}).select().single()
+          if(data)setTemplates(prev=>[...prev,data])
+        }}
+        onLoadTemplate={(t)=>{if(!t?.data)return;removeAll();importTools(t.data)}}
+      />
+      <DrawingConfigPill
+        selectedTool={selectedTool}
+        onUpdate={(opts)=>{
+          if(!selectedTool?.id||!pluginRef.current)return
+          try{pluginRef.current.applyLineToolOptions({id:selectedTool.id,options:{line:{color:opts.color,width:opts.width},body:{background:{color:opts.fillColor}}}})}catch(e){}
+        }}
+        onDelete={()=>{removeSelected();setSelectedTool(null)}}
+        onLock={()=>setSelectedTool(null)}
+        onDeselect={()=>setSelectedTool(null)}
       />
 
       {/* TOP BAR — FX Replay style: session name left, pair tabs center, stats right */}
