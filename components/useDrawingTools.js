@@ -1,67 +1,92 @@
 /**
- * useDrawingTools.js v2
- * Hook completo para herramientas de dibujo
+ * useDrawingTools.js v3 — estructura de opciones correcta
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
 
-export const LINE_STYLE = { SOLID: 0, DOTTED: 1, DASHED: 2, LARGE_DASHED: 3, SPARSE_DOTTED: 4 }
+// LineStyle numbers
+export const LS = { SOLID: 0, DOTTED: 1, DASHED: 2, LARGE_DASHED: 3, SPARSE_DOTTED: 4 }
 
-const DEFAULT_CONFIG = {
-  TrendLine:        { color: '#ffffff', width: 1, style: 0, fillColor: 'rgba(255,255,255,0)', label: '' },
-  HorizontalLine:   { color: '#ffffff', width: 1, style: 0, fillColor: 'rgba(255,255,255,0)', label: '' },
-  HorizontalRay:    { color: '#ffffff', width: 1, style: 0, fillColor: 'rgba(255,255,255,0)', label: '' },
-  Rectangle:        { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.1)', label: '' },
-  FibRetracement:   { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.05)', label: '' },
-  LongShortPosition:{ color: '#26a69a', width: 1, style: 0, fillColor: 'rgba(38,166,154,0.1)', label: '' },
-  PriceRange:       { color: '#ffffff', width: 1, style: 1, fillColor: 'rgba(255,255,255,0.05)', label: '' },
+// BoxVerticalAlignment / BoxHorizontalAlignment strings
+export const VA = { Top: 'top', Middle: 'middle', Bottom: 'bottom' }
+export const HA = { Left: 'left', Center: 'center', Right: 'right' }
+
+const DEFAULT_CFG = {
+  TrendLine:         { color: '#ffffff', width: 1, style: 0, label: '', fontSize: 12, textV: 'bottom', textH: 'center' },
+  HorizontalLine:    { color: '#ffffff', width: 1, style: 0, label: '', fontSize: 12, textV: 'bottom', textH: 'center' },
+  HorizontalRay:     { color: '#ffffff', width: 1, style: 0, label: '', fontSize: 12, textV: 'bottom', textH: 'center' },
+  Rectangle:         { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.15)', label: '', fontSize: 12, textV: 'middle', textH: 'center' },
+  FibRetracement:    { color: '#2962FF', width: 1, style: 0, label: '', fontSize: 10, textV: 'bottom', textH: 'left' },
+  LongShortPosition: { color: '#26a69a', width: 1, style: 0, label: '', fontSize: 12, textV: 'middle', textH: 'center' },
 }
 
-function buildToolOptions(toolKey, cfg) {
-  const base = {
-    line: { color: cfg.color, width: cfg.width, style: cfg.style },
-    visible: true,
-    editable: true,
-  }
-  if (toolKey === 'Rectangle' || toolKey === 'FibRetracement') {
-    base.body = { background: { color: cfg.fillColor } }
-    base.border = { color: cfg.color, width: cfg.width, style: cfg.style }
-  }
-  if (toolKey === 'LongShortPosition') {
-    base.profitLine = { color: '#26a69a', width: cfg.width }
-    base.stopLine   = { color: '#ef5350', width: cfg.width }
-  }
-  if (cfg.label) {
-    base.text = {
-      value: cfg.label,
-      font: { color: cfg.color, size: 11, bold: false, italic: false, family: 'Montserrat' },
-      box: {
-        background: { color: 'rgba(0,0,0,0.6)' },
-        border: { color: cfg.color, width: 1, style: 0, radius: 3 },
-        padding: { x: 4, y: 2 },
-        alignment: { vertical: 'bottom', horizontal: 'center' },
-      }
+function buildOptions(toolKey, cfg) {
+  const base = { visible: true, editable: true }
+
+  if (toolKey === 'Rectangle') {
+    return {
+      ...base,
+      background: { color: cfg.fillColor || 'rgba(41,98,255,0.15)' },
+      border: { color: cfg.color, width: cfg.width, style: cfg.style, radius: 0 },
+      text: buildText(cfg),
     }
   }
-  return base
+
+  if (toolKey === 'FibRetracement') {
+    return {
+      ...base,
+      line: { color: cfg.color, width: cfg.width, style: cfg.style },
+      // Keep default levels but override colors
+    }
+  }
+
+  if (toolKey === 'LongShortPosition') {
+    return {
+      ...base,
+      line: { color: cfg.color, width: cfg.width, style: cfg.style },
+    }
+  }
+
+  // TrendLine, HorizontalLine, HorizontalRay
+  return {
+    ...base,
+    line: { color: cfg.color, width: cfg.width, style: cfg.style, extend: { left: false, right: false } },
+    text: buildText(cfg),
+  }
+}
+
+function buildText(cfg) {
+  if (!cfg.label) return { value: '' }
+  return {
+    value: cfg.label,
+    font: { family: 'Montserrat, sans-serif', color: cfg.color, size: cfg.fontSize || 12, bold: false, italic: false },
+    box: {
+      scale: 1, angle: 0,
+      alignment: { vertical: cfg.textV || 'bottom', horizontal: cfg.textH || 'center' },
+      padding: { x: 4, y: 2 },
+      background: { color: 'rgba(0,0,0,0.5)', inflation: { x: 4, y: 2 } },
+      border: { color: cfg.color, width: 1, style: 0, radius: 3, highlight: false },
+    },
+  }
 }
 
 export function useDrawingTools({ chartMap, activePair, dataReady }) {
-  const pluginRef      = useRef(null)
-  const [toolConfigs, setToolConfigs] = useState({ ...DEFAULT_CONFIG })
-  const toolConfigsRef = useRef({ ...DEFAULT_CONFIG })
+  const pluginRef       = useRef(null)
+  const [toolConfigs, setToolConfigs] = useState({ ...DEFAULT_CFG })
+  const cfgRef          = useRef({ ...DEFAULT_CFG })
 
-  useEffect(() => { toolConfigsRef.current = toolConfigs }, [toolConfigs])
+  useEffect(() => { cfgRef.current = toolConfigs }, [toolConfigs])
 
   const initPlugin = useCallback(async () => {
     if (!dataReady) return
     const cr = chartMap.current[activePair]
     if (!cr?.chart || !cr?.series || pluginRef.current) return
     try {
-      const { createLineToolsPlugin } = await import('lightweight-charts-line-tools-core')
+      const { createLineToolsPlugin }                                          = await import('lightweight-charts-line-tools-core')
       const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
-      const { LineToolRectangle }         = await import('lightweight-charts-line-tools-rectangle')
-      const { LineToolFibRetracement }    = await import('lightweight-charts-line-tools-fib-retracement')
-      const { LineToolLongShortPosition } = await import('lightweight-charts-line-tools-long-short-position')
+      const { LineToolRectangle }                                              = await import('lightweight-charts-line-tools-rectangle')
+      const { LineToolFibRetracement }                                         = await import('lightweight-charts-line-tools-fib-retracement')
+      const { LineToolLongShortPosition }                                      = await import('lightweight-charts-line-tools-long-short-position')
+
       const plugin = createLineToolsPlugin(cr.chart, cr.series)
       plugin.registerLineTool('TrendLine',         LineToolTrendLine)
       plugin.registerLineTool('HorizontalLine',    LineToolHorizontalLine)
@@ -90,17 +115,20 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
 
   const addTool = useCallback((toolKey) => {
     const p = pluginRef.current; if (!p) return
-    const cfg = toolConfigsRef.current[toolKey] || DEFAULT_CONFIG[toolKey] || {}
-    try { p.addLineTool(toolKey, [], buildToolOptions(toolKey, cfg)) } catch (e) { console.error(e) }
+    const cfg = cfgRef.current[toolKey] || DEFAULT_CFG[toolKey] || {}
+    try { p.addLineTool(toolKey, [], buildOptions(toolKey, cfg)) } catch (e) { console.error('addTool:', e) }
   }, [])
 
-  const updateToolConfig = useCallback((toolKey, newCfg) => {
-    setToolConfigs(prev => ({ ...prev, [toolKey]: { ...prev[toolKey], ...newCfg } }))
+  const updateToolConfig = useCallback((toolKey, patch) => {
+    setToolConfigs(prev => ({ ...prev, [toolKey]: { ...prev[toolKey], ...patch } }))
   }, [])
 
-  const applyToSelected = useCallback((toolId, toolKey, cfg) => {
+  // Apply to a specific tool ID immediately
+  const applyToTool = useCallback((toolId, toolKey, cfg) => {
     const p = pluginRef.current; if (!p || !toolId) return
-    try { p.applyLineToolOptions({ id: toolId, options: buildToolOptions(toolKey, cfg) }) } catch (e) { console.error(e) }
+    try {
+      p.applyLineToolOptions({ id: toolId, options: buildOptions(toolKey, cfg) })
+    } catch (e) { console.error('applyToTool:', e) }
   }, [])
 
   const removeSelected = useCallback(() => { try { pluginRef.current?.removeSelectedLineTools() } catch {} }, [])
@@ -111,5 +139,5 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
   const onDoubleClick  = useCallback((h) => { try { pluginRef.current?.subscribeLineToolsDoubleClick(h) } catch {} }, [])
   const getSelected    = useCallback(() => { try { return JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') } catch { return [] } }, [])
 
-  return { pluginRef, toolConfigs, updateToolConfig, applyToSelected, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected }
+  return { pluginRef, toolConfigs, updateToolConfig, applyToTool, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected }
 }

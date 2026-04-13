@@ -125,7 +125,7 @@ export default function SessionPage(){
   const [drawingCtxMenu, setDrawingCtxMenu] = useState(null)  // {x,y}
   const [activeToolKey,  setActiveToolKey]  = useState(null)
 
-  const { pluginRef, toolConfigs, updateToolConfig, applyToSelected, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
+  const { pluginRef, toolConfigs, updateToolConfig, applyToTool, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
@@ -703,11 +703,24 @@ export default function SessionPage(){
         toolKey={activeToolKey}
         toolConfig={activeToolKey?toolConfigs[activeToolKey]:null}
         onUpdate={(newCfg)=>{
-          if(activeToolKey){updateToolConfig(activeToolKey,newCfg)}
-          if(selectedTool?.id&&activeToolKey){applyToSelected(selectedTool.id,activeToolKey,newCfg)}
+          if(activeToolKey){
+            updateToolConfig(activeToolKey,newCfg)
+            if(selectedTool?.id) applyToTool(selectedTool.id,activeToolKey,newCfg)
+          }
         }}
         onDelete={()=>{removeSelected();setSelectedTool(null)}}
         onDeselect={()=>setSelectedTool(null)}
+        templates={templates}
+        onSaveTemplate={async(name)=>{
+          const cfg=activeToolKey?toolConfigs[activeToolKey]:{}
+          if(!userIdRef.current) return
+          const{data}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfg)}).select().single()
+          if(data)setTemplates(prev=>[...prev,data])
+        }}
+        onLoadTemplate={(t)=>{
+          if(!t?.config||!activeToolKey) return
+          try{const cfg=JSON.parse(t.config);updateToolConfig(activeToolKey,cfg);if(selectedTool?.id)applyToTool(selectedTool.id,activeToolKey,cfg)}catch{}
+        }}
       />
       <DrawingContextMenu
         x={drawingCtxMenu?.x}
