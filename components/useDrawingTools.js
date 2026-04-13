@@ -132,7 +132,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
         id: toolId,
         toolType: toolKey,
         options: buildOptions(toolKey, cfg),
-        points: [],
+
       })
       // Pause polling so config pill stays visible after apply
       pausePollRef.current = true
