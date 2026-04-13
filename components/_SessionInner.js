@@ -124,6 +124,8 @@ export default function SessionPage(){
   const [templates,     setTemplates]     = useState([])
   const [drawingCtxMenu, setDrawingCtxMenu] = useState(null)  // {x,y}
   const [activeToolKey,  setActiveToolKey]  = useState(null)
+  const selectedToolRef  = useRef(null)
+  const activeToolKeyRef = useRef(null)
 
   const { pluginRef, toolConfigs, updateToolConfig, applyToTool, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
@@ -160,6 +162,8 @@ export default function SessionPage(){
     return()=>clearInterval(iv)
   },[dataReady,activePair])
   useEffect(()=>{activePairRef.current=activePair},[activePair])
+  useEffect(()=>{selectedToolRef.current=selectedTool},[selectedTool])
+  useEffect(()=>{activeToolKeyRef.current=activeToolKey},[activeToolKey])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
 
   // ── Background constellation animation ──────────────────────────────────────
@@ -705,10 +709,13 @@ export default function SessionPage(){
         selectedTool={selectedTool}
         toolKey={activeToolKey}
         toolConfig={activeToolKey?toolConfigs[activeToolKey]:null}
-        onUpdate={(newCfg)=>{ console.log('UPDATE', selectedTool?.id, activeToolKey, newCfg)
-          if(activeToolKey){
-            updateToolConfig(activeToolKey,newCfg)
-            if(selectedTool?.id) applyToTool(selectedTool.id,activeToolKey,newCfg)
+        onUpdate={(newCfg)=>{
+          const tk=activeToolKeyRef.current
+          const st=selectedToolRef.current
+          console.log('UPDATE', st?.id, tk, newCfg)
+          if(tk){
+            updateToolConfig(tk,newCfg)
+            if(st?.id) applyToTool(st.id,tk,newCfg)
           }
         }}
         onDelete={()=>{removeSelected();setSelectedTool(null)}}
