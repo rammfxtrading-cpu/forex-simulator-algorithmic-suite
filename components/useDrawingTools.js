@@ -63,8 +63,8 @@ function buildText(cfg) {
       scale: 1, angle: 0,
       alignment: { vertical: cfg.textV || 'bottom', horizontal: cfg.textH || 'center' },
       padding: { x: 4, y: 2 },
-      background: { color: 'rgba(0,0,0,0.5)', inflation: { x: 4, y: 2 } },
-      border: { color: cfg.color, width: 1, style: 0, radius: 3, highlight: false },
+      background: { color: 'rgba(0,0,0,0)', inflation: { x: 0, y: 0 } },
+      border: { color: 'transparent', width: 0, style: 0, radius: 0, highlight: false },
     },
   }
 }
