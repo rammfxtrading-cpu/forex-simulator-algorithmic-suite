@@ -150,9 +150,13 @@ export default function SessionPage(){
     const iv=setInterval(()=>{
       try{
         const sel=getSelected()
-        if(sel&&sel.length>0){const t=sel[0];if(t?.id){setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}}
+        if(sel&&sel.length>0){
+          const t=sel[0]
+          console.log('SELECTED TOOL:', JSON.stringify(t))
+          if(t?.id){setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
+        }
         else{setSelectedTool(prev=>prev?null:prev)}
-      }catch{}
+      }catch(e){console.log('getSelected error:',e)}
     },300)
     return()=>clearInterval(iv)
   },[dataReady,activePair])
