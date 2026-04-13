@@ -705,7 +705,7 @@ export default function SessionPage(){
         selectedTool={selectedTool}
         toolKey={activeToolKey}
         toolConfig={activeToolKey?toolConfigs[activeToolKey]:null}
-        onUpdate={(newCfg)=>{
+        onUpdate={(newCfg)=>{ console.log('UPDATE', selectedTool?.id, activeToolKey, newCfg)
           if(activeToolKey){
             updateToolConfig(activeToolKey,newCfg)
             if(selectedTool?.id) applyToTool(selectedTool.id,activeToolKey,newCfg)
