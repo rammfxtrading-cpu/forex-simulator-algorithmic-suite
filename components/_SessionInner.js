@@ -154,7 +154,7 @@ export default function SessionPage(){
           const t=sel[0]
           if(t?.id){setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
         }
-        else{setSelectedTool(prev=>prev?null:prev)}
+        // keep selectedTool visible until user dismisses
       }catch{}
     },300)
     return()=>clearInterval(iv)
