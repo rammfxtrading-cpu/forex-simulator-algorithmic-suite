@@ -149,24 +149,41 @@ export default function SessionPage(){
     onDoubleClick((event)=>{
       try{setSelectedTool({id:event?.toolId,toolType:event?.toolType});if(event?.toolType)setActiveToolKey(event.toolType)}catch{}
     })
-    let noSelCount=0
-    const iv=setInterval(()=>{
+      const iv=setInterval(()=>{
       try{
         const sel=getSelected()
         if(sel&&sel.length>0){
-          noSelCount=0
           const t=sel[0]
-          if(t?.id){setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
-        } else {
-          noSelCount++
-          if(noSelCount>10) setSelectedTool(prev=>prev?null:prev)
+          if(t?.id){
+            setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType})
+            if(t.toolType) setActiveToolKey(t.toolType)
+          }
         }
+        // Never auto-clear — user dismisses with X button or clicking chart
       }catch{}
     },300)
     return()=>clearInterval(iv)
   },[dataReady,activePair])
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{selectedToolRef.current=selectedTool},[selectedTool])
+
+  // Clear selectedTool when user clicks empty chart area
+  useEffect(()=>{
+    if(!dataReady) return
+    const cr=chartMap.current[activePair]
+    if(!cr?.chart) return
+    const handler=()=>{
+      // Small delay to let plugin process click first
+      setTimeout(()=>{
+        try{
+          const sel=getSelected()
+          if(!sel||sel.length===0) setSelectedTool(null)
+        }catch{}
+      },50)
+    }
+    cr.chart.subscribeClick(handler)
+    return()=>{ try{cr.chart.unsubscribeClick(handler)}catch{} }
+  },[dataReady,activePair])
   useEffect(()=>{activeToolKeyRef.current=activeToolKey},[activeToolKey])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
 
