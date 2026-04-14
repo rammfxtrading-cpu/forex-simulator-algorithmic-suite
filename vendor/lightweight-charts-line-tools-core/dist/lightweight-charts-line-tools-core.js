@@ -1567,20 +1567,29 @@ function getExtendedVisiblePriceRange(tool) {
  * @param timestamp - The target timestamp to convert.
  * @returns The calculated `Logical` index, or `null` if the series has insufficient data.
  */
-function interpolateLogicalIndexFromTime(chart, // Chart is passed but mainly for context/consistency, not used here directly after removing timeToLogical
-series, timestamp) {
+function interpolateLogicalIndexFromTime(chart, series, timestamp) {
     if (!series) {
         console.warn("[interpolateLogicalIndexFromTime] series is not defined.");
         return null;
     }
-    // Retrieve data for the first two points in the series to calculate the time interval.
-    // This approach avoids reliance on `timeScale.timeToLogical`.
+    const givenTimeNum = typeof timestamp === 'string'
+        ? convertDateStringToUTCTimestamp(timestamp)
+        : Number(timestamp);
+    // Use cached series data array for exact binary search (handles gaps correctly)
+    const cachedData = typeof window !== 'undefined' && window.__algSuiteSeriesData;
+    if (cachedData && cachedData.length >= 2) {
+        let lo = 0, hi = cachedData.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi + 1) >> 1;
+            if (Number(cachedData[mid].time) <= givenTimeNum) lo = mid;
+            else hi = mid - 1;
+        }
+        return lo;
+    }
+    // Fallback: linear interpolation with first two data points
     const dataAtIndex0 = series.dataByIndex(0, 0);
     const dataAtIndex1 = series.dataByIndex(1, 0);
-    if (!dataAtIndex0 || !dataAtIndex1) {
-        console.warn("[interpolateLogicalIndexFromTime] Not enough data points to reliably interpolate logical index.");
-        return null; // Cannot interpolate without at least two data points
-    }
+    if (!dataAtIndex0 || !dataAtIndex1) return null;
     const time0 = typeof dataAtIndex0.time === 'string'
         ? convertDateStringToUTCTimestamp(dataAtIndex0.time)
         : dataAtIndex0.time;
@@ -1588,20 +1597,9 @@ series, timestamp) {
         ? convertDateStringToUTCTimestamp(dataAtIndex1.time)
         : dataAtIndex1.time;
     const interval = (Number(time1) - Number(time0));
-    if (interval === 0) {
-        console.warn("[interpolateLogicalIndexFromTime] Series data points have zero time interval, cannot interpolate logical index.");
-        return null; // Avoid division by zero
-    }
-    // Convert the given timestamp to a number (UTCTimestamp) for calculations
-    const givenTimeNum = typeof timestamp === 'string'
-        ? convertDateStringToUTCTimestamp(timestamp)
-        : Number(timestamp);
-    // Calculate the difference in time from the given timestamp to the starting point
+    if (interval === 0) return null;
     const timeDiff = givenTimeNum - Number(time0);
-    // Calculate the logical index based on the time difference and interval
-    // Assuming logical index 0 corresponds to dataAtIndex0
-    const logicalIndex = timeDiff / interval;
-    return logicalIndex;
+    return timeDiff / interval;
 }
 // NOTE: The `interpolateLogicalIndexFromTime` function might also be useful for complex scenarios
 // but is not strictly required for the immediate goal of "drawing in blank space" for creation.

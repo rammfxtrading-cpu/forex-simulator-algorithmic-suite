@@ -145,13 +145,6 @@ export default function SessionPage(){
     onAfterEdit(()=>{
       setDrawingCount(c=>c+1)
       try{
-        const sel2=getSelected()
-        if(sel2?.length>0){
-          const tj=pluginRef.current?.getLineToolByID(sel2[0].id)
-          if(tj){const tp=JSON.parse(tj);console.log('TOOL POINTS',JSON.stringify(tp[0]?.points))}
-        }
-      }catch{}
-      try{
         const sel=getSelected()
         if(sel&&sel.length>0){const t=sel[0];setSelectedTool({id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
       }catch{}
@@ -202,7 +195,6 @@ export default function SessionPage(){
     const tf=pairTf[activePair]||'H1'
     Object.entries(drawingTfMap).forEach(([toolId,entry])=>{
       const tfs=Array.isArray(entry)?entry:(entry.tfs||['M1','M5','M15','M30','H1','H4','D1'])
-      console.log('setToolVisible',toolId,tfs.includes(tf),tf,tfs)
       setToolVisible(toolId, tfs.includes(tf))
     })
   },[pairTf,activePair,drawingTfMap,setToolVisible])
@@ -421,6 +413,7 @@ export default function SessionPage(){
       // Export tools, setData, reimport to fix logical index after TF change
       const p=pluginRef.current
       cr.series.setData(agg)
+      if(typeof window!=='undefined') window.__algSuiteSeriesData=agg
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
