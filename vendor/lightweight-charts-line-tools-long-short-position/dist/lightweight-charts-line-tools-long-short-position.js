@@ -202,7 +202,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             this._slCanvas.setData({
                 topLeft: { x: Math.min(P_Entry_Screen.x, P_Stop_Screen.x), y: Math.min(P_Entry_Screen.y, P_Stop_Screen.y) },
                 bottomRight: { x: Math.max(P_Entry_Screen.x, P_Stop_Screen.x), y: Math.max(P_Entry_Screen.y, P_Stop_Screen.y) },
-                text: slTxt, color: 'rgba(255,255,255,0.9)',
+                text: slTxt, color: options.textColor || 'rgba(255,255,255,0.9)',
             });
             compositeRenderer.append(this._slCanvas);
             if (P_PT_Screen && P2_logical) {
@@ -215,7 +215,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
                 this._tpCanvas.setData({
                     topLeft: { x: Math.min(P_Entry_Screen.x, P_PT_Screen.x), y: Math.min(P_Entry_Screen.y, P_PT_Screen.y) },
                     bottomRight: { x: Math.max(P_Entry_Screen.x, P_PT_Screen.x), y: Math.max(P_Entry_Screen.y, P_PT_Screen.y) },
-                    text: tpTxt, color: 'rgba(255,255,255,0.9)',
+                    text: tpTxt, color: options.textColor || 'rgba(255,255,255,0.9)',
                 });
                 compositeRenderer.append(this._tpCanvas);
             }

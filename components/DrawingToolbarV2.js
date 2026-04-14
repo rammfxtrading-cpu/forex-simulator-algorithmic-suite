@@ -125,12 +125,12 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
     <div style={{...PILL,position:'fixed',cursor:'grab',zIndex:200,...(pos.x!=null?{left:pos.x,top:pos.y}:{right:80,top:80})}} onMouseDown={onMD} onClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()}>
 
       {/* Color línea */}
-      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+      {toolKey !== 'LongShortPosition' && <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
         <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>LÍNEA</span>
         <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',background:cfg.color||'#fff',overflow:'hidden'}}>
           <input type="color" value={cfg.color||'#ffffff'} onChange={e=>apply({color:e.target.value})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
         </label>
-      </div>
+      </div>}
 
       {hasRect&&<>
         <div style={DIV}/>
