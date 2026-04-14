@@ -756,7 +756,7 @@ export default function SessionPage(){
           const cfg=activeToolKey?toolConfigs[activeToolKey]:{}
           if(!userIdRef.current){console.log('NO USER ID');return}
           console.log('INSERT templates',userIdRef.current,activeToolKey,cfg)
-          const{data,error}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfg)})
+          const{data,error}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfg),data:'{}'})
           console.log('INSERT result',data,error).select().single()
           if(data)setTemplates(prev=>[...prev,data])
         }}
