@@ -1587,6 +1587,14 @@ function interpolateLogicalIndexFromTime(chart, series, timestamp) {
     // Use cached series data array for exact binary search (handles gaps correctly)
     const cachedData = typeof window !== 'undefined' && window.__algSuiteSeriesData;
     if (cachedData && cachedData.length >= 2) {
+        const lastTime = Number(cachedData[cachedData.length - 1].time);
+        const prevTime = Number(cachedData[cachedData.length - 2].time);
+        const interval = lastTime - prevTime;
+        const currentTime = typeof window !== 'undefined' && window.__algSuiteCurrentTime ? Number(window.__algSuiteCurrentTime) : lastTime;
+        // Only extrapolate if timestamp is beyond currentTime of the replay
+        if (givenTimeNum > currentTime) {
+            return (cachedData.length - 1) + (givenTimeNum - lastTime) / interval;
+        }
         let lo = 0, hi = cachedData.length - 1;
         while (lo < hi) {
             const mid = (lo + hi + 1) >> 1;

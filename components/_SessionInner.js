@@ -441,7 +441,7 @@ export default function SessionPage(){
       setIsPlaying(ps.engine.isPlaying);setCurrentTime(ps.engine.currentTime)
       setProgress(Math.round(ps.engine.progress*100))
       const agg=ps.engine.getAggregated(pairTfRef.current[activePair]||'H1')
-      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true)
+      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime
     }else{setDataReady(false);if(sessionRef.current)loadPair(activePair)}
     setTick(t=>t+1)
   },[activePair,loadPair])
