@@ -754,8 +754,10 @@ export default function SessionPage(){
         templates={templates}
         onSaveTemplate={async(name)=>{
           const cfg=activeToolKey?toolConfigs[activeToolKey]:{}
-          if(!userIdRef.current) return
-          const{data}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfg)}).select().single()
+          if(!userIdRef.current){console.log('NO USER ID');return}
+          console.log('INSERT templates',userIdRef.current,activeToolKey,cfg)
+          const{data,error}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfg)})
+          console.log('INSERT result',data,error).select().single()
           if(data)setTemplates(prev=>[...prev,data])
         }}
         onDeleteTemplate={async(id)=>{
