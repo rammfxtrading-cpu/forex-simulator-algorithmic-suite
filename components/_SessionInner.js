@@ -419,10 +419,15 @@ export default function SessionPage(){
     if(full||(curr!==prev&&curr!==prev+1)){
       // Export tools, setData, reimport to fix logical index after TF change
       const p=pluginRef.current
-      const toolsJson=p?p.exportLineTools():null
-      if(toolsJson)console.log('EXPORT',toolsJson)
       cr.series.setData(agg)
-      if(toolsJson){try{p.importLineTools(toolsJson);console.log('IMPORT OK')}catch(e){console.log('IMPORT ERR',e)}}
+      // Reimport tools after setData to fix logical index on TF change
+      try{
+        const plugin=pluginRef.current
+        if(plugin){
+          const tj=plugin.exportLineTools()
+          if(tj){plugin.importLineTools(tj)}
+        }
+      }catch{}
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
