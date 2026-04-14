@@ -1365,8 +1365,8 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
         try{tpY=cr2?.series?.priceToCoordinate(ord.tp)}catch{}
         const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
         if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.55)',drag:true, cancel:true})
-        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL',                   color:'rgba(239,83,80,0.5)',  drag:true, cancel:false})
-        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP',                   color:'rgba(30,144,255,0.5)', drag:true, cancel:false})
+        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL', color:'rgba(239,83,80,0.5)',  drag:true, cancel:true})
+        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP', color:'rgba(30,144,255,0.5)', drag:true, cancel:true})
       })
       // Don't update if dragging — keeps line under cursor
       if(!dragState.current?.active) setLines(all)
