@@ -130,7 +130,7 @@ export default function SessionPage(){
   const selectedToolRef  = useRef(null)
   const activeToolKeyRef = useRef(null)
 
-  const { pluginRef, toolConfigs, updateToolConfig, applyToTool, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
+  const { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
@@ -190,6 +190,14 @@ export default function SessionPage(){
   useEffect(()=>{activeToolKeyRef.current=activeToolKey},[activeToolKey])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
 
+  // Apply TF visibility when timeframe changes
+  useEffect(()=>{
+    const tf=pairTf[activePair]||'H1'
+    Object.entries(drawingTfMap).forEach(([toolId,entry])=>{
+      const tfs=Array.isArray(entry)?entry:(entry.tfs||['M1','M5','M15','M30','H1','H4','D1'])
+      setToolVisible(toolId, tfs.includes(tf))
+    })
+  },[pairTf,activePair,drawingTfMap,setToolVisible])
 
   // ── Background constellation animation ──────────────────────────────────────
   useEffect(()=>{

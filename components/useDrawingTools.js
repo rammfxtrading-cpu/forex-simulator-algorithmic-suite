@@ -165,6 +165,18 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
     setToolConfigs(prev => ({ ...prev, [toolKey]: { ...prev[toolKey], ...patch } }))
   }, [])
 
+  const setToolVisible = useCallback((toolId, visible) => {
+    const p = pluginRef.current; if (!p || !toolId) return
+    try {
+      const json = p.getLineToolByID(toolId)
+      if (!json) return
+      const arr = JSON.parse(json)
+      if (!arr?.length) return
+      const { toolType, points, options } = arr[0]
+      p.createOrUpdateLineTool(toolType, points, { ...options, visible }, toolId)
+    } catch (e) { console.error('setToolVisible:', e) }
+  }, [])
+
   const applyToTool = useCallback((toolId, toolKey, cfg) => {
     const p = pluginRef.current; if (!p || !toolId || !toolKey) return
     try {
@@ -185,5 +197,5 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
   const onDoubleClick  = useCallback((h) => { try { pluginRef.current?.subscribeLineToolsDoubleClick(h) } catch {} }, [])
   const getSelected    = useCallback(() => { try { return JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') } catch { return [] } }, [])
 
-  return { pluginRef, toolConfigs, updateToolConfig, applyToTool, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected }
+  return { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected }
 }
