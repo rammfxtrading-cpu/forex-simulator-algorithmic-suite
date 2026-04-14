@@ -46,6 +46,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
          * @protected
          */
         this._rewardLabelRenderer = new TextRenderer();
+        this._entryLabelRenderer = new TextRenderer();
     }
     /**
      * The core update logic.
