@@ -756,6 +756,10 @@ export default function SessionPage(){
           const{data}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfg)}).select().single()
           if(data)setTemplates(prev=>[...prev,data])
         }}
+        onDeleteTemplate={async(id)=>{
+          await supabase.from('sim_drawing_templates').delete().eq('id',id)
+          setTemplates(prev=>prev.filter(t=>t.id!==id))
+        }}
         onLoadTemplate={(t)=>{
           if(!t?.config||!activeToolKey) return
           try{const cfg=JSON.parse(t.config);updateToolConfig(activeToolKey,cfg);if(selectedTool?.id)applyToTool(selectedTool.id,activeToolKey,cfg)}catch{}

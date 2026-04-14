@@ -72,7 +72,7 @@ export default function DrawingToolbarV2({ activeTool,onToolChange,onAddTool,onR
 }
 
 // ── Config pill ───────────────────────────────────────────────────────────────
-export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate,onOpenConfig }) {
+export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate,onDeleteTemplate,onOpenConfig }) {
   const [pos,onMD]=useDrag({x:null,y:null})
   const [showText,setShowText]=useState(false)
   const [showTpl,setShowTpl]=useState(false)
@@ -183,25 +183,48 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
 
       <div style={DIV}/>
 
-      {/* Plantillas en config pill */}
+      {/* Plantillas en config pill — modal liquid glass */}
       <div style={{position:'relative'}}>
         <button title="Plantillas" style={btn(showTpl)} onClick={()=>setShowTpl(v=>!v)}><TemplateIcon/></button>
         {showTpl&&(
           <>
-            <div style={{position:'fixed',inset:0,zIndex:299}} onClick={()=>setShowTpl(false)}/>
-            <div style={{position:'absolute',bottom:36,right:0,zIndex:300,background:'rgba(4,10,24,0.97)',border:'1px solid rgba(30,144,255,0.3)',borderRadius:12,minWidth:200,boxShadow:'0 8px 40px rgba(0,0,0,0.7)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif"}}>
-              <div style={{padding:'8px 12px 10px',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
-                <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1.5,marginBottom:6}}>GUARDAR COMO PLANTILLA</div>
+            <div style={{position:'fixed',inset:0,zIndex:399,background:'rgba(0,0,0,0.45)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)'}} onClick={()=>setShowTpl(false)}/>
+            <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:400,width:300,background:'rgba(8,14,30,0.82)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:18,boxShadow:'0 8px 48px rgba(0,0,0,0.8)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif",overflow:'hidden'}}>
+              {/* Header */}
+              <div style={{padding:'14px 16px 12px',borderBottom:'1px solid rgba(255,255,255,0.07)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:11,fontWeight:700,color:'#fff',letterSpacing:0.5}}>Plantillas</span>
+                <button onClick={()=>setShowTpl(false)} style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>&times;</button>
+              </div>
+              {/* Guardar actual */}
+              <div style={{padding:'12px 16px',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+                <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.35)',letterSpacing:1.5,marginBottom:8}}>GUARDAR CONFIGURACIÓN ACTUAL</div>
                 <div style={{display:'flex',gap:6}}>
-                  <input value={tplName} onChange={e=>setTplName(e.target.value)} placeholder="Nombre..." style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'4px 8px',color:'#fff',fontSize:10,fontFamily:"'Montserrat',sans-serif",outline:'none'}}/>
-                  <button onClick={()=>{if(tplName.trim()){onSaveTemplate(tplName.trim());setTplName('');setShowTpl(false)}}} style={{background:'rgba(41,98,255,0.3)',border:'1px solid rgba(41,98,255,0.5)',borderRadius:6,color:'#fff',fontSize:10,fontWeight:700,padding:'4px 10px',cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>Guardar</button>
+                  <input value={tplName} onChange={e=>setTplName(e.target.value)}
+                    onKeyDown={e=>{if(e.key==='Enter'&&tplName.trim()){onSaveTemplate(tplName.trim());setTplName('');setShowTpl(false)}}}
+                    placeholder="Nombre de la plantilla..." autoFocus
+                    style={{flex:1,background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:8,padding:'7px 10px',color:'#fff',fontSize:11,fontFamily:"'Montserrat',sans-serif",outline:'none'}}/>
+                  <button onClick={()=>{if(tplName.trim()){onSaveTemplate(tplName.trim());setTplName('');setShowTpl(false)}}}
+                    style={{background:'rgba(41,98,255,0.35)',border:'1px solid rgba(41,98,255,0.5)',borderRadius:8,color:'#fff',fontSize:11,fontWeight:700,padding:'7px 12px',cursor:'pointer',fontFamily:"'Montserrat',sans-serif",whiteSpace:'nowrap'}}>
+                    Guardar
+                  </button>
                 </div>
               </div>
-              <div>
-                <div style={{padding:'6px 12px 4px',fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1.5}}>APLICAR PLANTILLA</div>
-                {!templates||templates.length===0
-                  ?<div style={{padding:'8px 14px 10px',fontSize:10,color:'rgba(255,255,255,0.25)'}}>Sin plantillas aún</div>
-                  :templates.filter(t=>!toolKey||t.toolKey===toolKey).map(t=><button key={t.id} onClick={()=>{onLoadTemplate(t);setShowTpl(false)}} style={{display:'block',width:'100%',background:'none',border:'none',color:'#fff',fontSize:11,fontWeight:600,padding:'8px 14px',cursor:'pointer',textAlign:'left',fontFamily:"'Montserrat',sans-serif"}}>{t.name}</button>)
+              {/* Lista plantillas */}
+              <div style={{maxHeight:240,overflowY:'auto',padding:'8px 0'}}>
+                <div style={{padding:'4px 16px 6px',fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.35)',letterSpacing:1.5}}>PLANTILLAS GUARDADAS</div>
+                {(!templates||templates.filter(t=>!toolKey||t.toolKey===toolKey).length===0)
+                  ?<div style={{padding:'10px 16px',fontSize:11,color:'rgba(255,255,255,0.2)'}}>Sin plantillas para esta herramienta</div>
+                  :templates.filter(t=>!toolKey||t.toolKey===toolKey).map(t=>(
+                    <div key={t.id} style={{display:'flex',alignItems:'center',padding:'2px 8px 2px 16px',gap:6}}>
+                      <button onClick={()=>{onLoadTemplate(t);setShowTpl(false)}}
+                        style={{flex:1,background:'none',border:'none',color:'#fff',fontSize:11,fontWeight:600,padding:'8px 0',cursor:'pointer',textAlign:'left',fontFamily:"'Montserrat',sans-serif"}}>
+                        {t.name}
+                      </button>
+                      {onDeleteTemplate&&<button onClick={()=>onDeleteTemplate(t.id)}
+                        style={{background:'none',border:'none',color:'rgba(239,83,80,0.5)',cursor:'pointer',fontSize:14,padding:'4px',lineHeight:1,borderRadius:4,flexShrink:0}}
+                        title="Eliminar">×</button>}
+                    </div>
+                  ))
                 }
               </div>
             </div>
