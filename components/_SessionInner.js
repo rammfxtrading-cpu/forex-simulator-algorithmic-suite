@@ -780,8 +780,11 @@ export default function SessionPage(){
         templates={templates}
         onSaveTemplate={async(name)=>{
           const cfg=activeToolKey?toolConfigs[activeToolKey]:{}
+          const entry=selectedTool?.id?drawingTfMap[selectedTool.id]:null
+          const tfsToSave=entry?(Array.isArray(entry)?entry:entry.tfs||null):null
+          const cfgWithTf={...cfg,...(tfsToSave?{visibleTf:tfsToSave}:{})}
           if(!userIdRef.current){console.log('NO USER ID');return}
-          const insRes=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfg),data:'{}'}).select().single()
+          const insRes=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfgWithTf),data:'{}'}).select().single()
           if(insRes.data)setTemplates(prev=>[...prev,insRes.data])
         }}
         onDeleteTemplate={async(id)=>{
@@ -790,7 +793,22 @@ export default function SessionPage(){
         }}
         onLoadTemplate={(t)=>{
           if(!t?.config||!activeToolKey) return
-          try{const cfg=JSON.parse(t.config);updateToolConfig(activeToolKey,cfg);if(selectedTool?.id)applyToTool(selectedTool.id,activeToolKey,cfg)}catch{}
+          try{
+            const cfg=JSON.parse(t.config)
+            const {visibleTf:tfs,...cfgWithoutTf}=cfg
+            updateToolConfig(activeToolKey,cfgWithoutTf)
+            if(selectedTool?.id){
+              applyToTool(selectedTool.id,activeToolKey,cfgWithoutTf)
+              if(tfs&&Array.isArray(tfs)){
+                const json=pluginRef.current?.getLineToolByID(selectedTool.id)
+                const arr=json?JSON.parse(json):null
+                const origCfg=arr?.[0]?.options||cfgWithoutTf
+                setDrawingTfMap(prev=>({...prev,[selectedTool.id]:{tfs,cfg:origCfg,toolKey:activeToolKey}}))
+                const tf=pairTf[activePair]||'H1'
+                setToolVisible(selectedTool.id,tfs.includes(tf))
+              }
+            }
+          }catch{}
         }}
       />
       {longShortModal&&(
