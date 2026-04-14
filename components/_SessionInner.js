@@ -417,7 +417,11 @@ export default function SessionPage(){
     const agg=engine.getAggregated(tf); if(!agg.length) return
     const prev=cr.prevCount,curr=agg.length
     if(full||(curr!==prev&&curr!==prev+1)){
+      // Export tools, setData, reimport to fix logical index after TF change
+      const p=pluginRef.current
+      const toolsJson=p?p.exportLineTools():null
       cr.series.setData(agg)
+      if(toolsJson){try{p.importLineTools(toolsJson)}catch{}}
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
