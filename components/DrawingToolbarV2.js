@@ -162,7 +162,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
         </div>
       </div>
 
-      {toolKey !== 'Path' && <><div style={DIV}/>
+      {toolKey !== 'Path' && toolKey !== 'LongShortPosition' && <><div style={DIV}/>
 
       {/* Texto — no para Path */}
       <div style={{position:'relative'}}>

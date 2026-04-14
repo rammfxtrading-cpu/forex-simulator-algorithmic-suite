@@ -2,14 +2,14 @@ import { useState } from 'react'
 
 // ─── Order Modal — Fintech / Algorithmic Suite ────────────────────────────────
 export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
-  const {side,entry,pair,isLimit}=modal
+  const {side,entry,pair,isLimit,sl:initSl,tp:initTp,lots:initLots,slPips:initSlPips,tpPips:initTpPips,rr:initRr}=modal
   const isBuy=side==='BUY'
   const isJpy=pair?.includes('JPY')
   const mult=isJpy?100:10000
   const RISK_PRESETS=[0.3,0.5,0.7,1,2,3]
   const [riskPct,setRiskPct]=useState(1)
-  const [slPips,setSlPips]=useState(10)
-  const [tpPips,setTpPips]=useState(20)
+  const [slPips,setSlPips]=useState(initSlPips||10)
+  const [tpPips,setTpPips]=useState(initTpPips||20)
   const [autoBE,setAutoBE]=useState(false)
 
   const riskAmt=parseFloat((balance*riskPct/100).toFixed(2))
