@@ -159,7 +159,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             compositeRenderer.append(this._rewardRenderer);
         }
         // --- 4. Dynamic Auto-Text Labels ---
-        if (options.showAutoText) {
+        if (options.showAutoText && P_Entry_Screen && P_Stop_Screen && (P_Entry_Screen.x !== P_Stop_Screen.x || P_Entry_Screen.y !== P_Stop_Screen.y)) {
             // 1. Define Theme Defaults (Fallback styles if user provided nothing)
             const isLongPos = P2_logical ? P2_logical.price > P0_logical.price : true
             const tpBgColor = isLongPos ? 'rgba(41,98,255,0.9)' : 'rgba(239,83,80,0.9)'
