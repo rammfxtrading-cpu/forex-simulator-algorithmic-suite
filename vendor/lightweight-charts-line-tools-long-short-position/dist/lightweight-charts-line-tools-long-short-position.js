@@ -161,10 +161,42 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
         // --- 4. Dynamic Auto-Text Labels ---
         if (options.showAutoText) {
             // 1. Define Theme Defaults (Fallback styles if user provided nothing)
+            const isLongPos = P2_logical ? P2_logical.price > P0_logical.price : true
+            const tpBgColor = isLongPos ? 'rgba(41,98,255,0.9)' : 'rgba(239,83,80,0.9)'
+            const slBgColor = isLongPos ? 'rgba(239,83,80,0.75)' : 'rgba(41,98,255,0.75)'
+            const entryBgColor = 'rgba(41,98,255,0.9)'
             const defaultAutoTextStyle = {
-                font: { color: 'white', size: 12, bold: true, family: 'sans-serif' },
+                font: { color: 'white', size: 11, bold: true, family: 'Montserrat, sans-serif' },
                 box: {
-                    background: { color: 'rgba(0, 0, 0, 0)' },
+                    background: { color: 'rgba(0,0,0,0)', inflation: { x: 6, y: 3 } },
+                    border: { color: 'transparent', width: 0, radius: 4, highlight: false, style: 0 },
+                    alignment: { vertical: BoxVerticalAlignment.Middle, horizontal: BoxHorizontalAlignment.Center }
+                },
+                padding: 4,
+            };
+            const tpTextStyle = {
+                font: { color: 'white', size: 11, bold: true, family: 'Montserrat, sans-serif' },
+                box: {
+                    background: { color: tpBgColor, inflation: { x: 6, y: 3 } },
+                    border: { color: 'transparent', width: 0, radius: 4, highlight: false, style: 0 },
+                    alignment: { vertical: BoxVerticalAlignment.Top, horizontal: BoxHorizontalAlignment.Center }
+                },
+                padding: 4,
+            };
+            const slTextStyle = {
+                font: { color: 'white', size: 11, bold: true, family: 'Montserrat, sans-serif' },
+                box: {
+                    background: { color: slBgColor, inflation: { x: 6, y: 3 } },
+                    border: { color: 'transparent', width: 0, radius: 4, highlight: false, style: 0 },
+                    alignment: { vertical: BoxVerticalAlignment.Bottom, horizontal: BoxHorizontalAlignment.Center }
+                },
+                padding: 4,
+            };
+            const entryTextStyle = {
+                font: { color: 'white', size: 11, bold: true, family: 'Montserrat, sans-serif' },
+                box: {
+                    background: { color: entryBgColor, inflation: { x: 6, y: 3 } },
+                    border: { color: 'transparent', width: 0, radius: 4, highlight: false, style: 0 },
                     alignment: { vertical: BoxVerticalAlignment.Middle, horizontal: BoxHorizontalAlignment.Center }
                 },
                 padding: 4,
@@ -176,7 +208,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             // Source: options.entryStopLossText
             // ============================================================
             // A. Merge Defaults + User Options
-            const finalRiskTextOptions = merge(deepCopy(defaultAutoTextStyle), options.entryStopLossText);
+            const finalRiskTextOptions = merge(deepCopy(slTextStyle), options.entryStopLossText);
             // B. Set Dynamic Text (Preserving User Note)
             // TV-style text with pips and amount
             const pipMult = (options.pair||'').includes('JPY') ? 100 : 10000
@@ -192,9 +224,8 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             // Append user note on a new line if it exists
             finalRiskTextOptions.value = riskStats;
             // Entry label - separate renderer at entry price
-            const entryTextOptions = JSON.parse(JSON.stringify(finalRiskTextOptions));
+            const entryTextOptions = JSON.parse(JSON.stringify(entryTextStyle));
             entryTextOptions.value = entryStats;
-            entryTextOptions.box = { ...entryTextOptions.box, alignment: { vertical: BoxVerticalAlignment.Middle, horizontal: BoxHorizontalAlignment.Center } };
             // C. Apply Smart Alignment Logic
             // If the final alignment is 'Middle' (the generic default), we assume the user wants Auto-Alignment.
             // If the user explicitly set 'Top' or 'Bottom', we respect it.
@@ -234,7 +265,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
                 const rewardDistance = Math.abs(P0_logical.price - P2_logical.price);
                 const rrValue = riskDistance !== 0 ? (rewardDistance / riskDistance).toFixed(2) : '0.00';
                 // A. Merge Defaults + User Options
-                const finalRewardTextOptions = merge(deepCopy(defaultAutoTextStyle), options.entryPtText);
+                const finalRewardTextOptions = merge(deepCopy(tpTextStyle), options.entryPtText);
                 // B. Set Dynamic Text (Preserving User Note)
                 // TV-style reward text
                 const rewardPips = (rewardDistance * pipMult).toFixed(1)
