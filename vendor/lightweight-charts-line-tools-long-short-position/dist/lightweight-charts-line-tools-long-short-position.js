@@ -251,7 +251,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             // Entry label at entry price (P_Entry_Screen)
             this._entryLabelRenderer.setData({
                 text: entryTextOptions,
-                points: [P_Entry_Screen, P_Entry_Screen],
+                points: [P_Entry_Screen, P_Stop_Screen],
                 hitTestBackground: false,
                 toolDefaultHoverCursor: options.defaultHoverCursor,
                 toolDefaultDragCursor: options.defaultDragCursor,
