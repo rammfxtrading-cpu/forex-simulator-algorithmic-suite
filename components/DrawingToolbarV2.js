@@ -56,7 +56,6 @@ export default function DrawingToolbarV2({ activeTool,onToolChange,onAddTool,onR
   const [pos,onMD]=useDrag({x:null,y:null})
   const [showTpl,setShowTpl]=useState(false)
   const [tplName,setTplName]=useState('')
-  const [showTf,setShowTf]=useState(false)
 
   return (
     <div style={{...PILL,position:'absolute',cursor:'grab',zIndex:25,...(pos.x!=null?{left:pos.x,top:pos.y}:{left:'50%',top:76,transform:'translateX(-50%)'})}} onMouseDown={onMD}>
@@ -77,6 +76,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
   const [pos,onMD]=useDrag({x:null,y:null})
   const [showText,setShowText]=useState(false)
   const [showTpl,setShowTpl]=useState(false)
+  const [showTf,setShowTf]=useState(false)
   const [tplName,setTplName]=useState('')
   const [label,setLabel]=useState('')
 
