@@ -142,7 +142,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
         </div>
       </>}
 
-      <div style={DIV}/>
+      {toolKey !== 'LongShortPosition' && <><div style={DIV}/>
 
       {/* Grosor */}
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
@@ -160,7 +160,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
         <div style={{display:'flex',gap:2}}>
           {STYLES.map(s=><button key={s.k} title={s.t} onClick={()=>apply({style:s.k})} style={{...btn(cfg.style===s.k),minWidth:22,height:20,fontSize:9}}>{s.l}</button>)}
         </div>
-      </div>
+      </div></>}
 
       {toolKey !== 'Path' && toolKey !== 'LongShortPosition' && <><div style={DIV}/>
 
