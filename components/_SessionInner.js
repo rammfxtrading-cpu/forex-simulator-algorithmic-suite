@@ -412,8 +412,16 @@ export default function SessionPage(){
     if(full||(curr!==prev&&curr!==prev+1)){
       // Export tools, setData, reimport to fix logical index after TF change
       const p=pluginRef.current
-      cr.series.setData(agg)
-      if(typeof window!=='undefined') window.__algSuiteSeriesData=agg
+      const _lastC = agg[agg.length-1]
+      const _tfMap={'M1':60,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400}
+      const _interval = (_tfMap[tf]||3600)
+      const _phantom = Array.from({length:50},(_,i)=>({
+        time: _lastC.time + _interval*(i+1),
+        open:_lastC.close, high:_lastC.close, low:_lastC.close, close:_lastC.close,
+        color:'rgba(0,0,0,0)', wickColor:'rgba(0,0,0,0)', borderColor:'rgba(0,0,0,0)'
+      }))
+      cr.series.setData([...agg,..._phantom])
+      if(typeof window!=='undefined') window.__algSuiteSeriesData=[...agg,..._phantom]
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:300})}catch{}
