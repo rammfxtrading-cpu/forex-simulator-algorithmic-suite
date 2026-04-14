@@ -416,7 +416,7 @@ export default function SessionPage(){
       if(typeof window!=='undefined') window.__algSuiteSeriesData=agg
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
-        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:100})}catch{}
+        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:300})}catch{}
         cr.hasLoaded=true
       }
     } else {
