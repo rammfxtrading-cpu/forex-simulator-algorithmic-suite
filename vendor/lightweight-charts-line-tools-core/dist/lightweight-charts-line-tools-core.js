@@ -1703,6 +1703,7 @@ class InteractionManager {
         const timeScale = this._chart.timeScale();
         const price = this._series.coordinateToPrice(screenPoint.y);
         let logical = timeScale.coordinateToLogical(screenPoint.x);
+        console.log('[STP] logical:', logical, 'x:', screenPoint.x, 'cachedLen:', window.__algSuiteSeriesData?.length);
         if (logical === null) {
             // Blank space to the right — extrapolate logical from visible range
             const visibleRange = timeScale.getVisibleLogicalRange();
