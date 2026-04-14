@@ -420,8 +420,9 @@ export default function SessionPage(){
       // Export tools, setData, reimport to fix logical index after TF change
       const p=pluginRef.current
       const toolsJson=p?p.exportLineTools():null
+      if(toolsJson)console.log('EXPORT',toolsJson)
       cr.series.setData(agg)
-      if(toolsJson){try{p.importLineTools(toolsJson)}catch{}}
+      if(toolsJson){try{p.importLineTools(toolsJson);console.log('IMPORT OK')}catch(e){console.log('IMPORT ERR',e)}}
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
