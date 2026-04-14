@@ -183,13 +183,17 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             const riskPips = (riskDistance * pipMult).toFixed(1)
             const riskPct = P0_logical.price > 0 ? ((riskDistance / P0_logical.price) * 100).toFixed(3) : '0'
             const riskAmt = (riskDistance * pipMult * lots * 10).toFixed(2)
+            const rrCalc = P2_logical ? (Math.abs(P0_logical.price - P2_logical.price) / riskDistance).toFixed(2) : '—'
+            const entryStats = `PyG Apertura: ${priceFormatter.format(riskDistance)}, Cantidad: ${Math.round(lots * 10000)}\nratio riesgo/beneficio: ${rrCalc}`
             const riskStats = `Stop: ${priceFormatter.format(riskDistance)} (${riskPct}%) ${riskPips}, Importe: ${riskAmt}`;
             // Capture user text (if any) from the merged options before we overwrite it
             const riskUserNote = finalRiskTextOptions.value;
             // Append user note on a new line if it exists
-            finalRiskTextOptions.value = (riskUserNote && riskUserNote.trim().length > 0)
-                ? `${riskStats}\n${riskUserNote}`
-                : riskStats;
+            finalRiskTextOptions.value = riskStats;
+            // Entry label - separate renderer at entry price
+            const entryTextOptions = JSON.parse(JSON.stringify(finalRiskTextOptions));
+            entryTextOptions.value = entryStats;
+            entryTextOptions.box = { ...entryTextOptions.box, alignment: { vertical: BoxVerticalAlignment.Middle, horizontal: BoxHorizontalAlignment.Center } };
             // C. Apply Smart Alignment Logic
             // If the final alignment is 'Middle' (the generic default), we assume the user wants Auto-Alignment.
             // If the user explicitly set 'Top' or 'Bottom', we respect it.
@@ -212,6 +216,15 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
                 toolDefaultDragCursor: options.defaultDragCursor,
             });
             compositeRenderer.append(this._riskLabelRenderer);
+            // Entry label at entry price (P_Entry_Screen)
+            this._entryLabelRenderer.setData({
+                text: entryTextOptions,
+                points: [P_Entry_Screen, P_Entry_Screen],
+                hitTestBackground: false,
+                toolDefaultHoverCursor: options.defaultHoverCursor,
+                toolDefaultDragCursor: options.defaultDragCursor,
+            });
+            compositeRenderer.append(this._entryLabelRenderer);
             // ============================================================
             // 4.2. Reward Label (PT Zone)
             // Source: options.entryPtText  <-- FIX: Now using correct options source
