@@ -411,9 +411,10 @@ export default function SessionPage(){
     const prev=cr.prevCount,curr=agg.length
     if(full||(curr!==prev&&curr!==prev+1)){
       cr.series.setData(agg)
-      if(prev===0){
+      if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
+        cr.hasLoaded=true
       }
     } else {
       cr.series.update(agg[agg.length-1])
