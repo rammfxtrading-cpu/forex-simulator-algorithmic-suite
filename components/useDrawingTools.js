@@ -157,7 +157,8 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
   const addTool = useCallback((toolKey) => {
     const p = pluginRef.current; if (!p) return
     const cfg = cfgRef.current[toolKey] || DEFAULT_CFG[toolKey] || {}
-    try { p.addLineTool(toolKey, [], buildOptions(toolKey, cfg)) } catch (e) { console.error('addTool:', e) }
+    const newCfg = { ...cfg, label: '' }
+    try { p.addLineTool(toolKey, [], buildOptions(toolKey, newCfg)) } catch (e) { console.error('addTool:', e) }
   }, [])
 
   const updateToolConfig = useCallback((toolKey, patch) => {
