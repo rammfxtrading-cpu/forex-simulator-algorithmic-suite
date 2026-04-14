@@ -1600,6 +1600,9 @@ function interpolateLogicalIndexFromTime(chart, series, timestamp) {
             if (Number(cachedData[mid].time) <= givenTimeNum) lo = mid;
             else hi = mid - 1;
         }
+        if (lo === 0 && givenTimeNum > Number(cachedData[0].time)) {
+            console.log('[INTERP BUG] given:', givenTimeNum, 'type:', typeof timestamp, 'raw:', timestamp, 'first:', Number(cachedData[0].time), 'last:', lastTime);
+        }
         return lo;
     }
     // Fallback: linear interpolation with first two data points
