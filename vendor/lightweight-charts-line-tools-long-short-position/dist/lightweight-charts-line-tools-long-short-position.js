@@ -211,13 +211,26 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
                 const tpAmt2 = (tpD * pipMult2 * lots2 * 10).toFixed(2);
                 const rr2 = riskD > 0 ? (tpD / riskD).toFixed(2) : '—';
                 if (!this._tpCanvas) this._tpCanvas = new SimpleCanvasTextRenderer();
-                let tpTxt = tpPips2 + ' pips\nRR ' + rr2 + (lots2 > 0 ? '\n$' + tpAmt2 : '');
+                // pips centered in TP box, RR near entry line
+                const tpBoxTop = Math.min(P_Entry_Screen.y, P_PT_Screen.y);
+                const tpBoxBot = Math.max(P_Entry_Screen.y, P_PT_Screen.y);
+                const entryY = P_Entry_Screen.y;
+                let tpTxt = tpPips2 + ' pips';
+                if (lots2 > 0) tpTxt += '\n$' + tpAmt2;
                 this._tpCanvas.setData({
-                    topLeft: { x: Math.min(P_Entry_Screen.x, P_PT_Screen.x), y: Math.min(P_Entry_Screen.y, P_PT_Screen.y) },
-                    bottomRight: { x: Math.max(P_Entry_Screen.x, P_PT_Screen.x), y: Math.max(P_Entry_Screen.y, P_PT_Screen.y) },
+                    topLeft: { x: Math.min(P_Entry_Screen.x, P_PT_Screen.x), y: tpBoxTop },
+                    bottomRight: { x: Math.max(P_Entry_Screen.x, P_PT_Screen.x), y: tpBoxBot },
                     text: tpTxt, color: options.textColor || 'rgba(255,255,255,0.9)',
                 });
+                // RR label near entry line
+                if (!this._rrCanvas) this._rrCanvas = new SimpleCanvasTextRenderer();
+                this._rrCanvas.setData({
+                    topLeft: { x: Math.min(P_Entry_Screen.x, P_PT_Screen.x), y: entryY - 16 },
+                    bottomRight: { x: Math.max(P_Entry_Screen.x, P_PT_Screen.x), y: entryY + 16 },
+                    text: 'RR ' + rr2, color: options.textColor || 'rgba(255,255,255,0.9)',
+                });
                 compositeRenderer.append(this._tpCanvas);
+                compositeRenderer.append(this._rrCanvas);
             }
         }
         // --- 4. Dynamic Auto-Text Labels ---
