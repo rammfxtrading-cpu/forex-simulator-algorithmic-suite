@@ -6420,7 +6420,7 @@ class BaseLineTool extends PriceDataSource {
      */
     getChart() {
         if (!this._chart) {
-            throw new Error('Chart API not available. Tool might not be attached.');
+            return null;
         }
         return this._chart;
     }
