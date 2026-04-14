@@ -89,8 +89,6 @@ function buildOptions(toolKey, cfg) {
     return {
       ...base,
       line: { color: cfg.color || '#26a69a', width: cfg.width || 1, style: cfg.style || 0 },
-      lots: cfg.lots || 0,
-      pair: cfg.pair || '',
       entryStopLossRectangle: { background: { color: cfg.stopColor || 'rgba(239,83,80,0.2)' }, border: { width: cfg.borderWidth||1, style: 0, color: cfg.stopColor||'#ef5350', radius:0 } },
       entryPtRectangle: { background: { color: cfg.profitColor || 'rgba(38,166,154,0.2)' }, border: { width: cfg.borderWidth||1, style: 0, color: cfg.profitColor||'#26a69a', radius:0 } },
     }
