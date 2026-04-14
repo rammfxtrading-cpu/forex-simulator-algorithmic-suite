@@ -1,6 +1,37 @@
 import { LineStyle } from 'lightweight-charts';
 import { LineToolPaneView, RectangleRenderer, TextRenderer, deepCopy, BoxHorizontalAlignment, BoxVerticalAlignment, merge, PaneCursorType, getToolCullingState, OffScreenState, TextAlignment, BaseLineTool, ensureNotNull, InteractionPhase, Point } from 'lightweight-charts-line-tools-core';
 
+class SimpleCanvasTextRenderer {
+    constructor() { this._data = null; }
+    setData(data) { this._data = data; }
+    draw(target) {
+        if (!this._data) return;
+        const { topLeft, bottomRight, text, color } = this._data;
+        if (!topLeft || !bottomRight || !text) return;
+        const x = Math.min(topLeft.x, bottomRight.x);
+        const y = Math.min(topLeft.y, bottomRight.y);
+        const w = Math.abs(bottomRight.x - topLeft.x);
+        const h = Math.abs(bottomRight.y - topLeft.y);
+        if (w < 10 || h < 6) return;
+        target.useMediaCoordinateSpace((scope) => {
+            const ctx = scope.context;
+            ctx.save();
+            ctx.font = 'bold 11px Montserrat, sans-serif';
+            ctx.fillStyle = color || 'rgba(255,255,255,0.9)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.clip();
+            const lines = text.split('\n');
+            const lineH = 14;
+            const startY = (y + h/2) - ((lines.length - 1) * lineH / 2);
+            lines.forEach((line, i) => ctx.fillText(line, x + w/2, startY + i * lineH));
+            ctx.restore();
+        });
+    }
+    hitTest() { return null; }
+}
 // /lightweight-charts-line-tools-long-short-position/src/views/LineToolLongShortPositionPaneView.ts
 /**
  * The Pane View for the Long/Short Position tool.
@@ -157,6 +188,37 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
                 hitTestBackground: false,
             });
             compositeRenderer.append(this._rewardRenderer);
+        }
+        // Canvas labels SL/TP
+        if (P0_logical && P1_logical && P_Entry_Screen && P_Stop_Screen &&
+            (P_Entry_Screen.x !== P_Stop_Screen.x || P_Entry_Screen.y !== P_Stop_Screen.y)) {
+            const pipMult2 = (options.pair || '').includes('JPY') ? 100 : 10000;
+            const lots2 = options.lots || 0;
+            const riskD = Math.abs(P0_logical.price - P1_logical.price);
+            const riskPips2 = (riskD * pipMult2).toFixed(1);
+            const riskAmt2 = (riskD * pipMult2 * lots2 * 10).toFixed(2);
+            if (!this._slCanvas) this._slCanvas = new SimpleCanvasTextRenderer();
+            let slTxt = riskPips2 + ' pips' + (lots2 > 0 ? '\n$' + riskAmt2 : '');
+            this._slCanvas.setData({
+                topLeft: { x: Math.min(P_Entry_Screen.x, P_Stop_Screen.x), y: Math.min(P_Entry_Screen.y, P_Stop_Screen.y) },
+                bottomRight: { x: Math.max(P_Entry_Screen.x, P_Stop_Screen.x), y: Math.max(P_Entry_Screen.y, P_Stop_Screen.y) },
+                text: slTxt, color: 'rgba(255,255,255,0.9)',
+            });
+            compositeRenderer.append(this._slCanvas);
+            if (P_PT_Screen && P2_logical) {
+                const tpD = Math.abs(P0_logical.price - P2_logical.price);
+                const tpPips2 = (tpD * pipMult2).toFixed(1);
+                const tpAmt2 = (tpD * pipMult2 * lots2 * 10).toFixed(2);
+                const rr2 = riskD > 0 ? (tpD / riskD).toFixed(2) : '—';
+                if (!this._tpCanvas) this._tpCanvas = new SimpleCanvasTextRenderer();
+                let tpTxt = tpPips2 + ' pips\nRR ' + rr2 + (lots2 > 0 ? '\n$' + tpAmt2 : '');
+                this._tpCanvas.setData({
+                    topLeft: { x: Math.min(P_Entry_Screen.x, P_PT_Screen.x), y: Math.min(P_Entry_Screen.y, P_PT_Screen.y) },
+                    bottomRight: { x: Math.max(P_Entry_Screen.x, P_PT_Screen.x), y: Math.max(P_Entry_Screen.y, P_PT_Screen.y) },
+                    text: tpTxt, color: 'rgba(255,255,255,0.9)',
+                });
+                compositeRenderer.append(this._tpCanvas);
+            }
         }
         // --- 4. Dynamic Auto-Text Labels ---
         if (options.showAutoText && P_Entry_Screen && P_Stop_Screen && (P_Entry_Screen.x !== P_Stop_Screen.x || P_Entry_Screen.y !== P_Stop_Screen.y)) {
