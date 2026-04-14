@@ -190,30 +190,6 @@ export default function SessionPage(){
   useEffect(()=>{activeToolKeyRef.current=activeToolKey},[activeToolKey])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
 
-  // Apply TF visibility when timeframe changes
-  useEffect(()=>{
-    const tf=pairTf[activePair]||'H1'
-    const p=pluginRef.current
-    if(!p) return
-    Object.entries(drawingTfMap).forEach(([toolId,entry])=>{
-      try{
-        const tfs=Array.isArray(entry)?entry:entry.tfs||['M1','M5','M15','M30','H1','H4','D1']
-        const origCfg=Array.isArray(entry)?null:entry.cfg
-        const json=p.getLineToolByID(toolId)
-        if(!json) return
-        const arr=JSON.parse(json)
-        if(!arr?.length) return
-        const toolKey=arr[0].toolType
-        if(tfs.includes(tf)){
-          if(origCfg) applyToTool(toolId,toolKey,origCfg)
-        } else {
-          const baseCfg=origCfg||toolConfigs[toolKey]||{}
-          const hiddenCfg={...baseCfg,color:'rgba(0,0,0,0)',fillColor:'rgba(0,0,0,0)',textColor:'rgba(0,0,0,0)',stopColor:'rgba(0,0,0,0)',profitColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'}
-          applyToTool(toolId,toolKey,hiddenCfg)
-        }
-      }catch{}
-    })
-  },[pairTf,activePair,drawingTfMap])
 
   // ── Background constellation animation ──────────────────────────────────────
   useEffect(()=>{
