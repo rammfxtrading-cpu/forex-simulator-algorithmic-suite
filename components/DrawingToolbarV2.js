@@ -65,32 +65,7 @@ export default function DrawingToolbarV2({ activeTool,onToolChange,onAddTool,onR
           <button title={tool.label} style={btn(activeTool===tool.id)} onClick={()=>{onToolChange(tool.id);if(tool.toolKey)onAddTool(tool.toolKey)}}><tool.icon/></button>
         </div>
       ))}
-      <div style={DIV}/>
-      {/* Plantillas */}
-      <div style={{position:'relative'}}>
-        <button title="Plantillas" style={btn(showTpl)} onClick={()=>setShowTpl(v=>!v)}><TemplateIcon/></button>
-        {showTpl&&(
-          <>
-            <div style={{position:'fixed',inset:0,zIndex:99}} onClick={()=>setShowTpl(false)}/>
-            <div style={{position:'absolute',top:36,left:'50%',transform:'translateX(-50%)',background:'rgba(4,10,24,0.97)',border:'1px solid rgba(30,144,255,0.3)',borderRadius:12,zIndex:100,minWidth:210,boxShadow:'0 8px 40px rgba(0,0,0,0.7)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif"}}>
-              <div style={{padding:'8px 12px 10px',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
-                <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1.5,marginBottom:6}}>GUARDAR PLANTILLA ACTUAL</div>
-                <div style={{display:'flex',gap:6}}>
-                  <input value={tplName} onChange={e=>setTplName(e.target.value)} placeholder="Nombre..." style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:6,padding:'4px 8px',color:'#fff',fontSize:10,fontFamily:"'Montserrat',sans-serif",outline:'none'}}/>
-                  <button onClick={()=>{if(tplName.trim()){onSaveTemplate(tplName.trim());setTplName('');setShowTpl(false)}}} style={{background:'rgba(41,98,255,0.3)',border:'1px solid rgba(41,98,255,0.5)',borderRadius:6,color:'#fff',fontSize:10,fontWeight:700,padding:'4px 10px',cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>Guardar</button>
-                </div>
-              </div>
-              <div>
-                <div style={{padding:'6px 12px 4px',fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1.5}}>PLANTILLAS GUARDADAS</div>
-                {templates.length===0
-                  ?<div style={{padding:'8px 14px 10px',fontSize:10,color:'rgba(255,255,255,0.25)'}}>Sin plantillas aún</div>
-                  :templates.map(t=><button key={t.id} onClick={()=>{onLoadTemplate(t);setShowTpl(false)}} style={{display:'block',width:'100%',background:'none',border:'none',color:'#fff',fontSize:11,fontWeight:600,padding:'8px 14px',cursor:'pointer',textAlign:'left',fontFamily:"'Montserrat',sans-serif"}}>{t.name}</button>)
-                }
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+
       {drawingCount>0&&(<><div style={DIV}/><button title="Borrar todo" style={btn(false,true)} onClick={onRemoveAll}><TrashIcon/></button></>)}
     </div>
   )
