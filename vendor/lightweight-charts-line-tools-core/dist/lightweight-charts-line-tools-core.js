@@ -1481,20 +1481,20 @@ logicalIndex) {
         // If we can't get a reliable interval, return null.
         return null;
     }
-    // Use native timeScale conversion for accurate logical->time mapping (handles gaps correctly)
-    const nativeTime = timeScale.coordinateToTime(timeScale.logicalToCoordinate(logicalIndex));
-    if (nativeTime !== null) {
-        return nativeTime;
-    }
     const startTime = typeof dataAtIndex0.time === 'string'
         ? convertDateStringToUTCTimestamp(dataAtIndex0.time)
         : dataAtIndex0.time;
     const endTime = typeof dataAtIndex1.time === 'string'
         ? convertDateStringToUTCTimestamp(dataAtIndex1.time)
         : dataAtIndex1.time;
+    // Calculate the time interval between the two data points (e.g., 86400 for daily bars).
     const interval = (Number(endTime) - Number(startTime));
-    const logicalDelta = logicalIndex - 0;
+    // Calculate the difference in logical units from the first data point.
+    // We assume that `logicalIndex` relates linearly to `time`.
+    const logicalDelta = logicalIndex - 0; // Assuming the first data point (index 0) corresponds to logical 0.
+    // Interpolate the time for the given logical index.
     const interpolatedTime = Number(startTime) + logicalDelta * interval;
+    // Return the interpolated time in the correct format (UTCTimestamp or string).
     if (typeof dataAtIndex0.time === 'string') {
         return convertUTCTimestampToDateString(interpolatedTime);
     }
@@ -1567,42 +1567,41 @@ function getExtendedVisiblePriceRange(tool) {
  * @param timestamp - The target timestamp to convert.
  * @returns The calculated `Logical` index, or `null` if the series has insufficient data.
  */
-function interpolateLogicalIndexFromTime(chart, series, timestamp) {
+function interpolateLogicalIndexFromTime(chart, // Chart is passed but mainly for context/consistency, not used here directly after removing timeToLogical
+series, timestamp) {
     if (!series) {
         console.warn("[interpolateLogicalIndexFromTime] series is not defined.");
         return null;
     }
-    // Use native timeScale for accurate timestamp->logical mapping (handles gaps correctly)
-    if (chart) {
-        const timeScale = chart.timeScale();
-        const givenTimeNum = typeof timestamp === 'string'
-            ? convertDateStringToUTCTimestamp(timestamp)
-            : Number(timestamp);
-        const coordinate = timeScale.timeToCoordinate(givenTimeNum);
-        if (coordinate !== null) {
-            const logical = timeScale.coordinateToLogical(coordinate);
-            if (logical !== null) return logical;
-        }
-        // Fallback: binary search in series data for exact match
-        const dataAtIndex0 = series.dataByIndex(0, 0);
-        const dataAtIndex1 = series.dataByIndex(1, 0);
-        if (!dataAtIndex0 || !dataAtIndex1) return null;
-        const time0 = typeof dataAtIndex0.time === 'string' ? convertDateStringToUTCTimestamp(dataAtIndex0.time) : dataAtIndex0.time;
-        const time1 = typeof dataAtIndex1.time === 'string' ? convertDateStringToUTCTimestamp(dataAtIndex1.time) : dataAtIndex1.time;
-        const interval = Number(time1) - Number(time0);
-        if (interval === 0) return null;
-        const givenTimeNum2 = typeof timestamp === 'string' ? convertDateStringToUTCTimestamp(timestamp) : Number(timestamp);
-        return (givenTimeNum2 - Number(time0)) / interval;
-    }
+    // Retrieve data for the first two points in the series to calculate the time interval.
+    // This approach avoids reliance on `timeScale.timeToLogical`.
     const dataAtIndex0 = series.dataByIndex(0, 0);
     const dataAtIndex1 = series.dataByIndex(1, 0);
-    if (!dataAtIndex0 || !dataAtIndex1) return null;
-    const time0 = typeof dataAtIndex0.time === 'string' ? convertDateStringToUTCTimestamp(dataAtIndex0.time) : dataAtIndex0.time;
-    const time1 = typeof dataAtIndex1.time === 'string' ? convertDateStringToUTCTimestamp(dataAtIndex1.time) : dataAtIndex1.time;
-    const interval = Number(time1) - Number(time0);
-    if (interval === 0) return null;
-    const givenTimeNum = typeof timestamp === 'string' ? convertDateStringToUTCTimestamp(timestamp) : Number(timestamp);
-    return (givenTimeNum - Number(time0)) / interval;
+    if (!dataAtIndex0 || !dataAtIndex1) {
+        console.warn("[interpolateLogicalIndexFromTime] Not enough data points to reliably interpolate logical index.");
+        return null; // Cannot interpolate without at least two data points
+    }
+    const time0 = typeof dataAtIndex0.time === 'string'
+        ? convertDateStringToUTCTimestamp(dataAtIndex0.time)
+        : dataAtIndex0.time;
+    const time1 = typeof dataAtIndex1.time === 'string'
+        ? convertDateStringToUTCTimestamp(dataAtIndex1.time)
+        : dataAtIndex1.time;
+    const interval = (Number(time1) - Number(time0));
+    if (interval === 0) {
+        console.warn("[interpolateLogicalIndexFromTime] Series data points have zero time interval, cannot interpolate logical index.");
+        return null; // Avoid division by zero
+    }
+    // Convert the given timestamp to a number (UTCTimestamp) for calculations
+    const givenTimeNum = typeof timestamp === 'string'
+        ? convertDateStringToUTCTimestamp(timestamp)
+        : Number(timestamp);
+    // Calculate the difference in time from the given timestamp to the starting point
+    const timeDiff = givenTimeNum - Number(time0);
+    // Calculate the logical index based on the time difference and interval
+    // Assuming logical index 0 corresponds to dataAtIndex0
+    const logicalIndex = timeDiff / interval;
+    return logicalIndex;
 }
 // NOTE: The `interpolateLogicalIndexFromTime` function might also be useful for complex scenarios
 // but is not strictly required for the immediate goal of "drawing in blank space" for creation.
