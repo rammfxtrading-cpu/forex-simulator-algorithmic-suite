@@ -252,6 +252,11 @@ export default function SessionPage(){
           closeTime:t.closed_at?Math.floor(new Date(t.closed_at).getTime()/1000):null,
         }))]
       }
+      // Load drawing templates
+      if(data.user_id){
+        const{data:tpls}=await supabase.from('sim_drawing_templates').select('*').eq('user_id',data.user_id).order('created_at',{ascending:false})
+        if(tpls)setTemplates(tpls)
+      }
       setLoading(false)
     })
   },[id])
