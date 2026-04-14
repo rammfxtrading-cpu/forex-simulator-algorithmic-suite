@@ -708,7 +708,7 @@ export default function SessionPage(){
           chartMap={chartMap}
           activePair={activePair}
           dataReady={dataReady}
-          onClosePos={(posId)=>setCloseModal({posId,pair:activePair,pos:openPositions.find(p=>p.id===posId)})}
+          onClosePos={(posId)=>{ const p=openPositions.find(x=>x.id===posId); if(p) setCloseModal({posId,pair:activePair,pos:p}) }}
           onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
         />
 
