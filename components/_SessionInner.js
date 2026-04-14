@@ -219,7 +219,7 @@ export default function SessionPage(){
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
   useEffect(()=>{
-    supabase.auth.getSession().then(({data:{session:s}})=>{
+    supabase.auth.getSession().then(async({data:{session:s}})=>{
       if(!s){router.replace('/');return}
       userIdRef.current=s.user.id
       const{data:tpls}=await supabase.from('sim_drawing_templates').select('*').eq('user_id',s.user.id)
