@@ -1572,22 +1572,28 @@ function interpolateLogicalIndexFromTime(chart, series, timestamp) {
         console.warn("[interpolateLogicalIndexFromTime] series is not defined.");
         return null;
     }
-    const givenTimeNum = typeof timestamp === 'string'
-        ? convertDateStringToUTCTimestamp(timestamp)
-        : Number(timestamp);
-    // Binary search through series data for exact or nearest timestamp
-    let lo = 0, hi = 1000000, found = -1;
-    for (let i = 0; i < 30; i++) {
-        const mid = Math.floor((lo + hi) / 2);
-        const d = series.dataByIndex(mid, 0);
-        if (!d) { hi = mid; continue; }
-        const t = typeof d.time === 'string' ? convertDateStringToUTCTimestamp(d.time) : Number(d.time);
-        if (t === givenTimeNum) { found = mid; break; }
-        if (t < givenTimeNum) { found = mid; lo = mid + 1; }
-        else { hi = mid; }
+    // Use native timeScale for accurate timestamp->logical mapping (handles gaps correctly)
+    if (chart) {
+        const timeScale = chart.timeScale();
+        const givenTimeNum = typeof timestamp === 'string'
+            ? convertDateStringToUTCTimestamp(timestamp)
+            : Number(timestamp);
+        const coordinate = timeScale.timeToCoordinate(givenTimeNum);
+        if (coordinate !== null) {
+            const logical = timeScale.coordinateToLogical(coordinate);
+            if (logical !== null) return logical;
+        }
+        // Fallback: binary search in series data for exact match
+        const dataAtIndex0 = series.dataByIndex(0, 0);
+        const dataAtIndex1 = series.dataByIndex(1, 0);
+        if (!dataAtIndex0 || !dataAtIndex1) return null;
+        const time0 = typeof dataAtIndex0.time === 'string' ? convertDateStringToUTCTimestamp(dataAtIndex0.time) : dataAtIndex0.time;
+        const time1 = typeof dataAtIndex1.time === 'string' ? convertDateStringToUTCTimestamp(dataAtIndex1.time) : dataAtIndex1.time;
+        const interval = Number(time1) - Number(time0);
+        if (interval === 0) return null;
+        const givenTimeNum2 = typeof timestamp === 'string' ? convertDateStringToUTCTimestamp(timestamp) : Number(timestamp);
+        return (givenTimeNum2 - Number(time0)) / interval;
     }
-    if (found >= 0) return found;
-    // Fallback to linear interpolation
     const dataAtIndex0 = series.dataByIndex(0, 0);
     const dataAtIndex1 = series.dataByIndex(1, 0);
     if (!dataAtIndex0 || !dataAtIndex1) return null;
@@ -1595,6 +1601,7 @@ function interpolateLogicalIndexFromTime(chart, series, timestamp) {
     const time1 = typeof dataAtIndex1.time === 'string' ? convertDateStringToUTCTimestamp(dataAtIndex1.time) : dataAtIndex1.time;
     const interval = Number(time1) - Number(time0);
     if (interval === 0) return null;
+    const givenTimeNum = typeof timestamp === 'string' ? convertDateStringToUTCTimestamp(timestamp) : Number(timestamp);
     return (givenTimeNum - Number(time0)) / interval;
 }
 // NOTE: The `interpolateLogicalIndexFromTime` function might also be useful for complex scenarios
