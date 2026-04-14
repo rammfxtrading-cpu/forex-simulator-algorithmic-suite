@@ -212,9 +212,9 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
               {/* Lista plantillas */}
               <div style={{maxHeight:240,overflowY:'auto',padding:'8px 0'}}>
                 <div style={{padding:'4px 16px 6px',fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.35)',letterSpacing:1.5}}>PLANTILLAS GUARDADAS</div>
-                {(!templates||templates.filter(t=>!toolKey||t.toolKey===toolKey).length===0)
+                {(!templates||templates.filter(t=>!toolKey||t.tool_key===toolKey).length===0)
                   ?<div style={{padding:'10px 16px',fontSize:11,color:'rgba(255,255,255,0.2)'}}>Sin plantillas para esta herramienta</div>
-                  :templates.filter(t=>!toolKey||t.toolKey===toolKey).map(t=>(
+                  :templates.filter(t=>!toolKey||t.tool_key===toolKey).map(t=>(
                     <div key={t.id} style={{display:'flex',alignItems:'center',padding:'2px 8px 2px 16px',gap:6}}>
                       <button onClick={()=>{onLoadTemplate(t);setShowTpl(false)}}
                         style={{flex:1,background:'none',border:'none',color:'#fff',fontSize:11,fontWeight:600,padding:'8px 0',cursor:'pointer',textAlign:'left',fontFamily:"'Montserrat',sans-serif"}}>
