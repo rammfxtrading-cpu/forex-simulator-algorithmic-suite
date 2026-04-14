@@ -195,21 +195,20 @@ export default function SessionPage(){
     const tf=pairTf[activePair]||'H1'
     const p=pluginRef.current
     if(!p) return
-    Object.entries(drawingTfMap).forEach(([toolId,tfs])=>{
+    Object.entries(drawingTfMap).forEach(([toolId,entry])=>{
       try{
+        const tfs=Array.isArray(entry)?entry:entry.tfs||['M1','M5','M15','M30','H1','H4','D1']
+        const origCfg=Array.isArray(entry)?null:entry.cfg
         const json=p.getLineToolByID(toolId)
         if(!json) return
         const arr=JSON.parse(json)
         if(!arr?.length) return
-        const tool=arr[0]
-        const toolKey=tool.toolType
-        const cfg=toolConfigs[toolKey]||{}
+        const toolKey=arr[0].toolType
         if(tfs.includes(tf)){
-          // restore original
-          applyToTool(toolId,toolKey,cfg)
+          if(origCfg) applyToTool(toolId,toolKey,origCfg)
         } else {
-          // hide — apply transparent colors
-          const hiddenCfg={...cfg,color:'rgba(0,0,0,0)',fillColor:'rgba(0,0,0,0)',textColor:'rgba(0,0,0,0)',stopColor:'rgba(0,0,0,0)',profitColor:'rgba(0,0,0,0)'}
+          const baseCfg=origCfg||toolConfigs[toolKey]||{}
+          const hiddenCfg={...baseCfg,color:'rgba(0,0,0,0)',fillColor:'rgba(0,0,0,0)',textColor:'rgba(0,0,0,0)',stopColor:'rgba(0,0,0,0)',profitColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'}
           applyToTool(toolId,toolKey,hiddenCfg)
         }
       }catch{}
@@ -779,8 +778,15 @@ export default function SessionPage(){
         onDelete={()=>{removeSelected();setSelectedTool(null)}}
         visibleTf={selectedTool?.id?drawingTfMap[selectedTool.id]||['M1','M5','M15','M30','H1','H4','D1']:['M1','M5','M15','M30','H1','H4','D1']}
         onVisibilityChange={(tfs)=>{
-          if(!selectedTool?.id) return
-          setDrawingTfMap(prev=>({...prev,[selectedTool.id]:tfs}))
+          if(!selectedTool?.id||!activeToolKey) return
+          try{
+            const json=pluginRef.current?.getLineToolByID(selectedTool.id)
+            const arr=json?JSON.parse(json):null
+            const origCfg=arr?.[0]?.options||toolConfigs[activeToolKey]||{}
+            setDrawingTfMap(prev=>({...prev,[selectedTool.id]:{tfs,cfg:origCfg,toolKey:activeToolKey}}))
+          }catch{
+            setDrawingTfMap(prev=>({...prev,[selectedTool.id]:{tfs,cfg:toolConfigs[activeToolKey]||{},toolKey:activeToolKey}}))
+          }
         }}
         onDeselect={()=>setSelectedTool(null)}
         templates={templates}
