@@ -781,7 +781,7 @@ export default function SessionPage(){
           }}
           onConfirm={(posData)=>{
             setLongShortModal(null)
-            setOrderModal({side:posData.side,entry:posData.entry,pair:activePair,isLimit:false,...posData})
+            setOrderModal({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData})
           }}
         />
       )}
