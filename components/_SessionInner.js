@@ -420,14 +420,6 @@ export default function SessionPage(){
       // Export tools, setData, reimport to fix logical index after TF change
       const p=pluginRef.current
       cr.series.setData(agg)
-      // Reimport tools after setData to fix logical index on TF change
-      try{
-        const plugin=pluginRef.current
-        if(plugin){
-          const tj=plugin.exportLineTools()
-          if(tj){plugin.importLineTools(tj)}
-        }
-      }catch{}
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
