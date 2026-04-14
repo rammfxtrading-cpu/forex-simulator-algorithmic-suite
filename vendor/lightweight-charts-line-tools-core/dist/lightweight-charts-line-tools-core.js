@@ -4310,8 +4310,8 @@ function getViewportBounds(tool) {
         return null;
     }
     //console.log(`Initial Logical Range: [${logicalRange.from.toFixed(2)}, ${logicalRange.to.toFixed(2)}]`);
-    // BUFFER: Widen by 1 logical unit each side for anti-edge-cull buffer
-    const BUFFER = 1;
+    // BUFFER: Widen by large amount to prevent culling on TF change
+    const BUFFER = 500;
     const leftLogical = (logicalRange.from - BUFFER);
     const rightLogical = (logicalRange.to + BUFFER);
     //console.log(`Buffered Logical Range (Target Indices): [${leftLogical.toFixed(2)}, ${rightLogical.toFixed(2)}]`);
