@@ -253,8 +253,9 @@ export default function SessionPage(){
         }))]
       }
       // Load drawing templates
-      if(data.user_id){
-        const{data:tpls}=await supabase.from('sim_drawing_templates').select('*').eq('user_id',data.user_id).order('created_at',{ascending:false})
+      const uid=userIdRef.current
+      if(uid){
+        const{data:tpls}=await supabase.from('sim_drawing_templates').select('*').eq('user_id',uid)
         if(tpls)setTemplates(tpls)
       }
       setLoading(false)
