@@ -51,14 +51,14 @@ const isJpy = (pair) => pair?.includes('JPY')
 const pipMult = (pair) => isJpy(pair) ? 100 : 10000
 const pipSize = (pair) => isJpy(pair) ? 0.01 : 0.0001
 
-export default function LongShortModal({ tool, toolId, activePair, balance, onConfirm, onClose, onStyleUpdate }) {
+export default function LongShortModal({ tool, toolId, activePair, balance, initialBalance, onConfirm, onClose, onStyleUpdate }) {
   const [tab, setTab] = useState('data')
 
   // Position data from tool points
   const [entryPrice, setEntryPrice]   = useState('')
   const [stopPrice,  setStopPrice]    = useState('')
   const [targetPrice,setTargetPrice]  = useState('')
-  const [accountSize,setAccountSize]  = useState(balance || 10000)
+  const [accountSize,setAccountSize]  = useState(initialBalance || balance || 10000)
   const [riskPct,    setRiskPct]      = useState(1)
   const [leverage,   setLeverage]     = useState(100)
 
@@ -261,20 +261,23 @@ export default function LongShortModal({ tool, toolId, activePair, balance, onCo
         </div>
 
         {/* Footer */}
-        <div style={{ padding:'12px 22px 18px', borderTop:'1px solid rgba(255,255,255,0.06)', display:'flex', justifyContent:'flex-end', gap:10 }}>
+        <div style={{ padding:'12px 22px 18px', borderTop:'1px solid rgba(255,255,255,0.06)', display:'flex', justifyContent:'space-between', gap:10 }}>
           <button onClick={onClose} style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:10, color:'rgba(255,255,255,0.7)', cursor:'pointer', padding:'9px 20px', fontSize:12, fontWeight:600, fontFamily:"'Montserrat',sans-serif" }}>Cancelar</button>
-          <button onClick={() => onConfirm({
-            side: isLong ? 'BUY' : 'SELL',
-            entry: parseFloat(entryPrice),
-            sl: parseFloat(stopPrice),
-            tp: parseFloat(targetPrice),
-            lots: parseFloat(lotSize) || 0.01,
-            slPips: parseFloat(stopTicks),
-            tpPips: parseFloat(targetTicks),
-            rr: parseFloat(rr),
-          })} style={{ background: isLong ? 'linear-gradient(135deg,#26a69a,#1a7a72)' : 'linear-gradient(135deg,#ef5350,#b71c1c)', border:'none', borderRadius:10, color:'#fff', cursor:'pointer', padding:'9px 24px', fontSize:12, fontWeight:800, fontFamily:"'Montserrat',sans-serif", boxShadow: isLong ? '0 4px 20px rgba(38,166,154,0.4)' : '0 4px 20px rgba(239,83,80,0.4)' }}>
-            Aceptar → Ejecutar
-          </button>
+          <div style={{display:'flex',gap:10}}>
+            <button onClick={onClose} style={{ background:'rgba(30,144,255,0.15)', border:'1px solid rgba(30,144,255,0.4)', borderRadius:10, color:'#fff', cursor:'pointer', padding:'9px 20px', fontSize:12, fontWeight:700, fontFamily:"'Montserrat',sans-serif" }}>Aceptar</button>
+            <button onClick={() => onConfirm({
+              side: isLong ? 'BUY' : 'SELL',
+              entry: parseFloat(entryPrice),
+              sl: parseFloat(stopPrice),
+              tp: parseFloat(targetPrice),
+              lots: parseFloat(lotSize) || 0.01,
+              slPips: parseFloat(stopTicks),
+              tpPips: parseFloat(targetTicks),
+              rr: parseFloat(rr),
+            })} style={{ background: isLong ? 'linear-gradient(135deg,#26a69a,#1a7a72)' : 'linear-gradient(135deg,#ef5350,#b71c1c)', border:'none', borderRadius:10, color:'#fff', cursor:'pointer', padding:'9px 24px', fontSize:12, fontWeight:800, fontFamily:"'Montserrat',sans-serif", boxShadow: isLong ? '0 4px 20px rgba(38,166,154,0.4)' : '0 4px 20px rgba(239,83,80,0.4)' }}>
+              Ejecutar
+            </button>
+          </div>
         </div>
 
       </div>

@@ -767,6 +767,7 @@ export default function SessionPage(){
           toolId={longShortModal.toolId}
           activePair={activePair}
           balance={balance}
+          initialBalance={initialCapital}
           onClose={()=>setLongShortModal(null)}
           onStyleUpdate={(styleOpts)=>{
             const tk='LongShortPosition'
@@ -1058,7 +1059,8 @@ export default function SessionPage(){
 
       {/* ORDER MODAL */}
       {orderModal&&(
-        <OrderModal modal={orderModal} balance={balance} currentPrice={currentPrice}
+        <OrderModal modal={orderModal} balance={balance}
+          initialBalance={initialCapital} currentPrice={currentPrice}
           onClose={()=>setOrderModal(null)}
           onConfirm={(posData)=>{
             if(orderModal.isLimit){

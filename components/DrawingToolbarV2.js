@@ -235,6 +235,24 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
       </div>
 
       {toolKey === 'LongShortPosition' && <>
+        {/* Color TP */}
+        <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',title:'Color beneficio'}}>
+          <span style={{width:16,height:16,borderRadius:3,background:cfg.profitColor||'rgba(38,166,154,0.4)',border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',overflow:'hidden'}}>
+            <input type="color" defaultValue="#26a69a" onChange={e=>apply({profitColor:e.target.value+'66'})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+          </span>
+        </label>
+        {/* Color SL */}
+        <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',title:'Color stop'}}>
+          <span style={{width:16,height:16,borderRadius:3,background:cfg.stopColor||'rgba(239,83,80,0.4)',border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',overflow:'hidden'}}>
+            <input type="color" defaultValue="#ef5350" onChange={e=>apply({stopColor:e.target.value+'66'})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+          </span>
+        </label>
+        {/* Color texto */}
+        <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',title:'Color texto'}}>
+          <span style={{width:16,height:16,borderRadius:3,background:cfg.textColor||'#ffffff',border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',overflow:'hidden'}}>
+            <input type="color" defaultValue="#ffffff" onChange={e=>apply({textColor:e.target.value})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+          </span>
+        </label>
         <div style={DIV}/>
         <button title="Configurar posición" style={btn(false)} onClick={onOpenConfig}><GearIcon/></button>
       </>}
