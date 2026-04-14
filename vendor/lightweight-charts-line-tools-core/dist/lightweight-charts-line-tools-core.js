@@ -1481,12 +1481,6 @@ logicalIndex) {
         // If we can't get a reliable interval, return null.
         return null;
     }
-    // Use cached series data for accurate logical->time mapping (handles gaps/weekends)
-    const cachedData2 = typeof window !== 'undefined' && window.__algSuiteSeriesData;
-    if (cachedData2 && cachedData2.length >= 2) {
-        const idx = Math.max(0, Math.min(Math.round(logicalIndex), cachedData2.length - 1));
-        return cachedData2[idx].time;
-    }
     const startTime = typeof dataAtIndex0.time === 'string'
         ? convertDateStringToUTCTimestamp(dataAtIndex0.time)
         : dataAtIndex0.time;
