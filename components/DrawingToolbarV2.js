@@ -56,6 +56,7 @@ export default function DrawingToolbarV2({ activeTool,onToolChange,onAddTool,onR
   const [pos,onMD]=useDrag({x:null,y:null})
   const [showTpl,setShowTpl]=useState(false)
   const [tplName,setTplName]=useState('')
+  const [showTf,setShowTf]=useState(false)
 
   return (
     <div style={{...PILL,position:'absolute',cursor:'grab',zIndex:25,...(pos.x!=null?{left:pos.x,top:pos.y}:{left:'50%',top:76,transform:'translateX(-50%)'})}} onMouseDown={onMD}>
@@ -72,7 +73,7 @@ export default function DrawingToolbarV2({ activeTool,onToolChange,onAddTool,onR
 }
 
 // ── Config pill ───────────────────────────────────────────────────────────────
-export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate,onDeleteTemplate,onOpenConfig }) {
+export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate,onDeleteTemplate,onOpenConfig,visibleTf,onVisibilityChange }) {
   const [pos,onMD]=useDrag({x:null,y:null})
   const [showText,setShowText]=useState(false)
   const [showTpl,setShowTpl]=useState(false)
@@ -257,6 +258,37 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
 
       <div style={DIV}/>
 
+      {/* Visibilidad TF */}
+      <div style={{position:'relative'}}>
+        <button title="Visibilidad por temporalidad" style={btn(showTf)} onClick={()=>setShowTf(v=>!v)}><TfIcon/></button>
+        {showTf&&(
+          <>
+            <div style={{position:'fixed',inset:0,zIndex:399,background:'rgba(0,0,0,0.45)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)'}} onClick={()=>setShowTf(false)}/>
+            <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:400,width:260,background:'rgba(8,14,30,0.82)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:18,boxShadow:'0 8px 48px rgba(0,0,0,0.8)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif",overflow:'hidden'}}>
+              <div style={{padding:'14px 16px 12px',borderBottom:'1px solid rgba(255,255,255,0.07)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:11,fontWeight:700,color:'#fff',letterSpacing:0.5}}>Visibilidad por temporalidad</span>
+                <button onClick={()=>setShowTf(false)} style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',cursor:'pointer',fontSize:16,lineHeight:1,padding:0}}>&times;</button>
+              </div>
+              <div style={{padding:'12px 16px'}}>
+                <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.35)',letterSpacing:1.5,marginBottom:10}}>MOSTRAR EN</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                  {['M1','M5','M15','M30','H1','H4','D1'].map(tf=>{
+                    const active=(visibleTf||['M1','M5','M15','M30','H1','H4','D1']).includes(tf)
+                    return <button key={tf} onClick={()=>{
+                      const cur=visibleTf||['M1','M5','M15','M30','H1','H4','D1']
+                      const next=active?cur.filter(t=>t!==tf):[...cur,tf]
+                      onVisibilityChange&&onVisibilityChange(next)
+                    }} style={{padding:'5px 10px',borderRadius:6,border:`1px solid ${active?'rgba(41,98,255,0.6)':'rgba(255,255,255,0.1)'}`,background:active?'rgba(41,98,255,0.3)':'rgba(255,255,255,0.04)',color:active?'#fff':'rgba(255,255,255,0.35)',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>{tf}</button>
+                  })}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div style={DIV}/>
+
       {/* Borrar */}
       <button title="Borrar (Del)" style={btn(false,true)} onClick={onDelete}><TrashIcon/></button>
       {/* Cerrar */}
@@ -290,6 +322,7 @@ function RectIcon()     { return <svg width="13" height="13" viewBox="0 0 24 24"
 function FibIcon()      { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" fill="none"><line x1="2" y1="4" x2="22" y2="4"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="13" x2="22" y2="13"/><line x1="2" y1="17" x2="22" y2="17"/><line x1="2" y1="21" x2="22" y2="21"/></svg> }
 function PosIcon()      { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="8" rx="1" stroke="#26a69a"/><rect x="3" y="13" width="18" height="8" rx="1" stroke="#ef5350"/></svg> }
 function PathIcon()     { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><path d="M3 17 C6 17 6 7 9 7 C12 7 12 17 15 17 C18 17 18 7 21 7"/></svg> }
+function TfIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> }
 function TemplateIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/></svg> }
 function GearIcon()     { return <svg width="13" height="13" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> }
 function TrashIcon()    { return <svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14H6L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4h6v2"/></svg> }

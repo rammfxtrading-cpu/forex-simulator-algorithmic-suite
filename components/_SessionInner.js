@@ -123,6 +123,7 @@ export default function SessionPage(){
   const [drawingCount,  setDrawingCount]  = useState(0)
   const [selectedTool,  setSelectedTool]  = useState(null)
   const [templates,     setTemplates]     = useState([])
+  const [drawingTfMap,  setDrawingTfMap]  = useState({}) // {toolId: string[]}
   const [drawingCtxMenu, setDrawingCtxMenu] = useState(null)  // {x,y}
   const [longShortModal, setLongShortModal] = useState(null)  // {toolId, tool}
   const [activeToolKey,  setActiveToolKey]  = useState(null)
@@ -188,6 +189,32 @@ export default function SessionPage(){
   },[dataReady,activePair])
   useEffect(()=>{activeToolKeyRef.current=activeToolKey},[activeToolKey])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
+
+  // Apply TF visibility when timeframe changes
+  useEffect(()=>{
+    const tf=pairTf[activePair]||'H1'
+    const p=pluginRef.current
+    if(!p) return
+    Object.entries(drawingTfMap).forEach(([toolId,tfs])=>{
+      try{
+        const json=p.getLineToolByID(toolId)
+        if(!json) return
+        const arr=JSON.parse(json)
+        if(!arr?.length) return
+        const tool=arr[0]
+        const toolKey=tool.toolType
+        const cfg=toolConfigs[toolKey]||{}
+        if(tfs.includes(tf)){
+          // restore original
+          applyToTool(toolId,toolKey,cfg)
+        } else {
+          // hide — apply transparent colors
+          const hiddenCfg={...cfg,color:'rgba(0,0,0,0)',fillColor:'rgba(0,0,0,0)',textColor:'rgba(0,0,0,0)',stopColor:'rgba(0,0,0,0)',profitColor:'rgba(0,0,0,0)'}
+          applyToTool(toolId,toolKey,hiddenCfg)
+        }
+      }catch{}
+    })
+  },[pairTf,activePair,drawingTfMap])
 
   // ── Background constellation animation ──────────────────────────────────────
   useEffect(()=>{
@@ -750,6 +777,11 @@ export default function SessionPage(){
           }
         }}
         onDelete={()=>{removeSelected();setSelectedTool(null)}}
+        visibleTf={selectedTool?.id?drawingTfMap[selectedTool.id]||['M1','M5','M15','M30','H1','H4','D1']:['M1','M5','M15','M30','H1','H4','D1']}
+        onVisibilityChange={(tfs)=>{
+          if(!selectedTool?.id) return
+          setDrawingTfMap(prev=>({...prev,[selectedTool.id]:tfs}))
+        }}
         onDeselect={()=>setSelectedTool(null)}
         templates={templates}
         onSaveTemplate={async(name)=>{
