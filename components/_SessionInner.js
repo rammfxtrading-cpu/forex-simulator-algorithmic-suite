@@ -417,7 +417,7 @@ export default function SessionPage(){
       const tfMins = {'M1':60,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400}
       const tfSecs = tfMins[tf] || 3600
       const phantom = []
-      for(let i=1;i<=50;i++){
+      for(let i=1;i<=200;i++){
         phantom.push({time:lastCandle.time+tfSecs*i,open:lastCandle.close,high:lastCandle.close,low:lastCandle.close,close:lastCandle.close,volume:0})
       }
       const aggWithPhantom = [...agg,...phantom]
@@ -425,7 +425,7 @@ export default function SessionPage(){
       if(typeof window!=='undefined') window.__algSuiteSeriesData=aggWithPhantom
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
-        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:50})}catch{}
+        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:100})}catch{}
         cr.hasLoaded=true
       }
     } else {
