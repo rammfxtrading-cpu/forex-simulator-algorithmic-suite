@@ -1484,7 +1484,15 @@ logicalIndex) {
     // Use cached series data for accurate logical->time (handles weekend gaps)
     const cachedData2 = typeof window !== 'undefined' && window.__algSuiteSeriesData;
     if (cachedData2 && cachedData2.length >= 2) {
-        const idx = Math.max(0, Math.min(Math.round(logicalIndex), cachedData2.length - 1));
+        const roundedIdx = Math.round(logicalIndex);
+        if (roundedIdx >= cachedData2.length) {
+            // Beyond last candle — extrapolate using last interval
+            const last = cachedData2[cachedData2.length - 1];
+            const prev = cachedData2[cachedData2.length - 2];
+            const interval = Number(last.time) - Number(prev.time);
+            return Number(last.time) + (roundedIdx - (cachedData2.length - 1)) * interval;
+        }
+        const idx = Math.max(0, Math.min(roundedIdx, cachedData2.length - 1));
         return cachedData2[idx].time;
     }
     const startTime = typeof dataAtIndex0.time === 'string'
