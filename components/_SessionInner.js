@@ -202,6 +202,7 @@ export default function SessionPage(){
     const tf=pairTf[activePair]||'H1'
     Object.entries(drawingTfMap).forEach(([toolId,entry])=>{
       const tfs=Array.isArray(entry)?entry:(entry.tfs||['M1','M5','M15','M30','H1','H4','D1'])
+      console.log('setToolVisible',toolId,tfs.includes(tf),tf,tfs)
       setToolVisible(toolId, tfs.includes(tf))
     })
   },[pairTf,activePair,drawingTfMap,setToolVisible])
