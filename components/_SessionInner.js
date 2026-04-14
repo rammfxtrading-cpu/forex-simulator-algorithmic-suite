@@ -776,7 +776,7 @@ export default function SessionPage(){
           }
         }}
         onDelete={()=>{removeSelected();setSelectedTool(null)}}
-        visibleTf={selectedTool?.id?drawingTfMap[selectedTool.id]||['M1','M5','M15','M30','H1','H4','D1']:['M1','M5','M15','M30','H1','H4','D1']}
+        visibleTf={selectedTool?.id?(()=>{const e=drawingTfMap[selectedTool.id];return e?Array.isArray(e)?e:e.tfs||['M1','M5','M15','M30','H1','H4','D1']:['M1','M5','M15','M30','H1','H4','D1']})():['M1','M5','M15','M30','H1','H4','D1']}
         onVisibilityChange={(tfs)=>{
           if(!selectedTool?.id||!activeToolKey) return
           try{
