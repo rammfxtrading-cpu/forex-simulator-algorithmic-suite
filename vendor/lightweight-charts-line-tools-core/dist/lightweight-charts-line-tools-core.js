@@ -1481,20 +1481,21 @@ logicalIndex) {
         // If we can't get a reliable interval, return null.
         return null;
     }
+    // Use cached series data for accurate logical->time mapping (handles gaps/weekends)
+    const cachedData2 = typeof window !== 'undefined' && window.__algSuiteSeriesData;
+    if (cachedData2 && cachedData2.length >= 2) {
+        const idx = Math.max(0, Math.min(Math.round(logicalIndex), cachedData2.length - 1));
+        return cachedData2[idx].time;
+    }
     const startTime = typeof dataAtIndex0.time === 'string'
         ? convertDateStringToUTCTimestamp(dataAtIndex0.time)
         : dataAtIndex0.time;
     const endTime = typeof dataAtIndex1.time === 'string'
         ? convertDateStringToUTCTimestamp(dataAtIndex1.time)
         : dataAtIndex1.time;
-    // Calculate the time interval between the two data points (e.g., 86400 for daily bars).
     const interval = (Number(endTime) - Number(startTime));
-    // Calculate the difference in logical units from the first data point.
-    // We assume that `logicalIndex` relates linearly to `time`.
-    const logicalDelta = logicalIndex - 0; // Assuming the first data point (index 0) corresponds to logical 0.
-    // Interpolate the time for the given logical index.
+    const logicalDelta = logicalIndex - 0;
     const interpolatedTime = Number(startTime) + logicalDelta * interval;
-    // Return the interpolated time in the correct format (UTCTimestamp or string).
     if (typeof dataAtIndex0.time === 'string') {
         return convertUTCTimestampToDateString(interpolatedTime);
     }
