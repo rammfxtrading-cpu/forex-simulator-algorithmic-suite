@@ -145,6 +145,13 @@ export default function SessionPage(){
     onAfterEdit(()=>{
       setDrawingCount(c=>c+1)
       try{
+        const sel2=getSelected()
+        if(sel2?.length>0){
+          const tj=pluginRef.current?.getLineToolByID(sel2[0].id)
+          if(tj){const tp=JSON.parse(tj);console.log('TOOL POINTS',JSON.stringify(tp[0]?.points))}
+        }
+      }catch{}
+      try{
         const sel=getSelected()
         if(sel&&sel.length>0){const t=sel[0];setSelectedTool({id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
       }catch{}
