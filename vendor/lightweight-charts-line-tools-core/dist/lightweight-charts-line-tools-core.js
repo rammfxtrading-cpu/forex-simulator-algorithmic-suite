@@ -1694,9 +1694,17 @@ class InteractionManager {
     screenPointToLineToolPoint(screenPoint) {
         const timeScale = this._chart.timeScale();
         const price = this._series.coordinateToPrice(screenPoint.y);
-        const logical = timeScale.coordinateToLogical(screenPoint.x);
+        let logical = timeScale.coordinateToLogical(screenPoint.x);
         if (logical === null) {
-            return null;
+            // Blank space to the right — extrapolate logical from visible range
+            const visibleRange = timeScale.getVisibleLogicalRange();
+            if (!visibleRange) return null;
+            const width = timeScale.width ? timeScale.width() : 0;
+            if (!width) return null;
+            const logicalPerPixel = (visibleRange.to - visibleRange.from) / width;
+            const leftCoord = timeScale.logicalToCoordinate(visibleRange.from);
+            if (leftCoord === null) return null;
+            logical = visibleRange.from + (screenPoint.x - leftCoord) * logicalPerPixel;
         }
         // Use utility function (which uses interpolation) to get a timestamp from the logical index.
         const interpolatedTime = interpolateTimeFromLogicalIndex(this._chart, this._series, logical);
