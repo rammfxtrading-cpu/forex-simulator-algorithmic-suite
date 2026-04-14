@@ -222,6 +222,8 @@ export default function SessionPage(){
     supabase.auth.getSession().then(({data:{session:s}})=>{
       if(!s){router.replace('/');return}
       userIdRef.current=s.user.id
+      const{data:tpls}=await supabase.from('sim_drawing_templates').select('*').eq('user_id',s.user.id)
+      if(tpls)setTemplates(tpls)
     })
   },[])
 
@@ -251,12 +253,6 @@ export default function SessionPage(){
           openTime:t.opened_at?Math.floor(new Date(t.opened_at).getTime()/1000):null,
           closeTime:t.closed_at?Math.floor(new Date(t.closed_at).getTime()/1000):null,
         }))]
-      }
-      // Load drawing templates
-      const uid=userIdRef.current
-      if(uid){
-        const{data:tpls}=await supabase.from('sim_drawing_templates').select('*').eq('user_id',uid)
-        if(tpls)setTemplates(tpls)
       }
       setLoading(false)
     })
