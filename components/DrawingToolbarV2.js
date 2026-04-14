@@ -97,7 +97,7 @@ export default function DrawingToolbarV2({ activeTool,onToolChange,onAddTool,onR
 }
 
 // ── Config pill ───────────────────────────────────────────────────────────────
-export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate }) {
+export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate,onOpenConfig }) {
   const [pos,onMD]=useDrag({x:null,y:null})
   const [showText,setShowText]=useState(false)
   const [showTpl,setShowTpl]=useState(false)
