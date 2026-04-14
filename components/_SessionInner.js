@@ -11,6 +11,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
+import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
@@ -123,6 +124,7 @@ export default function SessionPage(){
   const [selectedTool,  setSelectedTool]  = useState(null)
   const [templates,     setTemplates]     = useState([])
   const [drawingCtxMenu, setDrawingCtxMenu] = useState(null)  // {x,y}
+  const [longShortModal, setLongShortModal] = useState(null)  // {toolId, tool}
   const [activeToolKey,  setActiveToolKey]  = useState(null)
   const selectedToolRef  = useRef(null)
   const activeToolKeyRef = useRef(null)
@@ -740,6 +742,11 @@ export default function SessionPage(){
             if(st?.id) applyToTool(st.id,tk,newCfg)
           }
         }}
+        onOpenConfig={()=>{
+          if(activeToolKeyRef.current==='LongShortPosition'&&selectedToolRef.current?.id){
+            try{const json=pluginRef.current?.getLineToolByID(selectedToolRef.current.id);const arr=JSON.parse(json);setLongShortModal({toolId:selectedToolRef.current.id,tool:arr?.[0]});}catch{}
+          }
+        }}
         onDelete={()=>{removeSelected();setSelectedTool(null)}}
         onDeselect={()=>setSelectedTool(null)}
         templates={templates}
@@ -754,9 +761,37 @@ export default function SessionPage(){
           try{const cfg=JSON.parse(t.config);updateToolConfig(activeToolKey,cfg);if(selectedTool?.id)applyToTool(selectedTool.id,activeToolKey,cfg)}catch{}
         }}
       />
+      {longShortModal&&(
+        <LongShortModal
+          tool={longShortModal.tool}
+          toolId={longShortModal.toolId}
+          activePair={activePair}
+          balance={balance}
+          onClose={()=>setLongShortModal(null)}
+          onStyleUpdate={(styleOpts)=>{
+            const tk='LongShortPosition'
+            const cfg={...toolConfigs[tk]}
+            if(styleOpts.profitColor) cfg.profitColor=styleOpts.profitColor
+            if(styleOpts.stopColor)   cfg.stopColor=styleOpts.stopColor
+            if(styleOpts.textColor)   cfg.textColor=styleOpts.textColor
+            if(styleOpts.borderWidth) cfg.borderWidth=styleOpts.borderWidth
+            updateToolConfig(tk,cfg)
+            if(longShortModal.toolId) applyToTool(longShortModal.toolId,tk,cfg)
+          }}
+          onConfirm={(posData)=>{
+            setLongShortModal(null)
+            setOrderModal({side:posData.side,entry:posData.entry,pair:activePair,isLimit:false,...posData})
+          }}
+        />
+      )}
       <DrawingContextMenu
         x={drawingCtxMenu?.x}
         y={drawingCtxMenu?.y}
+        onOpenConfig={()=>{
+          if(activeToolKeyRef.current==='LongShortPosition'&&selectedToolRef.current?.id){
+            try{const json=pluginRef.current?.getLineToolByID(selectedToolRef.current.id);const arr=JSON.parse(json);setLongShortModal({toolId:selectedToolRef.current.id,tool:arr?.[0]});}catch{}
+          }
+        }}
         onDelete={()=>{removeSelected();setSelectedTool(null)}}
         onClose={()=>setDrawingCtxMenu(null)}
       />
