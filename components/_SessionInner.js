@@ -420,11 +420,17 @@ export default function SessionPage(){
       const _lastT = agg[agg.length-1].time
       try {
         if(!cr.futureSeries) {
-          cr.futureSeries = cr.chart.addLineSeries({color:'rgba(0,0,0,0)',lineWidth:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false})
+          cr.futureSeries = cr.chart.addLineSeries({
+            color:'rgba(0,0,0,0)', lineWidth:0,
+            priceLineVisible:false, lastValueVisible:false,
+            crosshairMarkerVisible:false,
+            priceScaleId:'', visible:false
+          })
         }
-        const _futureData = Array.from({length:200},(_,i)=>({time:_lastT+_tfS2*(i+1),value:agg[agg.length-1].close}))
+        const _close = agg[agg.length-1].close
+        const _futureData = Array.from({length:200},(_,i)=>({time:_lastT+_tfS2*(i+1),value:_close}))
         cr.futureSeries.setData(_futureData)
-      } catch(e) {}
+      } catch(e) { console.log('futureSeries error:', e) }
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:300})}catch{}
