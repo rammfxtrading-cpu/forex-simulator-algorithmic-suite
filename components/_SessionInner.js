@@ -125,6 +125,7 @@ export default function SessionPage(){
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
   const [mounted,     setMounted]     = useState(false)
   const [activeTool,    setActiveTool]    = useState('cursor')
+  const activeToolRef = useRef('cursor')
   const [drawingCount,  setDrawingCount]  = useState(0)
   const [selectedTool,  setSelectedTool]  = useState(null)
   const [templates,     setTemplates]     = useState([])
@@ -398,7 +399,7 @@ export default function SessionPage(){
     }).observe(el)
 
     el.addEventListener('click', e=>{
-      if(activeTool !== 'text') return
+      if(activeToolRef.current !== 'text') return
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
       const x = e.clientX - rect.left
