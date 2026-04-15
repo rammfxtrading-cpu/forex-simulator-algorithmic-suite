@@ -409,36 +409,35 @@ export default function SessionPage(){
     const tf=pairTfRef.current[pair]||'H1'
     const agg=engine.getAggregated(tf); if(!agg.length) return
     const prev=cr.prevCount,curr=agg.length
+    const _tfMap2={'M1':60,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400}
+    const _tfS2 = _tfMap2[tf]||3600
+    const _lastT = agg[agg.length-1].time
+    const _lastC = agg[agg.length-1].close
     if(full||(curr!==prev&&curr!==prev+1)){
-      // Export tools, setData, reimport to fix logical index after TF change
-      const p=pluginRef.current
-      cr.series.setData(agg)
+      // Structural change — regenerate phantoms and setData
+      cr.phantom = Array.from({length:200},(_,i)=>({
+        time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
+        color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
+      }))
+      cr.phantomBaseTime = _lastT
+      cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined') window.__algSuiteSeriesData=agg
-      // Extend time axis with invisible future data
-      const _tfMap2={'M1':60,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400}
-      const _tfS2 = _tfMap2[tf]||3600
-      const _lastT = agg[agg.length-1].time
-      try {
-        if(!cr.futureSeries) {
-          cr.futureSeries = cr.chart.addLineSeries({
-            color:'rgba(0,0,0,0)', lineWidth:0,
-            priceLineVisible:false, lastValueVisible:false,
-            crosshairMarkerVisible:false,
-            priceScaleId:'', visible:false
-          })
-        }
-        const _close = agg[agg.length-1].close
-        const _futureData = Array.from({length:200},(_,i)=>({time:_lastT+_tfS2*(i+1),value:_close}))
-        cr.futureSeries.setData(_futureData)
-      } catch(e) { console.log('futureSeries error:', e) }
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:300})}catch{}
         cr.hasLoaded=true
       }
     } else {
-      cr.series.update(agg[agg.length-1])
-      // Never auto-scroll during replay — let user navigate freely
+      // Normal replay — realign phantoms if last candle changed
+      if(!cr.phantom||!cr.phantom.length||cr.phantomBaseTime!==_lastT){
+        cr.phantom = Array.from({length:200},(_,i)=>({
+          time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
+          color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
+        }))
+        cr.phantomBaseTime = _lastT
+      }
+      cr.series.setData([...agg,...cr.phantom])
+      if(typeof window!=='undefined') window.__algSuiteSeriesData=agg
     }
     cr.prevCount=curr
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
