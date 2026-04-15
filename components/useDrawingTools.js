@@ -11,6 +11,7 @@ const DEFAULT_CFG = {
   Rectangle:         { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.15)', label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
   FibRetracement:    { color: '#2962FF', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 10, textV: 'middle', textH: 'left' },
   LongShortPosition: { color: '#26a69a', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
+  Callout:           { color: '#f0c040', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
 }
 
 function buildText(cfg) {
@@ -138,7 +139,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
     if (!cr?.chart || !cr?.series || pluginRef.current) return
     try {
       const { createLineToolsPlugin }                                            = await import('lightweight-charts-line-tools-core')
-      const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
+      const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay, LineToolCallout } = await import('lightweight-charts-line-tools-lines')
       const { LineToolPath } = await import('lightweight-charts-line-tools-path')
       const { LineToolRectangle }                                                = await import('lightweight-charts-line-tools-rectangle')
       const { LineToolFibRetracement }                                           = await import('lightweight-charts-line-tools-fib-retracement')
@@ -148,6 +149,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
       plugin.registerLineTool('TrendLine',         LineToolTrendLine)
       plugin.registerLineTool('Path',              LineToolPath)
       plugin.registerLineTool('HorizontalRay',     LineToolHorizontalRay)
+      plugin.registerLineTool('Callout',           LineToolCallout)
       plugin.registerLineTool('Rectangle',         LineToolRectangle)
       plugin.registerLineTool('FibRetracement',    LineToolFibRetracement)
       plugin.registerLineTool('LongShortPosition', LineToolLongShortPosition)

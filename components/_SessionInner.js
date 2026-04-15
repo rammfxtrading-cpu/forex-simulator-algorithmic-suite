@@ -14,6 +14,7 @@ import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './Drawi
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
 import ChartConfigPanel, { useChartConfig, applyChartConfig } from './ChartConfigPanel'
+import RulerOverlay from './RulerOverlay'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -131,6 +132,8 @@ export default function SessionPage(){
   const selectedToolRef  = useRef(null)
   const activeToolKeyRef = useRef(null)
   const [chartConfigOpen, setChartConfigOpen] = useState(false)
+  const [rulerActive, setRulerActive] = useState(false)
+  const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
 
   const { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
@@ -188,11 +191,29 @@ export default function SessionPage(){
   // Drawing tools events
   useEffect(()=>{
     if(!dataReady) return
-    onAfterEdit(()=>{
+    onAfterEdit((event)=>{
       setDrawingCount(c=>c+1)
       try{
         const sel=getSelected()
-        if(sel&&sel.length>0){const t=sel[0];setSelectedTool({id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
+        if(sel&&sel.length>0){
+          const t=sel[0]
+          setSelectedTool({id:t.id,toolType:t.toolType})
+          if(t.toolType) setActiveToolKey(t.toolType)
+          // Show text input when Callout is just placed
+          if(t.toolType==='Callout' && event?.stage==='lineToolFinished'){
+            setTextInput({
+              x: window.innerWidth/2 - 120,
+              y: window.innerHeight/2 - 60,
+              onConfirm:(text)=>{
+                if(!text.trim()) return
+                try{
+                  applyToTool(t.id,{label:text})
+                }catch{}
+                if(saveDrawingsRef.current) saveDrawingsRef.current()
+              }
+            })
+          }
+        }
       }catch{}
       if(saveDrawingsRef.current) saveDrawingsRef.current()
     })
@@ -780,6 +801,7 @@ export default function SessionPage(){
             style={{...s.chart,display:pair===activePair?'block':'none'}}
           />
         ))}
+        <RulerOverlay active={rulerActive} chartMap={chartMap} activePair={activePair} />
         {!dataReady&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
         )}
@@ -1175,6 +1197,24 @@ export default function SessionPage(){
         </>
       )}
 
+      {textInput&&(
+        <>
+          <div style={{position:'fixed',inset:0,zIndex:2000}} onClick={()=>setTextInput(null)}/>
+          <div style={{position:'fixed',left:textInput.x,top:textInput.y,zIndex:2001,background:'rgba(4,10,24,0.95)',border:'1px solid rgba(30,144,255,0.4)',borderRadius:12,padding:'12px 14px',boxShadow:'0 8px 40px rgba(0,0,0,0.7)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif"}}>
+            <div style={{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:8,fontWeight:600}}>TEXTO</div>
+            <input
+              autoFocus
+              style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(30,144,255,0.3)',borderRadius:7,color:'#fff',fontSize:12,padding:'6px 10px',outline:'none',fontFamily:"'Montserrat',sans-serif",width:200}}
+              placeholder="Escribe aquí..."
+              onKeyDown={e=>{
+                if(e.key==='Enter'){textInput.onConfirm(e.target.value);setTextInput(null)}
+                if(e.key==='Escape') setTextInput(null)
+              }}
+            />
+            <div style={{fontSize:9,color:'rgba(255,255,255,0.3)',marginTop:6}}>Enter para confirmar · Esc para cancelar</div>
+          </div>
+        </>
+      )}
       <ChartConfigPanel
         open={chartConfigOpen}
         onClose={()=>setChartConfigOpen(false)}
