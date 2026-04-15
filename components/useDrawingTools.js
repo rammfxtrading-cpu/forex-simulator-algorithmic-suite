@@ -2,6 +2,7 @@
  * useDrawingTools.js v4 — estructuras de opciones correctas por herramienta
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
+import { supabase } from '../lib/supabase'
 
 const DEFAULT_CFG = {
   TrendLine:         { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
@@ -109,12 +110,27 @@ function buildOptions(toolKey, cfg) {
   }
 }
 
-export function useDrawingTools({ chartMap, activePair, dataReady }) {
+export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   const pluginRef      = useRef(null)
   const [toolConfigs, setToolConfigs] = useState({ ...DEFAULT_CFG })
   const cfgRef         = useRef({ ...DEFAULT_CFG })
 
   useEffect(() => { cfgRef.current = toolConfigs }, [toolConfigs])
+
+  // Load tool config from Supabase on mount
+  useEffect(() => {
+    if (!userId) return
+    supabase.from('user_tool_config').select('config').eq('user_id', userId).single()
+      .then(({ data }) => {
+        if (data?.config && Object.keys(data.config).length > 0) {
+          const merged = {}
+          Object.keys(DEFAULT_CFG).forEach(k => {
+            merged[k] = { ...DEFAULT_CFG[k], ...(data.config[k] || {}) }
+          })
+          setToolConfigs(merged)
+        }
+      }).catch(() => {})
+  }, [userId])
 
   const initPlugin = useCallback(async () => {
     if (!dataReady) return
@@ -162,8 +178,18 @@ export function useDrawingTools({ chartMap, activePair, dataReady }) {
   }, [])
 
   const updateToolConfig = useCallback((toolKey, patch) => {
-    setToolConfigs(prev => ({ ...prev, [toolKey]: { ...prev[toolKey], ...patch } }))
-  }, [])
+    setToolConfigs(prev => {
+      const next = { ...prev, [toolKey]: { ...prev[toolKey], ...patch } }
+      // Save to Supabase
+      if (userId) {
+        supabase.from('user_tool_config').upsert(
+          { user_id: userId, config: next, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id' }
+        ).then(() => {}).catch(() => {})
+      }
+      return next
+    })
+  }, [userId])
 
   const setToolVisible = useCallback((toolId, visible) => {
     const p = pluginRef.current; if (!p || !toolId) return

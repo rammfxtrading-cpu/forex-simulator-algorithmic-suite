@@ -136,6 +136,7 @@ export default function SessionPage(){
     chartMap,
     activePair,
     dataReady,
+    userId: userIdRef.current,
   })
   
 
