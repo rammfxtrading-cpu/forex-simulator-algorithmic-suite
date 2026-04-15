@@ -155,6 +155,7 @@ export default function SessionPage(){
   useEffect(()=>{setMounted(true)},[])
 
   // Save session drawings to Supabase
+  const saveDrawingsRef = useRef(null)
   const saveSessionDrawings = useCallback(async () => {
     const uid = userIdRef.current
     const sid = router.query?.id
@@ -168,6 +169,7 @@ export default function SessionPage(){
       ).then(()=>{}).catch(()=>{})
     } catch(e) {}
   }, [exportTools])
+  useEffect(() => { saveDrawingsRef.current = saveSessionDrawings }, [saveSessionDrawings])
 
   // Load session drawings when chart is ready
   useEffect(() => {
@@ -192,7 +194,7 @@ export default function SessionPage(){
         const sel=getSelected()
         if(sel&&sel.length>0){const t=sel[0];setSelectedTool({id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
       }catch{}
-      saveSessionDrawings()
+      if(saveDrawingsRef.current) saveDrawingsRef.current()
     })
     onDoubleClick((event)=>{
       try{setSelectedTool({id:event?.toolId,toolType:event?.toolType});if(event?.toolType)setActiveToolKey(event.toolType)}catch{}
