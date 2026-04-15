@@ -6459,14 +6459,17 @@ class BaseLineTool extends PriceDataSource {
         }
         // Use logicalToCoordinate for x-coordinate based on the logical index.
         let x = timeScale.logicalToCoordinate(logicalIndex);
-        // If null (blank space beyond last candle), extrapolate from visible range
+        // If null (blank space beyond last candle), extrapolate using two known points
         if (x === null) {
-            const vr = timeScale.getVisibleLogicalRange();
-            if (vr) {
-                const fc = timeScale.logicalToCoordinate(vr.from);
-                const tc = timeScale.logicalToCoordinate(vr.to);
-                if (fc !== null && tc !== null && vr.to !== vr.from) {
-                    x = fc + (logicalIndex - vr.from) * (tc - fc) / (vr.to - vr.from);
+            const cachedD = typeof window !== 'undefined' && window.__algSuiteSeriesData;
+            if (cachedD && cachedD.length >= 2) {
+                const lastIdx = cachedD.length - 1;
+                const prevIdx = cachedD.length - 2;
+                const xLast = timeScale.logicalToCoordinate(lastIdx);
+                const xPrev = timeScale.logicalToCoordinate(prevIdx);
+                if (xLast !== null && xPrev !== null) {
+                    const pxPerBar = xLast - xPrev;
+                    x = xLast + (logicalIndex - lastIdx) * pxPerBar;
                 }
             }
         }
