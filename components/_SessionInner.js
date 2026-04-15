@@ -398,21 +398,20 @@ export default function SessionPage(){
       try{if(chartMap.current[pair]) chart.resize(width,height)}catch{}
     }).observe(el)
 
-    el.addEventListener('click', e=>{
+    chart.subscribeClick((param)=>{
       if(activeToolRef.current !== 'text') return
       const cr=chartMap.current[pair]; if(!cr) return
-      const rect=el.getBoundingClientRect()
-      const x = e.clientX - rect.left
-      const y = e.clientY - rect.top
-      const coords = fromScreenCoords(cr, x, y)
+      if(!param?.point) return
+      const coords = fromScreenCoords(cr, param.point.x, param.point.y)
       if(!coords) return
       setTextInput({
-        x: e.clientX,
-        y: e.clientY - 60,
+        x: (param.sourceEvent?.clientX || window.innerWidth/2),
+        y: (param.sourceEvent?.clientY || window.innerHeight/2) - 60,
         onConfirm: (text) => {
           if(!text.trim()) return
           addDrawing(DRAWING_TYPES.TEXT, [{ time: coords.time, price: coords.price }], { text, fontSize: 12, color: '#ffffff' })
           setActiveTool('cursor')
+          activeToolRef.current = 'cursor'
         }
       })
     })
