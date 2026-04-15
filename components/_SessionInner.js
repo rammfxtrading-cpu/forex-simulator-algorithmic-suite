@@ -30,8 +30,8 @@ function chartOpts(w,h){return{
     fontSize:13,
   },
   grid:{
-    vertLines:{color:'rgba(255,255,255,0.03)',style:0},
-    horzLines:{color:'rgba(255,255,255,0.06)',style:0},
+    vertLines:{color:'rgba(255,255,255,0.03)',style:0,visible:false},
+    horzLines:{color:'rgba(255,255,255,0.06)',style:0,visible:false},
   },
   crosshair:{
     mode:0,
