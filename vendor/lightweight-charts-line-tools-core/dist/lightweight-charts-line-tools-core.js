@@ -6458,7 +6458,18 @@ class BaseLineTool extends PriceDataSource {
             return null;
         }
         // Use logicalToCoordinate for x-coordinate based on the logical index.
-        const x = timeScale.logicalToCoordinate(logicalIndex);
+        let x = timeScale.logicalToCoordinate(logicalIndex);
+        // If null (blank space beyond last candle), extrapolate from visible range
+        if (x === null) {
+            const vr = timeScale.getVisibleLogicalRange();
+            if (vr) {
+                const fc = timeScale.logicalToCoordinate(vr.from);
+                const tc = timeScale.logicalToCoordinate(vr.to);
+                if (fc !== null && tc !== null && vr.to !== vr.from) {
+                    x = fc + (logicalIndex - vr.from) * (tc - fc) / (vr.to - vr.from);
+                }
+            }
+        }
         // Use the series' priceToCoordinate method directly.
         const y = this._series.priceToCoordinate(point.price);
         // Ensure conversions were successful and resulted in valid coordinates.
