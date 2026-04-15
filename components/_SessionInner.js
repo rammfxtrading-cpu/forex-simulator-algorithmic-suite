@@ -399,6 +399,7 @@ export default function SessionPage(){
     }).observe(el)
 
     chart.subscribeClick((param)=>{
+      console.log('[CLICK] tool:', activeToolRef.current, 'param:', JSON.stringify(param))
       if(activeToolRef.current !== 'text') return
       const cr=chartMap.current[pair]; if(!cr) return
       if(!param?.point) return
