@@ -172,7 +172,7 @@ export default function SessionPage(){
     if(!dataReady || !id || !userIdRef.current) return
     const load = async () => {
       try {
-        const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).single()
+        const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).maybeSingle()
         if(data?.data && data.data !== '[]') {
           setTimeout(() => { try { importTools(data.data) } catch(e) {} }, 500)
         }
