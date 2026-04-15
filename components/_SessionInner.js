@@ -414,6 +414,11 @@ export default function SessionPage(){
       const p=pluginRef.current
       cr.series.setData(agg)
       if(typeof window!=='undefined') window.__algSuiteSeriesData=agg
+      // Extend time axis 200 bars into future so drawing tools can place points there
+      const _tfMap2={'M1':60,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400}
+      const _tfS2 = _tfMap2[tf]||3600
+      const _lastT = agg[agg.length-1].time
+      cr.chart.timeScale().setVisibleRange({from:agg[Math.max(0,agg.length-200)].time, to:_lastT+_tfS2*200})
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:300})}catch{}
