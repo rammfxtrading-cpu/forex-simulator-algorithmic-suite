@@ -6459,17 +6459,22 @@ class BaseLineTool extends PriceDataSource {
         }
         // Use logicalToCoordinate for x-coordinate based on the logical index.
         let x = timeScale.logicalToCoordinate(logicalIndex);
-        // If null (blank space beyond last candle), extrapolate using two known points
+        // If null (blank space beyond last candle), interpolate using surrounding integer indices
         if (x === null) {
-            const cachedD = typeof window !== 'undefined' && window.__algSuiteSeriesData;
-            if (cachedD && cachedD.length >= 2) {
-                const lastIdx = cachedD.length - 1;
-                const prevIdx = cachedD.length - 2;
-                const xLast = timeScale.logicalToCoordinate(lastIdx);
-                const xPrev = timeScale.logicalToCoordinate(prevIdx);
-                if (xLast !== null && xPrev !== null) {
-                    const pxPerBar = xLast - xPrev;
-                    x = xLast + (logicalIndex - lastIdx) * pxPerBar;
+            const floorIdx = Math.floor(logicalIndex);
+            const x1 = timeScale.logicalToCoordinate(floorIdx - 1);
+            const x2 = timeScale.logicalToCoordinate(floorIdx);
+            if (x1 !== null && x2 !== null) {
+                x = x1 + (logicalIndex - (floorIdx - 1)) * (x2 - x1);
+            } else {
+                // fallback: find any two consecutive valid indices below logicalIndex
+                for (let i = floorIdx - 1; i >= Math.max(0, floorIdx - 10); i--) {
+                    const xa = timeScale.logicalToCoordinate(i);
+                    const xb = timeScale.logicalToCoordinate(i + 1);
+                    if (xa !== null && xb !== null) {
+                        x = xa + (logicalIndex - i) * (xb - xa);
+                        break;
+                    }
                 }
             }
         }
