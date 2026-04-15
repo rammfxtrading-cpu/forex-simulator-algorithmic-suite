@@ -369,7 +369,7 @@ export default function SessionPage(){
     chartMap.current[pair]={chart,series,prevCount:0}
     new ResizeObserver(entries=>{
       const{width,height}=entries[0].contentRect
-      if(chartMap.current[pair]) chart.resize(width,height)
+      try{if(chartMap.current[pair]) chart.resize(width,height)}catch{}
     }).observe(el)
 
     el.addEventListener('contextmenu', e=>{
@@ -742,6 +742,8 @@ export default function SessionPage(){
   },[handlePlayPause,handleStep])
 
   useEffect(()=>()=>{
+    // Save drawings before unmount
+    if(saveDrawingsRef.current) saveDrawingsRef.current()
     // Save progress before unmount
     const e = pairState.current[activePairRef.current]?.engine
     if(e?.currentTime && id){
