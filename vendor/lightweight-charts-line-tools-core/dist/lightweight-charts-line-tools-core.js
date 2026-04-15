@@ -6459,22 +6459,17 @@ class BaseLineTool extends PriceDataSource {
         }
         // Use logicalToCoordinate for x-coordinate based on the logical index.
         let x = timeScale.logicalToCoordinate(logicalIndex);
-        // If null (blank space beyond last candle), interpolate using surrounding integer indices
+        // If null (blank space beyond last candle), extrapolate using last two valid indices
         if (x === null) {
             const floorIdx = Math.floor(logicalIndex);
-            const x1 = timeScale.logicalToCoordinate(floorIdx - 1);
-            const x2 = timeScale.logicalToCoordinate(floorIdx);
-            if (x1 !== null && x2 !== null) {
-                x = x1 + (logicalIndex - (floorIdx - 1)) * (x2 - x1);
-            } else {
-                // fallback: find any two consecutive valid indices below logicalIndex
-                for (let i = floorIdx - 1; i >= Math.max(0, floorIdx - 10); i--) {
-                    const xa = timeScale.logicalToCoordinate(i);
-                    const xb = timeScale.logicalToCoordinate(i + 1);
-                    if (xa !== null && xb !== null) {
-                        x = xa + (logicalIndex - i) * (xb - xa);
-                        break;
-                    }
+            // Find last two valid consecutive indices
+            for (let i = floorIdx; i >= Math.max(1, floorIdx - 20); i--) {
+                const xa = timeScale.logicalToCoordinate(i - 1);
+                const xb = timeScale.logicalToCoordinate(i);
+                if (xa !== null && xb !== null) {
+                    const barWidth = xb - xa;
+                    x = xb + (logicalIndex - i) * barWidth;
+                    break;
                 }
             }
         }
