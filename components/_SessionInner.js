@@ -13,6 +13,7 @@ import ReplayEngine from '../lib/replayEngine'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
+import ChartConfigPanel, { useChartConfig, applyChartConfig } from './ChartConfigPanel'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -129,6 +130,7 @@ export default function SessionPage(){
   const [activeToolKey,  setActiveToolKey]  = useState(null)
   const selectedToolRef  = useRef(null)
   const activeToolKeyRef = useRef(null)
+  const [chartConfigOpen, setChartConfigOpen] = useState(false)
 
   const { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
@@ -136,6 +138,18 @@ export default function SessionPage(){
     dataReady,
   })
   
+
+  const sessionId = typeof window !== 'undefined' ? window.location.pathname.split('/').pop() : null
+  const { config: chartConfig, saveConfig: saveChartConfig, loaded: chartConfigLoaded } = useChartConfig({
+    sessionId,
+    userId: userIdRef.current,
+  })
+
+  // Apply config whenever chart is ready or config loads
+  useEffect(() => {
+    if (!chartConfigLoaded || !activePair) return
+    applyChartConfig(chartMap, activePair, chartConfig)
+  }, [chartConfigLoaded, chartConfig, activePair])
 
   useEffect(()=>{setMounted(true)},[])
 
@@ -1116,6 +1130,9 @@ export default function SessionPage(){
                 <span style={{color:'#ffffff',fontSize:9}}>{ctxMenu.price.toFixed(5)}</span>
               </button>
             )}
+            <button style={{...s.ctxItem,borderTop:'1px solid rgba(255,255,255,0.06)'}} onClick={()=>{setCtxMenu(null);setChartConfigOpen(true)}}>
+              <span style={{color:'rgba(255,255,255,0.7)'}}>⚙ Configuración</span>
+            </button>
             <button style={{...s.ctxItem,borderTop:'1px solid rgba(255,255,255,0.06)'}} onClick={()=>setCtxMenu(null)}>
               <span style={{color:'#ffffff'}}>Cerrar</span>
             </button>
@@ -1123,7 +1140,17 @@ export default function SessionPage(){
         </>
       )}
 
-      {/* ORDER MODAL */}
+      <ChartConfigPanel
+        open={chartConfigOpen}
+        onClose={()=>setChartConfigOpen(false)}
+        config={chartConfig}
+        onSave={(newConfig)=>{
+          saveChartConfig(newConfig)
+          applyChartConfig(chartMap, activePair, newConfig)
+        }}
+      />
+
+      {/* ORDER MODAL */}}
       {orderModal&&(
         <OrderModal modal={orderModal} balance={balance}
           initialBalance={initialCapital} currentPrice={currentPrice}
