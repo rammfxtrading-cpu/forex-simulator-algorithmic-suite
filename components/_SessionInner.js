@@ -421,7 +421,7 @@ export default function SessionPage(){
       }))
       cr.phantomBaseTime = _lastT
       cr.series.setData([...agg,...cr.phantom])
-      if(typeof window!=='undefined') window.__algSuiteSeriesData=agg
+      if(typeof window!=='undefined') window.__algSuiteSeriesData=[...agg,...cr.phantom]
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:300})}catch{}
@@ -437,7 +437,7 @@ export default function SessionPage(){
         cr.phantomBaseTime = _lastT
       }
       cr.series.setData([...agg,...cr.phantom])
-      if(typeof window!=='undefined') window.__algSuiteSeriesData=agg
+      if(typeof window!=='undefined') window.__algSuiteSeriesData=[...agg,...cr.phantom]
     }
     cr.prevCount=curr
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
