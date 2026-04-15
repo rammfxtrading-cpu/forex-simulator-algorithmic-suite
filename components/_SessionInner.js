@@ -157,19 +157,17 @@ export default function SessionPage(){
   // Save session drawings to Supabase
   const saveSessionDrawings = useCallback(async () => {
     const uid = userIdRef.current
-    console.log('[SAVE DRAWINGS] id:', id, 'uid:', uid)
-    if(!uid || !id) return
+    const sid = router.query?.id
+    if(!uid || !sid) return
     try {
       const json = exportTools()
-      console.log('[SAVE DRAWINGS] json:', json?.slice?.(0,80))
       if(!json || json === '[]') return
-      const {error} = await supabase.from('session_drawings').upsert(
-        { session_id: id, user_id: uid, data: json, updated_at: new Date().toISOString() },
+      await supabase.from('session_drawings').upsert(
+        { session_id: sid, user_id: uid, data: json, updated_at: new Date().toISOString() },
         { onConflict: 'session_id' }
-      )
-      console.log('[SAVE DRAWINGS] error:', error)
-    } catch(e) { console.log('[SAVE DRAWINGS] catch:', e) }
-  }, [id, exportTools])
+      ).then(()=>{}).catch(()=>{})
+    } catch(e) {}
+  }, [exportTools])
 
   // Load session drawings when chart is ready
   useEffect(() => {
