@@ -1150,7 +1150,7 @@ export default function SessionPage(){
         }}
       />
 
-      {/* ORDER MODAL */}}
+      {/* ORDER MODAL */}
       {orderModal&&(
         <OrderModal modal={orderModal} balance={balance}
           initialBalance={initialCapital} currentPrice={currentPrice}
