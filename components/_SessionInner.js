@@ -154,6 +154,33 @@ export default function SessionPage(){
 
   useEffect(()=>{setMounted(true)},[])
 
+  // Save session drawings to Supabase
+  const saveSessionDrawings = useCallback(async () => {
+    if(!userIdRef.current || !id) return
+    try {
+      const json = exportTools()
+      if(!json) return
+      await supabase.from('session_drawings').upsert(
+        { session_id: id, user_id: userIdRef.current, data: json, updated_at: new Date().toISOString() },
+        { onConflict: 'session_id' }
+      )
+    } catch(e) {}
+  }, [id, exportTools])
+
+  // Load session drawings when chart is ready
+  useEffect(() => {
+    if(!dataReady || !id || !userIdRef.current) return
+    const load = async () => {
+      try {
+        const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).single()
+        if(data?.data && data.data !== '[]') {
+          setTimeout(() => { try { importTools(data.data) } catch(e) {} }, 500)
+        }
+      } catch(e) {}
+    }
+    load()
+  }, [dataReady, id])
+
   // Drawing tools events
   useEffect(()=>{
     if(!dataReady) return
@@ -163,6 +190,7 @@ export default function SessionPage(){
         const sel=getSelected()
         if(sel&&sel.length>0){const t=sel[0];setSelectedTool({id:t.id,toolType:t.toolType});if(t.toolType)setActiveToolKey(t.toolType)}
       }catch{}
+      saveSessionDrawings()
     })
     onDoubleClick((event)=>{
       try{setSelectedTool({id:event?.toolId,toolType:event?.toolType});if(event?.toolType)setActiveToolKey(event.toolType)}catch{}
