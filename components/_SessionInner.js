@@ -156,15 +156,19 @@ export default function SessionPage(){
 
   // Save session drawings to Supabase
   const saveSessionDrawings = useCallback(async () => {
-    if(!userIdRef.current || !id) return
+    const uid = userIdRef.current
+    console.log('[SAVE DRAWINGS] id:', id, 'uid:', uid)
+    if(!uid || !id) return
     try {
       const json = exportTools()
-      if(!json) return
-      await supabase.from('session_drawings').upsert(
-        { session_id: id, user_id: userIdRef.current, data: json, updated_at: new Date().toISOString() },
+      console.log('[SAVE DRAWINGS] json:', json?.slice?.(0,80))
+      if(!json || json === '[]') return
+      const {error} = await supabase.from('session_drawings').upsert(
+        { session_id: id, user_id: uid, data: json, updated_at: new Date().toISOString() },
         { onConflict: 'session_id' }
       )
-    } catch(e) {}
+      console.log('[SAVE DRAWINGS] error:', error)
+    } catch(e) { console.log('[SAVE DRAWINGS] catch:', e) }
   }, [id, exportTools])
 
   // Load session drawings when chart is ready
