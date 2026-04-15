@@ -308,7 +308,7 @@ export default function SessionPage(){
   // ── Session load ──────────────────────────────────────────────────────────────
   useEffect(()=>{
     if(!id) return
-    supabase.from('sim_sessions').select('*').eq('id',id).single().then(async ({data})=>{
+    supabase.from('sim_sessions').select('*').eq('id',id).maybeSingle().then(async ({data})=>{
       if(!data){setLoading(false);return}
       sessionRef.current=data
       setSession(data)
