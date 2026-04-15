@@ -398,7 +398,7 @@ export default function SessionPage(){
     }).observe(el)
 
     el.addEventListener('click', e=>{
-      if(activeToolKeyRef.current !== 'Callout') return
+      if(activeTool !== 'text') return
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
       const x = e.clientX - rect.left
@@ -411,6 +411,7 @@ export default function SessionPage(){
         onConfirm: (text) => {
           if(!text.trim()) return
           addDrawing(DRAWING_TYPES.TEXT, [{ time: coords.time, price: coords.price }], { text, fontSize: 12, color: '#ffffff' })
+          setActiveTool('cursor')
         }
       })
     })

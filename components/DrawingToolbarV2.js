@@ -15,7 +15,7 @@ const TOOLS = [
   { id: 'Rectangle',        label: 'Rectángulo',         icon: RectIcon,     toolKey: 'Rectangle' },
   { id: 'FibRetracement',   label: 'Fibonacci',          icon: FibIcon,      toolKey: 'FibRetracement' },
   { id: 'LongShortPosition',label: 'Long / Short',       icon: PosIcon,      toolKey: 'LongShortPosition' },
-  { id: 'Callout',          label: 'Texto',              icon: TextIcon,     toolKey: 'Callout' },
+  { id: 'text',             label: 'Texto',              icon: TextIcon,     toolKey: null },
   { id: 'ruler',            label: 'Regla',              icon: RulerIcon,    toolKey: null },
 ]
 
