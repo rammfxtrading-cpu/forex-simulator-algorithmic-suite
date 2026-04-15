@@ -15,6 +15,9 @@ import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
 import ChartConfigPanel, { useChartConfig, applyChartConfig } from './ChartConfigPanel'
 import RulerOverlay from './RulerOverlay'
+import useCustomDrawings, { DRAWING_TYPES } from './useCustomDrawings'
+import CustomDrawingsOverlay from './CustomDrawingsOverlay'
+import { fromScreenCoords } from '../lib/chartCoords'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -134,6 +137,7 @@ export default function SessionPage(){
   const [chartConfigOpen, setChartConfigOpen] = useState(false)
   const [rulerActive, setRulerActive] = useState(false)
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
+  const { drawings, addDrawing, updateDrawing, removeDrawing, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
 
   const { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
@@ -392,6 +396,24 @@ export default function SessionPage(){
       const{width,height}=entries[0].contentRect
       try{if(chartMap.current[pair]) chart.resize(width,height)}catch{}
     }).observe(el)
+
+    el.addEventListener('click', e=>{
+      if(activeToolKeyRef.current !== 'Callout') return
+      const cr=chartMap.current[pair]; if(!cr) return
+      const rect=el.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      const coords = fromScreenCoords(cr, x, y)
+      if(!coords) return
+      setTextInput({
+        x: e.clientX,
+        y: e.clientY - 60,
+        onConfirm: (text) => {
+          if(!text.trim()) return
+          addDrawing(DRAWING_TYPES.TEXT, [{ time: coords.time, price: coords.price }], { text, fontSize: 12, color: '#ffffff' })
+        }
+      })
+    })
 
     el.addEventListener('contextmenu', e=>{
       e.preventDefault()
@@ -802,6 +824,7 @@ export default function SessionPage(){
           />
         ))}
         <RulerOverlay active={rulerActive} chartMap={chartMap} activePair={activePair} />
+        <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} />
         {!dataReady&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
         )}
