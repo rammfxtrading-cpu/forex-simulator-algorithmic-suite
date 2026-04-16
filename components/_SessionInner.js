@@ -845,7 +845,7 @@ export default function SessionPage(){
 
       <DrawingToolbarV2
         activeTool={activeTool}
-        onToolChange={(id)=>{setActiveTool(id);setActiveToolKey(id==='cursor'?null:id);if(id==='cursor')setSelectedTool(null)}}
+        onToolChange={(id)=>{setActiveTool(id);setActiveToolKey((id==='cursor'||id==='text'||id==='ruler')?null:id);if(id==='cursor')setSelectedTool(null)}}
         onAddTool={(toolKey)=>addTool(toolKey)}
         onRemoveSelected={removeSelected}
         onRemoveAll={()=>{removeAll();setDrawingCount(0);setSelectedTool(null)}}
