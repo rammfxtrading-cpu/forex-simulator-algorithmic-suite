@@ -178,6 +178,7 @@ export default function SessionPage(){
   const [hoverCandle, setHoverCandle] = useState(null) // {o,h,l,c,t}
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
   const [tfInput, setTfInput] = useState('')  // TF keyboard modal
+  const [tfInput, setTfInput] = useState('')  // TF keyboard modal
   const [selectedDrawing, setSelectedDrawing] = useState(null) // {id, x, y}
   const selectedDrawingRef = useRef(null)
   useEffect(()=>{selectedDrawingRef.current=selectedDrawing},[selectedDrawing])
