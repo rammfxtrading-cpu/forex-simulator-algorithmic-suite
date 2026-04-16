@@ -182,7 +182,7 @@ export default function CustomDrawingsOverlay({ drawings, chartMap, activePair, 
       style={{
         position: 'absolute', inset: 0,
         width: '100%', height: '100%',
-        pointerEvents: 'auto',
+        pointerEvents: 'none',
         zIndex: 19,
         cursor: 'default',
       }}
