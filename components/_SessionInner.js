@@ -472,7 +472,11 @@ export default function SessionPage(){
         }
       }
       engine.onEnd=()=>{if(pair===activePairRef.current)setIsPlaying(false)}
-      pairState.current[pair]={engine,ready:true,positions:[],trades:[],ordinalToReal,realToOrdinal}
+      const ps={engine,ready:true,positions:[],trades:[],ordinalToReal,realToOrdinal,
+        lastSLTPIdx: engine.currentIndex,   // start from current — don't re-check history
+        lastLimitIdx: engine.currentIndex,
+      }
+      pairState.current[pair]=ps
       updateChart(pair,engine,true)
       if(pair===activePairRef.current){
         setDataReady(true);setCurrentTime(engine.currentTime);setProgress(Math.round(engine.progress*100))
@@ -747,7 +751,7 @@ export default function SessionPage(){
   },[currentPrice,activePair,lots,slPips,tpPips,rr,currentTime])
 
   // closePosition accepts optional pair+exitPrice for use from engine.onTick
-  const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride)=>{
+  const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null)=>{
     const usePair=pairOverride||activePair
     const usePrice=exitPriceOverride||currentPrice
     const ps=pairState.current[usePair];if(!ps||!usePrice) return
@@ -762,6 +766,15 @@ export default function SessionPage(){
     setBalance(newBalance);setTick(t=>t+1)
     if(userIdRef.current){
       try{
+        // Convert ordinal timestamps → real unix timestamps for DB storage
+        const ps2=pairState.current[usePair]
+        const toReal=(ordTs)=>{
+          if(!ordTs) return null
+          if(ps2?.ordinalToReal){ const idx=Math.floor(ordTs/60); return ps2.ordinalToReal[idx]??null }
+          return ordTs>1000000000?ordTs:null // fallback: if already real ts, use it
+        }
+        const realOpenTime = toReal(pos.openTime)
+        const realCloseTime = toReal(currentTime)
         await supabase.from('sim_trades').insert({
           user_id:userIdRef.current,
           session_id:id,
@@ -775,10 +788,10 @@ export default function SessionPage(){
           rr:parseFloat(rrReal.toFixed(2)),
           pnl:parseFloat(pnl.toFixed(2)),
           result,
-          opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():new Date().toISOString(),
-          closed_at:currentTime?new Date(currentTime*1000).toISOString():new Date().toISOString(),
+          notes: note||null,
+          opened_at:realOpenTime?new Date(realOpenTime*1000).toISOString():new Date().toISOString(),
+          closed_at:realCloseTime?new Date(realCloseTime*1000).toISOString():new Date().toISOString(),
         })
-        // Persist balance and timestamp
         await supabase.from('sim_sessions').update({balance:newBalance,last_timestamp:currentTime}).eq('id',id)
       }catch(e){console.error(e)}
     }
@@ -913,45 +926,55 @@ export default function SessionPage(){
 
   const checkSLTP=useCallback((pair,engine)=>{
     const ps=pairState.current[pair];if(!ps?.positions?.length) return
-    // Always use M1 for SL/TP detection — prevents missing hits on higher TFs
-    const m1=engine.visibleCandles
-    const candle=m1[m1.length-1];if(!candle) return
-    const{high,low}=candle
+    const curIdx=engine.currentIndex
+    // Determine range to check — from last checked index+1 to current
+    // This ensures no M1 candle is skipped at any speed (1x, 5x, 15x, 60x, ∞)
+    const fromIdx = ps.lastSLTPIdx != null ? ps.lastSLTPIdx + 1 : curIdx
+    ps.lastSLTPIdx = curIdx
+
     const toClose=[]
-    ps.positions.forEach(pos=>{
-      const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
-      const hitSl=pos.side==='BUY'?low<=pos.sl:high>=pos.sl
-      if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp})
-      else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl})
-    })
-    // Close outside forEach to avoid mutation during iteration
+    for(let i=fromIdx; i<=curIdx; i++){
+      const candle=engine.candles[i];if(!candle) continue
+      const{high,low}=candle
+      ps.positions.forEach(pos=>{
+        if(toClose.find(x=>x.id===pos.id)) return // already queued
+        const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
+        const hitSl=pos.side==='BUY'?low<=pos.sl:high>=pos.sl
+        if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp})
+        else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl})
+      })
+    }
     toClose.forEach(({id,reason,price})=>closePositionRef.current(id,reason,pair,price))
   },[])
 
   const checkLimitOrders=useCallback((pair,engine)=>{
     const ps=pairState.current[pair]; if(!ps?.orders?.length) return
-    const agg=engine.getAggregated(pairTfRef.current[pair]||'H1')
-    const candle=agg[agg.length-1]; if(!candle) return
+    const curIdx=engine.currentIndex
+    const fromIdx = ps.lastLimitIdx != null ? ps.lastLimitIdx + 1 : curIdx
+    ps.lastLimitIdx = curIdx
+
     const executed=[]
-    ps.orders.forEach(order=>{
-      const hit=(order.side==='BUY_LIMIT'&&candle.low<=order.entry)||(order.side==='SELL_LIMIT'&&candle.high>=order.entry)
-      if(!hit) return
-      executed.push(order.id)
-      // Remove price lines
-      const cr=chartMap.current[pair]
-      if(cr?.priceLines){
-        ['_entry','_sl','_tp'].forEach(k=>{
-          if(cr.priceLines[order.id+k]){try{cr.series.removePriceLine(cr.priceLines[order.id+k])}catch{};delete cr.priceLines[order.id+k]}
-        })
-      }
-      // Open position and create its price lines
-      const side=order.side==='BUY_LIMIT'?'BUY':'SELL'
-      if(!ps.positions) ps.positions=[]
-      const posId=`P${Date.now()}-${Math.random().toString(36).slice(2,5)}`
-      const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:engine.currentTime}
-      ps.positions=[...ps.positions,newPos]
-      setTimeout(()=>createPositionLines(posId,pair,newPos),50)
-    })
+    for(let i=fromIdx; i<=curIdx; i++){
+      const candle=engine.candles[i]; if(!candle) continue
+      ps.orders.forEach(order=>{
+        if(executed.includes(order.id)) return
+        const hit=(order.side==='BUY_LIMIT'&&candle.low<=order.entry)||(order.side==='SELL_LIMIT'&&candle.high>=order.entry)
+        if(!hit) return
+        executed.push(order.id)
+        const cr=chartMap.current[pair]
+        if(cr?.priceLines){
+          ['_entry','_sl','_tp'].forEach(k=>{
+            if(cr.priceLines[order.id+k]){try{cr.series.removePriceLine(cr.priceLines[order.id+k])}catch{};delete cr.priceLines[order.id+k]}
+          })
+        }
+        const side=order.side==='BUY_LIMIT'?'BUY':'SELL'
+        if(!ps.positions) ps.positions=[]
+        const posId=`P${Date.now()}-${Math.random().toString(36).slice(2,5)}`
+        const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:engine.currentTime}
+        ps.positions=[...ps.positions,newPos]
+        setTimeout(()=>createPositionLines(posId,pair,newPos),50)
+      })
+    }
     if(executed.length){
       ps.orders=ps.orders.filter(o=>!executed.includes(o.id))
       setTick(t=>t+1)
@@ -1291,6 +1314,7 @@ export default function SessionPage(){
               ;[...ps.positions].forEach(p=>closePositionRef.current(p.id,'RESET',activePair,p.entry))
               ps.positions=[];ps.orders=[]
               ps.engine.reset()
+              ps.lastSLTPIdx=0; ps.lastLimitIdx=0
               const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
               updateChart(activePair,ps.engine,true)
               setCurrentTime(ps.engine.currentTime);setProgress(0)
@@ -1371,6 +1395,9 @@ export default function SessionPage(){
             const fraction=(e.clientX-rect.left)/rect.width
             const e2=eng();if(!e2)return
             e2.seekToProgress(Math.max(0,Math.min(1,fraction)))
+            // Reset check indices so we don't re-fire SL/TP on already-passed candles
+            const ps=pairState.current[activePair]
+            if(ps){ ps.lastSLTPIdx=e2.currentIndex; ps.lastLimitIdx=e2.currentIndex }
             setCurrentTime(e2.currentTime);setProgress(Math.round(e2.progress*100))
             const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
             updateChart(activePair,e2,true)
@@ -1403,9 +1430,21 @@ export default function SessionPage(){
 
         {/* Balance info — right side like FX Replay */}
         <div style={s.balanceRow}>
-          <span style={s.balLbl}>Account Balance: <span style={s.balVal}>${balance.toFixed(2)}</span></span>
-          <span style={s.balLbl}>Realized PnL: <span style={{...s.balVal,color:pnlColor(realized)}}>{fmtPnl(realized)}</span></span>
-          <span style={s.balLbl}>Unrealized PnL: <span style={{...s.balVal,color:pnlColor(unrealized)}}>{fmtPnl(unrealized)}</span></span>
+          <span style={s.balLbl}>Balance: <span style={s.balVal}>${balance.toFixed(2)}</span></span>
+          <span style={s.balLbl}>PnL: <span style={{...s.balVal,color:pnlColor(realized)}}>{fmtPnl(realized)}</span></span>
+          <span style={s.balLbl}>Float: <span style={{...s.balVal,color:pnlColor(unrealized)}}>{fmtPnl(unrealized)}</span></span>
+          {allTrades.length>0&&(()=>{
+            const wins=allTrades.filter(t=>t.result==='WIN').length
+            const losses=allTrades.filter(t=>t.result==='LOSS').length
+            const wr=allTrades.length>0?Math.round(wins/allTrades.length*100):0
+            return(
+              <>
+                <div style={{width:1,height:16,background:'rgba(255,255,255,0.1)'}}/>
+                <span style={s.balLbl}><span style={{color:wins>0?'#1E90FF':'rgba(255,255,255,0.4)',fontWeight:700}}>{wins}W</span> <span style={{color:'rgba(255,255,255,0.3)'}}>·</span> <span style={{color:losses>0?'#ef5350':'rgba(255,255,255,0.4)',fontWeight:700}}>{losses}L</span></span>
+                <span style={{...s.balLbl,color:wr>=50?'#1E90FF':'#ef5350',fontWeight:700}}>{wr}%</span>
+              </>
+            )
+          })()}
         </div>
 
         <div style={s.pillDivider}/>
@@ -1503,7 +1542,7 @@ export default function SessionPage(){
           </div>
           <div style={{overflowX:'auto'}}>
             <table style={s.tbl}>
-              <thead><tr>{['PAR','DIR','ENTRY','EXIT','LOTS','R:R','P&L','RESULT','ABIERTO','CERRADO'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['PAR','DIR','ENTRY','EXIT','LOTS','R:R','P&L','RESULT','ABIERTO','CERRADO','NOTA'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {allTrades.map((t,i)=>(
                   <tr key={i} style={s.tblRow}>
@@ -1517,6 +1556,7 @@ export default function SessionPage(){
                     <td style={{...s.td,color:t.result==='WIN'?'#1E90FF':t.result==='LOSS'?'#ef5350':'#a0b8d0',fontWeight:700}}>{t.result}</td>
                     <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.openTime,activePair,pairState)}</td>
                     <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.closeTime,activePair,pairState)}</td>
+                    <td style={{...s.td,color:'rgba(255,255,255,0.6)',fontSize:9,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis'}}>{t.note||'—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1648,23 +1688,31 @@ export default function SessionPage(){
       {closeModal&&(
         <CloseModal modal={closeModal} currentPrice={currentPrice}
           onClose={()=>setCloseModal(null)}
-          onConfirm={(lotsToClose)=>{
+          onConfirm={(lotsToClose,note)=>{
             const ps=pairState.current[closeModal.pair]
             const pos=ps?.positions?.find(p=>p.id===closeModal.posId)
             if(!pos||!currentPrice) return
             const pnl=calcPnl(pos.side,pos.entry,currentPrice,lotsToClose,closeModal.pair)
             const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
             const rrReal=pos.slPips>0?pnl/(pos.slPips*lotsToClose*10):0
+            // Convert ordinal→real for DB timestamps
+            const toReal2=(ordTs)=>{
+              if(!ordTs) return null
+              if(ps?.ordinalToReal){ const idx=Math.floor(ordTs/60); return ps.ordinalToReal[idx]??null }
+              return ordTs>1000000000?ordTs:null
+            }
             if(lotsToClose>=pos.lots){
-              closePosition(pos.id,'MANUAL',closeModal.pair,currentPrice)
+              closePosition(pos.id,'MANUAL',closeModal.pair,currentPrice,note)
             } else {
               const remaining=parseFloat((pos.lots-lotsToClose).toFixed(2))
-              ps.trades=[...ps.trades,{...pos,lots:lotsToClose,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL'}]
+              ps.trades=[...ps.trades,{...pos,lots:lotsToClose,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL',note}]
               pos.lots=remaining
               ps.positions=[...ps.positions]
               const newBal=parseFloat((balanceRef.current+pnl).toFixed(2))
               setBalance(newBal);setTick(t=>t+1)
               if(userIdRef.current){
+                const realOpen=toReal2(pos.openTime)
+                const realClose=toReal2(currentTime)
                 supabase.from('sim_sessions').update({balance:newBal}).eq('id',id).then(()=>{}).catch(()=>{})
                 supabase.from('sim_trades').insert({
                   user_id:userIdRef.current, session_id:id,
@@ -1677,8 +1725,9 @@ export default function SessionPage(){
                   rr:parseFloat(rrReal.toFixed(2)),
                   pnl:parseFloat(pnl.toFixed(2)),
                   result,
-                  opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():new Date().toISOString(),
-                  closed_at:currentTime?new Date(currentTime*1000).toISOString():new Date().toISOString(),
+                  notes: note||null,
+                  opened_at:realOpen?new Date(realOpen*1000).toISOString():new Date().toISOString(),
+                  closed_at:realClose?new Date(realClose*1000).toISOString():new Date().toISOString(),
                 }).then(()=>{}).catch(()=>{})
               }
             }
@@ -1805,6 +1854,7 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
   const isJpy=pair?.includes('JPY')
   const PRESETS=[25,50,75,100]
   const [pct,setPct]=useState(100)
+  const [note,setNote]=useState('')
   const lotsToClose=parseFloat((pos.lots*pct/100).toFixed(2))
   const estPnl=calcPnl(pos.side,pos.entry,currentPrice||pos.entry,lotsToClose,pair)
   const fmtP=p=>p?.toFixed(isJpy?3:5)??'—'
@@ -1881,8 +1931,19 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
             </div>
           </div>
 
+          {/* Note */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1.5,marginBottom:6}}>NOTA (OPCIONAL)</div>
+            <textarea
+              value={note} onChange={e=>setNote(e.target.value)}
+              placeholder="¿Por qué entraste? ¿Qué salió bien o mal?..."
+              rows={2}
+              style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'8px 12px',color:'rgba(255,255,255,0.85)',fontSize:11,fontFamily:"'Montserrat',sans-serif",outline:'none',resize:'none',boxSizing:'border-box'}}
+            />
+          </div>
+
           {/* Confirm */}
-          <button onClick={()=>onConfirm(lotsToClose)} style={{
+          <button onClick={()=>onConfirm(lotsToClose,note.trim()||null)} style={{
             width:'100%',
             background:isProfit
               ?'linear-gradient(135deg,rgba(30,144,255,0.9),rgba(20,110,100,0.9))'

@@ -41,34 +41,28 @@ export default function Dashboard() {
       nodes.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, vx:(Math.random()-.5)*.3, vy:(Math.random()-.5)*.3, r:Math.random()*1.8+0.5, pulse:Math.random()*Math.PI*2 })
     }
     let id
-    let t2=0
-    function draw() {
-      t2+=0.012
+    let lastT = 0
+    function draw(ts) {
+      id = requestAnimationFrame(draw)
+      if (document.hidden) return
+      if (ts - lastT < 33) return  // cap at 30fps
+      lastT = ts
       ctx.clearRect(0,0,canvas.width,canvas.height)
-      // Connections — electric blue lines
       for (let i=0;i<nodes.length;i++) for (let j=i+1;j<nodes.length;j++) {
         const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy)
         if(d<180){ctx.strokeStyle=`rgba(0,100,255,${(1-d/180)*.4})`;ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.stroke()}
       }
       nodes.forEach(n=>{
-        const pulse=0.5+0.5*Math.sin(t2*2+n.pulse)
-        // Blue glow around star
-        const grd=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*5)
-        grd.addColorStop(0,`rgba(0,120,255,${0.3*pulse})`)
-        grd.addColorStop(1,'rgba(0,0,0,0)')
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r*5,0,Math.PI*2);ctx.fillStyle=grd;ctx.fill()
-        // Star core — alternate white and light blue
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r*(0.6+pulse*0.5),0,Math.PI*2)
-        const isBlue = n.pulse > Math.PI
-        ctx.fillStyle=isBlue?`rgba(150,210,255,${0.8+pulse*0.2})`:`rgba(255,255,255,${0.85+pulse*0.15})`
+        // Simple dot — no radial gradient per node (expensive)
+        ctx.beginPath();ctx.arc(n.x,n.y,n.r*(1.2),0,Math.PI*2)
+        ctx.fillStyle=n.pulse>Math.PI?'rgba(150,210,255,0.85)':'rgba(255,255,255,0.85)'
         ctx.fill()
         n.x+=n.vx;n.y+=n.vy
         if(n.x<0||n.x>canvas.width)n.vx*=-1
         if(n.y<0||n.y>canvas.height)n.vy*=-1
       })
-      id=requestAnimationFrame(draw)
     }
-    draw()
+    draw(0)
     const onResize=()=>{canvas.width=window.innerWidth;canvas.height=window.innerHeight}
     window.addEventListener('resize',onResize)
     return ()=>{cancelAnimationFrame(id);window.removeEventListener('resize',onResize)}
@@ -84,27 +78,25 @@ export default function Dashboard() {
       nodes.push({ x: Math.random()*W, y: Math.random()*H, vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4, r:Math.random()*1.8+.8, pulse:Math.random()*Math.PI*2 })
     }
     let id2
-    function drawLogo() {
+    let lastT2 = 0
+    function drawLogo(ts) {
+      id2 = requestAnimationFrame(drawLogo)
+      if (document.hidden) return
+      if (ts - lastT2 < 66) return  // cap at 15fps — logo is decorative
+      lastT2 = ts
       ctx.clearRect(0,0,W,H)
-      const t = Date.now()/1000
       for (let i=0;i<nodes.length;i++) for (let j=i+1;j<nodes.length;j++) {
         const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy)
         if(d<60){ctx.strokeStyle=`rgba(30,144,255,${(1-d/60)*.8})`;ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.stroke()}
       }
       nodes.forEach(n=>{
-        const pulse=0.5+0.5*Math.sin(t*2+n.pulse)
-        const glow=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*5)
-        glow.addColorStop(0,`rgba(30,144,255,${0.8*pulse})`)
-        glow.addColorStop(1,'rgba(30,144,255,0)')
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r*4,0,Math.PI*2);ctx.fillStyle=glow;ctx.fill()
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fillStyle=`rgba(120,200,255,${0.9+0.1*pulse})`;ctx.fill()
+        ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fillStyle='rgba(120,200,255,0.9)';ctx.fill()
         n.x+=n.vx;n.y+=n.vy
         if(n.x<0||n.x>W)n.vx*=-1
         if(n.y<0||n.y>H)n.vy*=-1
       })
-      id2=requestAnimationFrame(drawLogo)
     }
-    drawLogo()
+    drawLogo(0)
     return ()=>cancelAnimationFrame(id2)
   }, [loading])
 
