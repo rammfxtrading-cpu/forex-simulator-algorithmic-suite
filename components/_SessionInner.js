@@ -496,7 +496,8 @@ export default function SessionPage(){
       const masterTime = (typeof window !== 'undefined' && window.__algSuiteCurrentTime) || null
       // Convert real masterTime/resumeTs to ordinal if needed
       const toOrdinal = (t) => t ?? null  // real timestamps — no conversion needed
-      const resumeReal = masterTime || sess.last_timestamp || replayTs
+      const isOrdinal = (t) => t && t < 1000000000
+      const resumeReal = masterTime || (isOrdinal(sess.last_timestamp)?null:sess.last_timestamp) || replayTs
       const resumeTs = toOrdinal(resumeReal) ?? 0
       engine.load(ordinalCandles); engine.seekToTime(resumeTs); engine.speed=speedRef.current
       engine.onTick=()=>{
