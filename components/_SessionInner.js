@@ -150,7 +150,6 @@ export default function SessionPage(){
   const balanceRef          = useRef(10000)
   // Order modal
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
-  const [mounted,     setMounted]     = useState(false)
   const [activeTool,    setActiveTool]    = useState('cursor')
   const activeToolRef = useRef('cursor')
   const [drawingCount,  setDrawingCount]  = useState(0)
@@ -204,7 +203,6 @@ export default function SessionPage(){
     applyChartConfig(chartMap, activePair, chartConfig)
   }, [chartConfigLoaded, chartConfig, activePair])
 
-  useEffect(()=>{setMounted(true)},[])
 
   // Save session drawings to Supabase
   const saveDrawingsRef = useRef(null)
@@ -513,7 +511,7 @@ export default function SessionPage(){
           if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime
         }
       }
-      engine.onEnd=()=>{if(pair===activePairRef.current)setIsPlaying(false)}
+      engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(engine.currentTime)}}
       const ps={engine,ready:true,positions:[],trades:[],ordinalToReal,realToOrdinal,
         lastSLTPIdx: engine.currentIndex,   // start from current — don't re-check history
         lastLimitIdx: engine.currentIndex,
