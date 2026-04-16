@@ -159,7 +159,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
       const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
       const { LineToolPath }           = await import('lightweight-charts-line-tools-path')
       const { LineToolRectangle }      = await import('lightweight-charts-line-tools-rectangle')
-      const { LineToolFibRetracement } = await import('lightweight-charts-line-tools-fib-retracement')
+      const { LineToolFibRetracement } = await import('../lightweight-charts-line-tools-fib-retracement')
       const { LineToolLongShortPosition } = await import('lightweight-charts-line-tools-long-short-position')
 
       const plugin = createLineToolsPlugin(cr.chart, cr.series)
