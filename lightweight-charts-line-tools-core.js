@@ -5245,7 +5245,7 @@ class LineToolPriceAxisLabelView extends PriceAxisView {
         paneRendererData.visible = false;
         const toolOptions = this._tool.options();
         const priceScaleApi = this._tool.priceScale();
-        if(!this._tool._series) return;
+        if(!this._tool._series){ axisRendererData.visible=false; paneRendererData.visible=false; return; }
         const series = this._tool.getSeries();
         const point = this._tool.getPoint(this._pointIndex);
         const labelId = this._tool.id() + '-p' + this._pointIndex;
