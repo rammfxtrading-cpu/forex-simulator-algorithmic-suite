@@ -78,7 +78,7 @@ const fmtTs = (ordTs, activePairArg, pairStateRef) => {
   if(pairStateRef && activePairArg){
     const ps = pairStateRef.current?.[activePairArg]
     if(ps?.ordinalToReal && ordTs != null){
-      const idx = Math.floor(ordTs / 60)
+      const idx = Math.round(ordTs / 60)
       realTs = ps.ordinalToReal[idx] ?? ordTs
     }
   }
@@ -494,9 +494,9 @@ export default function SessionPage(){
         return true
       })
       // Remap to ordinal timestamps — sequential minutes, no gaps
-      const ordinalToReal = filtered.map(c => c.time)
-      const realToOrdinal = new Map(filtered.map((c,i) => [c.time, i*60]))
-      const ordinalCandles = filtered.map((c,i) => ({...c, time: i*60}))
+      const ordinalToReal = [null, ...filtered.map(c => c.time)]
+      const realToOrdinal = new Map(filtered.map((c,i) => [c.time, (i+1)*60]))
+      const ordinalCandles = filtered.map((c,i) => ({...c, time: (i+1)*60}))
 
       const engine=new ReplayEngine()
       // If there's a master time (another pair already advanced), use that. Otherwise resume saved position.
