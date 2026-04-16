@@ -1832,9 +1832,7 @@ export default function SessionPage(){
         )
       })()}
 
-      <style>{css}
-        @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
-      </style>
+      <style>{css}</style>
     </div>
   )
 }
@@ -1931,6 +1929,7 @@ const css=`
   button:disabled{opacity:0.3;cursor:not-allowed!important}
   .sp{width:24px;height:24px;border:2px solid rgba(255,255,255,0.1);border-top-color:rgba(255,255,255,0.6);border-radius:50%;animation:sp .6s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 `
 
 
