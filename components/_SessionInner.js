@@ -595,7 +595,11 @@ export default function SessionPage(){
   useEffect(()=>{
     if(activePair){
       const ps=pairState.current[activePair],cr=chartMap.current[activePair]
-      if(ps?.engine&&cr){cr.prevCount=0;updateChart(activePair,ps.engine,true);setTfKey(k=>k+1)}
+      if(ps?.engine&&cr){
+        cr.prevCount=0;updateChart(activePair,ps.engine,true);setTfKey(k=>k+1)
+        // Double rAF — ensures LWC has painted the new TF before text positions recalculate
+        requestAnimationFrame(()=>requestAnimationFrame(()=>setChartTick(t=>t+1)))
+      }
     }
   },[pairTf,activePair,updateChart])
 
