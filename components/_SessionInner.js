@@ -533,11 +533,12 @@ export default function SessionPage(){
     if(chartMap.current[pair]) return
     const chart=lc.createChart(el,chartOpts(el.clientWidth,el.clientHeight))
     const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#ffffff',borderUpColor:'#2962FF',borderDownColor:'#ffffff',wickUpColor:'#2962FF',wickDownColor:'#ffffff',borderVisible:false,priceFormat:{type:'price',precision:5,minMove:0.00001}})
-    chartMap.current[pair]={chart,series,prevCount:0}
-    new ResizeObserver(entries=>{
+    const ro=new ResizeObserver(entries=>{
       const{width,height}=entries[0].contentRect
       try{if(chartMap.current[pair]) chart.resize(width,height)}catch{}
-    }).observe(el)
+    })
+    ro.observe(el)
+    chartMap.current[pair]={chart,series,prevCount:0,ro}
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{
       setChartTick(t=>t+1)
@@ -1025,7 +1026,7 @@ export default function SessionPage(){
 
   const removePair=useCallback((pair)=>{
     if(activePairs.length===1) return
-    const cr=chartMap.current[pair];if(cr){try{cr.chart.remove()}catch{};delete chartMap.current[pair]}
+    const cr=chartMap.current[pair];if(cr){try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{};delete chartMap.current[pair]}
     delete pairState.current[pair]
     const next=activePairs.filter(p=>p!==pair);setActivePairs(next)
     if(activePair===pair)setActivePair(next[0])
@@ -1081,7 +1082,7 @@ export default function SessionPage(){
       try{supabase.from('sim_sessions').update({last_timestamp:e.currentTime,balance:balanceRef.current}).eq('id',id)}catch(err){}
     }
     Object.values(pairState.current).forEach(ps=>ps?.engine?.pause())
-    Object.values(chartMap.current).forEach(cr=>{try{cr.chart.remove()}catch{}})
+    Object.values(chartMap.current).forEach(cr=>{try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{}})
   },[])
 
   // ── Computed ──────────────────────────────────────────────────────────────────
