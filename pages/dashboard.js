@@ -349,7 +349,15 @@ export default function Dashboard() {
                 <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
-                    <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
+                    <button onClick={async()=>{if(!confirm('¿Eliminar sesión y todos sus datos?'))return
+                      const sid=session.id
+                      await Promise.all([
+                        supabase.from('sim_trades').delete().eq('session_id',sid),
+                        supabase.from('session_drawings').delete().eq('session_id',sid),
+                        supabase.from('session_chart_config').delete().eq('session_id',sid),
+                        supabase.from('sim_sessions').delete().eq('id',sid),
+                      ])
+                      setSessions(p=>p.filter(s=>s.id!==sid))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
                   <div style={{display:'flex',gap:6}}>
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
@@ -402,7 +410,15 @@ export default function Dashboard() {
                 <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
-                    <button onClick={async()=>{if(!confirm('Delete?'))return;await supabase.from('sim_sessions').delete().eq('id',session.id);setSessions(p=>p.filter(s=>s.id!==session.id))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
+                    <button onClick={async()=>{if(!confirm('¿Eliminar sesión y todos sus datos?'))return
+                      const sid=session.id
+                      await Promise.all([
+                        supabase.from('sim_trades').delete().eq('session_id',sid),
+                        supabase.from('session_drawings').delete().eq('session_id',sid),
+                        supabase.from('session_chart_config').delete().eq('session_id',sid),
+                        supabase.from('sim_sessions').delete().eq('id',sid),
+                      ])
+                      setSessions(p=>p.filter(s=>s.id!==sid))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
                   <div style={{display:'flex',gap:6}}>
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
