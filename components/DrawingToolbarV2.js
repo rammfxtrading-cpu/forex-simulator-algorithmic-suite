@@ -99,19 +99,21 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
   const FONT_SIZES=[9,10,11,12,14,16]
   const V_ALIGN=[{k:'top',l:'↑'},{k:'middle',l:'↕'},{k:'bottom',l:'↓'}]
   const H_ALIGN=[{k:'left',l:'←'},{k:'center',l:'↔'},{k:'right',l:'→'}]
-  const hasRect=toolKey==='Rectangle'||toolKey==='FibRetracement'
+  const hasRect = toolKey === 'Rectangle'
+  const isFib   = toolKey === 'FibRetracement'
 
   return (
     <div style={{...PILL,position:'fixed',cursor:'grab',zIndex:200,...(pos.x!=null?{left:pos.x,top:pos.y}:{right:80,top:80})}} onMouseDown={onMD} onClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()}>
 
-      {/* Color línea */}
-      {toolKey !== 'LongShortPosition' && <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+      {/* Color línea — not for LongShortPosition or FibRetracement (fib has per-level colors) */}
+      {toolKey !== 'LongShortPosition' && !isFib && <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
         <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>LÍNEA</span>
         <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',background:cfg.color||'#fff',overflow:'hidden'}}>
           <input type="color" value={cfg.color||'#ffffff'} onChange={e=>apply({color:e.target.value})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
         </label>
       </div>}
 
+      {/* FONDO — only for Rectangle, not Fib */}
       {hasRect&&<>
         <div style={DIV}/>
         <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
@@ -142,10 +144,8 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
         </div>
       </div></>}
 
-      {toolKey !== 'Path' && toolKey !== 'LongShortPosition' && <><div style={DIV}/>
-
-      {/* Texto — no para Path */}
-      <div style={{position:'relative'}}>
+      {/* Texto — not for Path, LongShortPosition or FibRetracement */}
+      {toolKey !== 'Path' && toolKey !== 'LongShortPosition' && !isFib && <><div style={DIV}/>
         <button title="Texto" style={btn(showText)} onClick={()=>setShowText(v=>!v)}><TextIcon/></button>
         {showText&&(
           <>
@@ -184,7 +184,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
             </div>
           </>
         )}
-      </div></> }
+      </> }
 
       <div style={DIV}/>
 
