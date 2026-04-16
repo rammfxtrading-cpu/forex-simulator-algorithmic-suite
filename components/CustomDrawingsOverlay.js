@@ -120,13 +120,18 @@ export default function CustomDrawingsOverlay({ drawings, chartMap, activePair }
   // Also render when drawings change
   useEffect(() => { render() }, [drawings, render])
 
-  // Resize canvas
+  // Resize canvas with devicePixelRatio for sharp text
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ro = new ResizeObserver(() => {
-      canvas.width = canvas.offsetWidth
-      canvas.height = canvas.offsetHeight
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = canvas.offsetWidth * dpr
+      canvas.height = canvas.offsetHeight * dpr
+      canvas.style.width = canvas.offsetWidth + 'px'
+      canvas.style.height = canvas.offsetHeight + 'px'
+      const ctx = canvas.getContext('2d')
+      ctx.scale(dpr, dpr)
       render()
     })
     ro.observe(canvas)
