@@ -543,7 +543,7 @@ export default function SessionPage(){
     const _lastC = agg[agg.length-1].close
     if(full||(curr!==prev&&curr!==prev+1)){
       // Structural change — regenerate phantoms and setData
-      cr.phantom = Array.from({length:200},(_,i)=>({
+      cr.phantom = Array.from({length:50},(_,i)=>({
         time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
         color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
       }))
@@ -552,13 +552,13 @@ export default function SessionPage(){
       if(typeof window!=='undefined') window.__algSuiteSeriesData=[...agg,...cr.phantom]
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
-        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:50})}catch{}
+        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
         cr.hasLoaded=true
       }
     } else {
       // Normal replay — realign phantoms if last candle changed
       if(!cr.phantom||!cr.phantom.length||cr.phantomBaseTime!==_lastT){
-        cr.phantom = Array.from({length:200},(_,i)=>({
+        cr.phantom = Array.from({length:50},(_,i)=>({
           time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
           color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
         }))
