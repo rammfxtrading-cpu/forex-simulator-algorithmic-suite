@@ -137,6 +137,7 @@ export default function SessionPage(){
   const activeToolKeyRef = useRef(null)
   const [chartConfigOpen, setChartConfigOpen] = useState(false)
   const [rulerActive, setRulerActive] = useState(false)
+  const [tfKey, setTfKey] = useState(0)
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
   const [selectedDrawing, setSelectedDrawing] = useState(null) // {id, x, y}
   const selectedDrawingRef = useRef(null)
@@ -573,7 +574,7 @@ export default function SessionPage(){
   useEffect(()=>{
     if(activePair){
       const ps=pairState.current[activePair],cr=chartMap.current[activePair]
-      if(ps?.engine&&cr){cr.prevCount=0;updateChart(activePair,ps.engine,true)}
+      if(ps?.engine&&cr){cr.prevCount=0;updateChart(activePair,ps.engine,true);setTfKey(k=>k+1)}
     }
   },[pairTf,activePair,updateChart])
 
@@ -865,7 +866,7 @@ export default function SessionPage(){
           />
         ))}
         <RulerOverlay active={rulerActive} chartMap={chartMap} activePair={activePair} />
-        <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} />
+        <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
         {!dataReady&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
         )}

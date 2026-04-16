@@ -80,7 +80,7 @@ function drawRuler(ctx, drawing, coords) {
   ctx.fillText(label, lx, ly)
 }
 
-export default function CustomDrawingsOverlay({ drawings, chartMap, activePair }) {
+export default function CustomDrawingsOverlay({ drawings, chartMap, activePair, tfKey }) {
   const canvasRef = useRef(null)
   const crRef = useRef(null)
   const unsubRef = useRef(null)
@@ -118,7 +118,7 @@ export default function CustomDrawingsOverlay({ drawings, chartMap, activePair }
   }, [activePair, chartMap, render])
 
   // Also render when drawings change
-  useEffect(() => { render() }, [drawings, render])
+  useEffect(() => { render() }, [drawings, render, tfKey])
 
   // Resize canvas with devicePixelRatio for sharp text
   useEffect(() => {
@@ -138,14 +138,53 @@ export default function CustomDrawingsOverlay({ drawings, chartMap, activePair }
     return () => ro.disconnect()
   }, [render])
 
+  const hoveredId = useRef(null)
+
+  const onMouseMove = useCallback((e) => {
+    const canvas = canvasRef.current
+    const cr = chartMap?.current?.[activePair]
+    if (!canvas || !cr) return
+    const rect = canvas.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    let found = false
+    for (const drawing of drawings) {
+      if (drawing.type !== 'text') continue
+      const coords = drawing.points.map(p => toScreenCoords(cr, p.time, p.price)).filter(Boolean)
+      if (!coords.length) continue
+      const { x, y } = coords[0]
+      const text = drawing.metadata?.text || ''
+      const fontSize = drawing.metadata?.fontSize || 12
+      const textW = text.length * fontSize * 0.6 + 12
+      if (mx >= x - 6 && mx <= x + textW && my >= y - fontSize - 6 && my <= y + 6) {
+        canvas.style.cursor = 'pointer'
+        found = true
+        if (hoveredId.current !== drawing.id) {
+          hoveredId.current = drawing.id
+          render()
+        }
+        break
+      }
+    }
+    if (!found) {
+      canvas.style.cursor = 'default'
+      if (hoveredId.current !== null) {
+        hoveredId.current = null
+        render()
+      }
+    }
+  }, [drawings, chartMap, activePair, render])
+
   return (
     <canvas
       ref={canvasRef}
+      onMouseMove={onMouseMove}
       style={{
         position: 'absolute', inset: 0,
         width: '100%', height: '100%',
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
         zIndex: 19,
+        cursor: 'default',
       }}
     />
   )
