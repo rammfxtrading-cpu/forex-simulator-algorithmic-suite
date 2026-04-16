@@ -400,7 +400,11 @@ export default function SessionPage(){
         updateChart(pair,engine,false)
         checkSLTPRef.current?.(pair,engine)
         checkLimitOrdersRef.current?.(pair,engine)
-        if(pair===activePairRef.current){setCurrentTime(engine.currentTime);setProgress(Math.round(engine.progress*100))}
+        if(pair===activePairRef.current){
+          setCurrentTime(engine.currentTime)
+          setProgress(Math.round(engine.progress*100))
+          if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime
+        }
       }
       engine.onEnd=()=>{if(pair===activePairRef.current)setIsPlaying(false)}
       pairState.current[pair]={engine,ready:true,positions:[],trades:[]}
