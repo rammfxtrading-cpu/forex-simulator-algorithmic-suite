@@ -17,7 +17,7 @@ import ChartConfigPanel, { useChartConfig, applyChartConfig } from './ChartConfi
 import RulerOverlay from './RulerOverlay'
 import useCustomDrawings, { DRAWING_TYPES } from './useCustomDrawings'
 import CustomDrawingsOverlay from './CustomDrawingsOverlay'
-import { fromScreenCoords } from '../lib/chartCoords'
+import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -138,7 +138,8 @@ export default function SessionPage(){
   const [chartConfigOpen, setChartConfigOpen] = useState(false)
   const [rulerActive, setRulerActive] = useState(false)
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
-  const { drawings, addDrawing, updateDrawing, removeDrawing, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
+  const [selectedDrawing, setSelectedDrawing] = useState(null) // {id, x, y}
+  const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
 
   const { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
@@ -401,6 +402,28 @@ export default function SessionPage(){
 
     chart.subscribeClick((param)=>{
       console.log('[CLICK] tool:', activeToolRef.current, 'hasPoint:', !!param?.point)
+      // Hit test text drawings in cursor mode
+      if(activeToolRef.current === 'cursor' && param?.point){
+        const cr=chartMap.current[pair]; if(!cr) return
+        const allDrawings = drawingsRef.current
+        for(const d of allDrawings){
+          if(d.type !== 'text') continue
+          const coords = d.points[0]
+          if(!coords) continue
+          const sc = toScreenCoords(cr, coords.time, coords.price)
+          if(!sc) continue
+          const dx = param.point.x - sc.x
+          const dy = param.point.y - sc.y
+          if(Math.abs(dx) < 80 && Math.abs(dy) < 24){
+            const clientX = param.sourceEvent?.clientX || sc.x
+            const clientY = param.sourceEvent?.clientY || sc.y
+            setSelectedDrawing({id: d.id, x: clientX, y: clientY - 80})
+            return
+          }
+        }
+        setSelectedDrawing(null)
+        return
+      }
       if(activeToolRef.current !== 'text') return
       const cr=chartMap.current[pair]; if(!cr) return
       if(!param?.point) return
@@ -1222,6 +1245,37 @@ export default function SessionPage(){
           </div>
         </>
       )}
+
+      {selectedDrawing&&(()=>{
+        const d = drawings.find(x=>x.id===selectedDrawing.id)
+        if(!d) return null
+        return <>
+          <div style={{position:'fixed',inset:0,zIndex:1998}} onClick={()=>setSelectedDrawing(null)}/>
+          <div style={{position:'fixed',left:selectedDrawing.x,top:selectedDrawing.y,zIndex:1999,display:'flex',alignItems:'center',gap:6,
+            background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.22)',borderRadius:12,padding:'6px 10px',
+            backdropFilter:'blur(40px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.1)',
+            boxShadow:'0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.3)',
+            fontFamily:"'Montserrat',sans-serif",fontSize:11,color:'rgba(255,255,255,0.8)'}}>
+            <span style={{opacity:0.5,fontSize:10}}>Color</span>
+            <span style={{width:18,height:18,borderRadius:3,border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',background:d.metadata?.color||'#ffffff',overflow:'hidden',cursor:'pointer'}}>
+              <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+            </span>
+            <span style={{opacity:0.5,fontSize:10,marginLeft:4}}>Tamaño</span>
+            <input type="number" min={8} max={48} value={d.metadata?.fontSize||12}
+              onChange={e=>updateDrawing(d.id,{metadata:{...d.metadata,fontSize:parseInt(e.target.value)||12}})}
+              style={{width:36,background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:5,color:'#fff',fontSize:11,padding:'2px 4px',outline:'none',fontFamily:"'Montserrat',sans-serif"}}/>
+            <div style={{width:1,height:16,background:'rgba(255,255,255,0.15)',margin:'0 2px'}}/>
+            <button onClick={()=>{removeDrawing(d.id);setSelectedDrawing(null)}}
+              style={{background:'none',border:'none',color:'#ef5350',cursor:'pointer',fontSize:11,padding:'0 2px',fontFamily:"'Montserrat',sans-serif"}}>
+              🗑
+            </button>
+            <button onClick={()=>setSelectedDrawing(null)}
+              style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',cursor:'pointer',fontSize:13,padding:'0 2px',lineHeight:1}}>
+              ✕
+            </button>
+          </div>
+        </>
+      })()}
 
       {textInput&&(
         <>
