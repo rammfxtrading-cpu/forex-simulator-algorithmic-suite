@@ -27,7 +27,7 @@ export function useChartConfig({ sessionId, userId }) {
         .from('session_chart_config')
         .select('config')
         .eq('session_id', sessionId)
-        .single()
+        .maybeSingle()
       if (sc?.config && Object.keys(sc.config).length > 0) {
         setConfig({ ...DEFAULT_CONFIG, ...sc.config })
         setLoaded(true)
@@ -38,7 +38,7 @@ export function useChartConfig({ sessionId, userId }) {
         .from('user_chart_config')
         .select('config')
         .eq('user_id', userId)
-        .single()
+        .maybeSingle()
       if (uc?.config && Object.keys(uc.config).length > 0) {
         setConfig({ ...DEFAULT_CONFIG, ...uc.config })
       }

@@ -217,8 +217,10 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   const exportTools    = useCallback(() => { try { return pluginRef.current?.exportLineTools() ?? null } catch { return null } }, [])
   const importTools    = useCallback((json) => { try { pluginRef.current?.importLineTools(json) } catch (e) { console.error(e) } }, [])
   const onAfterEdit    = useCallback((h) => { try { pluginRef.current?.subscribeLineToolsAfterEdit(h) } catch {} }, [])
+  const offAfterEdit   = useCallback((h) => { try { pluginRef.current?.unsubscribeLineToolsAfterEdit(h) } catch {} }, [])
   const onDoubleClick  = useCallback((h) => { try { pluginRef.current?.subscribeLineToolsDoubleClick(h) } catch {} }, [])
+  const offDoubleClick = useCallback((h) => { try { pluginRef.current?.unsubscribeLineToolsDoubleClick(h) } catch {} }, [])
   const getSelected    = useCallback(() => { try { return JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') } catch { return [] } }, [])
 
-  return { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected }
+  return { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected }
 }

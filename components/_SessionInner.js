@@ -154,7 +154,7 @@ export default function SessionPage(){
   }
   const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
 
-  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
+  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
@@ -223,7 +223,7 @@ export default function SessionPage(){
   // Drawing tools events — subscribe only when plugin is confirmed ready
   useEffect(()=>{
     if(!pluginReady) return
-    onAfterEdit((event)=>{
+    const afterEditHandler=(event)=>{
       setDrawingCount(c=>c+1)
       try{
         const sel=getSelected()
@@ -231,16 +231,13 @@ export default function SessionPage(){
           const t=sel[0]
           setSelectedTool({id:t.id,toolType:t.toolType})
           if(t.toolType) setActiveToolKey(t.toolType)
-          // Show text input when Callout is just placed
           if(t.toolType==='Callout' && event?.stage==='lineToolFinished'){
             setTextInput({
               x: window.innerWidth/2 - 120,
               y: window.innerHeight/2 - 60,
               onConfirm:(text)=>{
                 if(!text.trim()) return
-                try{
-                  applyToTool(t.id,{label:text})
-                }catch{}
+                try{ applyToTool(t.id,{label:text}) }catch{}
                 if(saveDrawingsRef.current) saveDrawingsRef.current()
               }
             })
@@ -248,11 +245,13 @@ export default function SessionPage(){
         }
       }catch{}
       if(saveDrawingsRef.current) saveDrawingsRef.current()
-    })
-    onDoubleClick((event)=>{
+    }
+    const dblClickHandler=(event)=>{
       try{setSelectedTool({id:event?.toolId,toolType:event?.toolType});if(event?.toolType)setActiveToolKey(event.toolType)}catch{}
-    })
-      const iv=setInterval(()=>{
+    }
+    onAfterEdit(afterEditHandler)
+    onDoubleClick(dblClickHandler)
+    const iv=setInterval(()=>{
       try{
         const sel=getSelected()
         if(sel&&sel.length>0){
@@ -262,10 +261,13 @@ export default function SessionPage(){
             if(t.toolType) setActiveToolKey(t.toolType)
           }
         }
-        // Never auto-clear — user dismisses with X button or clicking chart
       }catch{}
     },300)
-    return()=>clearInterval(iv)
+    return()=>{
+      clearInterval(iv)
+      offAfterEdit(afterEditHandler)
+      offDoubleClick(dblClickHandler)
+    }
   },[pluginReady,activePair])
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{selectedToolRef.current=selectedTool},[selectedTool])
