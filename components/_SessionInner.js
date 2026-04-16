@@ -894,7 +894,7 @@ export default function SessionPage(){
       if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return
       if(e.code==='Space'){e.preventDefault();handlePlayPause()}
       if(e.code==='ArrowRight') handleStep()
-      if(e.code==='Escape') setActiveTool('cursor')
+      if(e.code==='Escape'){ setActiveTool('cursor'); setRulerActive(false) }
       if(e.code==='Delete'||e.code==='Backspace'){
         let deleted = false
         // Delete custom drawing (text)
@@ -1020,7 +1020,12 @@ export default function SessionPage(){
 
       <DrawingToolbarV2
         activeTool={activeTool}
-        onToolChange={(id)=>{setActiveTool(id);setActiveToolKey((id==='cursor'||id==='text'||id==='ruler')?null:id);if(id==='cursor')setSelectedTool(null)}}
+        onToolChange={(id)=>{
+          setActiveTool(id)
+          setActiveToolKey((id==='cursor'||id==='text'||id==='ruler')?null:id)
+          setRulerActive(id==='ruler')
+          if(id==='cursor')setSelectedTool(null)
+        }}
         onAddTool={(toolKey)=>addTool(toolKey)}
         onRemoveSelected={removeSelected}
         onRemoveAll={()=>{removeAll();setDrawingCount(0);setSelectedTool(null)}}
