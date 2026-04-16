@@ -888,7 +888,19 @@ export default function SessionPage(){
     if(activePair===pair)setActivePair(next[0])
   },[activePairs,activePair])
 
-  // ── Keyboard ──────────────────────────────────────────────────────────────────
+  // ── Shift+Click → activate ruler ─────────────────────────────────────────────
+  useEffect(()=>{
+    const onMouseDown=(e)=>{
+      if(e.button!==0||!e.shiftKey) return
+      // Only trigger inside the chart area
+      const chartEl=document.querySelector('[data-chart-wrap]')
+      if(chartEl&&!chartEl.contains(e.target)) return
+      setRulerActive(true)
+      setActiveTool('ruler')
+    }
+    window.addEventListener('mousedown',onMouseDown)
+    return()=>window.removeEventListener('mousedown',onMouseDown)
+  },[])
   useEffect(()=>{
     const onKey=e=>{
       if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return
@@ -949,7 +961,7 @@ export default function SessionPage(){
       <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
 
       {/* CHART — full screen */}
-      <div style={s.chartWrap}>
+      <div style={s.chartWrap} data-chart-wrap="1">
         {activePairs.map(pair=>(
           <div key={pair}
             ref={el=>{if(el&&!chartMap.current[pair])mountPair(pair,el)}}
@@ -1000,7 +1012,7 @@ export default function SessionPage(){
             }}
           >{d.metadata?.text||''}</div>
         })}
-        <RulerOverlay active={rulerActive} chartMap={chartMap} activePair={activePair} />
+        <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
         {!dataReady&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>

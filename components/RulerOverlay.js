@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
-// Format time duration like TradingView: "2d 19h 30m"
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '0m'
   const d = Math.floor(seconds / 86400)
@@ -13,9 +12,9 @@ function formatDuration(seconds) {
   return parts.join(' ')
 }
 
-export default function RulerOverlay({ active, chartMap, activePair }) {
+export default function RulerOverlay({ active, onDeactivate, chartMap, activePair }) {
   const canvasRef = useRef(null)
-  const stateRef  = useRef({ dragging: false, start: null, end: null })
+  const stateRef  = useRef({ phase: 'idle', start: null, end: null }) // phase: idle | measuring | fixed
   const [result, setResult] = useState(null)
 
   const getChart = useCallback(() => chartMap?.current?.[activePair], [chartMap, activePair])
@@ -24,49 +23,45 @@ export default function RulerOverlay({ active, chartMap, activePair }) {
     const cr = getChart()
     if (!cr?.series || !cr?.chart) return null
     try {
-      const price = cr.series.coordinateToPrice(y)
+      const price   = cr.series.coordinateToPrice(y)
       const logical = cr.chart.timeScale().coordinateToLogical(x)
-      const data = window.__algSuiteSeriesData
+      const data    = window.__algSuiteSeriesData
       if (price == null || logical == null || !data?.length) return null
       const realLen = window.__algSuiteRealDataLen || data.length
-      const idx = Math.max(0, Math.min(Math.round(logical), realLen - 1))
-      const time = data[idx]?.time ?? null
+      const idx     = Math.max(0, Math.min(Math.round(logical), realLen - 1))
+      const time    = data[idx]?.time ?? null
       return { price, logical, time, idx, x, y }
     } catch { return null }
   }, [getChart])
 
-  const draw = useCallback((start, end, isUp) => {
+  const draw = useCallback((start, end) => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     if (!start || !end) return
 
+    const isUp      = end.y < start.y  // lower y = higher price
+    const color     = isUp ? '#1E90FF' : '#ef5350'
+    const fillRgba  = isUp ? 'rgba(30,144,255,0.10)' : 'rgba(239,83,80,0.10)'
+
     const x1 = Math.min(start.x, end.x)
     const y1 = Math.min(start.y, end.y)
     const x2 = Math.max(start.x, end.x)
     const y2 = Math.max(start.y, end.y)
-    const w  = x2 - x1
-    const h  = y2 - y1
-
-    const color       = isUp ? '#26a69a' : '#ef5350'
-    const fillAlpha   = isUp ? 'rgba(38,166,154,0.15)' : 'rgba(239,83,80,0.15)'
-    const strokeAlpha = isUp ? 'rgba(38,166,154,0.8)'  : 'rgba(239,83,80,0.8)'
+    const midY = (start.y + end.y) / 2
 
     // Fill
-    ctx.fillStyle = fillAlpha
-    ctx.fillRect(x1, y1, w, h)
+    ctx.fillStyle = fillRgba
+    ctx.fillRect(x1, y1, x2 - x1, y2 - y1)
 
-    // Border
-    ctx.strokeStyle = strokeAlpha
+    // Border 1px solid
+    ctx.strokeStyle = color
     ctx.lineWidth = 1
     ctx.setLineDash([])
-    ctx.strokeRect(x1, y1, w, h)
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
 
     // Horizontal center line
-    const midY = (start.y + end.y) / 2
-    ctx.strokeStyle = strokeAlpha
-    ctx.lineWidth = 1
     ctx.setLineDash([4, 3])
     ctx.beginPath(); ctx.moveTo(x1, midY); ctx.lineTo(x2, midY); ctx.stroke()
 
@@ -75,25 +70,24 @@ export default function RulerOverlay({ active, chartMap, activePair }) {
     ctx.beginPath(); ctx.moveTo(midX, y1); ctx.lineTo(midX, y2); ctx.stroke()
     ctx.setLineDash([])
 
-    // Arrow pointing right or left from end
+    // Arrow at end
     const arrowX = end.x > start.x ? x2 : x1
     const dir    = end.x > start.x ? 1 : -1
     ctx.fillStyle = color
     ctx.beginPath()
-    ctx.moveTo(arrowX + dir * 8, midY)
+    ctx.moveTo(arrowX + dir * 7, midY)
     ctx.lineTo(arrowX + dir * 2, midY - 4)
     ctx.lineTo(arrowX + dir * 2, midY + 4)
     ctx.closePath()
     ctx.fill()
 
     // Corner dots
-    ctx.fillStyle = color
     ;[[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(([cx,cy]) => {
-      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill()
+      ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI*2); ctx.fill()
     })
   }, [])
 
-  const calcResult = useCallback((startData, endData, endClientX, endClientY) => {
+  const calcResult = useCallback((startData, endData, clientX, clientY) => {
     if (!startData || !endData) return null
     const isJpy     = activePair?.includes('JPY')
     const pipSize   = isJpy ? 0.01 : 0.0001
@@ -103,78 +97,94 @@ export default function RulerOverlay({ active, chartMap, activePair }) {
     const pct       = startData.price !== 0 ? Math.abs(priceDiff / startData.price) * 100 : 0
     const bars      = Math.abs(endData.idx - startData.idx)
     const duration  = (startData.time && endData.time) ? Math.abs(endData.time - startData.time) : null
-    const decimals  = isJpy ? 3 : 5
     return {
-      priceDiff: priceDiff.toFixed(decimals),
+      priceDiff: priceDiff.toFixed(isJpy ? 3 : 5),
       pips:      pips.toFixed(1),
       pct:       pct.toFixed(2),
       bars,
       duration:  duration ? formatDuration(duration) : null,
       isUp,
-      clientX:   endClientX,
-      clientY:   endClientY,
+      clientX,
+      clientY,
     }
   }, [activePair])
 
+  // Clear everything
+  const reset = useCallback(() => {
+    stateRef.current = { phase: 'idle', start: null, end: null }
+    setResult(null)
+    const canvas = canvasRef.current
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+  }, [])
+
   useEffect(() => {
-    if (!active) {
-      setResult(null)
-      stateRef.current = { dragging: false, start: null, end: null }
-      const canvas = canvasRef.current
-      if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
-      return
-    }
+    if (!active) { reset(); return }
 
     const canvas = canvasRef.current
     if (!canvas) return
 
     const onMouseDown = (e) => {
+      if (e.button !== 0) return
+      const phase = stateRef.current.phase
+      if (phase === 'fixed') {
+        // Click while fixed → dismiss
+        reset()
+        if (onDeactivate) onDeactivate()
+        return
+      }
+      // Start measuring
       const rect = canvas.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
       const data = coordsToData(x, y)
-      stateRef.current = { dragging: true, start: { x, y, data }, end: null }
+      stateRef.current = { phase: 'measuring', start: { x, y, data }, end: null }
       setResult(null)
       canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
     }
 
     const onMouseMove = (e) => {
-      if (!stateRef.current.dragging) return
+      if (stateRef.current.phase !== 'measuring') return
       const rect = canvas.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
       const data = coordsToData(x, y)
       stateRef.current.end = { x, y, data }
-      const isUp = (data && stateRef.current.start?.data)
-        ? data.price >= stateRef.current.start.data.price
-        : true
-      draw(stateRef.current.start, { x, y }, isUp)
+      draw(stateRef.current.start, { x, y })
       if (stateRef.current.start?.data && data) {
         setResult(calcResult(stateRef.current.start.data, data, e.clientX, e.clientY))
       }
     }
 
     const onMouseUp = (e) => {
-      if (!stateRef.current.dragging) return
-      stateRef.current.dragging = false
+      if (stateRef.current.phase !== 'measuring') return
       const rect = canvas.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
       const data = coordsToData(x, y)
-      if (stateRef.current.start?.data && data) {
-        setResult(calcResult(stateRef.current.start.data, data, e.clientX, e.clientY))
+      const start = stateRef.current.start
+      // If barely moved → dismiss (was just a click, not a drag)
+      const dx = x - (start?.x || 0)
+      const dy = y - (start?.y || 0)
+      if (Math.sqrt(dx*dx + dy*dy) < 5) {
+        reset()
+        if (onDeactivate) onDeactivate()
+        return
+      }
+      stateRef.current.phase = 'fixed'
+      if (start?.data && data) {
+        setResult(calcResult(start.data, data, e.clientX, e.clientY))
       }
     }
 
     canvas.addEventListener('mousedown', onMouseDown)
     window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', onMouseUp)
+    window.addEventListener('mouseup',   onMouseUp)
     return () => {
       canvas.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseup', onMouseUp)
+      window.removeEventListener('mouseup',   onMouseUp)
     }
-  }, [active, coordsToData, draw, calcResult])
+  }, [active, coordsToData, draw, calcResult, reset, onDeactivate])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -187,26 +197,23 @@ export default function RulerOverlay({ active, chartMap, activePair }) {
     return () => ro.disconnect()
   }, [])
 
-  const color = result?.isUp ? '#26a69a' : '#ef5350'
+  const color = result?.isUp ? '#1E90FF' : '#ef5350'
 
   return (
     <>
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: 'absolute', inset: 0, zIndex: 20,
-          width: '100%', height: '100%',
-          pointerEvents: active ? 'all' : 'none',
-          cursor: active ? 'crosshair' : 'default',
-        }}
-      />
+      <canvas ref={canvasRef} style={{
+        position: 'absolute', inset: 0, zIndex: 20,
+        width: '100%', height: '100%',
+        pointerEvents: active ? 'all' : 'none',
+        cursor: active ? 'crosshair' : 'default',
+      }}/>
       {result && active && (
         <div style={{
           position: 'fixed',
           left: result.clientX + 16,
           top:  result.clientY - 8,
           background: 'rgba(4,10,24,0.95)',
-          border: `1px solid ${color}40`,
+          border: `1px solid ${color}50`,
           borderLeft: `3px solid ${color}`,
           borderRadius: 6,
           padding: '7px 12px',
@@ -225,11 +232,10 @@ export default function RulerOverlay({ active, chartMap, activePair }) {
           <div style={{ color, fontWeight: 700, fontSize: 12 }}>
             {result.isUp ? '▲' : '▼'} {result.priceDiff} ({result.pct}%)
           </div>
-          <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11 }}>
-            <span style={{ color: 'rgba(255,255,255,0.45)', marginRight: 4 }}>pips</span>
-            {result.pips}
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)' }}>
+            <span style={{ color: 'rgba(255,255,255,0.4)', marginRight: 4 }}>pips</span>{result.pips}
           </div>
-          <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10, marginTop: 2 }}>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
             {result.bars} barras{result.duration ? `, ${result.duration}` : ''}
           </div>
         </div>
