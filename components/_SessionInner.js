@@ -73,7 +73,6 @@ const fmtPx    = (px,p)=>px?.toFixed(isJpy(p)?3:5)??'—'
 const fmtPnl   = v=>(!v&&v!==0)||isNaN(v)?'+$0.00':(v>=0?'+':'')+v.toFixed(2)
 const pnlColor = v=>v>0?'#1E90FF':v<0?'#ef5350':'#a0b8d0'
 const fmtTs = (ordTs, activePairArg, pairStateRef) => {
-  // Convert ordinal time back to real time for display
   let realTs = ordTs
   if(pairStateRef && activePairArg){
     const ps = pairStateRef.current?.[activePairArg]
@@ -82,7 +81,10 @@ const fmtTs = (ordTs, activePairArg, pairStateRef) => {
       realTs = ps.ordinalToReal[idx] ?? ordTs
     }
   }
-  return realTs ? new Date(realTs*1000).toLocaleString('es-ES',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'
+  // Guard: ordinals (ORD_BASE ~8.6M) are not real unix timestamps (~1.7B)
+  // If lookup failed, realTs is still the raw ordinal → show '—' instead of 1970
+  if(!realTs || realTs < 1000000000) return '—'
+  return new Date(realTs*1000).toLocaleString('es-ES',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'})
 }
 function calcPnl(side,entry,exit,lots,pair){const pips=side==='BUY'?(exit-entry)*pipMult(pair):(entry-exit)*pipMult(pair);return pips*lots*10}
 
