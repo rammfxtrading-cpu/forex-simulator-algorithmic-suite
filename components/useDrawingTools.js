@@ -74,15 +74,12 @@ function buildOptions(toolKey, cfg) {
       ...base,
       line: { width: cfg.width || 1, style: cfg.style || 0 },
       levels: [
-        { color: cfg.color || '#2962FF', coeff: 0,     opacity: 0 },
-        { color: cfg.color || '#2962FF', coeff: 0.236, opacity: 0 },
-        { color: cfg.color || '#2962FF', coeff: 0.382, opacity: 0 },
-        { color: cfg.color || '#2962FF', coeff: 0.5,   opacity: 0 },
-        { color: cfg.color || '#2962FF', coeff: 0.618, opacity: 0 },
-        { color: cfg.color || '#2962FF', coeff: 0.65,  opacity: 0 },
-        { color: cfg.color || '#2962FF', coeff: 0.702, opacity: 0 },
-        { color: cfg.color || '#2962FF', coeff: 0.786, opacity: 0 },
-        { color: cfg.color || '#2962FF', coeff: 1,     opacity: 0 },
+        { color: cfg.color || '#2962FF', coeff: 0,     opacity: 1 },
+        { color: cfg.color || '#2962FF', coeff: 0.5,   opacity: 1 },
+        { color: cfg.color || '#2962FF', coeff: 0.618, opacity: 1 },
+        { color: cfg.color || '#2962FF', coeff: 0.65,  opacity: 1 },
+        { color: cfg.color || '#2962FF', coeff: 0.702, opacity: 1 },
+        { color: cfg.color || '#2962FF', coeff: 1,     opacity: 1 },
       ],
     }
   }

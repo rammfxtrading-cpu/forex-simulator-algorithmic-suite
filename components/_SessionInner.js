@@ -152,7 +152,7 @@ export default function SessionPage(){
     const up = () => { textPillDragRef.current=null; window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up) }
     window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up); e.preventDefault()
   }
-  const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
+  const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, removeAll: removeAllCustom, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
 
   const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
     chartMap,
@@ -436,7 +436,6 @@ export default function SessionPage(){
     })
 
     chart.subscribeClick((param)=>{
-      console.log('[CLICK] tool:', activeToolRef.current, 'hasPoint:', !!param?.point)
       // Hit test text drawings in cursor mode
       if(activeToolRef.current === 'cursor' && param?.point){
         const cr=chartMap.current[pair]; if(!cr) return
@@ -827,10 +826,10 @@ export default function SessionPage(){
 
   const checkSLTP=useCallback((pair,engine)=>{
     const ps=pairState.current[pair];if(!ps?.positions?.length) return
-    const agg=engine.getAggregated(pairTfRef.current[pair]||'H1')
-    const candle=agg[agg.length-1];if(!candle) return
-    // Use high/low to check hits (not just close)
-    const{high,low,close}=candle
+    // Always use M1 for SL/TP detection — prevents missing hits on higher TFs
+    const m1=engine.visibleCandles
+    const candle=m1[m1.length-1];if(!candle) return
+    const{high,low}=candle
     const toClose=[]
     ps.positions.forEach(pos=>{
       const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
@@ -1040,7 +1039,14 @@ export default function SessionPage(){
         }}
         onAddTool={(toolKey)=>addTool(toolKey)}
         onRemoveSelected={removeSelected}
-        onRemoveAll={()=>{removeAll();setDrawingCount(0);setSelectedTool(null)}}
+        onRemoveAll={()=>{
+          removeAll()
+          removeAllCustom()
+          setDrawingCount(0)
+          setSelectedTool(null)
+          setSelectedDrawing(null)
+          setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)
+        }}
         drawingCount={drawingCount}
         templates={templates}
         onSaveTemplate={async(name)=>{
@@ -1057,7 +1063,6 @@ export default function SessionPage(){
         onUpdate={(newCfg)=>{
           const tk=activeToolKeyRef.current
           const st=selectedToolRef.current
-          console.log('UPDATE', st?.id, tk, newCfg)
           if(tk){
             updateToolConfig(tk,newCfg)
             if(st?.id) applyToTool(st.id,tk,newCfg)
@@ -1088,7 +1093,7 @@ export default function SessionPage(){
           const entry=selectedTool?.id?drawingTfMap[selectedTool.id]:null
           const tfsToSave=entry?(Array.isArray(entry)?entry:entry.tfs||null):null
           const cfgWithTf={...cfg,...(tfsToSave?{visibleTf:tfsToSave}:{})}
-          if(!userIdRef.current){console.log('NO USER ID');return}
+          if(!userIdRef.current) return
           const insRes=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfgWithTf),data:'{}'}).select().single()
           if(insRes.data)setTemplates(prev=>[...prev,insRes.data])
         }}
@@ -1429,7 +1434,7 @@ export default function SessionPage(){
             <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>COLOR</span>
               <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',background:d.metadata?.color||'#ffffff',overflow:'hidden'}}>
-                <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+                <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>{updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },200)}} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
               </label>
             </div>
             <div style={SDIV}/>
@@ -1437,7 +1442,7 @@ export default function SessionPage(){
             <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>TAMAÑO</span>
               <div style={{display:'flex',gap:2}}>
-                {FONT_SIZES.map(s=><button key={s} onClick={()=>updateDrawing(d.id,{metadata:{...d.metadata,fontSize:s}})} style={{...sbtn(d.metadata?.fontSize===s),width:'auto',minWidth:20,height:20,fontSize:9,padding:'0 3px'}}>{s}</button>)}
+                {FONT_SIZES.map(s=><button key={s} onClick={()=>{updateDrawing(d.id,{metadata:{...d.metadata,fontSize:s}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}} style={{...sbtn(d.metadata?.fontSize===s),width:'auto',minWidth:20,height:20,fontSize:9,padding:'0 3px'}}>{s}</button>)}
               </div>
             </div>
             <div style={SDIV}/>
@@ -1528,6 +1533,20 @@ export default function SessionPage(){
               setBalance(newBal);setTick(t=>t+1)
               if(userIdRef.current){
                 supabase.from('sim_sessions').update({balance:newBal}).eq('id',id).then(()=>{}).catch(()=>{})
+                supabase.from('sim_trades').insert({
+                  user_id:userIdRef.current, session_id:id,
+                  pair:pos.pair, side:pos.side,
+                  lots:parseFloat(lotsToClose)||0.01,
+                  entry_price:parseFloat(pos.entry)||0,
+                  exit_price:parseFloat(currentPrice)||0,
+                  sl_price:parseFloat(pos.sl)||0,
+                  tp_price:parseFloat(pos.tp)||0,
+                  rr:parseFloat(rrReal.toFixed(2)),
+                  pnl:parseFloat(pnl.toFixed(2)),
+                  result,
+                  opened_at:pos.openTime?new Date(pos.openTime*1000).toISOString():new Date().toISOString(),
+                  closed_at:currentTime?new Date(currentTime*1000).toISOString():new Date().toISOString(),
+                }).then(()=>{}).catch(()=>{})
               }
             }
             setCloseModal(null)
