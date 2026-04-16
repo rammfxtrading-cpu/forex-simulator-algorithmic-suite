@@ -446,6 +446,7 @@ export default function SessionPage(){
         y: (param.sourceEvent?.clientY || window.innerHeight/2) - 60,
         onConfirm: (text) => {
           if(!text.trim()) return
+          console.log('[TEXT] placing at time:', coords.time, 'price:', coords.price)
           addDrawing(DRAWING_TYPES.TEXT, [{ time: coords.time, price: coords.price }], { text, fontSize: 12, color: '#ffffff' })
           setActiveTool('cursor')
           activeToolRef.current = 'cursor'
