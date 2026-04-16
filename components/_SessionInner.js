@@ -892,14 +892,31 @@ export default function SessionPage(){
 
   // ── Keyboard ──────────────────────────────────────────────────────────────────
   useEffect(()=>{
-    const onKey=e=>{if(e.target.tagName==='INPUT')return;if(e.code==='Space'){e.preventDefault();handlePlayPause()}if(e.code==='ArrowRight')handleStep()
-    if(e.code==='Escape')setActiveTool('cursor')
-    if((e.code==='Delete'||e.code==='Backspace')&&selectedDrawingRef.current){
-      removeDrawing(selectedDrawingRef.current.id)
-      setSelectedDrawing(null)
+    const onKey=e=>{
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return
+      if(e.code==='Space'){e.preventDefault();handlePlayPause()}
+      if(e.code==='ArrowRight') handleStep()
+      if(e.code==='Escape') setActiveTool('cursor')
+      if(e.code==='Delete'||e.code==='Backspace'){
+        let deleted = false
+        // Delete custom drawing (text)
+        if(selectedDrawingRef.current){
+          removeDrawing(selectedDrawingRef.current.id)
+          setSelectedDrawing(null)
+          deleted = true
+        }
+        // Delete vendor drawing (TrendLine, Rectangle, etc.)
+        if(selectedToolRef.current){
+          removeSelected()
+          setSelectedTool(null)
+          deleted = true
+        }
+        // Persist immediately so deletion survives reload
+        if(deleted) setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
+      }
     }
-    if(e.code==='Delete'||e.code==='Backspace')setSelectedTool(null)}
-    window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)
+    window.addEventListener('keydown',onKey)
+    return()=>window.removeEventListener('keydown',onKey)
   },[handlePlayPause,handleStep])
 
   useEffect(()=>()=>{
@@ -1036,7 +1053,7 @@ export default function SessionPage(){
             try{const json=pluginRef.current?.getLineToolByID(selectedToolRef.current.id);const arr=JSON.parse(json);setLongShortModal({toolId:selectedToolRef.current.id,tool:arr?.[0]});}catch{}
           }
         }}
-        onDelete={()=>{removeSelected();setSelectedTool(null)}}
+        onDelete={()=>{removeSelected();setSelectedTool(null);setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}}
         visibleTf={selectedTool?.id?(()=>{const e=drawingTfMap[selectedTool.id];return e?Array.isArray(e)?e:e.tfs||['M1','M5','M15','M30','H1','H4','D1']:['M1','M5','M15','M30','H1','H4','D1']})():['M1','M5','M15','M30','H1','H4','D1']}
         onVisibilityChange={(tfs)=>{
           if(!selectedTool?.id||!activeToolKey) return
@@ -1116,7 +1133,7 @@ export default function SessionPage(){
             try{const json=pluginRef.current?.getLineToolByID(selectedToolRef.current.id);const arr=JSON.parse(json);setLongShortModal({toolId:selectedToolRef.current.id,tool:arr?.[0]});}catch{}
           }
         }}
-        onDelete={()=>{removeSelected();setSelectedTool(null)}}
+        onDelete={()=>{removeSelected();setSelectedTool(null);setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}}
         onClose={()=>setDrawingCtxMenu(null)}
       />
 
