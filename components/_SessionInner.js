@@ -1385,19 +1385,7 @@ export default function SessionPage(){
         ))}
         <div style={{flex:1}}/>
         {/* OHLCV hover display */}
-        {hoverCandle&&dataReady&&(()=>{
-          const isUp=hoverCandle.c>=hoverCandle.o
-          const col=isUp?'#2962FF':'#ffffff'
-          const fmt=p=>fmtPx(p,activePair)
-          return(
-            <div style={{display:'flex',gap:10,alignItems:'center',fontSize:10,fontWeight:600,fontFamily:"'Montserrat',sans-serif",marginRight:8}}>
-              <span style={{color:'rgba(255,255,255,0.35)'}}>O</span><span style={{color:col}}>{fmt(hoverCandle.o)}</span>
-              <span style={{color:'rgba(255,255,255,0.35)'}}>H</span><span style={{color:col}}>{fmt(hoverCandle.h)}</span>
-              <span style={{color:'rgba(255,255,255,0.35)'}}>L</span><span style={{color:col}}>{fmt(hoverCandle.l)}</span>
-              <span style={{color:'rgba(255,255,255,0.35)'}}>C</span><span style={{color:col}}>{fmt(hoverCandle.c)}</span>
-            </div>
-          )
-        })()}
+        {hoverCandle&&dataReady&&<OhlcvDisplay candle={hoverCandle} pair={activePair}/>}
         {currentTime&&<span style={s.tsBadge}>{fmtTs(currentTime,activePair,pairState)}</span>}
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
@@ -1634,43 +1622,16 @@ export default function SessionPage(){
         </>
       )}
 
-      {selectedDrawing&&(()=>{
-        const d = drawings.find(x=>x.id===selectedDrawing.id)
-        if(!d) return null
-        const SPILL={display:'flex',alignItems:'center',gap:4,background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.22)',borderRadius:12,padding:'6px 10px',backdropFilter:'blur(40px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.1)',boxShadow:'0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.3)',userSelect:'none',fontFamily:"'Montserrat',sans-serif"}
-        const SDIV={width:1,height:16,background:'rgba(255,255,255,0.12)',margin:'0 4px',flexShrink:0}
-        const sbtn=(active,danger)=>({background:danger?'rgba(239,83,80,0.10)':active?'rgba(41,98,255,0.45)':'rgba(255,255,255,0.06)',border:danger?'1px solid rgba(239,83,80,0.35)':active?'1px solid rgba(41,98,255,0.7)':'1px solid rgba(255,255,255,0.1)',borderRadius:7,color:danger?'#ef5350':'#fff',width:28,height:28,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0,fontFamily:"'Montserrat',sans-serif"})
-        const FONT_SIZES=[9,10,11,12,14,16,18,20,24]
-        return <>
-          <div style={{position:'fixed',inset:0,zIndex:1998}} onClick={()=>setSelectedDrawing(null)}/>
-          <div style={{...SPILL,position:'fixed',left:pillPos.x??selectedDrawing.x,top:pillPos.y??selectedDrawing.y,zIndex:1999,cursor:'grab'}} onMouseDown={onTextPillMouseDown}>
-            {/* Color */}
-            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-              <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>COLOR</span>
-              <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',background:d.metadata?.color||'#ffffff',overflow:'hidden'}}>
-                <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>{updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },200)}} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
-              </label>
-            </div>
-            <div style={SDIV}/>
-            {/* Tamaño */}
-            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-              <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>TAMAÑO</span>
-              <div style={{display:'flex',gap:2}}>
-                {FONT_SIZES.map(s=><button key={s} onClick={()=>{updateDrawing(d.id,{metadata:{...d.metadata,fontSize:s}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}} style={{...sbtn(d.metadata?.fontSize===s),width:'auto',minWidth:20,height:20,fontSize:9,padding:'0 3px'}}>{s}</button>)}
-              </div>
-            </div>
-            <div style={SDIV}/>
-            {/* Borrar */}
-            <button title="Borrar" style={sbtn(false,true)} onClick={()=>{removeDrawing(d.id);setSelectedDrawing(null)}}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-            </button>
-            {/* Cerrar */}
-            <button title="Cerrar" style={sbtn(false)} onClick={()=>setSelectedDrawing(null)}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-        </>
-      })()}
+      {selectedDrawing&&<TextDrawingPill
+        drawing={drawings.find(x=>x.id===selectedDrawing.id)}
+        pillPos={pillPos}
+        selectedDrawing={selectedDrawing}
+        onTextPillMouseDown={onTextPillMouseDown}
+        updateDrawing={updateDrawing}
+        removeDrawing={removeDrawing}
+        setSelectedDrawing={setSelectedDrawing}
+        saveDrawingsRef={saveDrawingsRef}
+      />}
 
       {textInput&&(
         <>
@@ -1782,6 +1743,57 @@ export default function SessionPage(){
 
       <style>{css}</style>
     </div>
+  )
+}
+
+function OhlcvDisplay({candle,pair}){
+  const isUp=candle.c>=candle.o
+  const col=isUp?'#2962FF':'#ffffff'
+  const fmt=p=>fmtPx(p,pair)
+  return(
+    <div style={{display:'flex',gap:10,alignItems:'center',fontSize:10,fontWeight:600,fontFamily:"'Montserrat',sans-serif",marginRight:8}}>
+      <span style={{color:'rgba(255,255,255,0.35)'}}>O</span><span style={{color:col}}>{fmt(candle.o)}</span>
+      <span style={{color:'rgba(255,255,255,0.35)'}}>H</span><span style={{color:col}}>{fmt(candle.h)}</span>
+      <span style={{color:'rgba(255,255,255,0.35)'}}>L</span><span style={{color:col}}>{fmt(candle.l)}</span>
+      <span style={{color:'rgba(255,255,255,0.35)'}}>C</span><span style={{color:col}}>{fmt(candle.c)}</span>
+    </div>
+  )
+}
+
+const TEXT_PILL_SPILL={display:'flex',alignItems:'center',gap:4,background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.22)',borderRadius:12,padding:'6px 10px',backdropFilter:'blur(40px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.1)',boxShadow:'0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.3)',userSelect:'none',fontFamily:"'Montserrat',sans-serif"}
+const TEXT_PILL_DIV={width:1,height:16,background:'rgba(255,255,255,0.12)',margin:'0 4px',flexShrink:0}
+const textPillBtn=(active,danger)=>({background:danger?'rgba(239,83,80,0.10)':active?'rgba(41,98,255,0.45)':'rgba(255,255,255,0.06)',border:danger?'1px solid rgba(239,83,80,0.35)':active?'1px solid rgba(41,98,255,0.7)':'1px solid rgba(255,255,255,0.1)',borderRadius:7,color:danger?'#ef5350':'#fff',width:28,height:28,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0,fontFamily:"'Montserrat',sans-serif"})
+const TEXT_FONT_SIZES=[9,10,11,12,14,16,18,20,24]
+
+function TextDrawingPill({drawing,pillPos,selectedDrawing,onTextPillMouseDown,updateDrawing,removeDrawing,setSelectedDrawing,saveDrawingsRef}){
+  if(!drawing) return null
+  const d=drawing
+  return(
+    <>
+      <div style={{position:'fixed',inset:0,zIndex:1998}} onClick={()=>setSelectedDrawing(null)}/>
+      <div style={{...TEXT_PILL_SPILL,position:'fixed',left:pillPos.x??selectedDrawing.x,top:pillPos.y??selectedDrawing.y,zIndex:1999,cursor:'grab'}} onMouseDown={onTextPillMouseDown}>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+          <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>COLOR</span>
+          <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',background:d.metadata?.color||'#ffffff',overflow:'hidden'}}>
+            <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>{updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },200)}} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+          </label>
+        </div>
+        <div style={TEXT_PILL_DIV}/>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+          <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>TAMAÑO</span>
+          <div style={{display:'flex',gap:2}}>
+            {TEXT_FONT_SIZES.map(sz=><button key={sz} onClick={()=>{updateDrawing(d.id,{metadata:{...d.metadata,fontSize:sz}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}} style={{...textPillBtn(d.metadata?.fontSize===sz),width:'auto',minWidth:20,height:20,fontSize:9,padding:'0 3px'}}>{sz}</button>)}
+          </div>
+        </div>
+        <div style={TEXT_PILL_DIV}/>
+        <button title="Borrar" style={textPillBtn(false,true)} onClick={()=>{removeDrawing(d.id);setSelectedDrawing(null)}}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+        <button title="Cerrar" style={textPillBtn(false)} onClick={()=>setSelectedDrawing(null)}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </>
   )
 }
 
