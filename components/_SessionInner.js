@@ -1249,29 +1249,36 @@ export default function SessionPage(){
       {selectedDrawing&&(()=>{
         const d = drawings.find(x=>x.id===selectedDrawing.id)
         if(!d) return null
+        const SPILL={display:'flex',alignItems:'center',gap:4,background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.22)',borderRadius:12,padding:'6px 10px',backdropFilter:'blur(40px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.1)',boxShadow:'0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.3)',userSelect:'none',fontFamily:"'Montserrat',sans-serif"}
+        const SDIV={width:1,height:16,background:'rgba(255,255,255,0.12)',margin:'0 4px',flexShrink:0}
+        const sbtn=(active,danger)=>({background:danger?'rgba(239,83,80,0.10)':active?'rgba(41,98,255,0.45)':'rgba(255,255,255,0.06)',border:danger?'1px solid rgba(239,83,80,0.35)':active?'1px solid rgba(41,98,255,0.7)':'1px solid rgba(255,255,255,0.1)',borderRadius:7,color:danger?'#ef5350':'#fff',width:28,height:28,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0,fontFamily:"'Montserrat',sans-serif"})
+        const FONT_SIZES=[9,10,11,12,14,16,18,20,24]
         return <>
           <div style={{position:'fixed',inset:0,zIndex:1998}} onClick={()=>setSelectedDrawing(null)}/>
-          <div style={{position:'fixed',left:selectedDrawing.x,top:selectedDrawing.y,zIndex:1999,display:'flex',alignItems:'center',gap:6,
-            background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.22)',borderRadius:12,padding:'6px 10px',
-            backdropFilter:'blur(40px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.1)',
-            boxShadow:'0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.3)',
-            fontFamily:"'Montserrat',sans-serif",fontSize:11,color:'rgba(255,255,255,0.8)'}}>
-            <span style={{opacity:0.5,fontSize:10}}>Color</span>
-            <span style={{width:18,height:18,borderRadius:3,border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',background:d.metadata?.color||'#ffffff',overflow:'hidden',cursor:'pointer'}}>
-              <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
-            </span>
-            <span style={{opacity:0.5,fontSize:10,marginLeft:4}}>Tamaño</span>
-            <input type="number" min={8} max={48} value={d.metadata?.fontSize||12}
-              onChange={e=>updateDrawing(d.id,{metadata:{...d.metadata,fontSize:parseInt(e.target.value)||12}})}
-              style={{width:36,background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:5,color:'#fff',fontSize:11,padding:'2px 4px',outline:'none',fontFamily:"'Montserrat',sans-serif"}}/>
-            <div style={{width:1,height:16,background:'rgba(255,255,255,0.15)',margin:'0 2px'}}/>
-            <button onClick={()=>{removeDrawing(d.id);setSelectedDrawing(null)}}
-              style={{background:'none',border:'none',color:'#ef5350',cursor:'pointer',fontSize:11,padding:'0 2px',fontFamily:"'Montserrat',sans-serif"}}>
-              🗑
+          <div style={{...SPILL,position:'fixed',left:selectedDrawing.x,top:selectedDrawing.y,zIndex:1999,cursor:'grab'}}>
+            {/* Color */}
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+              <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>COLOR</span>
+              <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',background:d.metadata?.color||'#ffffff',overflow:'hidden'}}>
+                <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+              </label>
+            </div>
+            <div style={SDIV}/>
+            {/* Tamaño */}
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+              <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>TAMAÑO</span>
+              <div style={{display:'flex',gap:2}}>
+                {FONT_SIZES.map(s=><button key={s} onClick={()=>updateDrawing(d.id,{metadata:{...d.metadata,fontSize:s}})} style={{...sbtn(d.metadata?.fontSize===s),width:'auto',minWidth:20,height:20,fontSize:9,padding:'0 3px'}}>{s}</button>)}
+              </div>
+            </div>
+            <div style={SDIV}/>
+            {/* Borrar */}
+            <button title="Borrar" style={sbtn(false,true)} onClick={()=>{removeDrawing(d.id);setSelectedDrawing(null)}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
             </button>
-            <button onClick={()=>setSelectedDrawing(null)}
-              style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',cursor:'pointer',fontSize:13,padding:'0 2px',lineHeight:1}}>
-              ✕
+            {/* Cerrar */}
+            <button title="Cerrar" style={sbtn(false)} onClick={()=>setSelectedDrawing(null)}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
         </>
