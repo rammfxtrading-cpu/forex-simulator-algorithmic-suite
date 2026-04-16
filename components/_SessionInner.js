@@ -482,7 +482,7 @@ export default function SessionPage(){
         const d = new Date(c.time * 1000)
         const day = d.getUTCDay()
         if(day === 6) return false                           // Saturday — skip entirely
-        if(day === 0 && d.getUTCHours() < 20) return false  // Sunday pre-market — skip
+        if(day === 0 && d.getUTCHours() < 22) return false  // Sunday pre-market — skip (market opens 22:00 UTC)
         return true
       })
       // Use real timestamps — weekend candles already filtered above
