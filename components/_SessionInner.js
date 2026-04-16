@@ -62,6 +62,20 @@ function chartOpts(w,h){return{
     fixLeftEdge:false,
     fixRightEdge:false,
     ticksVisible:true,
+    tickMarkFormatter:(time,tickMarkType,locale)=>{
+      const d=new Date(time*1000)
+      const days=['Dom','Lun','Mar','Mie','Jue','Vie','Sab']
+      const months=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+      const day=days[d.getUTCDay()]
+      const date=d.getUTCDate()
+      const mon=months[d.getUTCMonth()]
+      const h=d.getUTCHours().toString().padStart(2,'0')
+      const m=d.getUTCMinutes().toString().padStart(2,'0')
+      // tickMarkType: 0=Year, 1=Month, 2=DayOfMonth, 3=Time, 4=TimeWithSeconds
+      if(tickMarkType<=1) return mon+' '+d.getUTCFullYear()
+      if(tickMarkType===2) return day+' '+date+' '+mon
+      return day+' '+h+':'+m
+    },
   },
   handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
   handleScale:{axisPressedMouseMove:{time:true,price:true},mouseWheel:true,pinch:true},
