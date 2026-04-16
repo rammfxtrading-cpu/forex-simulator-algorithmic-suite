@@ -550,7 +550,7 @@ export default function SessionPage(){
       }))
       cr.phantomBaseTime = _lastT
       cr.series.setData([...agg,...cr.phantom])
-      if(typeof window!=='undefined') window.__algSuiteSeriesData=[...agg,...cr.phantom]
+      if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
       if(prev===0&&!cr.hasLoaded){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
