@@ -494,9 +494,9 @@ export default function SessionPage(){
         return true
       })
       // Remap to ordinal timestamps — sequential minutes, no gaps
+      const ORD_BASE=8640000
       const ordinalToReal = [null, ...filtered.map(c => c.time)]
       const realToOrdinal = new Map(filtered.map((c,i) => [c.time, ORD_BASE+(i+1)*60]))
-      const ORD_BASE=8640000
       const ordinalCandles = filtered.map((c,i) => ({...c, time: ORD_BASE+(i+1)*60}))
 
       const engine=new ReplayEngine()
