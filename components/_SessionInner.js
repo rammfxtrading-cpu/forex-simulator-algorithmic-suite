@@ -497,6 +497,7 @@ export default function SessionPage(){
       const ordinalToReal = [null, ...filtered.map(c => c.time)]
       const realToOrdinal = new Map(filtered.map((c,i) => [c.time, ORD_BASE+(i+1)*60]))
       const ORD_BASE=8640000
+      const ORD_BASE=8640000
       const ordinalCandles = filtered.map((c,i) => ({...c, time: ORD_BASE+(i+1)*60}))
 
       const engine=new ReplayEngine()
@@ -1750,7 +1751,7 @@ export default function SessionPage(){
             // Convert ordinal→real for DB timestamps
             const toReal2=(ordTs)=>{
               if(!ordTs) return null
-              if(ps?.ordinalToReal){ const idx=Math.floor(ordTs/60); return ps.ordinalToReal[idx]??null }
+              if(ps?.ordinalToReal){ const idx=Math.round((ordTs-8640000)/60); return ps.ordinalToReal[idx]??null }
               return ordTs>1000000000?ordTs:null
             }
             if(lotsToClose>=pos.lots){
