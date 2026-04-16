@@ -154,7 +154,7 @@ export default function SessionPage(){
   }
   const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
 
-  const { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
+  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
@@ -197,34 +197,32 @@ export default function SessionPage(){
   }, [exportTools, customDrawingsToJSON])
   useEffect(() => { saveDrawingsRef.current = saveSessionDrawings }, [saveSessionDrawings])
 
-  // Load session drawings when chart is ready
+  // Load session drawings — wait for plugin to be fully ready (async init)
   useEffect(() => {
-    if(!dataReady || !id || !userIdRef.current) return
+    if(!pluginReady || !id || !userIdRef.current) return
     const load = async () => {
       try {
         const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).maybeSingle()
         if(!data?.data || data.data === '[]') return
-        setTimeout(() => {
-          try {
-            const parsed = JSON.parse(data.data)
-            // New format: { v: vendorJson, c: customJson }
-            if(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.v) {
-              if(parsed.v && parsed.v !== '[]') importTools(parsed.v)
-              if(parsed.c && parsed.c !== '[]') customDrawingsFromJSON(parsed.c)
-            } else {
-              // Legacy format: plain vendor JSON string
-              importTools(data.data)
-            }
-          } catch(e) {}
-        }, 500)
+        try {
+          const parsed = JSON.parse(data.data)
+          // New format: { v: vendorJson, c: customJson }
+          if(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.v) {
+            if(parsed.v && parsed.v !== '[]') importTools(parsed.v)
+            if(parsed.c && parsed.c !== '[]') customDrawingsFromJSON(parsed.c)
+          } else {
+            // Legacy format: plain vendor JSON string
+            importTools(data.data)
+          }
+        } catch(e) {}
       } catch(e) {}
     }
     load()
-  }, [dataReady, id])
+  }, [pluginReady, id])
 
-  // Drawing tools events
+  // Drawing tools events — subscribe only when plugin is confirmed ready
   useEffect(()=>{
-    if(!dataReady) return
+    if(!pluginReady) return
     onAfterEdit((event)=>{
       setDrawingCount(c=>c+1)
       try{
@@ -268,7 +266,7 @@ export default function SessionPage(){
       }catch{}
     },300)
     return()=>clearInterval(iv)
-  },[dataReady,activePair])
+  },[pluginReady,activePair])
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{selectedToolRef.current=selectedTool},[selectedTool])
 

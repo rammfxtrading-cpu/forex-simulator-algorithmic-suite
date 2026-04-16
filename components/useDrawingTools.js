@@ -113,7 +113,8 @@ function buildOptions(toolKey, cfg) {
 
 export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   const pluginRef      = useRef(null)
-  const [toolConfigs, setToolConfigs] = useState({ ...DEFAULT_CFG })
+  const [toolConfigs,  setToolConfigs]  = useState({ ...DEFAULT_CFG })
+  const [pluginReady,  setPluginReady]  = useState(false)
   const cfgRef         = useRef({ ...DEFAULT_CFG })
 
   useEffect(() => { cfgRef.current = toolConfigs }, [toolConfigs])
@@ -121,7 +122,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   // Load tool config from Supabase on mount
   useEffect(() => {
     if (!userId) return
-    supabase.from('user_tool_config').select('config').eq('user_id', userId).single()
+    supabase.from('user_tool_config').select('config').eq('user_id', userId).maybeSingle()
       .then(({ data }) => {
         if (data?.config && Object.keys(data.config).length > 0) {
           const merged = {}
@@ -140,37 +141,31 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
     try {
       const { createLineToolsPlugin }                                            = await import('lightweight-charts-line-tools-core')
       const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
-      const { LineToolPath } = await import('lightweight-charts-line-tools-path')
-      const { LineToolRectangle }                                                = await import('lightweight-charts-line-tools-rectangle')
-      const { LineToolFibRetracement }                                           = await import('lightweight-charts-line-tools-fib-retracement')
-      const { LineToolLongShortPosition }                                        = await import('lightweight-charts-line-tools-long-short-position')
+      const { LineToolPath }           = await import('lightweight-charts-line-tools-path')
+      const { LineToolRectangle }      = await import('lightweight-charts-line-tools-rectangle')
+      const { LineToolFibRetracement } = await import('lightweight-charts-line-tools-fib-retracement')
+      const { LineToolLongShortPosition } = await import('lightweight-charts-line-tools-long-short-position')
 
       const plugin = createLineToolsPlugin(cr.chart, cr.series)
-      plugin.registerLineTool('TrendLine',         LineToolTrendLine)
-      plugin.registerLineTool('Path',              LineToolPath)
-      plugin.registerLineTool('HorizontalRay',     LineToolHorizontalRay)
-
-      plugin.registerLineTool('Rectangle',         LineToolRectangle)
-      plugin.registerLineTool('FibRetracement',    LineToolFibRetracement)
-      plugin.registerLineTool('LongShortPosition', LineToolLongShortPosition)
+      plugin.registerLineTool('TrendLine',          LineToolTrendLine)
+      plugin.registerLineTool('Path',               LineToolPath)
+      plugin.registerLineTool('HorizontalRay',      LineToolHorizontalRay)
+      plugin.registerLineTool('Rectangle',          LineToolRectangle)
+      plugin.registerLineTool('FibRetracement',     LineToolFibRetracement)
+      plugin.registerLineTool('LongShortPosition',  LineToolLongShortPosition)
       pluginRef.current = plugin
+      // Signal that the plugin is ready — triggers onAfterEdit subscription in _SessionInner
+      setPluginReady(true)
     } catch (e) { console.error('Drawing tools init error:', e) }
   }, [activePair, dataReady])
 
-  useEffect(() => { pluginRef.current = null }, [activePair])
-  useEffect(() => { if (dataReady) initPlugin() }, [dataReady, initPlugin])
-
-  // Delete key
+  // Reset plugin and ready flag on pair change
   useEffect(() => {
-    const onKey = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        try { pluginRef.current?.removeSelectedLineTools() } catch {}
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+    pluginRef.current = null
+    setPluginReady(false)
+  }, [activePair])
+
+  useEffect(() => { if (dataReady) initPlugin() }, [dataReady, initPlugin])
 
   const addTool = useCallback((toolKey) => {
     const p = pluginRef.current; if (!p) return
@@ -225,5 +220,5 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   const onDoubleClick  = useCallback((h) => { try { pluginRef.current?.subscribeLineToolsDoubleClick(h) } catch {} }, [])
   const getSelected    = useCallback(() => { try { return JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') } catch { return [] } }, [])
 
-  return { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected }
+  return { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected }
 }
