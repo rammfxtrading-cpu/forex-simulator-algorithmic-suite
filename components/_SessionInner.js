@@ -138,6 +138,7 @@ export default function SessionPage(){
   const [chartConfigOpen, setChartConfigOpen] = useState(false)
   const [rulerActive, setRulerActive] = useState(false)
   const [tfKey, setTfKey] = useState(0)
+  const [chartTick, setChartTick] = useState(0)
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
   const [selectedDrawing, setSelectedDrawing] = useState(null) // {id, x, y}
   const selectedDrawingRef = useRef(null)
@@ -411,6 +412,10 @@ export default function SessionPage(){
       const{width,height}=entries[0].contentRect
       try{if(chartMap.current[pair]) chart.resize(width,height)}catch{}
     }).observe(el)
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{
+      setChartTick(t=>t+1)
+    })
 
     chart.subscribeClick((param)=>{
       console.log('[CLICK] tool:', activeToolRef.current, 'hasPoint:', !!param?.point)
@@ -866,6 +871,50 @@ export default function SessionPage(){
             style={{...s.chart,display:pair===activePair?'block':'none'}}
           />
         ))}
+        {drawings.filter(d=>d.type==='text').map(d=>{
+          const cr=chartMap.current?.[activePair]
+          if(!cr) return null
+          const sc=toScreenCoords(cr,d.points[0].time,d.points[0].price)
+          if(!sc) return null
+          const isSelected=selectedDrawing?.id===d.id
+          return <div key={d.id}
+            style={{position:'absolute',left:sc.x,top:sc.y,transform:'translate(-4px,-100%)',
+              zIndex:20,cursor:'grab',userSelect:'none',
+              background:'rgba(4,10,24,0.85)',border:`1px solid ${isSelected?'rgba(30,144,255,0.8)':'rgba(30,144,255,0.3)'}`,
+              borderRadius:4,padding:'3px 7px',
+              color:d.metadata?.color||'#ffffff',
+              fontSize:d.metadata?.fontSize||12,
+              fontFamily:"'Montserrat',sans-serif",
+              whiteSpace:'nowrap'}}
+            onMouseDown={e=>{
+              if(e.button!==0) return
+              e.stopPropagation()
+              const startX=e.clientX,startY=e.clientY
+              const origTime=d.points[0].time,origPrice=d.points[0].price
+              const el=e.currentTarget.parentElement
+              const rect=el.getBoundingClientRect()
+              const origSc=toScreenCoords(cr,origTime,origPrice)
+              let moved=false
+              const mv=(ev)=>{
+                moved=true
+                const dx=ev.clientX-startX,dy=ev.clientY-startY
+                if(!origSc) return
+                const newCoords=fromScreenCoords(cr,origSc.x+dx,origSc.y+dy)
+                if(newCoords) updateDrawing(d.id,{points:[{time:newCoords.time,price:newCoords.price}]})
+              }
+              const up=(ev)=>{
+                window.removeEventListener('mousemove',mv)
+                window.removeEventListener('mouseup',up)
+                if(!moved){
+                  setSelectedDrawing(prev=>prev?.id===d.id?null:{id:d.id,x:ev.clientX,y:ev.clientY-80})
+                }
+              }
+              window.addEventListener('mousemove',mv)
+              window.addEventListener('mouseup',up)
+              e.preventDefault()
+            }}
+          >{d.metadata?.text||''}</div>
+        })}
         <RulerOverlay active={rulerActive} chartMap={chartMap} activePair={activePair} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
         {!dataReady&&(
