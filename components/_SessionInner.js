@@ -1066,6 +1066,8 @@ export default function SessionPage(){
           if(tk){
             updateToolConfig(tk,newCfg)
             if(st?.id) applyToTool(st.id,tk,newCfg)
+            // Persist so changes survive reload
+            setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },150)
           }
         }}
         onOpenConfig={()=>{

@@ -265,6 +265,17 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
                 </div>
               ))}
               <div style={{borderTop:'1px solid rgba(255,255,255,0.08)',marginTop:8,paddingTop:8,display:'flex',flexDirection:'column',gap:6}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:'rgba(255,255,255,0.6)'}}>
+                  <span>Etiquetas</span>
+                  <div style={{display:'flex',gap:3,marginLeft:'auto'}}>
+                    {['left','right'].map(p=>(
+                      <button key={p} onClick={()=>apply({fibLabelPosition:p})}
+                        style={{...btn(cfg.fibLabelPosition===p||(p==='right'&&!cfg.fibLabelPosition)),height:20,fontSize:9,padding:'0 6px'}}>
+                        {p==='left'?'← Izq':'Der →'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <label style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:'rgba(255,255,255,0.6)',cursor:'pointer'}}>
                   <input type="checkbox" checked={cfg.fibShowPrices!==false} onChange={e=>apply({fibShowPrices:e.target.checked})} style={{accentColor:'#1E90FF'}}/>
                   Mostrar precios

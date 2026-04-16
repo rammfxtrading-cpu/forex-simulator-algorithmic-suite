@@ -10,7 +10,7 @@ const DEFAULT_CFG = {
   HorizontalRay:     { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
   Rectangle:         { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.15)', label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
   FibRetracement:    { color: '#2962FF', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 10, textV: 'middle', textH: 'left',
-    fibShowPrices: true, fibShowLabels: true, fibBgOpacity: 0, fibExtendRight: false, fibReverse: false,
+    fibShowPrices: true, fibShowLabels: true, fibBgOpacity: 0, fibExtendRight: false, fibReverse: false, fibLabelPosition: 'right',
     fibLevels: [
       { coeff: 0,     color: '#787B86', enabled: true },
       { coeff: 0.5,   color: '#2962FF', enabled: true },
@@ -93,10 +93,12 @@ function buildOptions(toolKey, cfg) {
       line: { width: cfg.width || 1, style: cfg.style || 0 },
       extend: { left: false, right: cfg.fibExtendRight || false },
       reverse: cfg.fibReverse || false,
+      labelPosition: cfg.fibLabelPosition || 'right',
+      showPrices: cfg.fibShowPrices !== false,
       levels: levels.map(l => ({
         color: l.color || cfg.color || '#2962FF',
         coeff: l.coeff,
-        opacity: cfg.fibBgOpacity ?? 0,   // 0 = no fill, professional look
+        opacity: cfg.fibBgOpacity ?? 0,
       })),
     }
   }
