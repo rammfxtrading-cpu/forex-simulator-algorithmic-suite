@@ -82,7 +82,9 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
   const [tplName,setTplName]=useState('')
   const [label,setLabel]=useState('')
 
-  useEffect(()=>{ setLabel(toolConfig?.label||''); setShowText(false); setShowTpl(false) },[selectedTool?.id])
+  const [showFib, setShowFib] = useState(false)
+
+  useEffect(()=>{ setLabel(toolConfig?.label||''); setShowText(false); setShowTpl(false); setShowFib(false) },[selectedTool?.id])
 
   if(!selectedTool) return null
   const cfg=toolConfig||{}
@@ -234,6 +236,57 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
           </>
         )}
       </div>
+
+      {toolKey === 'FibRetracement' && <><div style={DIV}/>
+      <div style={{position:'relative'}}>
+        <button title="Niveles Fibonacci" style={btn(showFib)} onClick={()=>setShowFib(v=>!v)}>
+          <FibIcon/>
+        </button>
+        {showFib&&(
+          <>
+            <div style={{position:'fixed',inset:0,zIndex:299}} onClick={()=>setShowFib(false)}/>
+            <div style={{position:'absolute',bottom:36,right:0,zIndex:300,background:'rgba(4,10,24,0.97)',border:'1px solid rgba(30,144,255,0.3)',borderRadius:10,padding:'10px 12px',width:260,boxShadow:'0 4px 24px rgba(0,0,0,0.6)',fontFamily:"'Montserrat',sans-serif"}}>
+              <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1.5,marginBottom:8}}>NIVELES FIBONACCI</div>
+              {(cfg.fibLevels||[
+                {coeff:0,color:'#787B86',enabled:true},{coeff:0.5,color:'#2962FF',enabled:true},
+                {coeff:0.618,color:'#F7525F',enabled:true},{coeff:0.65,color:'#FF9800',enabled:true},
+                {coeff:0.702,color:'#4CAF50',enabled:true},{coeff:1,color:'#787B86',enabled:true}
+              ]).map((lv,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
+                  <input type="checkbox" checked={lv.enabled!==false} onChange={e=>{
+                    const lvs=[...(cfg.fibLevels||[])]; lvs[i]={...lvs[i],enabled:e.target.checked}; apply({fibLevels:lvs})
+                  }} style={{accentColor:'#1E90FF',width:13,height:13}}/>
+                  <label style={{width:18,height:18,borderRadius:3,border:'1px solid rgba(255,255,255,0.2)',background:lv.color,display:'block',overflow:'hidden',cursor:'pointer',flexShrink:0}}>
+                    <input type="color" value={lv.color||'#2962FF'} onChange={e=>{
+                      const lvs=[...(cfg.fibLevels||[])]; lvs[i]={...lvs[i],color:e.target.value}; apply({fibLevels:lvs})
+                    }} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+                  </label>
+                  <span style={{fontSize:10,color:'rgba(255,255,255,0.7)',flex:1}}>{lv.coeff}</span>
+                </div>
+              ))}
+              <div style={{borderTop:'1px solid rgba(255,255,255,0.08)',marginTop:8,paddingTop:8,display:'flex',flexDirection:'column',gap:6}}>
+                <label style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:'rgba(255,255,255,0.6)',cursor:'pointer'}}>
+                  <input type="checkbox" checked={cfg.fibShowPrices!==false} onChange={e=>apply({fibShowPrices:e.target.checked})} style={{accentColor:'#1E90FF'}}/>
+                  Mostrar precios
+                </label>
+                <label style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:'rgba(255,255,255,0.6)',cursor:'pointer'}}>
+                  <input type="checkbox" checked={cfg.fibExtendRight||false} onChange={e=>apply({fibExtendRight:e.target.checked})} style={{accentColor:'#1E90FF'}}/>
+                  Extender derecha
+                </label>
+                <label style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:'rgba(255,255,255,0.6)',cursor:'pointer'}}>
+                  <input type="checkbox" checked={cfg.fibReverse||false} onChange={e=>apply({fibReverse:e.target.checked})} style={{accentColor:'#1E90FF'}}/>
+                  Invertir
+                </label>
+                <div style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:'rgba(255,255,255,0.6)'}}>
+                  <span>Fondo</span>
+                  <input type="range" min={0} max={0.5} step={0.05} value={cfg.fibBgOpacity??0} onChange={e=>apply({fibBgOpacity:parseFloat(e.target.value)})} style={{flex:1,accentColor:'#1E90FF'}}/>
+                  <span style={{fontSize:9,minWidth:28}}>{Math.round((cfg.fibBgOpacity??0)*100)}%</span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div></>}
 
       {toolKey === 'LongShortPosition' && <>
         {/* Color TP */}

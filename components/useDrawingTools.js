@@ -9,7 +9,17 @@ const DEFAULT_CFG = {
   Path:              { color: '#ffffff', width: 1, style: 0 },
   HorizontalRay:     { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
   Rectangle:         { color: '#2962FF', width: 1, style: 0, fillColor: 'rgba(41,98,255,0.15)', label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
-  FibRetracement:    { color: '#2962FF', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 10, textV: 'middle', textH: 'left' },
+  FibRetracement:    { color: '#2962FF', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 10, textV: 'middle', textH: 'left',
+    fibShowPrices: true, fibShowLabels: true, fibBgOpacity: 0, fibExtendRight: false, fibReverse: false,
+    fibLevels: [
+      { coeff: 0,     color: '#787B86', enabled: true },
+      { coeff: 0.5,   color: '#2962FF', enabled: true },
+      { coeff: 0.618, color: '#F7525F', enabled: true },
+      { coeff: 0.65,  color: '#FF9800', enabled: true },
+      { coeff: 0.702, color: '#4CAF50', enabled: true },
+      { coeff: 1,     color: '#787B86', enabled: true },
+    ]
+  },
   LongShortPosition: { color: '#26a69a', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
 
 }
@@ -70,17 +80,24 @@ function buildOptions(toolKey, cfg) {
   }
 
   if (toolKey === 'FibRetracement') {
+    const levels = (cfg.fibLevels || [
+      { coeff: 0,     color: '#787B86', enabled: true },
+      { coeff: 0.5,   color: '#2962FF', enabled: true },
+      { coeff: 0.618, color: '#F7525F', enabled: true },
+      { coeff: 0.65,  color: '#FF9800', enabled: true },
+      { coeff: 0.702, color: '#4CAF50', enabled: true },
+      { coeff: 1,     color: '#787B86', enabled: true },
+    ]).filter(l => l.enabled !== false)
     return {
       ...base,
       line: { width: cfg.width || 1, style: cfg.style || 0 },
-      levels: [
-        { color: cfg.color || '#2962FF', coeff: 0,     opacity: 1 },
-        { color: cfg.color || '#2962FF', coeff: 0.5,   opacity: 1 },
-        { color: cfg.color || '#2962FF', coeff: 0.618, opacity: 1 },
-        { color: cfg.color || '#2962FF', coeff: 0.65,  opacity: 1 },
-        { color: cfg.color || '#2962FF', coeff: 0.702, opacity: 1 },
-        { color: cfg.color || '#2962FF', coeff: 1,     opacity: 1 },
-      ],
+      extend: { left: false, right: cfg.fibExtendRight || false },
+      reverse: cfg.fibReverse || false,
+      levels: levels.map(l => ({
+        color: l.color || cfg.color || '#2962FF',
+        coeff: l.coeff,
+        opacity: cfg.fibBgOpacity ?? 0,   // 0 = no fill, professional look
+      })),
     }
   }
 
