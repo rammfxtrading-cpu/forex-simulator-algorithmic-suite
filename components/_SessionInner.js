@@ -1098,10 +1098,13 @@ export default function SessionPage(){
   const openPositions = activePs?.positions??[]
   const allTrades     = Object.values(pairState.current).flatMap(ps=>ps?.trades??[])
   const unrealized    = openPositions.reduce((s,p)=>s+calcPnl(p.side,p.entry,currentPrice??p.entry,p.lots,activePair),0)
-  // Realized = current balance - initial capital (persists across sessions)
   const initialCapital = session ? parseFloat(session.capital||session.balance||10000) : 10000
   const realized      = parseFloat((balance - initialCapital).toFixed(2))
   const activeTf      = pairTf[activePair]||'H1'
+  // Live session stats
+  const sessWins   = allTrades.filter(t=>t.result==='WIN').length
+  const sessLosses = allTrades.filter(t=>t.result==='LOSS').length
+  const sessWR     = allTrades.length>0 ? Math.round(sessWins/allTrades.length*100) : 0
 
   if(loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}><Spin/></div>
 
@@ -1475,18 +1478,14 @@ export default function SessionPage(){
           <span style={s.balLbl}>Balance: <span style={s.balVal}>${balance.toFixed(2)}</span></span>
           <span style={s.balLbl}>PnL: <span style={{...s.balVal,color:pnlColor(realized)}}>{fmtPnl(realized)}</span></span>
           <span style={s.balLbl}>Float: <span style={{...s.balVal,color:pnlColor(unrealized)}}>{fmtPnl(unrealized)}</span></span>
-          {allTrades.length>0&&(()=>{
-            const wins=allTrades.filter(t=>t.result==='WIN').length
-            const losses=allTrades.filter(t=>t.result==='LOSS').length
-            const wr=allTrades.length>0?Math.round(wins/allTrades.length*100):0
-            return(
-              <>
-                <div style={{width:1,height:16,background:'rgba(255,255,255,0.1)'}}/>
-                <span style={s.balLbl}><span style={{color:wins>0?'#1E90FF':'rgba(255,255,255,0.4)',fontWeight:700}}>{wins}W</span> <span style={{color:'rgba(255,255,255,0.3)'}}>·</span> <span style={{color:losses>0?'#ef5350':'rgba(255,255,255,0.4)',fontWeight:700}}>{losses}L</span></span>
-                <span style={{...s.balLbl,color:wr>=50?'#1E90FF':'#ef5350',fontWeight:700}}>{wr}%</span>
-              </>
-            )
-          })()}
+          {allTrades.length>0&&<><div style={{width:1,height:16,background:'rgba(255,255,255,0.1)'}}/>
+            <span style={s.balLbl}>
+              <span style={{color:sessWins>0?'#1E90FF':'rgba(255,255,255,0.4)',fontWeight:700}}>{sessWins}W</span>
+              {' · '}
+              <span style={{color:sessLosses>0?'#ef5350':'rgba(255,255,255,0.4)',fontWeight:700}}>{sessLosses}L</span>
+            </span>
+            <span style={{...s.balLbl,color:sessWR>=50?'#1E90FF':'#ef5350',fontWeight:700}}>{sessWR}%</span>
+          </>}
         </div>
 
         <div style={s.pillDivider}/>
