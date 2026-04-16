@@ -185,13 +185,11 @@ export default function SessionPage(){
     try {
       const vendorJson = exportTools()
       const customJson = customDrawingsToJSON()
-      // Skip if both are empty
-      if((!vendorJson || vendorJson === '[]') && (!customJson || customJson === '[]')) return
-      // Store as unified object so both systems survive a reload
       const combined = JSON.stringify({ v: vendorJson || '[]', c: customJson || '[]' })
-      await supabase.from('session_drawings').upsert(
-        { session_id: sid, user_id: uid, data: combined, updated_at: new Date().toISOString() },
-        { onConflict: 'session_id' }
+      // DELETE then INSERT — avoids upsert constraint issues and guarantees latest data wins
+      await supabase.from('session_drawings').delete().eq('session_id', sid).then(()=>{}).catch(()=>{})
+      await supabase.from('session_drawings').insert(
+        { session_id: sid, user_id: uid, data: combined, updated_at: new Date().toISOString() }
       ).then(()=>{}).catch(()=>{})
     } catch(e) {}
   }, [exportTools, customDrawingsToJSON])
@@ -202,7 +200,7 @@ export default function SessionPage(){
     if(!pluginReady || !id || !userIdRef.current) return
     const load = async () => {
       try {
-        const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).maybeSingle()
+        const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).order('updated_at', { ascending: false }).limit(1).maybeSingle()
         if(!data?.data || data.data === '[]') return
         try {
           const parsed = JSON.parse(data.data)
