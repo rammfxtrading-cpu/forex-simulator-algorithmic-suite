@@ -3567,8 +3567,8 @@ function setLineStyle(ctx, style) {
  */
 function computeEndLineSize(lineWidth) {
     // Constant multiplier — arrow scales proportionally with line width
-    // width=1 → 12.5px, width=2 → 25px, width=3 → 37.5px
-    return 2.5;
+    // width=1 → 6px, width=2 → 12px, width=3 → 18px
+    return 1.2;
 }
 /**
  * Draws a pixel-perfect horizontal line on the canvas.
