@@ -394,8 +394,9 @@ export default function SessionPage(){
       all=all.filter(c=>{if(seen.has(c.time))return false;seen.add(c.time);return true}).sort((a,b)=>a.time-b.time)
       if(!all.length) return
       const engine=new ReplayEngine()
-      // Resume from last saved position if available
-      const resumeTs = sess.last_timestamp || replayTs
+      // If there's a master time (another pair already advanced), use that. Otherwise resume saved position.
+      const masterTime = (typeof window !== 'undefined' && window.__algSuiteCurrentTime) || null
+      const resumeTs = masterTime || sess.last_timestamp || replayTs
       engine.load(all); engine.seekToTime(resumeTs); engine.speed=speedRef.current
       engine.onTick=()=>{
         updateChart(pair,engine,false)
@@ -466,10 +467,11 @@ export default function SessionPage(){
         y: (param.sourceEvent?.clientY || window.innerHeight/2) - 60,
         onConfirm: (text) => {
           if(!text.trim()) return
-          console.log('[TEXT] placing at time:', coords.time, 'price:', coords.price)
           addDrawing(DRAWING_TYPES.TEXT, [{ time: coords.time, price: coords.price }], { text, fontSize: 12, color: '#ffffff' })
           setActiveTool('cursor')
           activeToolRef.current = 'cursor'
+          // Save immediately — text drawings are not vendor tools so onAfterEdit never fires
+          setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
         }
       })
     })
@@ -603,6 +605,11 @@ export default function SessionPage(){
     if(!activePair) return
     const ps=pairState.current[activePair]
     if(ps?.engine){
+      // Sync this pair's engine to the current master time (from whichever pair was active before)
+      const masterTime = window.__algSuiteCurrentTime
+      if(masterTime && Math.abs(ps.engine.currentTime - masterTime) > 60) {
+        ps.engine.seekToTime(masterTime)
+      }
       setIsPlaying(ps.engine.isPlaying);setCurrentTime(ps.engine.currentTime)
       setProgress(Math.round(ps.engine.progress*100))
       const agg=ps.engine.getAggregated(pairTfRef.current[activePair]||'H1')
