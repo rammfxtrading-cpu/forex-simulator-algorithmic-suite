@@ -86,6 +86,30 @@ const fmtTs = (ordTs, activePairArg, pairStateRef) => {
 }
 function calcPnl(side,entry,exit,lots,pair){const pips=side==='BUY'?(exit-entry)*pipMult(pair):(entry-exit)*pipMult(pair);return pips*lots*10}
 
+const TF_VALID={'1m':'M1','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D1'}
+const TF_OPTS=[{l:'1m',tf:'M1'},{l:'5m',tf:'M5'},{l:'15m',tf:'M15'},{l:'30m',tf:'M30'},{l:'1h',tf:'H1'},{l:'4h',tf:'H4'},{l:'1d',tf:'D1'}]
+function TfInputModal({tfInput,activeTf}){
+  const match=TF_VALID[tfInput.toLowerCase().trim()]
+  const ok=!!match
+  return(
+    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none',fontFamily:"'Montserrat',sans-serif"}}>
+      <div style={{background:'rgba(255,255,255,0.10)',border:'1px solid '+(ok?'rgba(41,98,255,0.7)':'rgba(255,255,255,0.22)'),borderRadius:20,backdropFilter:'blur(40px) saturate(200%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(200%) brightness(1.1)',boxShadow:'0 24px 80px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.25)',padding:'20px 28px 18px',minWidth:240,textAlign:'center'}}>
+        <div style={{fontSize:38,fontWeight:900,color:ok?'#2962FF':'#ffffff',letterSpacing:2,marginBottom:8,lineHeight:1}}>
+          {tfInput}<span style={{display:'inline-block',width:2,height:38,background:ok?'#2962FF':'rgba(255,255,255,0.6)',marginLeft:3,verticalAlign:'middle',animation:'blink 1s step-end infinite'}}/>
+        </div>
+        <div style={{fontSize:11,fontWeight:700,color:ok?'rgba(41,98,255,0.9)':'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:16}}>
+          {ok?('-> '+match):'1m  5m  15m  30m  1h  4h  1d'}
+        </div>
+        <div style={{display:'flex',gap:5,justifyContent:'center',flexWrap:'wrap'}}>
+          {TF_OPTS.map(o=>(
+            <div key={o.l} style={{padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:700,background:match===o.tf?'rgba(41,98,255,0.35)':activeTf===o.tf?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.05)',border:'1px solid '+(match===o.tf?'rgba(41,98,255,0.7)':activeTf===o.tf?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.08)'),color:match===o.tf?'#fff':activeTf===o.tf?'#fff':'rgba(255,255,255,0.4)'}}>{o.l}</div>
+          ))}
+        </div>
+        {ok&&<div style={{marginTop:12,fontSize:9,color:'rgba(255,255,255,0.35)',fontWeight:600,letterSpacing:1}}>ENTER confirma  ESC cancela</div>}
+      </div>
+    </div>
+  )
+}
 export default function SessionPage(){
   const router=useRouter()
   const {id}=router.query
@@ -148,7 +172,7 @@ export default function SessionPage(){
   const selectedToolRef  = useRef(null)
   const activeToolKeyRef = useRef(null)
   const [chartConfigOpen, setChartConfigOpen] = useState(false)
-  const [tfInput, setTfInput] = useState('')  // liquid glass TF input modal
+  const [rulerActive, setRulerActive] = useState(false)
   const [tfKey, setTfKey] = useState(0)
   const [chartTick, setChartTick] = useState(0)
   const [hoverCandle, setHoverCandle] = useState(null) // {o,h,l,c,t}
@@ -379,8 +403,6 @@ export default function SessionPage(){
     })
   },[])
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────────
-  useEffect(()=>{
   // ── TF keyboard input — TradingView style ─────────────────────────────────────
   useEffect(()=>{
     const VALID={'1m':'M1','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D1'}
@@ -388,34 +410,20 @@ export default function SessionPage(){
       const tag=e.target?.tagName
       if(tag==='INPUT'||tag==='TEXTAREA'||e.target?.contentEditable==='true') return
       if(e.ctrlKey||e.metaKey||e.altKey) return
-
-      if(e.key==='Escape'){ setTfInput(''); return }
-
+      if(e.key==='Escape'){setTfInput(''); return}
       if(e.key==='Enter'){
         setTfInput(prev=>{
           const tf=VALID[prev.toLowerCase().trim()]
           if(tf&&activePairRef.current){
             const n={...pairTfRef.current,[activePairRef.current]:tf}
-            pairTfRef.current=n
-            setPairTf(n)
+            pairTfRef.current=n;setPairTf(n)
           }
           return ''
         })
         return
       }
-
-      if(e.key==='Backspace'){
-        setTfInput(prev=>prev.slice(0,-1))
-        return
-      }
-
-      // Only accumulate digits and letters (ignore arrows, shift, etc.)
-      if(e.key.length===1&&/[0-9a-zA-Z]/.test(e.key)){
-        setTfInput(prev=>{
-          const next=(prev+e.key).slice(0,4) // max 4 chars
-          return next
-        })
-      }
+      if(e.key==='Backspace'){setTfInput(prev=>prev.slice(0,-1));return}
+      if(e.key.length===1&&/[0-9a-zA-Z]/.test(e.key)){setTfInput(prev=>(prev+e.key).slice(0,4))}
     }
     window.addEventListener('keydown',onKey)
     return()=>window.removeEventListener('keydown',onKey)
@@ -1098,13 +1106,10 @@ export default function SessionPage(){
   const openPositions = activePs?.positions??[]
   const allTrades     = Object.values(pairState.current).flatMap(ps=>ps?.trades??[])
   const unrealized    = openPositions.reduce((s,p)=>s+calcPnl(p.side,p.entry,currentPrice??p.entry,p.lots,activePair),0)
+  // Realized = current balance - initial capital (persists across sessions)
   const initialCapital = session ? parseFloat(session.capital||session.balance||10000) : 10000
   const realized      = parseFloat((balance - initialCapital).toFixed(2))
   const activeTf      = pairTf[activePair]||'H1'
-  // Live session stats
-  const sessWins   = allTrades.filter(t=>t.result==='WIN').length
-  const sessLosses = allTrades.filter(t=>t.result==='LOSS').length
-  const sessWR     = allTrades.length>0 ? Math.round(sessWins/allTrades.length*100) : 0
 
   if(loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}><Spin/></div>
 
@@ -1385,7 +1390,19 @@ export default function SessionPage(){
         ))}
         <div style={{flex:1}}/>
         {/* OHLCV hover display */}
-        {hoverCandle&&dataReady&&<OhlcvDisplay candle={hoverCandle} pair={activePair}/>}
+        {hoverCandle&&dataReady&&(()=>{
+          const isUp=hoverCandle.c>=hoverCandle.o
+          const col=isUp?'#2962FF':'#ffffff'
+          const fmt=p=>fmtPx(p,activePair)
+          return(
+            <div style={{display:'flex',gap:10,alignItems:'center',fontSize:10,fontWeight:600,fontFamily:"'Montserrat',sans-serif",marginRight:8}}>
+              <span style={{color:'rgba(255,255,255,0.35)'}}>O</span><span style={{color:col}}>{fmt(hoverCandle.o)}</span>
+              <span style={{color:'rgba(255,255,255,0.35)'}}>H</span><span style={{color:col}}>{fmt(hoverCandle.h)}</span>
+              <span style={{color:'rgba(255,255,255,0.35)'}}>L</span><span style={{color:col}}>{fmt(hoverCandle.l)}</span>
+              <span style={{color:'rgba(255,255,255,0.35)'}}>C</span><span style={{color:col}}>{fmt(hoverCandle.c)}</span>
+            </div>
+          )
+        })()}
         {currentTime&&<span style={s.tsBadge}>{fmtTs(currentTime,activePair,pairState)}</span>}
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
@@ -1466,14 +1483,18 @@ export default function SessionPage(){
           <span style={s.balLbl}>Balance: <span style={s.balVal}>${balance.toFixed(2)}</span></span>
           <span style={s.balLbl}>PnL: <span style={{...s.balVal,color:pnlColor(realized)}}>{fmtPnl(realized)}</span></span>
           <span style={s.balLbl}>Float: <span style={{...s.balVal,color:pnlColor(unrealized)}}>{fmtPnl(unrealized)}</span></span>
-          {allTrades.length>0&&<><div style={{width:1,height:16,background:'rgba(255,255,255,0.1)'}}/>
-            <span style={s.balLbl}>
-              <span style={{color:sessWins>0?'#1E90FF':'rgba(255,255,255,0.4)',fontWeight:700}}>{sessWins}W</span>
-              {' · '}
-              <span style={{color:sessLosses>0?'#ef5350':'rgba(255,255,255,0.4)',fontWeight:700}}>{sessLosses}L</span>
-            </span>
-            <span style={{...s.balLbl,color:sessWR>=50?'#1E90FF':'#ef5350',fontWeight:700}}>{sessWR}%</span>
-          </>}
+          {allTrades.length>0&&(()=>{
+            const wins=allTrades.filter(t=>t.result==='WIN').length
+            const losses=allTrades.filter(t=>t.result==='LOSS').length
+            const wr=allTrades.length>0?Math.round(wins/allTrades.length*100):0
+            return(
+              <>
+                <div style={{width:1,height:16,background:'rgba(255,255,255,0.1)'}}/>
+                <span style={s.balLbl}><span style={{color:wins>0?'#1E90FF':'rgba(255,255,255,0.4)',fontWeight:700}}>{wins}W</span> <span style={{color:'rgba(255,255,255,0.3)'}}>·</span> <span style={{color:losses>0?'#ef5350':'rgba(255,255,255,0.4)',fontWeight:700}}>{losses}L</span></span>
+                <span style={{...s.balLbl,color:wr>=50?'#1E90FF':'#ef5350',fontWeight:700}}>{wr}%</span>
+              </>
+            )
+          })()}
         </div>
 
         <div style={s.pillDivider}/>
@@ -1622,16 +1643,43 @@ export default function SessionPage(){
         </>
       )}
 
-      {selectedDrawing&&<TextDrawingPill
-        drawing={drawings.find(x=>x.id===selectedDrawing.id)}
-        pillPos={pillPos}
-        selectedDrawing={selectedDrawing}
-        onTextPillMouseDown={onTextPillMouseDown}
-        updateDrawing={updateDrawing}
-        removeDrawing={removeDrawing}
-        setSelectedDrawing={setSelectedDrawing}
-        saveDrawingsRef={saveDrawingsRef}
-      />}
+      {selectedDrawing&&(()=>{
+        const d = drawings.find(x=>x.id===selectedDrawing.id)
+        if(!d) return null
+        const SPILL={display:'flex',alignItems:'center',gap:4,background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.22)',borderRadius:12,padding:'6px 10px',backdropFilter:'blur(40px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.1)',boxShadow:'0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.3)',userSelect:'none',fontFamily:"'Montserrat',sans-serif"}
+        const SDIV={width:1,height:16,background:'rgba(255,255,255,0.12)',margin:'0 4px',flexShrink:0}
+        const sbtn=(active,danger)=>({background:danger?'rgba(239,83,80,0.10)':active?'rgba(41,98,255,0.45)':'rgba(255,255,255,0.06)',border:danger?'1px solid rgba(239,83,80,0.35)':active?'1px solid rgba(41,98,255,0.7)':'1px solid rgba(255,255,255,0.1)',borderRadius:7,color:danger?'#ef5350':'#fff',width:28,height:28,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0,fontFamily:"'Montserrat',sans-serif"})
+        const FONT_SIZES=[9,10,11,12,14,16,18,20,24]
+        return <>
+          <div style={{position:'fixed',inset:0,zIndex:1998}} onClick={()=>setSelectedDrawing(null)}/>
+          <div style={{...SPILL,position:'fixed',left:pillPos.x??selectedDrawing.x,top:pillPos.y??selectedDrawing.y,zIndex:1999,cursor:'grab'}} onMouseDown={onTextPillMouseDown}>
+            {/* Color */}
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+              <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>COLOR</span>
+              <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',background:d.metadata?.color||'#ffffff',overflow:'hidden'}}>
+                <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>{updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },200)}} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+              </label>
+            </div>
+            <div style={SDIV}/>
+            {/* Tamaño */}
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+              <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>TAMAÑO</span>
+              <div style={{display:'flex',gap:2}}>
+                {FONT_SIZES.map(s=><button key={s} onClick={()=>{updateDrawing(d.id,{metadata:{...d.metadata,fontSize:s}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}} style={{...sbtn(d.metadata?.fontSize===s),width:'auto',minWidth:20,height:20,fontSize:9,padding:'0 3px'}}>{s}</button>)}
+              </div>
+            </div>
+            <div style={SDIV}/>
+            {/* Borrar */}
+            <button title="Borrar" style={sbtn(false,true)} onClick={()=>{removeDrawing(d.id);setSelectedDrawing(null)}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            </button>
+            {/* Cerrar */}
+            <button title="Cerrar" style={sbtn(false)} onClick={()=>setSelectedDrawing(null)}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </>
+      })()}
 
       {textInput&&(
         <>
@@ -1738,106 +1786,9 @@ export default function SessionPage(){
         />
       )}
 
-      {/* TF INPUT MODAL — liquid glass, TradingView style */}
       {tfInput&&<TfInputModal tfInput={tfInput} activeTf={pairTf[activePair]||'H1'}/>}
 
       <style>{css}</style>
-    </div>
-  )
-}
-
-function OhlcvDisplay({candle,pair}){
-  const isUp=candle.c>=candle.o
-  const col=isUp?'#2962FF':'#ffffff'
-  const fmt=p=>fmtPx(p,pair)
-  return(
-    <div style={{display:'flex',gap:10,alignItems:'center',fontSize:10,fontWeight:600,fontFamily:"'Montserrat',sans-serif",marginRight:8}}>
-      <span style={{color:'rgba(255,255,255,0.35)'}}>O</span><span style={{color:col}}>{fmt(candle.o)}</span>
-      <span style={{color:'rgba(255,255,255,0.35)'}}>H</span><span style={{color:col}}>{fmt(candle.h)}</span>
-      <span style={{color:'rgba(255,255,255,0.35)'}}>L</span><span style={{color:col}}>{fmt(candle.l)}</span>
-      <span style={{color:'rgba(255,255,255,0.35)'}}>C</span><span style={{color:col}}>{fmt(candle.c)}</span>
-    </div>
-  )
-}
-
-const TEXT_PILL_SPILL={display:'flex',alignItems:'center',gap:4,background:'rgba(255,255,255,0.10)',border:'1px solid rgba(255,255,255,0.22)',borderRadius:12,padding:'6px 10px',backdropFilter:'blur(40px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.1)',boxShadow:'0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.3)',userSelect:'none',fontFamily:"'Montserrat',sans-serif"}
-const TEXT_PILL_DIV={width:1,height:16,background:'rgba(255,255,255,0.12)',margin:'0 4px',flexShrink:0}
-const textPillBtn=(active,danger)=>({background:danger?'rgba(239,83,80,0.10)':active?'rgba(41,98,255,0.45)':'rgba(255,255,255,0.06)',border:danger?'1px solid rgba(239,83,80,0.35)':active?'1px solid rgba(41,98,255,0.7)':'1px solid rgba(255,255,255,0.1)',borderRadius:7,color:danger?'#ef5350':'#fff',width:28,height:28,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0,fontFamily:"'Montserrat',sans-serif"})
-const TEXT_FONT_SIZES=[9,10,11,12,14,16,18,20,24]
-
-function TextDrawingPill({drawing,pillPos,selectedDrawing,onTextPillMouseDown,updateDrawing,removeDrawing,setSelectedDrawing,saveDrawingsRef}){
-  if(!drawing) return null
-  const d=drawing
-  return(
-    <>
-      <div style={{position:'fixed',inset:0,zIndex:1998}} onClick={()=>setSelectedDrawing(null)}/>
-      <div style={{...TEXT_PILL_SPILL,position:'fixed',left:pillPos.x??selectedDrawing.x,top:pillPos.y??selectedDrawing.y,zIndex:1999,cursor:'grab'}} onMouseDown={onTextPillMouseDown}>
-        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-          <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>COLOR</span>
-          <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',background:d.metadata?.color||'#ffffff',overflow:'hidden'}}>
-            <input type="color" value={d.metadata?.color||'#ffffff'} onChange={e=>{updateDrawing(d.id,{metadata:{...d.metadata,color:e.target.value}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },200)}} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
-          </label>
-        </div>
-        <div style={TEXT_PILL_DIV}/>
-        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-          <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>TAMAÑO</span>
-          <div style={{display:'flex',gap:2}}>
-            {TEXT_FONT_SIZES.map(sz=><button key={sz} onClick={()=>{updateDrawing(d.id,{metadata:{...d.metadata,fontSize:sz}});setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}} style={{...textPillBtn(d.metadata?.fontSize===sz),width:'auto',minWidth:20,height:20,fontSize:9,padding:'0 3px'}}>{sz}</button>)}
-          </div>
-        </div>
-        <div style={TEXT_PILL_DIV}/>
-        <button title="Borrar" style={textPillBtn(false,true)} onClick={()=>{removeDrawing(d.id);setSelectedDrawing(null)}}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        </button>
-        <button title="Cerrar" style={textPillBtn(false)} onClick={()=>setSelectedDrawing(null)}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-    </>
-  )
-}
-
-const TF_INPUT_VALID={'1m':'M1','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D1'}
-const TF_INPUT_OPTIONS=[
-  {label:'1m',tf:'M1'},{label:'5m',tf:'M5'},{label:'15m',tf:'M15'},
-  {label:'30m',tf:'M30'},{label:'1h',tf:'H1'},{label:'4h',tf:'H4'},{label:'1d',tf:'D1'},
-]
-
-function TfInputModal({tfInput,activeTf}){
-  const match=TF_INPUT_VALID[tfInput.toLowerCase().trim()]
-  const isValid=!!match
-  return(
-    <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none',fontFamily:"'Montserrat',sans-serif"}}>
-      <div style={{
-        background:'rgba(255,255,255,0.10)',
-        border:`1px solid ${isValid?'rgba(41,98,255,0.7)':'rgba(255,255,255,0.22)'}`,
-        borderRadius:20,
-        backdropFilter:'blur(40px) saturate(200%) brightness(1.1)',
-        WebkitBackdropFilter:'blur(40px) saturate(200%) brightness(1.1)',
-        boxShadow:`0 24px 80px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.25)`,
-        padding:'20px 28px 18px',
-        minWidth:240,
-        textAlign:'center',
-      }}>
-        <div style={{fontSize:38,fontWeight:900,color:isValid?'#2962FF':'#ffffff',letterSpacing:2,marginBottom:8,lineHeight:1}}>
-          {tfInput}
-          <span style={{display:'inline-block',width:2,height:38,background:isValid?'#2962FF':'rgba(255,255,255,0.6)',marginLeft:3,verticalAlign:'middle',animation:'blink 1s step-end infinite'}}/>
-        </div>
-        <div style={{fontSize:11,fontWeight:700,color:isValid?'rgba(41,98,255,0.9)':'rgba(255,255,255,0.3)',letterSpacing:1.5,marginBottom:16}}>
-          {isValid?('→ '+match):'Escribe 1m, 5m, 15m, 30m, 1h, 4h, 1d'}
-        </div>
-        <div style={{display:'flex',gap:5,justifyContent:'center',flexWrap:'wrap'}}>
-          {TF_INPUT_OPTIONS.map(o=>(
-            <div key={o.label} style={{
-              padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:700,
-              background:match===o.tf?'rgba(41,98,255,0.35)':activeTf===o.tf?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.05)',
-              border:`1px solid ${match===o.tf?'rgba(41,98,255,0.7)':activeTf===o.tf?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.08)'}`,
-              color:match===o.tf?'#fff':activeTf===o.tf?'#fff':'rgba(255,255,255,0.4)',
-            }}>{o.label}</div>
-          ))}
-        </div>
-        {isValid&&<div style={{marginTop:12,fontSize:9,color:'rgba(255,255,255,0.35)',fontWeight:600,letterSpacing:1}}>ENTER para confirmar  ESC para cancelar</div>}
-      </div>
     </div>
   )
 }
