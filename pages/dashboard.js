@@ -125,7 +125,7 @@ export default function Dashboard() {
       user_id: user.id, name: form.name, pair: form.pair,
       timeframe: 'H1', date_from: form.dateFrom, date_to: form.dateTo,
       capital: parseFloat(form.capital), balance: parseFloat(form.capital), status: 'active'
-    }).select().single()
+    }).select().maybeSingle()
     setCreating(false)
     if (!error && data) {
       setShowNew(false)

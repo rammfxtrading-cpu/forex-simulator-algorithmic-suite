@@ -23,7 +23,7 @@ const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
 const LOT_PRESETS = [0.01,0.05,0.1,0.25,0.5,1.0]
 const RR_PRESETS  = [1,1.5,2,3]
-const ALL_PAIRS   = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','EUR/GBP','EUR/JPY','GBP/JPY']
+const ALL_PAIRS   = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','AUD/CAD','EUR/GBP','EUR/JPY','GBP/JPY']
 
 function chartOpts(w,h){return{
   width:w,height:h,
@@ -70,7 +70,7 @@ function chartOpts(w,h){return{
 const isJpy    = p=>p?.includes('JPY')
 const pipMult  = p=>isJpy(p)?100:10000
 const fmtPx    = (px,p)=>px?.toFixed(isJpy(p)?3:5)??'—'
-const fmtPnl   = v=>(v>=0?'+':'')+v.toFixed(2)
+const fmtPnl   = v=>(!v&&v!==0)||isNaN(v)?'+$0.00':(v>=0?'+':'')+v.toFixed(2)
 const pnlColor = v=>v>0?'#1E90FF':v<0?'#ef5350':'#a0b8d0'
 const fmtTs    = ts=>ts?new Date(ts*1000).toLocaleString('es-ES',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'
 function calcPnl(side,entry,exit,lots,pair){const pips=side==='BUY'?(exit-entry)*pipMult(pair):(entry-exit)*pipMult(pair);return pips*lots*10}
@@ -306,11 +306,13 @@ export default function SessionPage(){
   useEffect(()=>{activeToolKeyRef.current=activeToolKey},[activeToolKey])
   useEffect(()=>{activeToolRef.current=activeTool},[activeTool])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
+  const tfMapSaveTimerRef = useRef(null)
   useEffect(()=>{
     drawingTfMapRef.current=drawingTfMap
-    // Auto-save whenever TF visibility changes
     if(Object.keys(drawingTfMap).length>0){
-      setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },200)
+      // Debounce — if user clicks multiple TFs quickly, only save once
+      if(tfMapSaveTimerRef.current) clearTimeout(tfMapSaveTimerRef.current)
+      tfMapSaveTimerRef.current=setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },400)
     }
   },[drawingTfMap])
 
@@ -332,7 +334,12 @@ export default function SessionPage(){
     const nodes=[]
     for(let i=0;i<55;i++) nodes.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,r:Math.random()*1.4+.7})
     let raf
-    function draw(){
+    let lastFrame = 0
+    function draw(ts){
+      raf=requestAnimationFrame(draw)
+      if(document.hidden) return           // pause when tab not visible
+      if(ts - lastFrame < 33) return       // cap at ~30fps
+      lastFrame = ts
       ctx.clearRect(0,0,canvas.width,canvas.height)
       for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
         const dx=nodes[i].x-nodes[j].x,dy=nodes[i].y-nodes[j].y,d=Math.sqrt(dx*dx+dy*dy)
@@ -344,9 +351,8 @@ export default function SessionPage(){
         if(n.x<0||n.x>canvas.width)n.vx*=-1
         if(n.y<0||n.y>canvas.height)n.vy*=-1
       })
-      raf=requestAnimationFrame(draw)
     }
-    draw()
+    draw(0)
     window.addEventListener('resize',resize)
     return()=>{cancelAnimationFrame(raf);window.removeEventListener('resize',resize)}
   },[])
@@ -588,8 +594,9 @@ export default function SessionPage(){
     const _tfS2 = _tfMap2[tf]||3600
     const _lastT = agg[agg.length-1].time
     const _lastC = agg[agg.length-1].close
+
     if(full||(curr!==prev&&curr!==prev+1)){
-      // Structural change — regenerate phantoms and setData
+      // Structural change — full rebuild with new phantoms
       cr.phantom = Array.from({length:50},(_,i)=>({
         time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
         color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
@@ -602,17 +609,28 @@ export default function SessionPage(){
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
         cr.hasLoaded=true
       }
-    } else {
-      // Normal replay — realign phantoms if last candle changed
-      if(!cr.phantom||!cr.phantom.length||cr.phantomBaseTime!==_lastT){
-        cr.phantom = Array.from({length:50},(_,i)=>({
-          time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
-          color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
-        }))
-        cr.phantomBaseTime = _lastT
-      }
+    } else if(curr===prev+1){
+      // New TF candle added — update phantoms and add new candle via update()
+      cr.phantom = Array.from({length:50},(_,i)=>({
+        time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
+        color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
+      }))
+      cr.phantomBaseTime = _lastT
       cr.series.setData([...agg,...cr.phantom])
-      if(typeof window!=='undefined') window.__algSuiteSeriesData=[...agg,...cr.phantom]
+      if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
+    } else {
+      // Within-bucket update — only last candle changed, use update() — 100x faster than setData
+      try{
+        cr.series.update(agg[agg.length-1])
+        // Update last real candle in-place in the global array (no new allocation)
+        if(typeof window!=='undefined'&&window.__algSuiteSeriesData){
+          window.__algSuiteSeriesData[agg.length-1]=agg[agg.length-1]
+        }
+      }catch{
+        // Fallback to setData if update fails
+        cr.series.setData([...agg,...cr.phantom])
+        if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
+      }
     }
     cr.prevCount=curr
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
@@ -1268,7 +1286,16 @@ export default function SessionPage(){
           <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="3" height="16"/></svg>
         </button>
         <div style={s.pillDivider}/>
-        <div style={s.pillProgress} title={`${progress}%`}>
+        <div style={s.pillProgress} title={`${progress}% — clic para saltar`}
+          onClick={e=>{
+            const rect=e.currentTarget.getBoundingClientRect()
+            const fraction=(e.clientX-rect.left)/rect.width
+            const e2=eng();if(!e2)return
+            e2.seekToProgress(Math.max(0,Math.min(1,fraction)))
+            setCurrentTime(e2.currentTime);setProgress(Math.round(e2.progress*100))
+            const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
+            updateChart(activePair,e2,true)
+          }}>
           <div style={{...s.pillProgressFill,width:`${progress}%`}}/>
         </div>
         <div style={s.pillDivider}/>
@@ -1812,6 +1839,8 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
   useEffect(()=>{
     if(!dataReady) return
     const update=()=>{
+      // Skip if nothing to show — saves CPU when no trades are open
+      if(!positions.length && !pendingOrders?.length){ setLines([]); return }
       const cr=chartMap.current[activePair]; if(!cr?.series) return
       const all=[]
       positions.forEach(pos=>{
@@ -1836,11 +1865,10 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
         if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL', color:'rgba(239,83,80,0.5)',  drag:true, cancel:true})
         if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP', color:'rgba(30,144,255,0.5)', drag:true, cancel:true})
       })
-      // Don't update if dragging — keeps line under cursor
       if(!dragState.current?.active) setLines(all)
     }
     update()
-    const iv=setInterval(update,100)
+    const iv=setInterval(update,150)
     return()=>clearInterval(iv)
   },[positions,pendingOrders,activePair,dataReady])
 

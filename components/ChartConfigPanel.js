@@ -50,16 +50,14 @@ export function useChartConfig({ sessionId, userId }) {
   const saveConfig = async (newConfig) => {
     setConfig(newConfig)
     if (!sessionId || !userId) return
-    // Save to session
-    await supabase.from('session_chart_config').upsert(
+    supabase.from('session_chart_config').upsert(
       { session_id: sessionId, user_id: userId, config: newConfig, updated_at: new Date().toISOString() },
       { onConflict: 'session_id' }
-    )
-    // Update global user config (template for new sessions)
-    await supabase.from('user_chart_config').upsert(
+    ).then(()=>{}).catch(()=>{})
+    supabase.from('user_chart_config').upsert(
       { user_id: userId, config: newConfig, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' }
-    )
+    ).then(()=>{}).catch(()=>{})
   }
 
   return { config, saveConfig, loaded }
