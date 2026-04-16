@@ -141,14 +141,13 @@ export default function SessionPage(){
   const [selectedDrawing, setSelectedDrawing] = useState(null) // {id, x, y}
   const selectedDrawingRef = useRef(null)
   useEffect(()=>{selectedDrawingRef.current=selectedDrawing},[selectedDrawing])
-  const [pillPos, setPillPos] = useState({x:null,y:null})
-  const pillDragRef = useRef(null)
-  const onPillMouseDown = (e) => {
+  const textPillDragRef = useRef(null)
+  const onTextPillMouseDown = (e) => {
     if(e.target.tagName==='BUTTON'||e.target.closest('button')||e.target.tagName==='INPUT') return
     const r = e.currentTarget.getBoundingClientRect()
-    pillDragRef.current = {ox: e.clientX - r.left, oy: e.clientY - r.top}
-    const mv = (ev) => setPillPos({x: ev.clientX - pillDragRef.current.ox, y: ev.clientY - pillDragRef.current.oy})
-    const up = () => { pillDragRef.current=null; window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up) }
+    textPillDragRef.current = {ox: e.clientX - r.left, oy: e.clientY - r.top}
+    const mv = (ev) => setSelectedDrawing(prev => prev ? {...prev, x: ev.clientX - textPillDragRef.current.ox, y: ev.clientY - textPillDragRef.current.oy} : prev)
+    const up = () => { textPillDragRef.current=null; window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up) }
     window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up); e.preventDefault()
   }
   const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
@@ -1271,7 +1270,7 @@ export default function SessionPage(){
         const FONT_SIZES=[9,10,11,12,14,16,18,20,24]
         return <>
           <div style={{position:'fixed',inset:0,zIndex:1998}} onClick={()=>setSelectedDrawing(null)}/>
-          <div style={{...SPILL,position:'fixed',left:pillPos.x??selectedDrawing.x,top:pillPos.y??selectedDrawing.y,zIndex:1999,cursor:'grab'}} onMouseDown={onPillMouseDown}>
+          <div style={{...SPILL,position:'fixed',left:pillPos.x??selectedDrawing.x,top:pillPos.y??selectedDrawing.y,zIndex:1999,cursor:'grab'}} onMouseDown={onTextPillMouseDown}>
             {/* Color */}
             <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>COLOR</span>
