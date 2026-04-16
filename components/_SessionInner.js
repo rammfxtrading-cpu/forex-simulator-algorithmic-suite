@@ -72,19 +72,9 @@ const pipMult  = p=>isJpy(p)?100:10000
 const fmtPx    = (px,p)=>px?.toFixed(isJpy(p)?3:5)??'—'
 const fmtPnl   = v=>(!v&&v!==0)||isNaN(v)?'+$0.00':(v>=0?'+':'')+v.toFixed(2)
 const pnlColor = v=>v>0?'#1E90FF':v<0?'#ef5350':'#a0b8d0'
-const fmtTs = (ordTs, activePairArg, pairStateRef) => {
-  let realTs = ordTs
-  if(pairStateRef && activePairArg){
-    const ps = pairStateRef.current?.[activePairArg]
-    if(ps?.ordinalToReal && ordTs != null){
-      const idx = Math.round((ordTs-8640000) / 60)
-      realTs = ps.ordinalToReal[idx] ?? ordTs
-    }
-  }
-  // Guard: ordinals (ORD_BASE ~8.6M) are not real unix timestamps (~1.7B)
-  // If lookup failed, realTs is still the raw ordinal → show '—' instead of 1970
-  if(!realTs || realTs < 1000000000) return '—'
-  return new Date(realTs*1000).toLocaleString('es-ES',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+const fmtTs = (ts) => {
+  if(!ts || ts < 1000000000) return '—'
+  return new Date(ts*1000).toLocaleString('es-ES',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'})
 }
 function calcPnl(side,entry,exit,lots,pair){const pips=side==='BUY'?(exit-entry)*pipMult(pair):(entry-exit)*pipMult(pair);return pips*lots*10}
 
@@ -495,11 +485,11 @@ export default function SessionPage(){
         if(day === 0 && d.getUTCHours() < 20) return false  // Sunday pre-market — skip
         return true
       })
-      // Remap to ordinal timestamps — sequential minutes, no gaps
-      const ORD_BASE=8640000
-      const ordinalToReal = [null, ...filtered.map(c => c.time)]
-      const realToOrdinal = new Map(filtered.map((c,i) => [c.time, ORD_BASE+(i+1)*60]))
-      const ordinalCandles = filtered.map((c,i) => ({...c, time: ORD_BASE+(i+1)*60}))
+      // Use real timestamps — weekend candles already filtered above
+      // LWC renders whatever candles it receives sequentially (no gaps for missing bars)
+      const ordinalToReal = null   // not needed — real timestamps used directly
+      const realToOrdinal = null
+      const ordinalCandles = filtered
 
       const engine=new ReplayEngine()
       // If there's a master time (another pair already advanced), use that. Otherwise resume saved position.
@@ -822,13 +812,8 @@ export default function SessionPage(){
       try{
         // Convert ordinal timestamps → real unix timestamps for DB storage
         const ps2=pairState.current[usePair]
-        const toReal=(ordTs)=>{
-          if(!ordTs) return null
-          if(ps2?.ordinalToReal){ const idx=Math.round((ordTs-8640000)/60); return ps2.ordinalToReal[idx]??null }
-          return ordTs>1000000000?ordTs:null // fallback: if already real ts, use it
-        }
-        const realOpenTime = toReal(pos.openTime)
-        const realCloseTime = toReal(currentTime)
+        const realOpenTime = pos.openTime??null
+        const realCloseTime = currentTime>1000000000?currentTime:null
         await supabase.from('sim_trades').insert({
           user_id:userIdRef.current,
           session_id:id,
@@ -1407,7 +1392,7 @@ export default function SessionPage(){
             </div>
           )
         })()}
-        {currentTime&&<span style={s.tsBadge}>{fmtTs(currentTime,activePair,pairState)}</span>}
+        {currentTime&&<span style={s.tsBadge}>{fmtTs(currentTime)}</span>}
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
 
@@ -1608,8 +1593,8 @@ export default function SessionPage(){
                     <td style={s.td}>{t.rrReal}R</td>
                     <td style={{...s.td,color:pnlColor(t.pnl),fontWeight:700}}>{fmtPnl(t.pnl)}</td>
                     <td style={{...s.td,color:t.result==='WIN'?'#1E90FF':t.result==='LOSS'?'#ef5350':'#a0b8d0',fontWeight:700}}>{t.result}</td>
-                    <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.openTime,activePair,pairState)}</td>
-                    <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.closeTime,activePair,pairState)}</td>
+                    <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.openTime)}</td>
+                    <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.closeTime)}</td>
                     <td style={{...s.td,color:'rgba(255,255,255,0.6)',fontSize:9,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis'}}>{t.note||'—'}</td>
                   </tr>
                 ))}
@@ -1750,11 +1735,7 @@ export default function SessionPage(){
             const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
             const rrReal=pos.slPips>0?pnl/(pos.slPips*lotsToClose*10):0
             // Convert ordinal→real for DB timestamps
-            const toReal2=(ordTs)=>{
-              if(!ordTs) return null
-              if(ps?.ordinalToReal){ const idx=Math.round((ordTs-8640000)/60); return ps.ordinalToReal[idx]??null }
-              return ordTs>1000000000?ordTs:null
-            }
+            // toReal2 removed — using real timestamps directly
             if(lotsToClose>=pos.lots){
               closePosition(pos.id,'MANUAL',closeModal.pair,currentPrice,note)
             } else {
@@ -1765,8 +1746,8 @@ export default function SessionPage(){
               const newBal=parseFloat((balanceRef.current+pnl).toFixed(2))
               setBalance(newBal);setTick(t=>t+1)
               if(userIdRef.current){
-                const realOpen=toReal2(pos.openTime)
-                const realClose=toReal2(currentTime)
+                const realOpen=pos.openTime??null
+                const realClose=currentTime>1000000000?currentTime:null
                 supabase.from('sim_sessions').update({balance:newBal}).eq('id',id).then(()=>{}).catch(()=>{})
                 supabase.from('sim_trades').insert({
                   user_id:userIdRef.current, session_id:id,
