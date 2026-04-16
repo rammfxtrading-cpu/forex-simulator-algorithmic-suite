@@ -183,14 +183,18 @@ export default function SessionPage(){
     const sid = router.query?.id
     if(!uid || !sid) return
     try {
-      const json = exportTools()
-      if(!json || json === '[]') return
+      const vendorJson = exportTools()
+      const customJson = customDrawingsToJSON()
+      // Skip if both are empty
+      if((!vendorJson || vendorJson === '[]') && (!customJson || customJson === '[]')) return
+      // Store as unified object so both systems survive a reload
+      const combined = JSON.stringify({ v: vendorJson || '[]', c: customJson || '[]' })
       await supabase.from('session_drawings').upsert(
-        { session_id: sid, user_id: uid, data: json, updated_at: new Date().toISOString() },
+        { session_id: sid, user_id: uid, data: combined, updated_at: new Date().toISOString() },
         { onConflict: 'session_id' }
       ).then(()=>{}).catch(()=>{})
     } catch(e) {}
-  }, [exportTools])
+  }, [exportTools, customDrawingsToJSON])
   useEffect(() => { saveDrawingsRef.current = saveSessionDrawings }, [saveSessionDrawings])
 
   // Load session drawings when chart is ready
@@ -199,9 +203,20 @@ export default function SessionPage(){
     const load = async () => {
       try {
         const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).maybeSingle()
-        if(data?.data && data.data !== '[]') {
-          setTimeout(() => { try { importTools(data.data) } catch(e) {} }, 500)
-        }
+        if(!data?.data || data.data === '[]') return
+        setTimeout(() => {
+          try {
+            const parsed = JSON.parse(data.data)
+            // New format: { v: vendorJson, c: customJson }
+            if(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.v) {
+              if(parsed.v && parsed.v !== '[]') importTools(parsed.v)
+              if(parsed.c && parsed.c !== '[]') customDrawingsFromJSON(parsed.c)
+            } else {
+              // Legacy format: plain vendor JSON string
+              importTools(data.data)
+            }
+          } catch(e) {}
+        }, 500)
       } catch(e) {}
     }
     load()
@@ -332,8 +347,8 @@ export default function SessionPage(){
       if(!data){setLoading(false);return}
       sessionRef.current=data
       setSession(data)
-      // Use persisted balance (updated after each trade)
-      const savedBalance = parseFloat(data.balance)
+      // Use persisted balance (updated after each trade); fallback to capital or default
+      const savedBalance = parseFloat(data.balance) || parseFloat(data.capital) || 10000
       setBalance(savedBalance)
       balanceRef.current = savedBalance
       const p=data.pair||'EUR/USD', tf=data.timeframe||'H1'
@@ -591,7 +606,7 @@ export default function SessionPage(){
       setIsPlaying(ps.engine.isPlaying);setCurrentTime(ps.engine.currentTime)
       setProgress(Math.round(ps.engine.progress*100))
       const agg=ps.engine.getAggregated(pairTfRef.current[activePair]||'H1')
-      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime
+      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);if(typeof window!=='undefined') window.__algSuiteCurrentTime=ps.engine.currentTime
     }else{setDataReady(false);if(sessionRef.current)loadPair(activePair)}
     setTick(t=>t+1)
   },[activePair,loadPair])
@@ -722,6 +737,46 @@ export default function SessionPage(){
   },[preview,currentTime])
 
   const cancelPreview=useCallback(()=>setPreview(null),[])
+
+  // Called by PositionOverlay when user finishes dragging a SL/TP line
+  const handlePositionDragEnd=useCallback((posId, type, newPrice)=>{
+    const ps=pairState.current[activePair]; if(!ps) return
+    // Handle open positions
+    const pos=ps.positions?.find(x=>x.id===posId)
+    if(pos){
+      const pips=parseFloat((Math.abs((newPrice-pos.entry)*pipMult(activePair))).toFixed(1))
+      if(type==='sl'){pos.sl=newPrice;pos.slPips=pips}
+      else if(type==='tp'){pos.tp=newPrice;pos.tpPips=pips}
+      ps.positions=[...ps.positions]
+      setTick(t=>t+1)
+      return
+    }
+    // Handle limit orders
+    const ord=ps.orders?.find(x=>x.id===posId)
+    if(ord){
+      const pips=parseFloat((Math.abs((newPrice-ord.entry)*pipMult(activePair))).toFixed(1))
+      if(type==='lim_sl'){ord.sl=newPrice;ord.slPips=pips}
+      else if(type==='lim_tp'){ord.tp=newPrice;ord.tpPips=pips}
+      else if(type==='lim_e'){ord.entry=newPrice}
+      // Update price lines on chart
+      const cr=chartMap.current[activePair]
+      if(cr?.series&&cr?.priceLines){
+        const keyMap={lim_e:'_entry',lim_sl:'_sl',lim_tp:'_tp'}
+        const k=keyMap[type]
+        if(k&&cr.priceLines[ord.id+k]){
+          try{cr.series.removePriceLine(cr.priceLines[ord.id+k])}catch{}
+          cr.priceLines[ord.id+k]=cr.series.createPriceLine({
+            price:newPrice,
+            color:k==='_entry'?'rgba(180,180,180,0.5)':k==='_sl'?'rgba(239,83,80,0.4)':'rgba(30,144,255,0.4)',
+            lineWidth:1,lineStyle:k==='_entry'?0:2,axisLabelVisible:true,
+            title:k==='_entry'?`${ord.side==='BUY_LIMIT'?'B':'S'}.LIM ${ord.lots}L`:k==='_sl'?'SL':'TP'
+          })
+        }
+      }
+      ps.orders=[...ps.orders]
+      setTick(t=>t+1)
+    }
+  },[activePair])
 
   const cancelLimitOrder=useCallback((orderId,pair)=>{
     const ps=pairState.current[pair]; if(!ps?.orders) return
@@ -928,6 +983,7 @@ export default function SessionPage(){
           dataReady={dataReady}
           onClosePos={(posId)=>{ const p=openPositions.find(x=>x.id===posId); if(p) setCloseModal({posId,pair:activePair,pos:p}) }}
           onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
+          onDragEnd={handlePositionDragEnd}
         />
 
       </div>
