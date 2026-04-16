@@ -261,6 +261,7 @@ export default function SessionPage(){
     return()=>{ try{cr.chart.unsubscribeClick(handler)}catch{} }
   },[dataReady,activePair])
   useEffect(()=>{activeToolKeyRef.current=activeToolKey},[activeToolKey])
+  useEffect(()=>{activeToolRef.current=activeTool},[activeTool])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
 
   // Apply TF visibility when timeframe changes
