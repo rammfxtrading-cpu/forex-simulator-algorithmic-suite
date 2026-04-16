@@ -139,6 +139,18 @@ export default function SessionPage(){
   const [rulerActive, setRulerActive] = useState(false)
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
   const [selectedDrawing, setSelectedDrawing] = useState(null) // {id, x, y}
+  const selectedDrawingRef = useRef(null)
+  useEffect(()=>{selectedDrawingRef.current=selectedDrawing},[selectedDrawing])
+  const [pillPos, setPillPos] = useState({x:null,y:null})
+  const pillDragRef = useRef(null)
+  const onPillMouseDown = (e) => {
+    if(e.target.tagName==='BUTTON'||e.target.closest('button')||e.target.tagName==='INPUT') return
+    const r = e.currentTarget.getBoundingClientRect()
+    pillDragRef.current = {ox: e.clientX - r.left, oy: e.clientY - r.top}
+    const mv = (ev) => setPillPos({x: ev.clientX - pillDragRef.current.ox, y: ev.clientY - pillDragRef.current.oy})
+    const up = () => { pillDragRef.current=null; window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up) }
+    window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up); e.preventDefault()
+  }
   const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
 
   const { pluginRef, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, onDoubleClick, getSelected } = useDrawingTools({
@@ -417,7 +429,7 @@ export default function SessionPage(){
           if(Math.abs(dx) < 80 && Math.abs(dy) < 24){
             const clientX = param.sourceEvent?.clientX || sc.x
             const clientY = param.sourceEvent?.clientY || sc.y
-            setSelectedDrawing({id: d.id, x: clientX, y: clientY - 80})
+            setSelectedDrawing({id: d.id, x: clientX, y: clientY - 80}); setPillPos({x:null,y:null})
             return
           }
         }
@@ -806,6 +818,10 @@ export default function SessionPage(){
   useEffect(()=>{
     const onKey=e=>{if(e.target.tagName==='INPUT')return;if(e.code==='Space'){e.preventDefault();handlePlayPause()}if(e.code==='ArrowRight')handleStep()
     if(e.code==='Escape')setActiveTool('cursor')
+    if((e.code==='Delete'||e.code==='Backspace')&&selectedDrawingRef.current){
+      removeDrawing(selectedDrawingRef.current.id)
+      setSelectedDrawing(null)
+    }
     if(e.code==='Delete'||e.code==='Backspace')setSelectedTool(null)}
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)
   },[handlePlayPause,handleStep])
@@ -1255,7 +1271,7 @@ export default function SessionPage(){
         const FONT_SIZES=[9,10,11,12,14,16,18,20,24]
         return <>
           <div style={{position:'fixed',inset:0,zIndex:1998}} onClick={()=>setSelectedDrawing(null)}/>
-          <div style={{...SPILL,position:'fixed',left:selectedDrawing.x,top:selectedDrawing.y,zIndex:1999,cursor:'grab'}}>
+          <div style={{...SPILL,position:'fixed',left:pillPos.x??selectedDrawing.x,top:pillPos.y??selectedDrawing.y,zIndex:1999,cursor:'grab'}} onMouseDown={onPillMouseDown}>
             {/* Color */}
             <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>COLOR</span>
