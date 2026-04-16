@@ -95,7 +95,8 @@ export default function CustomDrawingsOverlay({ drawings, chartMap, activePair, 
       const coords = drawing.points.map(p => toScreenCoords(cr, p.time, p.price)).filter(Boolean)
       if (!coords.length) continue
       try {
-        if (drawing.type === DRAWING_TYPES.TEXT)  drawText(ctx, drawing, coords)
+        // TEXT is rendered as DOM div in _SessionInner.js
+      // if (drawing.type === DRAWING_TYPES.TEXT)  drawText(ctx, drawing, coords)
         if (drawing.type === DRAWING_TYPES.RULER) drawRuler(ctx, drawing, coords)
       } catch {}
     }
