@@ -130,6 +130,7 @@ export default function SessionPage(){
   const [selectedTool,  setSelectedTool]  = useState(null)
   const [templates,     setTemplates]     = useState([])
   const [drawingTfMap,  setDrawingTfMap]  = useState({}) // {toolId: string[]}
+  const drawingTfMapRef = useRef({})
   const [drawingCtxMenu, setDrawingCtxMenu] = useState(null)  // {x,y}
   const [longShortModal, setLongShortModal] = useState(null)  // {toolId, tool}
   const [activeToolKey,  setActiveToolKey]  = useState(null)
@@ -185,8 +186,12 @@ export default function SessionPage(){
     try {
       const vendorJson = exportTools()
       const customJson = customDrawingsToJSON()
-      const combined = JSON.stringify({ v: vendorJson || '[]', c: customJson || '[]' })
-      // DELETE then INSERT — avoids upsert constraint issues and guarantees latest data wins
+      const tfMap      = drawingTfMapRef.current
+      const combined   = JSON.stringify({
+        v: vendorJson || '[]',
+        c: customJson || '[]',
+        tfMap: Object.keys(tfMap).length > 0 ? tfMap : undefined,
+      })
       await supabase.from('session_drawings').delete().eq('session_id', sid).then(()=>{}).catch(()=>{})
       await supabase.from('session_drawings').insert(
         { session_id: sid, user_id: uid, data: combined, updated_at: new Date().toISOString() }
@@ -204,12 +209,23 @@ export default function SessionPage(){
         if(!data?.data || data.data === '[]') return
         try {
           const parsed = JSON.parse(data.data)
-          // New format: { v: vendorJson, c: customJson }
           if(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.v) {
             if(parsed.v && parsed.v !== '[]') importTools(parsed.v)
             if(parsed.c && parsed.c !== '[]') customDrawingsFromJSON(parsed.c)
+            // Restore TF visibility map and re-apply to all drawings
+            if(parsed.tfMap && Object.keys(parsed.tfMap).length > 0) {
+              setDrawingTfMap(parsed.tfMap)
+              drawingTfMapRef.current = parsed.tfMap
+              // Re-apply visibility after a short delay (plugin needs to finish importing)
+              setTimeout(() => {
+                const tf = pairTfRef.current[activePairRef.current] || 'H1'
+                Object.entries(parsed.tfMap).forEach(([toolId, entry]) => {
+                  const tfs = Array.isArray(entry) ? entry : (entry.tfs || ['M1','M5','M15','M30','H1','H4','D1'])
+                  setToolVisible(toolId, tfs.includes(tf))
+                })
+              }, 300)
+            }
           } else {
-            // Legacy format: plain vendor JSON string
             importTools(data.data)
           }
         } catch(e) {}
@@ -290,6 +306,13 @@ export default function SessionPage(){
   useEffect(()=>{activeToolKeyRef.current=activeToolKey},[activeToolKey])
   useEffect(()=>{activeToolRef.current=activeTool},[activeTool])
   useEffect(()=>{pairTfRef.current=pairTf},[pairTf])
+  useEffect(()=>{
+    drawingTfMapRef.current=drawingTfMap
+    // Auto-save whenever TF visibility changes
+    if(Object.keys(drawingTfMap).length>0){
+      setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },200)
+    }
+  },[drawingTfMap])
 
   // Apply TF visibility when timeframe changes
   useEffect(()=>{
