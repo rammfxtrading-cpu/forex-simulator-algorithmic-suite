@@ -72,7 +72,18 @@ const pipMult  = p=>isJpy(p)?100:10000
 const fmtPx    = (px,p)=>px?.toFixed(isJpy(p)?3:5)??'—'
 const fmtPnl   = v=>(!v&&v!==0)||isNaN(v)?'+$0.00':(v>=0?'+':'')+v.toFixed(2)
 const pnlColor = v=>v>0?'#1E90FF':v<0?'#ef5350':'#a0b8d0'
-const fmtTs    = ts=>ts?new Date(ts*1000).toLocaleString('es-ES',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'—'
+const fmtTs = (ordTs, activePairArg, pairStateRef) => {
+  // Convert ordinal time back to real time for display
+  let realTs = ordTs
+  if(pairStateRef && activePairArg){
+    const ps = pairStateRef.current?.[activePairArg]
+    if(ps?.ordinalToReal && ordTs != null){
+      const idx = Math.floor(ordTs / 60)
+      realTs = ps.ordinalToReal[idx] ?? ordTs
+    }
+  }
+  return realTs ? new Date(realTs*1000).toLocaleString('es-ES',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'
+}
 function calcPnl(side,entry,exit,lots,pair){const pips=side==='BUY'?(exit-entry)*pipMult(pair):(entry-exit)*pipMult(pair);return pips*lots*10}
 
 export default function SessionPage(){
@@ -140,6 +151,7 @@ export default function SessionPage(){
   const [rulerActive, setRulerActive] = useState(false)
   const [tfKey, setTfKey] = useState(0)
   const [chartTick, setChartTick] = useState(0)
+  const [hoverCandle, setHoverCandle] = useState(null) // {o,h,l,c,t}
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
   const [selectedDrawing, setSelectedDrawing] = useState(null) // {id, x, y}
   const selectedDrawingRef = useRef(null)
@@ -420,11 +432,35 @@ export default function SessionPage(){
       const seen=new Set()
       all=all.filter(c=>{if(seen.has(c.time))return false;seen.add(c.time);return true}).sort((a,b)=>a.time-b.time)
       if(!all.length) return
+
+      // ── Remove weekend gaps ──────────────────────────────────────────────
+      // Filter out Saturday candles and Sunday pre-market (before 20:00 UTC)
+      const filtered = all.filter(c => {
+        const d = new Date(c.time * 1000)
+        const day = d.getUTCDay()
+        if(day === 6) return false                           // Saturday — skip entirely
+        if(day === 0 && d.getUTCHours() < 20) return false  // Sunday pre-market — skip
+        return true
+      })
+      // Remap to ordinal timestamps — sequential minutes, no gaps
+      const ordinalToReal = filtered.map(c => c.time)
+      const realToOrdinal = new Map(filtered.map((c,i) => [c.time, i*60]))
+      const ordinalCandles = filtered.map((c,i) => ({...c, time: i*60}))
+
       const engine=new ReplayEngine()
       // If there's a master time (another pair already advanced), use that. Otherwise resume saved position.
       const masterTime = (typeof window !== 'undefined' && window.__algSuiteCurrentTime) || null
-      const resumeTs = masterTime || sess.last_timestamp || replayTs
-      engine.load(all); engine.seekToTime(resumeTs); engine.speed=speedRef.current
+      // Convert real masterTime/resumeTs to ordinal if needed
+      const toOrdinal = (t) => t ? (realToOrdinal.get(t) ?? (() => {
+        // Find closest ordinal for approximate timestamps (e.g. different TF boundaries)
+        let closest = ordinalCandles[0]?.time ?? 0
+        let minDiff = Infinity
+        for(const [rt, ot] of realToOrdinal) { const d=Math.abs(rt-t); if(d<minDiff){minDiff=d;closest=ot} }
+        return closest
+      })()) : null
+      const resumeReal = masterTime || sess.last_timestamp || replayTs
+      const resumeTs = toOrdinal(resumeReal) ?? 0
+      engine.load(ordinalCandles); engine.seekToTime(resumeTs); engine.speed=speedRef.current
       engine.onTick=()=>{
         updateChart(pair,engine,false)
         checkSLTPRef.current?.(pair,engine)
@@ -436,7 +472,7 @@ export default function SessionPage(){
         }
       }
       engine.onEnd=()=>{if(pair===activePairRef.current)setIsPlaying(false)}
-      pairState.current[pair]={engine,ready:true,positions:[],trades:[]}
+      pairState.current[pair]={engine,ready:true,positions:[],trades:[],ordinalToReal,realToOrdinal}
       updateChart(pair,engine,true)
       if(pair===activePairRef.current){
         setDataReady(true);setCurrentTime(engine.currentTime);setProgress(Math.round(engine.progress*100))
@@ -462,6 +498,16 @@ export default function SessionPage(){
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{
       setChartTick(t=>t+1)
+    })
+
+    chart.subscribeCrosshairMove((param)=>{
+      if(pair!==activePairRef.current) return
+      if(!param?.time||!param?.seriesData) return
+      try{
+        const bar=param.seriesData.get(series)
+        if(bar){ setHoverCandle({o:bar.open,h:bar.high,l:bar.low,c:bar.close,t:param.time}) }
+        else setHoverCandle(null)
+      }catch{ setHoverCandle(null) }
     })
 
     chart.subscribeClick((param)=>{
@@ -1234,8 +1280,27 @@ export default function SessionPage(){
           </div>
         </div>
 
-        {/* Right: fullscreen only */}
+        {/* Right: reset + fullscreen */}
         <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+          <button style={{...s.iconBtn,color:'rgba(255,255,255,0.5)',fontSize:9,gap:4,padding:'4px 8px'}}
+            title="Reiniciar sesión al inicio"
+            onClick={()=>{
+              if(!confirm('¿Reiniciar la sesión al principio? Las posiciones abiertas se cerrarán.')) return
+              const ps=pairState.current[activePair]; if(!ps?.engine) return
+              // Close all open positions
+              ;[...ps.positions].forEach(p=>closePositionRef.current(p.id,'RESET',activePair,p.entry))
+              ps.positions=[];ps.orders=[]
+              ps.engine.reset()
+              const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
+              updateChart(activePair,ps.engine,true)
+              setCurrentTime(ps.engine.currentTime);setProgress(0)
+              setIsPlaying(false);setTick(t=>t+1)
+              // Save reset position to DB
+              if(userIdRef.current) supabase.from('sim_sessions').update({last_timestamp:ps.engine.currentTime}).eq('id',id).then(()=>{}).catch(()=>{})
+            }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            Reset
+          </button>
           <button style={s.fullBtn} onClick={()=>{if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen()}} title="Pantalla completa">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
@@ -1250,7 +1315,21 @@ export default function SessionPage(){
           >{tf}</button>
         ))}
         <div style={{flex:1}}/>
-        {currentTime&&<span style={s.tsBadge}>{fmtTs(currentTime)}</span>}
+        {/* OHLCV hover display */}
+        {hoverCandle&&dataReady&&(()=>{
+          const isUp=hoverCandle.c>=hoverCandle.o
+          const col=isUp?'#2962FF':'#ffffff'
+          const fmt=p=>fmtPx(p,activePair)
+          return(
+            <div style={{display:'flex',gap:10,alignItems:'center',fontSize:10,fontWeight:600,fontFamily:"'Montserrat',sans-serif",marginRight:8}}>
+              <span style={{color:'rgba(255,255,255,0.35)'}}>O</span><span style={{color:col}}>{fmt(hoverCandle.o)}</span>
+              <span style={{color:'rgba(255,255,255,0.35)'}}>H</span><span style={{color:col}}>{fmt(hoverCandle.h)}</span>
+              <span style={{color:'rgba(255,255,255,0.35)'}}>L</span><span style={{color:col}}>{fmt(hoverCandle.l)}</span>
+              <span style={{color:'rgba(255,255,255,0.35)'}}>C</span><span style={{color:col}}>{fmt(hoverCandle.c)}</span>
+            </div>
+          )
+        })()}
+        {currentTime&&<span style={s.tsBadge}>{fmtTs(currentTime,activePair,pairState)}</span>}
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
 
@@ -1424,7 +1503,7 @@ export default function SessionPage(){
           </div>
           <div style={{overflowX:'auto'}}>
             <table style={s.tbl}>
-              <thead><tr>{['PAR','DIR','ENTRY','EXIT','LOTS','R:R','P&L','RESULT'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['PAR','DIR','ENTRY','EXIT','LOTS','R:R','P&L','RESULT','ABIERTO','CERRADO'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {allTrades.map((t,i)=>(
                   <tr key={i} style={s.tblRow}>
@@ -1436,6 +1515,8 @@ export default function SessionPage(){
                     <td style={s.td}>{t.rrReal}R</td>
                     <td style={{...s.td,color:pnlColor(t.pnl),fontWeight:700}}>{fmtPnl(t.pnl)}</td>
                     <td style={{...s.td,color:t.result==='WIN'?'#1E90FF':t.result==='LOSS'?'#ef5350':'#a0b8d0',fontWeight:700}}>{t.result}</td>
+                    <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.openTime,activePair,pairState)}</td>
+                    <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.closeTime,activePair,pairState)}</td>
                   </tr>
                 ))}
               </tbody>
