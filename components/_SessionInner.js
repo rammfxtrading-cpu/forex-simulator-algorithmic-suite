@@ -461,13 +461,16 @@ export default function SessionPage(){
     const replayTs=sess.date_from?Math.floor(new Date(sess.date_from).getTime()/1000):Math.floor(new Date('2023-01-01').getTime()/1000)
     const toTs=sess.date_to?Math.floor(new Date(sess.date_to+'T23:59:59').getTime()/1000):Math.floor(new Date('2023-12-31T23:59:59').getTime()/1000)
     const ctxTs=replayTs-6*30*24*60*60
-    const ctxYear=new Date(ctxTs*1000).getFullYear().toString()
-    const rpYear=new Date(replayTs*1000).getFullYear().toString()
+    const ctxYear=new Date(ctxTs*1000).getFullYear()
+    const toYear=new Date(toTs*1000).getFullYear()
+    // Build list of ALL years needed: from ctxYear to toYear
+    const years=[]
+    for(let y=ctxYear;y<=toYear;y++) years.push(y)
     try{
       let all=[]
-      for(const yr of[...new Set([ctxYear,rpYear])]){
+      for(const yr of years){
         const yStart=Math.max(ctxTs,Math.floor(new Date(`${yr}-01-01`).getTime()/1000))
-        const yEnd=yr===rpYear?toTs:Math.floor(new Date(`${yr}-12-31T23:59:59`).getTime()/1000)
+        const yEnd=yr===toYear?toTs:Math.floor(new Date(`${yr}-12-31T23:59:59`).getTime()/1000)
         const r=await fetch(`/api/candles?pair=${clean}&timeframe=M1&from=${yStart}&to=${yEnd}&year=${yr}`)
         const j=await r.json()
         if(j.candles?.length) all=all.concat(j.candles)
