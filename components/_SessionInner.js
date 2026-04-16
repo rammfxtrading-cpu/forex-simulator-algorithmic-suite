@@ -495,13 +495,7 @@ export default function SessionPage(){
       // If there's a master time (another pair already advanced), use that. Otherwise resume saved position.
       const masterTime = (typeof window !== 'undefined' && window.__algSuiteCurrentTime) || null
       // Convert real masterTime/resumeTs to ordinal if needed
-      const toOrdinal = (t) => t ? (realToOrdinal.get(t) ?? (() => {
-        // Find closest ordinal for approximate timestamps (e.g. different TF boundaries)
-        let closest = ordinalCandles[0]?.time ?? 0
-        let minDiff = Infinity
-        for(const [rt, ot] of realToOrdinal) { const d=Math.abs(rt-t); if(d<minDiff){minDiff=d;closest=ot} }
-        return closest
-      })()) : null
+      const toOrdinal = (t) => t ?? null  // real timestamps — no conversion needed
       const resumeReal = masterTime || sess.last_timestamp || replayTs
       const resumeTs = toOrdinal(resumeReal) ?? 0
       engine.load(ordinalCandles); engine.seekToTime(resumeTs); engine.speed=speedRef.current
