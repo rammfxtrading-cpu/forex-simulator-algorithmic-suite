@@ -46,7 +46,7 @@ function chartOpts(w,h){return{
   rightPriceScale:{
     borderColor:'rgba(255,255,255,0.1)',
     textColor:'#ffffff',
-    scaleMargins:{top:0.1,bottom:0.1},
+    scaleMargins:{top:0.05,bottom:0.05},
     autoScale:true,
     mode:0,
     ticksVisible:true,
