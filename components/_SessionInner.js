@@ -557,17 +557,26 @@ export default function SessionPage(){
       wickUpColor:'#2962FF',wickDownColor:'#ffffff',
       borderVisible:false,
       priceFormat:{type:'price',precision:5,minMove:0.00001},
-      autoscaleInfoProvider: () => {
-        const data = window.__algSuiteSeriesData
-        const realLen = window.__algSuiteRealDataLen
-        if(!data||!realLen) return null
-        // Only use real candles (not phantoms) for price scale
-        const real = data.slice(0, realLen)
-        if(!real.length) return null
-        let min=Infinity,max=-Infinity
-        for(const c of real){ if(c.low<min)min=c.low; if(c.high>max)max=c.high }
-        const margin=(max-min)*0.08
-        return { priceRange:{ minValue:min-margin, maxValue:max+margin } }
+      autoscaleInfoProvider: (original) => {
+        try {
+          const data = window.__algSuiteSeriesData
+          const realLen = window.__algSuiteRealDataLen
+          if(!data||!realLen) return original
+          // Get visible range from chart (stored on chartMap)
+          const cr = window.__chartMap?.current?.[pair]
+          if(!cr) return original
+          const range = cr.chart.timeScale().getVisibleLogicalRange()
+          if(!range) return original
+          const from = Math.max(0, Math.floor(range.from))
+          const to = Math.min(realLen-1, Math.ceil(range.to))
+          const visible = data.slice(from, to+1)
+          if(!visible.length) return original
+          let min=Infinity,max=-Infinity
+          for(const c of visible){ if(c.low<min)min=c.low; if(c.high>max)max=c.high }
+          if(!isFinite(min)||!isFinite(max)) return original
+          const margin=(max-min)*0.05
+          return { priceRange:{ minValue:min-margin, maxValue:max+margin } }
+        } catch(e){ return original }
       }
     })
     const ro=new ResizeObserver(entries=>{
