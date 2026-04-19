@@ -715,9 +715,13 @@ export default function SessionPage(){
 
     if(full||(curr!==prev&&curr!==prev+1)){
       // Structural change — full rebuild with new phantoms
+      cr.phantom=Array.from({length:50},(_,i)=>({
+        time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
+        color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
+      }))
       let _savedRange=null
       try{ if(cr.hasLoaded) _savedRange=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
-      cr.series.setData(agg)
+      cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
       if(!cr.hasLoaded){
         cr.hasLoaded=true
@@ -726,6 +730,7 @@ export default function SessionPage(){
         try{cr.chart.timeScale().applyOptions({rightOffset:5,barSpacing:8})}catch{}
         requestAnimationFrame(()=>requestAnimationFrame(()=>{
           _setRange(cr,{from:_rangeFrom,to:_rangeTo})
+          try{cr.series.priceScale().applyOptions({autoScale:true})}catch{}
         }))
       } else {
         if(full) cr.userScrolled=false
@@ -736,9 +741,13 @@ export default function SessionPage(){
       }
     } else if(curr===prev+1){
       // New TF candle added
+      cr.phantom=Array.from({length:50},(_,i)=>({
+        time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
+        color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
+      }))
       let _savedRange2=null
       try{ _savedRange2=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
-      cr.series.setData(agg)
+      cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
       requestAnimationFrame(()=>requestAnimationFrame(()=>{
         if(_savedRange2){ _setRange(cr,_savedRange2) }
