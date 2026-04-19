@@ -126,7 +126,7 @@ export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick
     }
     setBoxes(nb)
     }, 50)
-  }, [tick, chartTick, dataReady, activePair, cfg])
+  }, [chartTick, dataReady, activePair, cfg])
   // Note: tick updates on every engine tick — debounce is handled by React batching
 
   const Toggle = ({ label, k }) => (
