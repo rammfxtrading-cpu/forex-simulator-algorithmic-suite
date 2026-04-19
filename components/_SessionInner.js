@@ -709,25 +709,32 @@ export default function SessionPage(){
         color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
       }))
       cr.phantomBaseTime = _lastT
+      // Save range before setData (LWC resets it internally)
+      let _savedRange=null
+      try{ if(cr.hasLoaded) _savedRange=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
-      if(prev===0&&!cr.hasLoaded){
-        cr.chart.timeScale().scrollToPosition(8,false)
+      if(!cr.hasLoaded){
+        // First load: go to end with good spacing
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
+        cr.chart.timeScale().scrollToPosition(8,false)
         cr.hasLoaded=true
-      } else {
-        try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
+      } else if(_savedRange){
+        // TF change or rebuild: restore range so user stays in same area
+        try{cr.chart.timeScale().setVisibleLogicalRange(_savedRange)}catch{}
       }
     } else if(curr===prev+1){
-      // New TF candle added — update phantoms and add new candle via update()
+      // New TF candle added
       cr.phantom = Array.from({length:50},(_,i)=>({
         time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
         color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
       }))
       cr.phantomBaseTime = _lastT
+      let _savedRange2=null
+      try{ _savedRange2=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
-      try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
+      try{ if(_savedRange2) cr.chart.timeScale().setVisibleLogicalRange(_savedRange2) }catch{}
     } else {
       // Within-bucket update — only last candle changed, use update() — 100x faster than setData
       try{
