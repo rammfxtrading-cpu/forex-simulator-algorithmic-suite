@@ -761,8 +761,13 @@ if(full||(curr!==prev&&curr!==prev+1)){
       if(!cr.hasLoaded){
         cr.hasLoaded=true
         cr.userScrolled=false
-        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
-        requestAnimationFrame(()=>{ cr.chart.timeScale().scrollToPosition(8,false) })
+        const _tbars={'M1':80,'M5':70,'M15':60,'M30':50,'H1':60,'H4':50,'D1':40}
+        const _show=_tbars[tf]||80
+        const _to=agg.length+5
+        const _from=Math.max(0,_to-_show)
+        requestAnimationFrame(()=>{
+          try{cr.chart.timeScale().setVisibleLogicalRange({from:_from,to:_to})}catch{}
+        })
       } else {
         // TF change or rebuild — restore previous range
         if(full) cr.userScrolled=false
@@ -773,18 +778,17 @@ if(full||(curr!==prev&&curr!==prev+1)){
         }
       }
     } else if(curr===prev+1){
-      cr.phantom=Array.from({length:10},(_,i)=>({time:_lastT+_tfS2*(i+1)}))
-      let _savedRange2=null
-      try{ _savedRange2=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
-      cr.series.setData([...agg,...cr.phantom])
+      // Use update() — avoids setData jump when new TF candle forms
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
-      if(_savedRange2){
-        requestAnimationFrame(()=>{
-          try{
-            cr.chart.timeScale().setVisibleLogicalRange(_savedRange2)
-            setTimeout(()=>{ try{cr.series.priceScale().applyOptions({autoScale:true})}catch{} },50)
-          }catch{}
-        })
+      try{
+        if(agg.length>=2) cr.series.update(agg[agg.length-2])
+        cr.series.update(agg[agg.length-1])
+      }catch{
+        // Fallback
+        cr.phantom=Array.from({length:10},(_,i)=>({time:_lastT+_tfS2*(i+1)}))
+        const _r2=cr.chart.timeScale().getVisibleLogicalRange()
+        cr.series.setData([...agg,...cr.phantom])
+        if(_r2) requestAnimationFrame(()=>{ try{cr.chart.timeScale().setVisibleLogicalRange(_r2)}catch{} })
       }
     } else {
       // Within-bucket update — only last candle changed, use update() — 100x faster than setData
