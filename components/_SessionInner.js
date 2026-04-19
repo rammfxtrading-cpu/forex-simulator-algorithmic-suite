@@ -715,13 +715,16 @@ export default function SessionPage(){
       cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
       if(!cr.hasLoaded){
-        // First load: go to end with good spacing
-        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
-        cr.chart.timeScale().scrollToPosition(8,false)
         cr.hasLoaded=true
+        // rAF: wait for LWC fitContent to finish, then set our spacing
+        requestAnimationFrame(()=>{
+          try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
+          cr.chart.timeScale().scrollToPosition(8,false)
+        })
       } else if(_savedRange){
-        // TF change or rebuild: restore range so user stays in same area
-        try{cr.chart.timeScale().setVisibleLogicalRange(_savedRange)}catch{}
+        requestAnimationFrame(()=>{
+          try{cr.chart.timeScale().setVisibleLogicalRange(_savedRange)}catch{}
+        })
       }
     } else if(curr===prev+1){
       // New TF candle added
@@ -734,7 +737,7 @@ export default function SessionPage(){
       try{ _savedRange2=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
-      try{ if(_savedRange2) cr.chart.timeScale().setVisibleLogicalRange(_savedRange2) }catch{}
+      requestAnimationFrame(()=>{ try{ if(_savedRange2) cr.chart.timeScale().setVisibleLogicalRange(_savedRange2) }catch{} })
     } else {
       // Within-bucket update — only last candle changed, use update() — 100x faster than setData
       try{
