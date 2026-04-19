@@ -751,8 +751,11 @@ export default function SessionPage(){
       const ps=pairState.current[activePair],cr=chartMap.current[activePair]
       if(ps?.engine&&cr){
         cr.prevCount=0;updateChart(activePair,ps.engine,true);setTfKey(k=>k+1)
-        // Double rAF — ensures LWC has painted the new TF before text positions recalculate
-        requestAnimationFrame(()=>requestAnimationFrame(()=>setChartTick(t=>t+1)))
+        // Scroll to current position after TF change
+        requestAnimationFrame(()=>{
+          try{cr.chart.timeScale().scrollToPosition(8,false)}catch{}
+          requestAnimationFrame(()=>setChartTick(t=>t+1))
+        })
       }
     }
   },[pairTf,activePair,updateChart])
