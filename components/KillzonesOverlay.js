@@ -124,7 +124,7 @@ export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick
         nb.push({ ...s, left, top, width, height })
       } catch {}
     }
-
+    setBoxes(nb)
     }, 50)
   }, [chartTick, dataReady, activePair, cfg])
   // Note: tick updates on every engine tick — debounce is handled by React batching
