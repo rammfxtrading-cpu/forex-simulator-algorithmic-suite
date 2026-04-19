@@ -715,6 +715,8 @@ export default function SessionPage(){
         cr.chart.timeScale().scrollToPosition(8,false)
         try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
         cr.hasLoaded=true
+      } else {
+        try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
       }
     } else if(curr===prev+1){
       // New TF candle added — update phantoms and add new candle via update()
@@ -725,6 +727,7 @@ export default function SessionPage(){
       cr.phantomBaseTime = _lastT
       cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
+      try{cr.chart.timeScale().applyOptions({barSpacing:12})}catch{}
     } else {
       // Within-bucket update — only last candle changed, use update() — 100x faster than setData
       try{
