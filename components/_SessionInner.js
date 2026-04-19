@@ -48,7 +48,7 @@ function chartOpts(w,h){return{
     textColor:'#ffffff',
     scaleMargins:{top:0.02,bottom:0.02},
     autoScale:true,
-    mode:0,
+    mode:1,
     ticksVisible:true,
     minimumWidth:60,
     entireTextOnly:false,
@@ -722,10 +722,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         if(full) cr.userScrolled=false
         if(_savedRange){
           requestAnimationFrame(()=>{
-            try{
-              cr.chart.timeScale().setVisibleLogicalRange(_savedRange)
-              cr.series.priceScale().applyOptions({autoScale:true})
-            }catch{}
+            try{ cr.chart.timeScale().setVisibleLogicalRange(_savedRange) }catch{}
           })
         }
       }
