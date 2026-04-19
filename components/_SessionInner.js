@@ -60,6 +60,7 @@ function chartOpts(w,h){return{
     secondsVisible:false,
     rightOffset:8,
     barSpacing:12,
+    rightBarStaysOnScroll:true,
     minBarSpacing:3,
     fixLeftEdge:false,
     fixRightEdge:false,
