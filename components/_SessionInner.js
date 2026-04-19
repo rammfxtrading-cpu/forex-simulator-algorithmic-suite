@@ -763,7 +763,10 @@ if(full||(curr!==prev&&curr!==prev+1)){
       // Use update() — avoids setData jump when new TF candle forms
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
       try{
+        // Save range, update, restore — prevents chart from scrolling
+        const _rng=cr.userScrolled?cr.chart.timeScale().getVisibleLogicalRange():null
         cr.series.update(agg[agg.length-1])
+        if(_rng) requestAnimationFrame(()=>{try{cr.chart.timeScale().setVisibleLogicalRange(_rng)}catch{}})
       }catch{
         // Fallback
         cr.phantom=Array.from({length:10},(_,i)=>({time:_lastT+_tfS2*(i+1)}))
