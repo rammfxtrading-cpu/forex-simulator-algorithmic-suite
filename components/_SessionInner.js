@@ -710,8 +710,8 @@ export default function SessionPage(){
     }
     const _tfBars={'M1':80,'M5':80,'M15':60,'M30':50,'H1':60,'H4':60,'D1':60}
     const _barsVisible=_tfBars[tf]||80
-    const _rangeTo=agg.length+5
-    const _rangeFrom=_rangeTo-_barsVisible
+    const _rangeTo=agg.length-1
+    const _rangeFrom=Math.max(0,_rangeTo-_barsVisible)
 
     if(full||(curr!==prev&&curr!==prev+1)){
       // Structural change — full rebuild with new phantoms
