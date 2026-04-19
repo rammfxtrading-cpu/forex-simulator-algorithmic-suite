@@ -587,6 +587,27 @@ export default function SessionPage(){
     chartMap.current[pair]={chart,series,prevCount:0,ro}
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{
+      // Rescale Y to visible candles only
+      const _cr=chartMap.current[pair]
+      if(_cr?.hasLoaded){
+        try{
+          const _range=chart.timeScale().getVisibleLogicalRange()
+          const _data=window.__algSuiteSeriesData
+          const _realLen=window.__algSuiteRealDataLen
+          if(_range&&_data&&_realLen){
+            const _from=Math.max(0,Math.floor(_range.from))
+            const _to=Math.min(_realLen-1,Math.ceil(_range.to))
+            const _vis=_data.slice(_from,_to+1)
+            if(_vis.length){
+              let _hi=-Infinity,_lo=Infinity
+              for(const _c of _vis){if(_c.high>_hi)_hi=_c.high;if(_c.low<_lo)_lo=_c.low}
+              const _m=(_hi-_lo)*0.05
+              series.applyOptions({autoscaleInfoProvider:()=>({priceRange:{minValue:_lo-_m,maxValue:_hi+_m}})})
+            }
+          }
+        }catch{}
+      }
+      if(_cr?.hasLoaded&&!_cr?.isAutoSettingRange) _cr.userScrolled=true
       setChartTick(t=>t+1)
     })
 
