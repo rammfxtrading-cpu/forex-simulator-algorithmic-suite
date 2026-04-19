@@ -708,7 +708,8 @@ export default function SessionPage(){
       try{cr2.chart.timeScale().setVisibleLogicalRange(range)}catch{}
       requestAnimationFrame(()=>{ cr2.isAutoSettingRange=false })
     }
-    const _barsVisible=Math.min(120,Math.max(60,Math.floor(agg.length*0.2)))
+    const _tfBars={'M1':80,'M5':80,'M15':60,'M30':50,'H1':60,'H4':60,'D1':60}
+    const _barsVisible=_tfBars[tf]||80
     const _rangeTo=agg.length+5
     const _rangeFrom=_rangeTo-_barsVisible
 
