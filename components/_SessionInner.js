@@ -126,6 +126,7 @@ export default function SessionPage(){
   const bgCanvasRef   = useRef(null)
   const pairState     = useRef({})
   const chartMap      = useRef({})
+  if(typeof window!=="undefined") window.__chartMap=chartMap
   const sessionRef    = useRef(null)
   const userIdRef     = useRef(null)
   const speedRef      = useRef(1)
@@ -704,10 +705,7 @@ export default function SessionPage(){
     const _lastC = agg[agg.length-1].close
 
 if(full||(curr!==prev&&curr!==prev+1)){
-      cr.phantom=Array.from({length:50},(_,i)=>({
-        time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
-        color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
-      }))
+      cr.phantom=Array.from({length:10},(_,i)=>({time:_lastT+_tfS2*(i+1)}))
       let _savedRange=null
       try{ if(cr.hasLoaded) _savedRange=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
@@ -727,10 +725,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         }
       }
     } else if(curr===prev+1){
-      cr.phantom=Array.from({length:50},(_,i)=>({
-        time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
-        color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
-      }))
+      cr.phantom=Array.from({length:10},(_,i)=>({time:_lastT+_tfS2*(i+1)}))
       let _savedRange2=null
       try{ _savedRange2=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
@@ -739,7 +734,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         requestAnimationFrame(()=>{
           try{
             cr.chart.timeScale().setVisibleLogicalRange(_savedRange2)
-            cr.series.priceScale().applyOptions({autoScale:true})
+            setTimeout(()=>{ try{cr.series.priceScale().applyOptions({autoScale:true})}catch{} },50)
           }catch{}
         })
       }
