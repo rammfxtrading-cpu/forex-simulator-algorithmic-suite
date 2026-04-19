@@ -73,6 +73,7 @@ function calcSessions(candles, cfg) {
 const DEF = { visible: true, asia: true, london: true, nyam: true, nypm: false, showLabel: true, history: 5 }
 
 export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick, dataReady }) {
+  const debounceRef = useRef(null)
   const [boxes, setBoxes]       = useState([])
   const [cfg, setCfg]           = useState(DEF)
   const [hovered, setHovered]   = useState(false)
@@ -87,6 +88,8 @@ export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick
   }, [showPanel])
 
   useEffect(() => {
+    if(debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
     if (!cfg.visible || !dataReady || !activePair) return setBoxes([])
     const cr = chartMap.current[activePair]
     if (!cr?.chart || !cr?.series) return
@@ -122,7 +125,9 @@ export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick
       } catch {}
     }
     setBoxes(nb)
+    }, 50)
   }, [tick, chartTick, dataReady, activePair, cfg])
+  // Note: tick updates on every engine tick — debounce is handled by React batching
 
   const Toggle = ({ label, k }) => (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
