@@ -15,7 +15,6 @@ import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
 import ChartConfigPanel, { useChartConfig, applyChartConfig } from './ChartConfigPanel'
 import RulerOverlay from './RulerOverlay'
-import FvgOverlay from './FvgOverlay'
 import useCustomDrawings, { DRAWING_TYPES } from './useCustomDrawings'
 import CustomDrawingsOverlay from './CustomDrawingsOverlay'
 import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
@@ -1172,7 +1171,6 @@ export default function SessionPage(){
             }}
           >{d.metadata?.text||''}</div>
         })}
-        <FvgOverlay chartMap={chartMap} activePair={activePair} tick={tick} dataReady={dataReady}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
         {!dataReady&&(
