@@ -722,7 +722,10 @@ if(full||(curr!==prev&&curr!==prev+1)){
         if(full) cr.userScrolled=false
         if(_savedRange){
           requestAnimationFrame(()=>{
-            try{cr.chart.timeScale().setVisibleLogicalRange(_savedRange)}catch{}
+            try{
+              cr.chart.timeScale().setVisibleLogicalRange(_savedRange)
+              cr.series.priceScale().applyOptions({autoScale:true})
+            }catch{}
           })
         }
       }
@@ -737,7 +740,10 @@ if(full||(curr!==prev&&curr!==prev+1)){
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
       if(_savedRange2){
         requestAnimationFrame(()=>{
-          try{cr.chart.timeScale().setVisibleLogicalRange(_savedRange2)}catch{}
+          try{
+            cr.chart.timeScale().setVisibleLogicalRange(_savedRange2)
+            cr.series.priceScale().applyOptions({autoScale:true})
+          }catch{}
         })
       }
     } else {
