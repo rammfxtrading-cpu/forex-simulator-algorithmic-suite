@@ -48,7 +48,7 @@ function chartOpts(w,h){return{
     textColor:'#ffffff',
     scaleMargins:{top:0.02,bottom:0.02},
     autoScale:true,
-    mode:1,
+    mode:0,
     ticksVisible:true,
     minimumWidth:60,
     entireTextOnly:false,
