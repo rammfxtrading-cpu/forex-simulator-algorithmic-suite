@@ -702,19 +702,7 @@ export default function SessionPage(){
     const _lastT = agg[agg.length-1].time
     const _lastC = agg[agg.length-1].close
 
-    // ── Viewport helper — declared once ──────────────────────────────────────
-    const _setRange=(cr2,range)=>{
-      cr2.isAutoSettingRange=true
-      try{cr2.chart.timeScale().setVisibleLogicalRange(range)}catch{}
-      requestAnimationFrame(()=>{ cr2.isAutoSettingRange=false })
-    }
-    const _tfBars={'M1':80,'M5':80,'M15':60,'M30':50,'H1':60,'H4':60,'D1':60}
-    const _barsVisible=_tfBars[tf]||80
-    const _rangeTo=agg.length-1
-    const _rangeFrom=Math.max(0,_rangeTo-_barsVisible)
-
-    if(full||(curr!==prev&&curr!==prev+1)){
-      // Structural change — full rebuild with new phantoms
+if(full||(curr!==prev&&curr!==prev+1)){
       cr.phantom=Array.from({length:50},(_,i)=>({
         time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
         color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
@@ -726,21 +714,18 @@ export default function SessionPage(){
       if(!cr.hasLoaded){
         cr.hasLoaded=true
         cr.userScrolled=false
-        cr.isAutoSettingRange=false
-        try{cr.chart.timeScale().applyOptions({rightOffset:5,barSpacing:8})}catch{}
-        requestAnimationFrame(()=>requestAnimationFrame(()=>{
-          _setRange(cr,{from:_rangeFrom,to:_rangeTo})
-          try{cr.series.priceScale().applyOptions({autoScale:true})}catch{}
-        }))
+        try{cr.chart.timeScale().applyOptions({barSpacing:12,rightOffset:12})}catch{}
+        requestAnimationFrame(()=>{ cr.chart.timeScale().scrollToPosition(8,false) })
       } else {
+        // TF change or rebuild — restore previous range
         if(full) cr.userScrolled=false
-        requestAnimationFrame(()=>requestAnimationFrame(()=>{
-          if(_savedRange&&!full){ _setRange(cr,_savedRange) }
-          else if(!cr.userScrolled){ _setRange(cr,{from:_rangeFrom,to:_rangeTo}) }
-        }))
+        if(_savedRange){
+          requestAnimationFrame(()=>{
+            try{cr.chart.timeScale().setVisibleLogicalRange(_savedRange)}catch{}
+          })
+        }
       }
     } else if(curr===prev+1){
-      // New TF candle added
       cr.phantom=Array.from({length:50},(_,i)=>({
         time:_lastT+_tfS2*(i+1),open:_lastC,high:_lastC,low:_lastC,close:_lastC,
         color:'rgba(0,0,0,0)',wickColor:'rgba(0,0,0,0)',borderColor:'rgba(0,0,0,0)'
@@ -749,10 +734,11 @@ export default function SessionPage(){
       try{ _savedRange2=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
-      requestAnimationFrame(()=>requestAnimationFrame(()=>{
-        if(_savedRange2){ _setRange(cr,_savedRange2) }
-        else if(!cr.userScrolled){ _setRange(cr,{from:_rangeFrom,to:_rangeTo}) }
-      }))
+      if(_savedRange2){
+        requestAnimationFrame(()=>{
+          try{cr.chart.timeScale().setVisibleLogicalRange(_savedRange2)}catch{}
+        })
+      }
     } else {
       // Within-bucket update — only last candle changed, use update() — 100x faster than setData
       try{
