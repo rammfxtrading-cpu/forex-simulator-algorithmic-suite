@@ -72,7 +72,7 @@ function calcSessions(candles, cfg) {
 
 const DEF = { visible: true, asia: true, london: true, nyam: true, nypm: false, showLabel: true, history: 5 }
 
-export default function KillzonesOverlay({ chartMap, activePair, tick, dataReady }) {
+export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick, dataReady }) {
   const [boxes, setBoxes]       = useState([])
   const [cfg, setCfg]           = useState(DEF)
   const [hovered, setHovered]   = useState(false)
@@ -122,7 +122,7 @@ export default function KillzonesOverlay({ chartMap, activePair, tick, dataReady
       } catch {}
     }
     setBoxes(nb)
-  }, [tick, dataReady, activePair, cfg])
+  }, [tick, chartTick, dataReady, activePair, cfg])
 
   const Toggle = ({ label, k }) => (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>

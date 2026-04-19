@@ -63,6 +63,7 @@ function chartOpts(w,h){return{
     fixLeftEdge:false,
     fixRightEdge:false,
     ticksVisible:true,
+    lockVisibleTimeRangeOnResize:true,
     tickMarkFormatter:(time,tickMarkType,locale)=>{
       const d=new Date(time*1000)
       const days=['Dom','Lun','Mar','Mie','Jue','Vie','Sab']
@@ -1172,7 +1173,7 @@ export default function SessionPage(){
             }}
           >{d.metadata?.text||''}</div>
         })}
-        <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} dataReady={dataReady}/>
+        <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} chartTick={chartTick} dataReady={dataReady}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
         {!dataReady&&(
