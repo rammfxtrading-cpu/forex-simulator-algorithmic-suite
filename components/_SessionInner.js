@@ -781,7 +781,6 @@ if(full||(curr!==prev&&curr!==prev+1)){
       // Use update() — avoids setData jump when new TF candle forms
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
       try{
-        if(agg.length>=2) cr.series.update(agg[agg.length-2])
         cr.series.update(agg[agg.length-1])
       }catch{
         // Fallback
