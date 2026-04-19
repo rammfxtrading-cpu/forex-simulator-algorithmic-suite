@@ -551,7 +551,25 @@ export default function SessionPage(){
     const lc=await import('lightweight-charts')
     if(chartMap.current[pair]) return
     const chart=lc.createChart(el,chartOpts(el.clientWidth,el.clientHeight))
-    const series=chart.addSeries(lc.CandlestickSeries,{upColor:'#2962FF',downColor:'#ffffff',borderUpColor:'#2962FF',borderDownColor:'#ffffff',wickUpColor:'#2962FF',wickDownColor:'#ffffff',borderVisible:false,priceFormat:{type:'price',precision:5,minMove:0.00001}})
+    const series=chart.addSeries(lc.CandlestickSeries,{
+      upColor:'#2962FF',downColor:'#ffffff',
+      borderUpColor:'#2962FF',borderDownColor:'#ffffff',
+      wickUpColor:'#2962FF',wickDownColor:'#ffffff',
+      borderVisible:false,
+      priceFormat:{type:'price',precision:5,minMove:0.00001},
+      autoscaleInfoProvider: () => {
+        const data = window.__algSuiteSeriesData
+        const realLen = window.__algSuiteRealDataLen
+        if(!data||!realLen) return null
+        // Only use real candles (not phantoms) for price scale
+        const real = data.slice(0, realLen)
+        if(!real.length) return null
+        let min=Infinity,max=-Infinity
+        for(const c of real){ if(c.low<min)min=c.low; if(c.high>max)max=c.high }
+        const margin=(max-min)*0.08
+        return { priceRange:{ minValue:min-margin, maxValue:max+margin } }
+      }
+    })
     const ro=new ResizeObserver(entries=>{
       const{width,height}=entries[0].contentRect
       try{if(chartMap.current[pair]) chart.resize(width,height)}catch{}
