@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 
 // NY offset: EDT = UTC-4 (Mar-Nov), EST = UTC-5 (Nov-Mar)
 function getNYOffset(utcTs) {
@@ -87,6 +87,55 @@ export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick
     return () => document.removeEventListener('mousedown', fn)
   }, [showPanel])
 
+  // Recalculate pixel coordinates on every animation frame during scroll
+  const recalcPixels = useCallback(() => {
+    const cr = chartMap.current[activePair]
+    if (!cr?.chart || !cr?.series || !sessionsRef.current.length) return
+    const ts = cr.chart.timeScale()
+    const nb = []
+    for (const s of sessionsRef.current) {
+      try {
+        const x1 = ts.timeToCoordinate(s.startTime)
+        const x2 = ts.timeToCoordinate(s.endTime)
+        const y1 = cr.series.priceToCoordinate(s.high)
+        const y2 = cr.series.priceToCoordinate(s.low)
+        if (x1 == null || x2 == null || y1 == null || y2 == null) continue
+        const left = Math.min(x1, x2), width = Math.abs(x2 - x1)
+        const top = Math.min(y1, y2), height = Math.abs(y2 - y1)
+        if (width < 2 || height < 1) continue
+        nb.push({ ...s, left, top, width, height })
+      } catch {}
+    }
+    setBoxes(nb)
+  }, [activePair, chartMap])
+
+  // RAF loop during scroll
+  useEffect(() => {
+    const loop = () => {
+      if (isScrollingRef.current) {
+        recalcPixels()
+        rafRef.current = requestAnimationFrame(loop)
+      }
+    }
+    const cr = chartMap.current?.[activePair]
+    if (!cr?.chart) return
+    const onScroll = () => {
+      isScrollingRef.current = true
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = requestAnimationFrame(loop)
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        isScrollingRef.current = false
+        recalcPixels()
+      }, 100)
+    }
+    try { cr.chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll) } catch {}
+    return () => {
+      try { cr.chart.timeScale().unsubscribeVisibleLogicalRangeChange(onScroll) } catch {}
+      cancelAnimationFrame(rafRef.current)
+    }
+  }, [activePair, chartMap, recalcPixels])
+
   useEffect(() => {
     if(debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
@@ -124,9 +173,10 @@ export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick
         nb.push({ ...s, left, top, width, height })
       } catch {}
     }
-    setBoxes(nb)
+    sessionsRef.current = filtered
+    recalcPixels()
     }, 50)
-  }, [chartTick, dataReady, activePair, cfg])
+  }, [chartTick, dataReady, activePair, cfg, recalcPixels])
   // Note: tick updates on every engine tick — debounce is handled by React batching
 
   const Toggle = ({ label, k }) => (
