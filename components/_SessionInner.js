@@ -739,7 +739,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       let _savedRange=null
       try{ if(cr.hasLoaded) _savedRange=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
-      if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
+      if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
       if(!cr.hasLoaded){
         cr.hasLoaded=true
         cr.userScrolled=false
@@ -761,7 +761,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       }
     } else if(curr===prev+1){
       // Use update() — avoids setData jump when new TF candle forms
-      if(typeof window!=='undefined'){window.__algSuiteSeriesData=agg;window.__algSuiteRealDataLen=agg.length}
+      if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
       try{
         // Save range, update, restore — prevents chart from scrolling
         const _rng=cr.userScrolled?cr.chart.timeScale().getVisibleLogicalRange():null
