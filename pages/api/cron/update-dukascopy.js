@@ -92,7 +92,11 @@ export default async function handler(req, res) {
   }
 
   const startTime = Date.now()
-  const results = await Promise.allSettled(PAIRS.map(updatePair))
+  const results = []
+  for(const p of PAIRS) {
+    try { results.push({ status: "fulfilled", value: await updatePair(p) }) }
+    catch(e) { results.push({ status: "rejected", reason: e }) }
+  }
 
   const summary = results.map((r, i) =>
     r.status === 'fulfilled' ? r.value : { pair: PAIRS[i], status: 'rejected', error: r.reason?.message }
