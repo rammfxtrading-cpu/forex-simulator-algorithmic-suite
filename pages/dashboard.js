@@ -1,8 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../lib/useAuth'
-import NoAccess from '../components/NoAccess'
 
 export const getServerSideProps = () => ({ props: {} })
 
@@ -10,7 +8,7 @@ export default function Dashboard() {
   const router = useRouter()
   const bgCanvasRef = useRef(null)
   const logoCanvasRef = useRef(null)
-  const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showMenu, setShowMenu] = useState(false)
   const [sessions, setSessions] = useState([])
@@ -23,16 +21,14 @@ export default function Dashboard() {
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
 
   useEffect(() => {
-    if (authLoading || !user || !hasAccess) return
-    loadSessions(user.id)
-    loadTrades(user.id)
-    setLoading(false)
-  }, [authLoading, user, hasAccess])
-
-  // Si el usuario está autenticado pero no tiene acceso al simulador, mostrar pantalla de bloqueo.
-  if (!authLoading && !hasAccess) {
-    return <NoAccess profile={profile} producto="Simulador" />
-  }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) { router.replace('/'); return }
+      setUser(session.user)
+      loadSessions(session.user.id)
+      loadTrades(session.user.id)
+      setLoading(false)
+    })
+  }, [])
 
   useEffect(() => {
     const canvas = bgCanvasRef.current
@@ -267,7 +263,7 @@ export default function Dashboard() {
             <div style={s.menu}>
               <div style={s.menuEmail}>{user?.email}</div>
               <div style={s.menuDivider}/>
-              <div style={{...s.menuItem,color:'#ef4444'}} onClick={e=>{e.stopPropagation();handleSignOut()}}>Sign out</div>
+              <div style={{...s.menuItem,color:'#1E90FF'}} onClick={e=>{e.stopPropagation();window.location.href='https://algorithmicsuite.com/dashboard'}}>← Volver al hub</div>
             </div>
           )}
         </div>
