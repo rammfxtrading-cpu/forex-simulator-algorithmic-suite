@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
+import { requireUser, supabaseAdmin } from '../../lib/authApi'
 import { getHistoricalRates } from 'dukascopy-node'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
 
 const TIMEFRAMES = {
   M1: 1, M3: 3, M5: 5, M15: 15, M30: 30,
@@ -19,7 +14,7 @@ const cache = {}
 async function loadFromSupabase(pair, year) {
   const key = `${pair}_${year}`
   if (cache[key]) return cache[key]
-  const { data, error } = await supabase.storage
+  const { data, error } = await supabaseAdmin.storage
     .from('forex-data')
     .download(`${pair}/M1/${year}.json`)
   if (error || !data) return null
@@ -29,12 +24,11 @@ async function loadFromSupabase(pair, year) {
 }
 
 // ── Dukascopy fetcher (free, tick-real data) ─────────────────────────────────
-// Fetches M1 data for a full year and caches it in Supabase Storage for reuse.
 
 async function fetchFromDukascopy(pair, year) {
-  const now  = new Date()
+  const now = new Date()
   const from = new Date(`${year}-01-01T00:00:00Z`)
-  let   to   = new Date(`${Number(year) + 1}-01-01T00:00:00Z`)
+  let to = new Date(`${Number(year) + 1}-01-01T00:00:00Z`)
   if (to > now) to = now
 
   try {
@@ -48,22 +42,20 @@ async function fetchFromDukascopy(pair, year) {
 
     if (!data?.length) return null
 
-    // Normalize: { time (unix seconds), open, high, low, close, volume }
     const allCandles = data.map(c => ({
-      time:   Math.floor(c.timestamp / 1000),
-      open:   c.open,
-      high:   c.high,
-      low:    c.low,
-      close:  c.close,
+      time: Math.floor(c.timestamp / 1000),
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
       volume: c.volume ?? 0,
     }))
 
-    // Save to Supabase Storage for next time
     try {
       const json = JSON.stringify(allCandles)
       const blob = new Blob([json], { type: 'application/json' })
       const path = `${pair}/M1/${year}.json`
-      await supabase.storage
+      await supabaseAdmin.storage
         .from('forex-data')
         .upload(path, blob, { upsert: true, contentType: 'application/json' })
       cache[`${pair}_${year}`] = allCandles
@@ -94,9 +86,9 @@ function aggregate(m1Candles, tf, fromTs, toTs) {
       if (bucket) buckets.push(bucket)
       bucket = { time: bucketTime, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }
     } else {
-      bucket.high   = Math.max(bucket.high, c.high)
-      bucket.low    = Math.min(bucket.low, c.low)
-      bucket.close  = c.close
+      bucket.high = Math.max(bucket.high, c.high)
+      bucket.low = Math.min(bucket.low, c.low)
+      bucket.close = c.close
       bucket.volume += c.volume
     }
   }
@@ -107,22 +99,25 @@ function aggregate(m1Candles, tf, fromTs, toTs) {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
+  // Seguridad: solo usuarios autenticados pueden pedir velas.
+  // Evita scraping anonimo y uso abusivo del endpoint.
+  const auth = await requireUser(req, res)
+  if (!auth) return
+
   const { pair, timeframe, from, to, year } = req.query
   if (!pair || !timeframe || !from) {
     return res.status(400).json({ error: 'Missing params: pair, timeframe, from' })
   }
 
-  const tf     = TIMEFRAMES[timeframe] || 1
+  const tf = TIMEFRAMES[timeframe] || 1
   const fromTs = parseInt(from)
-  const toTs   = to ? parseInt(to) : fromTs + 86400
-  const yr     = year || new Date(fromTs * 1000).getFullYear().toString()
+  const toTs = to ? parseInt(to) : fromTs + 86400
+  const yr = year || new Date(fromTs * 1000).getFullYear().toString()
   const cleanPair = pair.toUpperCase().replace('/', '')
 
   try {
-    // 1. Try Supabase Storage first
     let m1 = await loadFromSupabase(cleanPair, yr)
 
-    // 2. Fall back to Dukascopy (fetches + saves to Supabase for next time)
     if (!m1) {
       console.log(`No Supabase data for ${cleanPair}/${yr} — fetching from Dukascopy…`)
       m1 = await fetchFromDukascopy(cleanPair, yr)
