@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/useAuth'
+import NoAccess from '../components/NoAccess'
 
 export const getServerSideProps = () => ({ props: {} })
 
@@ -8,19 +10,21 @@ const SESSIONS_LABEL = 'All Sessions'
 
 export default function Analytics() {
   const router = useRouter()
-  const [user, setUser] = useState(null)
+  const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
   const [sessions, setSessions] = useState([])
   const [trades, setTrades] = useState([])
   const [selectedSession, setSelectedSession] = useState(SESSIONS_LABEL)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { router.replace('/'); return }
-      setUser(session.user)
-      loadData(session.user.id)
-    })
-  }, [])
+    if (authLoading || !user || !hasAccess) return
+    loadData(user.id)
+  }, [authLoading, user, hasAccess])
+
+  // Si el usuario está autenticado pero no tiene acceso al simulador, mostrar pantalla de bloqueo.
+  if (!authLoading && !hasAccess) {
+    return <NoAccess profile={profile} producto="Simulador" />
+  }
 
   async function loadData(userId) {
     const [{ data: sess }, { data: tr }] = await Promise.all([

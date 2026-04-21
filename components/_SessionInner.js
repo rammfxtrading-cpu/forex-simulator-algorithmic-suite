@@ -19,6 +19,8 @@ import KillzonesOverlay from './KillzonesOverlay'
 import useCustomDrawings, { DRAWING_TYPES } from './useCustomDrawings'
 import CustomDrawingsOverlay from './CustomDrawingsOverlay'
 import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
+import { useAuth } from '../lib/useAuth'
+import NoAccess from './NoAccess'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -123,6 +125,9 @@ function TfInputModal({tfInput,activeTf}){
 export default function SessionPage(){
   const router=useRouter()
   const {id}=router.query
+
+  // Auth + check de acceso al Simulador
+  const { user: authUser, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
 
   const bgCanvasRef   = useRef(null)
   const pairState     = useRef({})
@@ -404,14 +409,15 @@ export default function SessionPage(){
   },[])
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
+  // La sesión y el check de acceso los gestiona useAuth() (arriba).
+  // Aquí solo propagamos el userId a userIdRef y cargamos los templates del usuario.
   useEffect(()=>{
-    supabase.auth.getSession().then(async({data:{session:s}})=>{
-      if(!s){router.replace('/');return}
-      userIdRef.current=s.user.id
-      const{data:tpls}=await supabase.from('sim_drawing_templates').select('*').eq('user_id',s.user.id)
+    if(!authUser || !hasAccess) return
+    userIdRef.current=authUser.id
+    supabase.from('sim_drawing_templates').select('*').eq('user_id',authUser.id).then(({data:tpls})=>{
       if(tpls)setTemplates(tpls)
     })
-  },[])
+  },[authUser, hasAccess])
 
   // ── TF keyboard input — TradingView style ─────────────────────────────────────
   useEffect(()=>{
@@ -1164,6 +1170,9 @@ if(full||(curr!==prev&&curr!==prev+1)){
   const initialCapital = session ? parseFloat(session.capital||session.balance||10000) : 10000
   const realized      = parseFloat((balance - initialCapital).toFixed(2))
   const activeTf      = pairTf[activePair]||'H1'
+
+  // Si el usuario está autenticado pero no tiene acceso al Simulador, bloqueamos.
+  if(!authLoading && !hasAccess) return <NoAccess profile={profile} producto="Simulador" />
 
   if(loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}><Spin/></div>
 
