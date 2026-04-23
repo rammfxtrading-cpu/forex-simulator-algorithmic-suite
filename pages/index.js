@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 
-export const getServerSideProps = () => ({ props: {} })
-
 export default function Login() {
   const router = useRouter()
   const canvasRef = useRef(null)

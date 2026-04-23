@@ -2,8 +2,6 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 
-export const getServerSideProps = () => ({ props: {} })
-
 export default function Dashboard() {
   const router = useRouter()
   const bgCanvasRef = useRef(null)
@@ -19,11 +17,19 @@ export default function Dashboard() {
   const [selectedSession, setSelectedSession] = useState('all')
   const [hoveredNav, setHoveredNav] = useState(null)
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
+  const [profile, setProfile] = useState(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.replace('/'); return }
       setUser(session.user)
+      // Cargar perfil para saber si es admin
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('id, email, nombre, rol_global, journal_activo, simulador_activo')
+        .eq('id', session.user.id)
+        .single()
+      if (prof) setProfile(prof)
       loadSessions(session.user.id)
       loadTrades(session.user.id)
       setLoading(false)
@@ -214,6 +220,12 @@ export default function Dashboard() {
     { key: 'new', label: 'New Session', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5,3 19,12 5,21"/></svg>, action: () => setShowNew(true) },
     { key: 'sessions', label: 'Sessions', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg> },
     { key: 'analytics', label: 'Analytics', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+    ...(profile?.rol_global === 'admin' ? [{
+      key: 'admin',
+      label: 'Admin',
+      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4z"/></svg>,
+      action: () => router.push('/admin')
+    }] : []),
   ]
 
   return (
