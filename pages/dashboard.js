@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
+import ChallengeSetupModal from '../components/ChallengeSetupModal'
 
 export default function Dashboard() {
   const router = useRouter()
@@ -18,6 +19,7 @@ export default function Dashboard() {
   const [hoveredNav, setHoveredNav] = useState(null)
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
   const [profile, setProfile] = useState(null)
+  const [showChallenge, setShowChallenge] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -313,20 +315,20 @@ export default function Dashboard() {
               <div style={s.ctaSub}>Replay historical candles and train your entries candle by candle</div>
               <div style={s.ctaLink}>Start now →</div>
             </div>
-            <div style={{...s.ctaCard,...s.ctaOff}}>
-              <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a7aaa" strokeWidth="1.5"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            <div style={{...s.ctaCard,borderColor:'#1E90FF60',background:'rgba(0,20,60,0.35)'}} onClick={()=>setShowChallenge(true)}>
+              <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><path d="M12 2L4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4z"/></svg>
               </div>
-              <div style={{...s.ctaTitle,color:'#4a6a8a'}}>Backtesting</div>
-              <div style={{...s.ctaSub,color:'#3a5570'}}>Test your strategy on historical data automatically</div>
-              <div style={{fontSize:11,fontWeight:700,color:'#4a6a8a'}}>Coming soon</div>
+              <div style={s.ctaTitle}>Propfirms Challenge</div>
+              <div style={s.ctaSub}>Challenge tipo FTMO: supera las fases respetando las reglas de drawdown</div>
+              <div style={s.ctaLink}>Start now →</div>
             </div>
             <div style={{...s.ctaCard,...s.ctaOff}}>
               <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a7aaa" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a7aaa" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
               </div>
-              <div style={{...s.ctaTitle,color:'#4a6a8a'}}>Live Mode</div>
-              <div style={{...s.ctaSub,color:'#3a5570'}}>Trade on live market data in real time</div>
+              <div style={{...s.ctaTitle,color:'#4a6a8a'}}>Operativa R.A.M.M.FX</div>
+              <div style={{...s.ctaSub,color:'#3a5570'}}>Vídeos y flujos de trabajo para el recap diario</div>
               <div style={{fontSize:11,fontWeight:700,color:'#4a6a8a'}}>Coming soon</div>
             </div>
           </div>
@@ -677,6 +679,7 @@ export default function Dashboard() {
         input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:0.5}
         select option{background:#030f20;color:#fff}
       `}</style>
+      <ChallengeSetupModal open={showChallenge} onClose={()=>setShowChallenge(false)} />
     </div>
   )
 }
