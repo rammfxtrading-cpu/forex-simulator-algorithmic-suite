@@ -910,7 +910,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
     const sl=side==='BUY'?currentPrice-slPips*pipSz:currentPrice+slPips*pipSz
     const tp=side==='BUY'?currentPrice+tpPips*pipSz:currentPrice-tpPips*pipSz
     const posId=`${Date.now()}`
-    const newPos={id:posId,pair:activePair,side,entry:currentPrice,sl,tp,lots,slPips,tpPips,rr,openTime:currentTime}
+    const newPos={id:posId,pair:activePair,side,entry:currentPrice,sl,tp,lots,slPips,tpPips,rr,openTime:currentTime,initialSlPips:slPips}
     ps.positions=[...ps.positions,newPos]
     createPositionLines(posId,activePair,newPos)
     setLastTrade(side);setTimeout(()=>setLastTrade(null),700);setTick(t=>t+1)
@@ -924,7 +924,11 @@ if(full||(curr!==prev&&curr!==prev+1)){
     const pos=ps.positions.find(p=>p.id===posId);if(!pos) return
     const pnl=calcPnl(pos.side,pos.entry,usePrice,pos.lots,usePair)
     const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
-    const rrReal=pos.slPips>0?pnl/(pos.slPips*pos.lots*10):0
+    // FIX BUG C: RR real se calcula contra el SL INICIAL, no contra el SL actual.
+    // Si alumno movió SL a BE o trailing, slPips actual puede ser ~0 y haría explotar el RR.
+    // initialSlPips se guarda en la apertura y nunca cambia. Fallback a slPips para trades antiguos.
+    const slPipsForRr = pos.initialSlPips ?? pos.slPips
+    const rrReal=slPipsForRr>0?pnl/(slPipsForRr*pos.lots*10):0
     ps.positions=ps.positions.filter(p=>p.id!==posId)
     ps.trades=[...ps.trades,{...pos,exit:usePrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}]
     removePositionLines(posId,usePair)
@@ -1143,7 +1147,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         const posId=`P${Date.now()}-${Math.random().toString(36).slice(2,5)}`
         // openTime = timestamp of the candle that triggered the LIMIT, not engine.currentTime.
         // This ensures checkSLTP only checks candles AFTER this position was actually opened.
-        const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:candle.time}
+        const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:candle.time,initialSlPips:order.slPips}
         ps.positions=[...ps.positions,newPos]
         setTimeout(()=>createPositionLines(posId,pair,newPos),50)
       })
@@ -1852,7 +1856,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
             } else {
               const ps=pairState.current[orderModal.pair]; if(!ps) return
               const posId=`${Date.now()}`
-              const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime}
+              const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}
               ps.positions=[...ps.positions,newPos]
               createPositionLines(posId,orderModal.pair,newPos)
               setLastTrade(orderModal.side);setTimeout(()=>setLastTrade(null),700)
@@ -1872,7 +1876,9 @@ if(full||(curr!==prev&&curr!==prev+1)){
             if(!pos||!currentPrice) return
             const pnl=calcPnl(pos.side,pos.entry,currentPrice,lotsToClose,closeModal.pair)
             const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
-            const rrReal=pos.slPips>0?pnl/(pos.slPips*lotsToClose*10):0
+            // FIX BUG C: RR real contra SL inicial, no actual
+            const slPipsForRr = pos.initialSlPips ?? pos.slPips
+            const rrReal=slPipsForRr>0?pnl/(slPipsForRr*lotsToClose*10):0
             // Convert ordinal→real for DB timestamps
             // toReal2 removed — using real timestamps directly
             if(lotsToClose>=pos.lots){
