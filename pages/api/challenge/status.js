@@ -91,7 +91,18 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Error cargando trades', detail: tErr.message })
   }
 
-  // ── 5. Evaluar con el motor puro
+  // ── 5. Evaluar con el motor puro.
+  // current_time es el timestamp de la vela actual del simulador (segundos unix).
+  // Opcional: si no llega, el motor usa la fecha real del ordenador (fallback para usos antiguos).
+  const currentTimeRaw = req.query.current_time
+  let currentTimeIso = null
+  if (currentTimeRaw) {
+    const n = Number(currentTimeRaw)
+    if (Number.isFinite(n) && n > 0) {
+      currentTimeIso = new Date(n * 1000).toISOString()
+    }
+  }
+
   let evaluation
   try {
     evaluation = evaluateChallenge({
@@ -99,6 +110,7 @@ export default async function handler(req, res) {
       currentPhase: session.challenge_phase || 1,
       capital: Number(session.capital),
       trades: trades || [],
+      currentTimeIso,
     })
   } catch (e) {
     return res.status(500).json({ error: 'Error evaluando challenge', detail: e.message })

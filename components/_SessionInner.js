@@ -21,6 +21,7 @@ import CustomDrawingsOverlay from './CustomDrawingsOverlay'
 import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from './NoAccess'
+import ChallengeHUD from './ChallengeHUD'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -139,8 +140,11 @@ export default function SessionPage(){
   const activePairRef = useRef(null)
   const mountPairRef  = useRef(null)
   const pairTfRef     = useRef({})
+  const currentTimeRef = useRef(null) // timestamp de la vela actual del simulador (unix segundos). Se usa en refreshChallengeStatus.
+  const lastMadridDayRef = useRef(null) // ultimo dia Madrid detectado para evitar refetch en cada tick
 
   const [session,     setSession]     = useState(null)
+  const [challengeStatus, setChallengeStatus] = useState(null) // FTMO-style: {session,config,evaluation} o null si no es challenge
   const [loading,     setLoading]     = useState(true)
   const [activePairs, setActivePairs] = useState([])
   const [activePair,  setActivePair]  = useState(null)
@@ -475,6 +479,53 @@ export default function SessionPage(){
       setLoading(false)
     })
   },[id])
+
+  // ── Challenge: fetch status helper ───────────────────────────────────────────
+  // Se llama al cargar sesion y despues de cada trade cerrado.
+  // Si la sesion no es un challenge (session.challenge_type == null), no hace nada.
+  const refreshChallengeStatus = useCallback(async () => {
+    if (!id || !sessionRef.current?.challenge_type) return
+    try {
+      // Pasamos currentTime del simulador: así el motor sabe qué día es HOY en el backtest.
+      // El DD diario se resetea en el día Madrid de esta vela, no de la fecha real del ordenador.
+      // Leemos currentTimeRef (state de React, se inicializa al cargar el engine).
+      // Fallback adicional a window.__algSuiteCurrentTime por si acaso.
+      const ct = currentTimeRef.current
+        || (typeof window !== 'undefined' && window.__algSuiteCurrentTime)
+        || null
+      const qs = ct ? `?session_id=${id}&current_time=${ct}` : `?session_id=${id}`
+      const res = await fetch(`/api/challenge/status${qs}`)
+      if (!res.ok) return
+      const data = await res.json()
+      setChallengeStatus(data)
+    } catch (e) {
+      console.error('[challenge/status] error', e)
+    }
+  }, [id])
+
+  // Fetch inicial cuando la sesion ya cargo y es un challenge
+  useEffect(() => {
+    if (session?.challenge_type) refreshChallengeStatus()
+  }, [session?.id, session?.challenge_type, refreshChallengeStatus])
+
+  // Refrescar el HUD cuando cambia el DIA MADRID del simulador.
+  // Sin esto, si avanzas velas sin cerrar trades, el HUD se queda en el ultimo valor
+  // y no muestra el reset del DD diario al cambiar de dia.
+  useEffect(() => {
+    if (!session?.challenge_type || !currentTime) return
+    // Solo refresca al cruzar frontera de día Madrid, no en cada tick (seria spam)
+    try {
+      const madridFmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Madrid',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      })
+      const currentDay = madridFmt.format(new Date(currentTime * 1000))
+      if (currentDay !== lastMadridDayRef.current) {
+        lastMadridDayRef.current = currentDay
+        refreshChallengeStatus()
+      }
+    } catch {}
+  }, [currentTime, session?.challenge_type, refreshChallengeStatus])
 
   // ── Load pair data ────────────────────────────────────────────────────────────
   const loadPair=useCallback(async(pair)=>{
@@ -905,10 +956,13 @@ if(full||(curr!==prev&&curr!==prev+1)){
         await supabase.from('sim_sessions').update({balance:newBalance,last_timestamp:currentTime}).eq('id',id)
       }catch(e){console.error(e)}
     }
-  },[activePair,currentPrice,currentTime,id])
+    // Si es un challenge, refrescar HUD con nuevo balance/DD/target
+    if(sessionRef.current?.challenge_type) refreshChallengeStatus()
+  },[activePair,currentPrice,currentTime,id,refreshChallengeStatus])
 
   // Keep refs always pointing to latest values/functions
   balanceRef.current = balance
+  currentTimeRef.current = currentTime
   useEffect(()=>{
     closePositionRef.current    = closePosition
     checkSLTPRef.current        = checkSLTP
@@ -1559,6 +1613,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
               </>
             )
           })()}
+          <ChallengeHUD status={challengeStatus} />
         </div>
 
         <div style={s.pillDivider}/>
@@ -1841,6 +1896,8 @@ if(full||(curr!==prev&&curr!==prev+1)){
                 }).then(()=>{}).catch(()=>{})
               }
             }
+            // Si es un challenge, refrescar HUD tras cerrar (parcial o total)
+            if(sessionRef.current?.challenge_type) refreshChallengeStatus()
             setCloseModal(null)
           }}
         />
