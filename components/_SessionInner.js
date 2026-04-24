@@ -1102,6 +1102,10 @@ if(full||(curr!==prev&&curr!==prev+1)){
       const{high,low}=candle
       ps.positions.forEach(pos=>{
         if(toClose.find(x=>x.id===pos.id)) return // already queued
+        // FIX BUG A: Skip candles before this position was opened.
+        // Without this guard, past candles could trigger SL/TP retroactively
+        // (e.g. when a LIMIT activated incorrectly on a past candle).
+        if(pos.openTime != null && candle.time < pos.openTime) return
         const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
         const hitSl=pos.side==='BUY'?low<=pos.sl:high>=pos.sl
         if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp})
@@ -1122,6 +1126,9 @@ if(full||(curr!==prev&&curr!==prev+1)){
       const candle=engine.candles[i]; if(!candle) continue
       ps.orders.forEach(order=>{
         if(executed.includes(order.id)) return
+        // FIX BUG A: Skip candles before this LIMIT was placed.
+        // Without this guard, a past candle that already crossed the entry would activate the LIMIT retroactively.
+        if(order.createdTime != null && candle.time < order.createdTime) return
         const hit=(order.side==='BUY_LIMIT'&&candle.low<=order.entry)||(order.side==='SELL_LIMIT'&&candle.high>=order.entry)
         if(!hit) return
         executed.push(order.id)
@@ -1134,7 +1141,9 @@ if(full||(curr!==prev&&curr!==prev+1)){
         const side=order.side==='BUY_LIMIT'?'BUY':'SELL'
         if(!ps.positions) ps.positions=[]
         const posId=`P${Date.now()}-${Math.random().toString(36).slice(2,5)}`
-        const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:engine.currentTime}
+        // openTime = timestamp of the candle that triggered the LIMIT, not engine.currentTime.
+        // This ensures checkSLTP only checks candles AFTER this position was actually opened.
+        const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:candle.time}
         ps.positions=[...ps.positions,newPos]
         setTimeout(()=>createPositionLines(posId,pair,newPos),50)
       })
