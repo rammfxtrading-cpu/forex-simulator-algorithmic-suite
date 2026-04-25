@@ -262,7 +262,9 @@ export default function Dashboard() {
   )
 
   const initials = user?.email?.slice(0,2).toUpperCase()||'FX'
-  const username = user?.email?.split('@')[0]||''
+  // Username de la tabla profiles (nombre asignado al invitar al alumno).
+  // Fallback al email split si no hay perfil cargado todavía o falta el nombre.
+  const username = profile?.nombre || user?.email?.split('@')[0] || ''
   const PAIRS = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','XAU/USD']
 
   const navItems = [
@@ -318,7 +320,7 @@ export default function Dashboard() {
           <div style={s.avatar}>{initials}</div>
           <div style={s.userInfo}>
             <div style={s.userName}>{username}</div>
-            <div style={s.userPlan}>Free Plan</div>
+            <div style={s.userPlan}>VIP Member</div>
           </div>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" strokeWidth="2"><polyline points="6,9 12,15 18,9"/></svg>
           {showMenu && (

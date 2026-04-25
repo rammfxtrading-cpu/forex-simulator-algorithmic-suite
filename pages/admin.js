@@ -377,7 +377,7 @@ export default function Admin() {
           <div style={s.avatar}>{initials(profile?.nombre || profile?.email)}</div>
           <div style={s.userInfo}>
             <div style={s.userName}>{profile?.nombre || profile?.email?.split('@')[0]}</div>
-            <div style={s.userPlan}>Free Plan</div>
+            <div style={s.userPlan}>VIP Member</div>
           </div>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" strokeWidth="2"><polyline points="6,9 12,15 18,9"/></svg>
           {showMenu && (

@@ -191,8 +191,8 @@ export default function Analytics() {
           <div style={s.userWrap} onClick={() => router.push('/dashboard')}>
             <div style={s.avatar}>{user?.email?.slice(0,2).toUpperCase() || 'FX'}</div>
             <div style={s.userInfo}>
-              <div style={s.userName}>{user?.email?.split('@')[0] || ''}</div>
-              <div style={s.userPlan}>Free Plan</div>
+              <div style={s.userName}>{profile?.nombre || user?.email?.split('@')[0] || ''}</div>
+              <div style={s.userPlan}>VIP Member</div>
             </div>
           </div>
         )}
