@@ -1047,7 +1047,12 @@ export default function SessionPage(){
     const _mkPhantom = (t) => ({ time: t, open: _lastC, high: _lastC, low: _lastC, close: _lastC })
 
 if(full||(curr!==prev&&curr!==prev+1)){
-      cr.phantom=Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
+      // Cantidad de phantoms: por defecto 10. Si hay drawings cuyos puntos
+      // caen más allá, el effect de cambio de TF setea cr._phantomsNeeded para
+      // que el array sea suficientemente largo para renderizarlos correctamente.
+      const _phN = cr._phantomsNeeded || 10
+      cr._phantomsNeeded = null  // consumir, vuelve a default en próxima llamada
+      cr.phantom=Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       let _savedRange=null
       try{ if(cr.hasLoaded) _savedRange=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
@@ -1104,18 +1109,17 @@ if(full||(curr!==prev&&curr!==prev+1)){
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
   },[])
 
-  // ── TF change: re-render chart + reproject drawings anchored on phantoms ────
+  // ── TF change: re-render chart sin tocar timestamps de drawings ─────────────
   // Cuando el alumno cambia de TF, los drawings cuyo punto cae a la DERECHA del
-  // último precio real (sobre las "phantom candles") se desanclan: el plugin
-  // LWC almacena los puntos por timestamp, pero los timestamps de phantoms del
-  // TF anterior (p.ej. M5: lastReal+300, +600, +900...) no existen en el array
-  // del TF nuevo (p.ej. H1: lastReal'+3600, +7200...). El punto queda colgado
-  // en el aire o se proyecta a una posición arbitraria.
+  // último precio real (sobre las "phantom candles") se desanclan si en el
+  // TF nuevo no generamos suficientes phantoms para cubrir ese timestamp.
+  // El plugin LWC ya sabe interpolar timestamps a posiciones sub-bucket via
+  // interpolateLogicalIndexFromTime — solo necesita que el array de velas
+  // sea suficientemente largo para que logicalToCoordinate no devuelva 0.
   //
-  // Solución estilo TradingView: mantener distancia VISUAL (mismas velas a la
-  // derecha del precio actual). Calculamos el offset en velas del punto phantom
-  // respecto al último real del TF anterior, y al aplicar el TF nuevo
-  // recalculamos el timestamp como lastReal_new + offset × tfSecs_new.
+  // Solución: NO tocamos los timestamps. Calculamos cuál es el timestamp más
+  // a la derecha entre todos los drawings, y generamos suficientes phantoms
+  // en el TF nuevo para que ese timestamp caiga dentro del array.
   const prevTfRef = useRef(null)
   useEffect(()=>{
     if(!activePair) return
@@ -1129,67 +1133,38 @@ if(full||(curr!==prev&&curr!==prev+1)){
     // previene el contraerse del LongShortPosition durante el setData).
     try{ deselectAll() }catch{}
 
-    // Si hay TF anterior y es distinto, proyectamos drawings con puntos en zona phantom.
-    let projection = null
-    if (oldTf && oldTf !== newTf) {
-      try {
-        const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
-        const oldSecs = TF_SECS[oldTf] || 3600
-        const newSecs = TF_SECS[newTf] || 3600
-        // Último timestamp REAL del TF anterior (NO incluye phantoms).
-        const oldAgg = ps.engine.getAggregated(oldTf)
-        const oldLastReal = oldAgg.length ? oldAgg[oldAgg.length-1].time : null
+    // Calcular cuántas phantoms necesitamos en el TF nuevo para que TODOS los
+    // drawings se rendericen correctamente (sus timestamps deben caer dentro
+    // del array de velas, sea sobre vela real o phantom).
+    let phantomsNeeded = 10  // mínimo por defecto
+    try {
+      const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
+      const newSecs = TF_SECS[newTf] || 3600
+      const newAgg = ps.engine.getAggregated(newTf)
+      const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
+      if (newLastReal) {
         const exportJson = exportTools()
         const tools = exportJson ? JSON.parse(exportJson) : []
-        if (oldLastReal && tools.length) {
-          // Para cada tool, marcamos qué puntos eran phantom y guardamos su offset.
-          const offsets = tools.map(tool => ({
-            id: tool.id,
-            // points[i].phantomOffset = nº de velas a la derecha del último real.
-            // null si el punto era real (no necesita reproyección).
-            offsets: (tool.points || []).map(p => {
-              if (typeof p?.timestamp !== 'number') return null
-              if (p.timestamp <= oldLastReal) return null  // punto real
-              const offset = Math.round((p.timestamp - oldLastReal) / oldSecs)
-              return offset > 0 ? offset : null
-            })
-          }))
-          projection = { offsets, newSecs }
+        let maxTs = newLastReal
+        tools.forEach(tool => {
+          (tool.points || []).forEach(p => {
+            if (typeof p?.timestamp === 'number' && p.timestamp > maxTs) {
+              maxTs = p.timestamp
+            }
+          })
+        })
+        if (maxTs > newLastReal) {
+          // +10 de colchón para que el chart respire visualmente a la derecha
+          phantomsNeeded = Math.ceil((maxTs - newLastReal) / newSecs) + 10
         }
-      } catch(e){ /* si algo falla, continuamos sin proyección — mejor que crashear */ }
-    }
+      }
+    } catch(e){ /* swallow — fallback al default 10 */ }
 
+    // Pasamos phantomsNeeded a updateChart vía un ref que lee la función.
+    cr._phantomsNeeded = phantomsNeeded
     cr.prevCount = 0
     updateChart(activePair, ps.engine, true)
     setTfKey(k => k+1)
-
-    // Tras el setData, reaplicamos los timestamps proyectados.
-    if (projection) {
-      try {
-        const newAgg = ps.engine.getAggregated(newTf)
-        const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
-        if (newLastReal) {
-          const exportJson = exportTools()
-          const tools = exportJson ? JSON.parse(exportJson) : []
-          let mutated = false
-          tools.forEach(tool => {
-            const entry = projection.offsets.find(o => o.id === tool.id)
-            if (!entry) return
-            (tool.points || []).forEach((p, idx) => {
-              const off = entry.offsets[idx]
-              if (off == null) return
-              // Proyectamos: timestamp nuevo = último real nuevo + offset × tfSecs nuevo.
-              const newTs = newLastReal + off * projection.newSecs
-              if (typeof p === 'object' && p !== null) {
-                p.timestamp = newTs
-                mutated = true
-              }
-            })
-          })
-          if (mutated) importTools(JSON.stringify(tools))
-        }
-      } catch(e){ /* swallow — drawings se quedarán como antes, sin crash */ }
-    }
 
     // Scroll a la posición actual tras el cambio de TF.
     requestAnimationFrame(()=>{
@@ -1198,7 +1173,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
     })
 
     prevTfRef.current = newTf
-  },[pairTf,activePair,updateChart,deselectAll,exportTools,importTools])
+  },[pairTf,activePair,updateChart,deselectAll,exportTools])
 
   useEffect(()=>{
     if(!activePair) return
