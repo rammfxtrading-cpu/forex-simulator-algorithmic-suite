@@ -1012,9 +1012,17 @@ export default function SessionPage(){
     const _tfS2 = _tfMap2[tf]||3600
     const _lastT = agg[agg.length-1].time
     const _lastC = agg[agg.length-1].close
+    // Phantoms = velas "futuras" sin movimiento que reservan espacio a la
+    // derecha del último precio. CRÍTICO: deben tener OHLC definidos, no
+    // sólo `time`. Si sólo tienen time, lightweight-charts intenta hacer
+    // autoscale del eje Y leyendo minValue/maxValue de cada bucket y
+    // crashea con `Cannot read properties of undefined (reading 'minValue')`.
+    // Con OHLC = lastClose se ven como velas plana (línea horizontal) y el
+    // autoscale las ignora correctamente.
+    const _mkPhantom = (t) => ({ time: t, open: _lastC, high: _lastC, low: _lastC, close: _lastC })
 
 if(full||(curr!==prev&&curr!==prev+1)){
-      cr.phantom=Array.from({length:10},(_,i)=>({time:_lastT+_tfS2*(i+1)}))
+      cr.phantom=Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       let _savedRange=null
       try{ if(cr.hasLoaded) _savedRange=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
@@ -1048,7 +1056,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         if(_rng) requestAnimationFrame(()=>{try{cr.chart.timeScale().setVisibleLogicalRange(_rng)}catch{}})
       }catch{
         // Fallback
-        cr.phantom=Array.from({length:10},(_,i)=>({time:_lastT+_tfS2*(i+1)}))
+        cr.phantom=Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
         const _r2=cr.chart.timeScale().getVisibleLogicalRange()
         cr.series.setData([...agg,...cr.phantom])
         if(_r2) requestAnimationFrame(()=>{ try{cr.chart.timeScale().setVisibleLogicalRange(_r2)}catch{} })
