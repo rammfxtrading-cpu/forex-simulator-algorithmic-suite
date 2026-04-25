@@ -20,6 +20,13 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
   const [slPips,setSlPips]=useState(initSlPips||10)
   const [tpPips,setTpPips]=useState(initTpPips||20)
   const [autoBE,setAutoBE]=useState(false)
+  // Si OrderModal nace de LongShortModal, recibimos sl/tp EXACTOS del dibujo.
+  // Mientras el usuario no edite pips, respetamos esos precios al pie de la
+  // letra. En cuanto edite pips, recalculamos a partir de entry ± pips
+  // (comportamiento clásico). Esto evita el desfase visual entre el
+  // dibujo del long/short (precios decimales puros) y las líneas SL/TP
+  // de la limit (que antes se recalculaban con pips redondeados a entero).
+  const [pipsEdited,setPipsEdited]=useState(false)
 
   // Base de cálculo para el riesgo. En challenge: capital inicial. En libres: balance vivo.
   const riskBase = isChallenge && initialBalance ? initialBalance : balance
@@ -30,8 +37,14 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
   const estProfit=(tpPips*lots*pipVal).toFixed(2)
   const rrRatio=slPips>0?(tpPips/slPips).toFixed(1):0
   const pipSz=1/mult
-  const sl=isBuy?entry-slPips*pipSz:entry+slPips*pipSz
-  const tp=isBuy?entry+tpPips*pipSz:entry-tpPips*pipSz
+  // Si el usuario NO ha tocado los pips y vino con sl/tp del long/short,
+  // usamos esos precios sin recalcular. Si los tocó, recalculamos.
+  const sl = (!pipsEdited && initSl != null)
+    ? initSl
+    : (isBuy ? entry - slPips*pipSz : entry + slPips*pipSz)
+  const tp = (!pipsEdited && initTp != null)
+    ? initTp
+    : (isBuy ? entry + tpPips*pipSz : entry - tpPips*pipSz)
   const fmtP=p=>p?.toFixed(isJpy?3:5)??'—'
   const accentColor=isBuy?'#1E90FF':'#ef5350'
   const accentRgb=isBuy?'30,144,255':'239,83,80'
@@ -114,7 +127,7 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               <Field label="PRECIO" value={fmtP(tp)} readOnly accent="rgba(30,144,255,0.8)"/>
-              <Field label="PIPS" value={tpPips} onChange={v=>setTpPips(Math.max(1,parseInt(v)||1))} step="1" accent="rgba(30,144,255,0.8)"/>
+              <Field label="PIPS" value={tpPips} onChange={v=>{setTpPips(Math.max(1,parseInt(v)||1));setPipsEdited(true)}} step="1" accent="rgba(30,144,255,0.8)"/>
             </div>
           </div>
 
@@ -126,7 +139,7 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               <Field label="PRECIO" value={fmtP(sl)} readOnly accent="rgba(239,83,80,0.8)"/>
-              <Field label="PIPS" value={slPips} onChange={v=>setSlPips(Math.max(1,parseInt(v)||1))} step="1" accent="rgba(239,83,80,0.8)"/>
+              <Field label="PIPS" value={slPips} onChange={v=>{setSlPips(Math.max(1,parseInt(v)||1));setPipsEdited(true)}} step="1" accent="rgba(239,83,80,0.8)"/>
             </div>
           </div>
 
