@@ -10,19 +10,29 @@
  *   - onClose(): callback para cerrar el modal sin avanzar (vuelve al dashboard).
  *   - onAdvance(): callback que dispara la llamada a /api/challenge/advance.
  *                  El padre se encarga del fetch, redirect y manejo de errores.
+ *   - onReview(): callback "Revisar mis trades" — solo cierra el modal sin redirigir,
+ *                 deja al alumno en el chart con bloqueos del Paso 3 aplicados.
  *   - advancing: boolean true mientras la petición /advance está en vuelo.
  */
 import { useEffect } from 'react'
 
 const FONT = "'Montserrat', sans-serif"
 
-export default function ChallengePassedPhaseModal({ status, onClose, onAdvance, advancing }) {
+export default function ChallengePassedPhaseModal({ status, onClose, onAdvance, onReview, advancing }) {
   // Cerrar con ESC
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !advancing) onClose?.() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, advancing])
+
+  // Handler "Revisar mis trades": persiste passed_phase en BD y cierra modal
+  // sin redirigir. El alumno queda en el chart con bloqueos del Paso 3 aplicados.
+  const handleReview = async () => {
+    if (advancing) return
+    if (onAdvance) await onAdvance()
+    if (onReview) onReview()
+  }
 
   if (!status) return null
 
@@ -104,6 +114,12 @@ export default function ChallengePassedPhaseModal({ status, onClose, onAdvance, 
               onClick={onClose}
               disabled={advancing}>
               Volver al Dashboard
+            </button>
+            <button
+              style={{...s.btnLink, ...(advancing ? {opacity:0.4, cursor:'not-allowed'} : {})}}
+              onClick={handleReview}
+              disabled={advancing}>
+              Revisar mis trades de esta fase
             </button>
           </div>
         </div>
@@ -245,6 +261,19 @@ const s = {
     background:'rgba(255,255,255,0.04)',
     border:'1px solid rgba(255,255,255,0.1)',
     color:'rgba(255,255,255,0.8)',
+  },
+  btnLink: {
+    width:'100%', padding:'8px 20px',
+    background:'transparent',
+    border:'none',
+    color:'rgba(255,255,255,0.45)',
+    fontFamily:FONT,
+    fontSize:11, fontWeight:600, letterSpacing:0.3,
+    cursor:'pointer',
+    textDecoration:'underline',
+    textUnderlineOffset:3,
+    textDecorationColor:'rgba(255,255,255,0.2)',
+    transition:'color 0.15s',
   },
   techFooter: {
     borderTop:'1px solid rgba(255,255,255,0.05)',

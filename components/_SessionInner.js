@@ -2126,6 +2126,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
           advancing={challengeAdvancing}
           onAdvance={async () => { await handleChallengePass() }}
           onClose={() => { setChallengeModal(null); handleGoToDashboard() }}
+          onReview={() => { setChallengeModal(null) }}
         />
       )}
       {challengeModal === 'passed_all' && challengeStatus && (
@@ -2135,6 +2136,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
           onAdvance={async () => { await handleChallengePass() }}
           onCtaReal={handleCtaRealChallenge}
           onClose={() => { setChallengeModal(null); handleGoToDashboard() }}
+          onReview={() => { setChallengeModal(null) }}
         />
       )}
       {challengeModal === 'failed' && challengeStatus && (
