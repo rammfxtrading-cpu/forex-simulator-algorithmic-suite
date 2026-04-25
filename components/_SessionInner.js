@@ -209,6 +209,25 @@ export default function SessionPage(){
   const [tfInput, setTfInput] = useState('')  // TF keyboard modal
   const [selectedDrawing, setSelectedDrawing] = useState(null) // {id, x, y}
   const selectedDrawingRef = useRef(null)
+
+  // Challenge lockout: derivado calculado lo más arriba posible para que esté disponible
+  // en TODOS los hooks (useEffect del keydown, useCallback, etc.) sin problemas TDZ.
+  // No permite abrir nuevas operaciones, dibujar, ni avanzar el replay si:
+  //   - La sesión ya está cerrada en BD (passed_phase / passed_all / failed_dd_*)
+  //   - El motor detectó un evento terminal en runtime (target_reached / failed_dd_*)
+  // Posiciones abiertas pueden seguir cerrándose normalmente (SL/TP o manual).
+  const sessionStatus = session?.status || 'active'
+  const evalStatus = challengeStatus?.evaluation?.status
+  const challengeLocked = (
+    sessionStatus === 'failed_dd_daily' ||
+    sessionStatus === 'failed_dd_total' ||
+    sessionStatus === 'passed_phase' ||
+    sessionStatus === 'passed_all' ||
+    evalStatus === 'target_reached' ||
+    evalStatus === 'failed_dd_daily' ||
+    evalStatus === 'failed_dd_total'
+  )
+
   useEffect(()=>{selectedDrawingRef.current=selectedDrawing},[selectedDrawing])
   const textPillDragRef = useRef(null)
   const onTextPillMouseDown = (e) => {
@@ -541,31 +560,48 @@ export default function SessionPage(){
   // detecta target_reached, failed_dd_daily o failed_dd_total.
   // Solo abre la PRIMERA vez para no spamear si el alumno ignora el modal.
   // Se resetea al avanzar/fallar (cambia session.id) o al desmontar.
+  //
+  // GUARD CRÍTICO: tras un transition (passed_phase → nueva sesión Fase 2),
+  // challengeStatus puede contener datos residuales de la sesión anterior durante
+  // un instante mientras refreshChallengeStatus() aún no terminó. Si actuamos
+  // sobre esos datos, abrimos un modal "Has pasado" en una sesión que no ha pasado.
+  // Por eso exigimos que challengeStatus.session.id === id (id de la URL actual).
+
+  // Reset del estado de modal al cambiar de sesión (Next.js puede reutilizar el
+  // componente entre rutas /session/[id], lo que mantendría refs vivos).
+  useEffect(() => {
+    challengeModalShownRef.current = false
+    setChallengeModal(null)
+  }, [id])
+
   useEffect(() => {
     if (!challengeStatus?.evaluation) return
     if (challengeModalShownRef.current) return
     if (challengeModal) return // ya hay modal abierto
+
+    // Guard race condition: el status debe corresponder a la sesión que estamos viendo.
+    // Si no, ignoramos hasta que llegue el refresh con los datos correctos.
+    if (challengeStatus.session?.id && challengeStatus.session.id !== id) return
+
     const evalStatus = challengeStatus.evaluation.status
     const sessStatus = challengeStatus.session?.status
 
-    // Si la sesión ya está cerrada en BD (passed_phase, passed_all, failed_*),
-    // mostrar el modal correspondiente al cargar la página.
-    if (sessStatus === 'passed_all') {
-      setChallengeModal('passed_all')
-      challengeModalShownRef.current = true
-      return
-    }
-    if (sessStatus === 'failed_dd_daily' || sessStatus === 'failed_dd_total') {
-      setChallengeModal('failed')
-      challengeModalShownRef.current = true
-      return
-    }
-    if (sessStatus === 'passed_phase') {
-      // Esta sesión ya pasó. No abrimos modal — el alumno ya está en la siguiente.
+    // Si la sesión ya está CERRADA en BD (passed_phase, passed_all, failed_*),
+    // el alumno ya vio el modal cuando ocurrió el evento. Al re-entrar para revisar
+    // el chart histórico, NO le interrumpimos con el modal otra vez. Los bloqueos
+    // del Paso 3 (botones, replay, dibujos) ya impiden cualquier acción que pueda
+    // alterar el resultado. El alumno solo viene a leer el pasado.
+    if (sessStatus === 'passed_all'
+        || sessStatus === 'passed_phase'
+        || sessStatus === 'failed_dd_daily'
+        || sessStatus === 'failed_dd_total') {
       return
     }
 
-    // Si la sesión está active pero el motor detectó evento, abrir modal.
+    // Si la sesión está active pero el motor detectó evento EN RUNTIME, abrir modal.
+    // Este es el momento clímax — el alumno acaba de cerrar el trade que cruzó target,
+    // o el SL que quemó el challenge. La primera vez que ocurre sí merece celebración
+    // (o disociación, si es fail).
     if (evalStatus === 'target_reached') {
       const isLastPhase = (challengeStatus.session?.challenge_phase || 1)
                           >= (challengeStatus.config?.phases || 1)
@@ -578,7 +614,7 @@ export default function SessionPage(){
       challengeModalShownRef.current = true
       return
     }
-  }, [challengeStatus, challengeModal])
+  }, [challengeStatus, challengeModal, id])
 
   // Llamada al endpoint /api/challenge/advance.
   // outcome='pass' o 'fail' según contexto. Devuelve el nextSession (si aplica).
@@ -1305,8 +1341,16 @@ if(full||(curr!==prev&&curr!==prev+1)){
   useEffect(()=>{
     const onKey=e=>{
       if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return
-      if(e.code==='Space'){e.preventDefault();handlePlayPause()}
-      if(e.code==='ArrowRight') handleStep()
+      // Si la sesión está terminada, bloqueamos atajos de replay para evitar
+      // que el alumno avance velas con el teclado y "vea el futuro" del precio.
+      if(e.code==='Space'){
+        if(challengeLocked) return
+        e.preventDefault();handlePlayPause()
+      }
+      if(e.code==='ArrowRight'){
+        if(challengeLocked) return
+        handleStep()
+      }
       if(e.code==='Escape'){ setActiveTool('cursor'); setRulerActive(false) }
       if(e.code==='Delete'||e.code==='Backspace'){
         let deleted = false
@@ -1328,7 +1372,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
     }
     window.addEventListener('keydown',onKey)
     return()=>window.removeEventListener('keydown',onKey)
-  },[handlePlayPause,handleStep])
+  },[handlePlayPause,handleStep,challengeLocked])
 
   useEffect(()=>()=>{
     // Save drawings before unmount
@@ -1352,22 +1396,6 @@ if(full||(curr!==prev&&curr!==prev+1)){
   const initialCapital = session ? parseFloat(session.capital||session.balance||10000) : 10000
   const realized      = parseFloat((balance - initialCapital).toFixed(2))
   const activeTf      = pairTf[activePair]||'H1'
-
-  // Challenge lockout: no permitir abrir nuevas operaciones si el challenge terminó
-  // o si la fase actual ya alcanzó su target (esperando que el alumno pulse "Submit Phase").
-  // Posiciones abiertas pueden seguir cerrándose normalmente (SL/TP o manual).
-  // Replay puede seguir avanzando (el alumno ve qué hubiera pasado).
-  const sessionStatus = session?.status || 'active'
-  const evalStatus = challengeStatus?.evaluation?.status
-  const challengeLocked = (
-    sessionStatus === 'failed_dd_daily' ||
-    sessionStatus === 'failed_dd_total' ||
-    sessionStatus === 'passed_phase' ||
-    sessionStatus === 'passed_all' ||
-    evalStatus === 'target_reached' ||
-    evalStatus === 'failed_dd_daily' ||
-    evalStatus === 'failed_dd_total'
-  )
 
   // Si el usuario está autenticado pero no tiene acceso al Simulador, bloqueamos.
   if(!authLoading && !hasAccess) return <NoAccess profile={profile} producto="Simulador" />
@@ -1451,6 +1479,9 @@ if(full||(curr!==prev&&curr!==prev+1)){
 
       </div>
 
+      {/* DrawingToolbarV2 + DrawingConfigPill ocultos en sesiones terminadas:
+          el alumno solo puede ver lo que hizo, no dibujar nuevo. */}
+      {!challengeLocked && (<>
       <DrawingToolbarV2
         activeTool={activeTool}
         onToolChange={(id)=>{
@@ -1545,6 +1576,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
           }catch{}
         }}
       />
+      </>)}
       {longShortModal&&(
         <LongShortModal
           tool={longShortModal.tool}
@@ -1693,18 +1725,38 @@ if(full||(curr!==prev&&curr!==prev+1)){
           e.preventDefault()
         }}
       >
-        <button style={{...s.pillPlay,...(isPlaying?s.pillPause:{})}} onClick={handlePlayPause} disabled={!dataReady}>
+        <button
+          style={{
+            ...s.pillPlay,
+            ...(isPlaying?s.pillPause:{}),
+            ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
+          }}
+          title={challengeLocked ? 'Sesión terminada — replay congelado' : undefined}
+          onClick={handlePlayPause}
+          disabled={!dataReady||challengeLocked}>
           {isPlaying
             ?<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="4" height="16"/><rect x="15" y="4" width="4" height="16"/></svg>
             :<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
           }
         </button>
-        <button style={s.pillBtn} onClick={handleStep} disabled={!dataReady} title="Avanzar vela">
+        <button
+          style={{
+            ...s.pillBtn,
+            ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
+          }}
+          onClick={handleStep}
+          disabled={!dataReady||challengeLocked}
+          title={challengeLocked ? 'Sesión terminada — replay congelado' : 'Avanzar vela'}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="3" height="16"/></svg>
         </button>
         <div style={s.pillDivider}/>
-        <div style={s.pillProgress} title={`${progress}% — clic para saltar`}
-          onClick={e=>{
+        <div
+          style={{
+            ...s.pillProgress,
+            ...(challengeLocked ? {opacity:0.4, cursor:'not-allowed', pointerEvents:'none'} : {}),
+          }}
+          title={challengeLocked ? 'Sesión terminada' : `${progress}% — clic para saltar`}
+          onClick={challengeLocked ? undefined : e=>{
             const rect=e.currentTarget.getBoundingClientRect()
             const fraction=(e.clientX-rect.left)/rect.width
             const e2=eng();if(!e2)return
@@ -1719,7 +1771,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
           <div style={{...s.pillProgressFill,width:`${progress}%`}}/>
         </div>
         <div style={s.pillDivider}/>
-        <div style={s.speedRow}>
+        <div style={{...s.speedRow, ...(challengeLocked ? {opacity:0.35, pointerEvents:'none'} : {})}}>
           {SPEED_OPTS.map(o=>(
             <button key={o.v} style={{...s.speedBtn,...(speed===o.v?s.speedActive:{})}} onClick={()=>handleSpeed(o.v)}>{o.l}</button>
           ))}
