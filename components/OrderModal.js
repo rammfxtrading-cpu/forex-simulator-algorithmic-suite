@@ -28,8 +28,16 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
   // de la limit (que antes se recalculaban con pips redondeados a entero).
   const [pipsEdited,setPipsEdited]=useState(false)
 
-  // Base de cálculo para el riesgo. En challenge: capital inicial. En libres: balance vivo.
-  const riskBase = isChallenge && initialBalance ? initialBalance : balance
+  // Risk base mode (FTMO-style):
+  // - 'initial' (DEFAULT, siempre activo en challenges): capital inicial fijo.
+  //   1% siempre = misma cantidad USD, sin importar el balance vivo. Así 5
+  //   pérdidas de 1% suman exactamente 5% (cap diario FTMO).
+  // - 'live' (solo disponible en sesiones libres): balance vivo (MT4-style).
+  // En challenge el toggle queda OCULTO y se fuerza 'initial' siempre.
+  const [riskBaseMode,setRiskBaseMode]=useState('initial')
+  const riskBase = (isChallenge || riskBaseMode === 'initial')
+    ? (initialBalance || balance)
+    : balance
   const riskAmt=parseFloat((riskBase*riskPct/100).toFixed(2))
   const pipVal=10
   const lots=slPips>0?parseFloat((riskAmt/(slPips*pipVal)).toFixed(2)):0.01
@@ -90,7 +98,34 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
 
           {/* Risk % presets */}
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.7)',letterSpacing:1.5,marginBottom:8}}>RIESGO DEL BALANCE</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+              <div style={{fontSize:8,fontWeight:700,color:'rgba(255,255,255,0.7)',letterSpacing:1.5}}>RIESGO DEL BALANCE</div>
+              {/* Toggle Inicial/Vivo solo visible fuera de challenges. En
+                  challenges el riesgo siempre se calcula sobre capital inicial. */}
+              {!isChallenge && (
+                <button
+                  type="button"
+                  onClick={()=>setRiskBaseMode(m=>m==='initial'?'live':'initial')}
+                  title={riskBaseMode==='initial'
+                    ? 'Riesgo sobre capital inicial (FTMO). Click para cambiar a balance vivo.'
+                    : 'Riesgo sobre balance vivo (MT4). Click para cambiar a capital inicial.'}
+                  style={{
+                    background:'rgba(30,144,255,0.1)',
+                    border:'1px solid rgba(30,144,255,0.3)',
+                    borderRadius:6,
+                    padding:'2px 8px',
+                    fontSize:9,
+                    fontWeight:700,
+                    color:'#1E90FF',
+                    cursor:'pointer',
+                    fontFamily:"'Montserrat',sans-serif",
+                    letterSpacing:0.3,
+                    textTransform:'uppercase',
+                  }}>
+                  {riskBaseMode==='initial'?'Inicial':'Vivo'}
+                </button>
+              )}
+            </div>
             <div style={{display:'flex',gap:4,marginBottom:10,background:'rgba(0,20,60,0.4)',borderRadius:12,padding:4,border:'1px solid rgba(0,120,255,0.2)'}}>
               {RISK_PRESETS.map(r=>(
                 <button key={r} onClick={()=>setRiskPct(r)} style={{
