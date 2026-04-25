@@ -1109,6 +1109,19 @@ if(full||(curr!==prev&&curr!==prev+1)){
         // Save range, update, restore — prevents chart from scrolling
         const _rng=cr.userScrolled?cr.chart.timeScale().getVisibleLogicalRange():null
         cr.series.update(agg[agg.length-1])
+        // [DEBUG TEMP] Log para investigar bug long/short se contrae al play
+        if(typeof window!=='undefined' && window.__algSuiteDebugLS){
+          const _expJson = (typeof window.__algSuiteExportTools === 'function') ? window.__algSuiteExportTools() : null
+          const _tools = _expJson ? JSON.parse(_expJson) : []
+          const _ls = _tools.find(t => t.toolType === 'LongShortPosition')
+          if(_ls){
+            console.log('[LS-DEBUG] new candle', {
+              tf, agg_len: agg.length, last_real_t: _lastT,
+              phantom_first_t: cr.phantom?.[0]?.time, phantom_last_t: cr.phantom?.[cr.phantom.length-1]?.time,
+              ls_points: _ls.points,
+            })
+          }
+        }
         if(_rng) requestAnimationFrame(()=>{try{cr.chart.timeScale().setVisibleLogicalRange(_rng)}catch{}})
       }catch{
         // Fallback
@@ -1862,7 +1875,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
             }}
           >{d.metadata?.text||''}</div>
         })}
-        <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} chartTick={chartTick} dataReady={dataReady}/>
+        <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} chartTick={chartTick} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
         {!dataReady&&(
