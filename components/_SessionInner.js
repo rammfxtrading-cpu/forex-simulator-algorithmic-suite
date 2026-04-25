@@ -22,6 +22,9 @@ import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from './NoAccess'
 import ChallengeHUD from './ChallengeHUD'
+import ChallengePassedPhaseModal from './ChallengePassedPhaseModal'
+import ChallengePassedAllModal from './ChallengePassedAllModal'
+import ChallengeFailedModal from './ChallengeFailedModal'
 
 const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
@@ -145,6 +148,13 @@ export default function SessionPage(){
 
   const [session,     setSession]     = useState(null)
   const [challengeStatus, setChallengeStatus] = useState(null) // FTMO-style: {session,config,evaluation} o null si no es challenge
+  // Challenge modal state — qué modal mostrar (null = ninguno)
+  // 'passed_phase' = pasaste fase intermedia, 'passed_all' = clímax, 'failed' = quemado
+  const [challengeModal, setChallengeModal] = useState(null)
+  const [challengeAdvancing, setChallengeAdvancing] = useState(false)
+  // Para evitar mostrar el modal cada vez que se refresca status mientras el alumno
+  // todavía no ha cerrado el modal — solo mostrar la primera vez que detectamos el evento.
+  const challengeModalShownRef = useRef(false)
   const [loading,     setLoading]     = useState(true)
   const [activePairs, setActivePairs] = useState([])
   const [activePair,  setActivePair]  = useState(null)
@@ -526,6 +536,111 @@ export default function SessionPage(){
       }
     } catch {}
   }, [currentTime, session?.challenge_type, refreshChallengeStatus])
+
+  // Detector de eventos challenge — abre el modal correspondiente cuando el motor
+  // detecta target_reached, failed_dd_daily o failed_dd_total.
+  // Solo abre la PRIMERA vez para no spamear si el alumno ignora el modal.
+  // Se resetea al avanzar/fallar (cambia session.id) o al desmontar.
+  useEffect(() => {
+    if (!challengeStatus?.evaluation) return
+    if (challengeModalShownRef.current) return
+    if (challengeModal) return // ya hay modal abierto
+    const evalStatus = challengeStatus.evaluation.status
+    const sessStatus = challengeStatus.session?.status
+
+    // Si la sesión ya está cerrada en BD (passed_phase, passed_all, failed_*),
+    // mostrar el modal correspondiente al cargar la página.
+    if (sessStatus === 'passed_all') {
+      setChallengeModal('passed_all')
+      challengeModalShownRef.current = true
+      return
+    }
+    if (sessStatus === 'failed_dd_daily' || sessStatus === 'failed_dd_total') {
+      setChallengeModal('failed')
+      challengeModalShownRef.current = true
+      return
+    }
+    if (sessStatus === 'passed_phase') {
+      // Esta sesión ya pasó. No abrimos modal — el alumno ya está en la siguiente.
+      return
+    }
+
+    // Si la sesión está active pero el motor detectó evento, abrir modal.
+    if (evalStatus === 'target_reached') {
+      const isLastPhase = (challengeStatus.session?.challenge_phase || 1)
+                          >= (challengeStatus.config?.phases || 1)
+      setChallengeModal(isLastPhase ? 'passed_all' : 'passed_phase')
+      challengeModalShownRef.current = true
+      return
+    }
+    if (evalStatus === 'failed_dd_daily' || evalStatus === 'failed_dd_total') {
+      setChallengeModal('failed')
+      challengeModalShownRef.current = true
+      return
+    }
+  }, [challengeStatus, challengeModal])
+
+  // Llamada al endpoint /api/challenge/advance.
+  // outcome='pass' o 'fail' según contexto. Devuelve el nextSession (si aplica).
+  const callChallengeAdvance = useCallback(async (outcome) => {
+    if (!id) return null
+    setChallengeAdvancing(true)
+    try {
+      const res = await fetch('/api/challenge/advance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: id, outcome }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        console.error('[challenge/advance] error:', data?.error || res.statusText)
+        return null
+      }
+      return data
+    } catch (e) {
+      console.error('[challenge/advance] fetch failed', e)
+      return null
+    } finally {
+      setChallengeAdvancing(false)
+    }
+  }, [id])
+
+  // Handlers compartidos por los modales
+  const handleChallengePass = useCallback(async () => {
+    const data = await callChallengeAdvance('pass')
+    if (!data) return
+    if (data.action === 'phase_passed' && data.next_session?.id) {
+      // Redirect a la nueva sesión de la siguiente fase
+      router.push(`/session/${data.next_session.id}`)
+    } else if (data.action === 'challenge_completed') {
+      // Solo persistimos en BD. El modal handler decide qué hacer luego.
+      // Refrescar status local para reflejar passed_all
+      await refreshChallengeStatus()
+    }
+  }, [callChallengeAdvance, router, refreshChallengeStatus])
+
+  const handleChallengeFail = useCallback(async () => {
+    const data = await callChallengeAdvance('fail')
+    if (!data) return
+    await refreshChallengeStatus()
+  }, [callChallengeAdvance, refreshChallengeStatus])
+
+  // CTA "Comenzar Challenge Real" — abre afiliado FTMO en pestaña nueva
+  const handleCtaRealChallenge = useCallback(() => {
+    const ftmoAffiliateUrl = 'https://trader.ftmo.com/?affiliates=VQiFmiFmoBxymSRKPBtl'
+    if (typeof window !== 'undefined') {
+      window.open(ftmoAffiliateUrl, '_blank', 'noopener,noreferrer')
+    }
+  }, [])
+
+  // Volver al dashboard / empezar nuevo challenge
+  const handleGoToDashboard = useCallback(() => {
+    router.push('/dashboard')
+  }, [router])
+
+  const handleGoToNewChallenge = useCallback(() => {
+    router.push('/dashboard') // El dashboard tiene el botón para empezar challenge nuevo
+  }, [router])
 
   // ── Load pair data ────────────────────────────────────────────────────────────
   const loadPair=useCallback(async(pair)=>{
@@ -1951,6 +2066,34 @@ if(full||(curr!==prev&&curr!==prev+1)){
       )}
 
       {tfInput&&<TfInputModal tfInput={tfInput} activeTf={pairTf[activePair]||'H1'}/>}
+
+      {/* CHALLENGE MODALS — pass / fail / passed-all */}
+      {challengeModal === 'passed_phase' && challengeStatus && (
+        <ChallengePassedPhaseModal
+          status={challengeStatus}
+          advancing={challengeAdvancing}
+          onAdvance={async () => { await handleChallengePass() }}
+          onClose={() => { setChallengeModal(null); handleGoToDashboard() }}
+        />
+      )}
+      {challengeModal === 'passed_all' && challengeStatus && (
+        <ChallengePassedAllModal
+          status={challengeStatus}
+          advancing={challengeAdvancing}
+          onAdvance={async () => { await handleChallengePass() }}
+          onCtaReal={handleCtaRealChallenge}
+          onClose={() => { setChallengeModal(null); handleGoToDashboard() }}
+        />
+      )}
+      {challengeModal === 'failed' && challengeStatus && (
+        <ChallengeFailedModal
+          status={challengeStatus}
+          advancing={challengeAdvancing}
+          onAdvance={async () => { await handleChallengeFail() }}
+          onNewChallenge={handleGoToNewChallenge}
+          onClose={() => { setChallengeModal(null) }}
+        />
+      )}
 
       <style>{css}</style>
     </div>
