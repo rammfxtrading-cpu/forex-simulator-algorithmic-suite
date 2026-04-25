@@ -2043,7 +2043,9 @@ if(full||(curr!==prev&&curr!==prev+1)){
       {/* ORDER MODAL */}
       {orderModal&&(
         <OrderModal modal={orderModal} balance={balance}
-          initialBalance={initialCapital} currentPrice={currentPrice}
+          initialBalance={initialCapital}
+          isChallenge={!!session?.challenge_type}
+          currentPrice={currentPrice}
           onClose={()=>setOrderModal(null)}
           onConfirm={(posData)=>{
             if(orderModal.isLimit){

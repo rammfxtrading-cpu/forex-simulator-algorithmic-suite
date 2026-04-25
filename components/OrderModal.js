@@ -1,7 +1,16 @@
 import { useState } from 'react'
 
 // ─── Order Modal — Fintech / Algorithmic Suite ────────────────────────────────
-export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm}){
+// Risk base: en sesiones de challenge (isChallenge=true) usamos `initialBalance`
+// (capital inicial FIJO). Esto garantiza FTMO-style: 1% del riesgo SIEMPRE
+// equivale a la misma cantidad de USD, independientemente de cómo evolucione
+// el balance. Así, 5 pérdidas de 1% suman exactamente 5% del capital, lo que
+// se alinea con el cap del DD diario (típicamente 5%) y evita el problema de
+// "1% del balance vivo" que produce pérdidas de $999.50 → $989.50 → … y nunca
+// llega exacto al cap.
+// En sesiones libres (no-challenge), conservamos el comportamiento clásico
+// (MT4-style): el riesgo se calcula sobre el balance actual.
+export default function OrderModal({modal,balance,initialBalance,isChallenge,currentPrice,onClose,onConfirm}){
   const {side,entry,pair,isLimit,sl:initSl,tp:initTp,lots:initLots,slPips:initSlPips,tpPips:initTpPips,rr:initRr}=modal
   const isBuy=side==='BUY'
   const isJpy=pair?.includes('JPY')
@@ -12,7 +21,9 @@ export default function OrderModal({modal,balance,currentPrice,onClose,onConfirm
   const [tpPips,setTpPips]=useState(initTpPips||20)
   const [autoBE,setAutoBE]=useState(false)
 
-  const riskAmt=parseFloat((balance*riskPct/100).toFixed(2))
+  // Base de cálculo para el riesgo. En challenge: capital inicial. En libres: balance vivo.
+  const riskBase = isChallenge && initialBalance ? initialBalance : balance
+  const riskAmt=parseFloat((riskBase*riskPct/100).toFixed(2))
   const pipVal=10
   const lots=slPips>0?parseFloat((riskAmt/(slPips*pipVal)).toFixed(2)):0.01
   const estLoss=(slPips*lots*pipVal).toFixed(2)

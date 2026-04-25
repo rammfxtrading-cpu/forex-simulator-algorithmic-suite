@@ -43,6 +43,15 @@ export default function ChallengeHUD({ status }) {
   const ddTotalCapPct = evaluation.ddTotalCapPct || 10
   const ddTotalProgress = ddTotalCapPct > 0 ? Math.max(0, Math.min(100, (ddTotalUsedPct / ddTotalCapPct) * 100)) : 0
 
+  // Formato del % usado: cuando estamos a <0.1% del cap pero NO lo hemos tocado,
+  // 2 decimales redondean engañosamente (4.998% → "5.00%" igual que el cap, pero
+  // sin haber fallado). En ese caso mostramos 3 decimales para que se vea la verdad.
+  // Una vez tocado, volvemos a 2 decimales (4.998 → 5.00 → fallaste).
+  const fmtUsedPct = (used, cap) => {
+    if (used < cap && cap - used < 0.1) return used.toFixed(3) + '%'
+    return used.toFixed(2) + '%'
+  }
+
   // Colores dinamicos para DDs: gris normal, naranja si >70% del cap, rojo si >=100%
   const ddDailyColor = ddDailyProgress >= 100 ? '#ef5350' : ddDailyProgress >= 70 ? '#fb923c' : '#a0b8d0'
   const ddTotalColor = ddTotalProgress >= 100 ? '#ef5350' : ddTotalProgress >= 70 ? '#fb923c' : '#a0b8d0'
@@ -80,7 +89,7 @@ export default function ChallengeHUD({ status }) {
         <div style={barTrack}>
           <div style={{...barFill, width:`${ddDailyProgress}%`, background:ddDailyColor}}/>
         </div>
-        <span style={{...metricValue, color:ddDailyColor}}>{ddDailyUsedPct.toFixed(2)}%</span>
+        <span style={{...metricValue, color:ddDailyColor}}>{fmtUsedPct(ddDailyUsedPct, ddDailyCapPct)}</span>
         <span style={metricCap}>/ {ddDailyCapPct.toFixed(0)}%</span>
       </div>
 
@@ -90,7 +99,7 @@ export default function ChallengeHUD({ status }) {
         <div style={barTrack}>
           <div style={{...barFill, width:`${ddTotalProgress}%`, background:ddTotalColor}}/>
         </div>
-        <span style={{...metricValue, color:ddTotalColor}}>{ddTotalUsedPct.toFixed(2)}%</span>
+        <span style={{...metricValue, color:ddTotalColor}}>{fmtUsedPct(ddTotalUsedPct, ddTotalCapPct)}</span>
         <span style={metricCap}>/ {ddTotalCapPct.toFixed(0)}%</span>
       </div>
     </>
