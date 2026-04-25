@@ -787,26 +787,36 @@ export default function SessionPage(){
       wickUpColor:'#2962FF',wickDownColor:'#ffffff',
       borderVisible:false,
       priceFormat:{type:'price',precision:5,minMove:0.00001},
-      autoscaleInfoProvider: (original) => {
+      autoscaleInfoProvider: (originalFn) => {
+        // CRÍTICO: lightweight-charts pasa una FUNCIÓN al provider, no un objeto.
+        // Llamarla devuelve el priceRange por defecto que LWC habría calculado.
+        // Si retornamos `originalFn` directamente, LWC lee `.priceRange` de una
+        // función (undefined) → crashea al hacer `undefined.minValue` durante
+        // el autoscale del eje Y. Reproducible al BAJAR de TF: el realLen aún
+        // no está actualizado en el primer render, caemos en el `return original`
+        // y el chart muere con `Cannot read properties of undefined (reading 'minValue')`.
+        const computeOriginal = () => {
+          try { return originalFn() } catch { return null }
+        }
         try {
           const data = window.__algSuiteSeriesData
           const realLen = window.__algSuiteRealDataLen
-          if(!data||!realLen) return original
+          if(!data||!realLen) return computeOriginal()
           // Get visible range from chart (stored on chartMap)
           const cr = window.__chartMap?.current?.[pair]
-          if(!cr) return original
+          if(!cr) return computeOriginal()
           const range = cr.chart.timeScale().getVisibleLogicalRange()
-          if(!range) return original
+          if(!range) return computeOriginal()
           const from = Math.max(0, Math.floor(range.from))
           const to = Math.min(realLen-1, Math.ceil(range.to))
           const visible = data.slice(from, to+1)
-          if(!visible.length) return original
+          if(!visible.length) return computeOriginal()
           let min=Infinity,max=-Infinity
           for(const c of visible){ if(c.low<min)min=c.low; if(c.high>max)max=c.high }
-          if(!isFinite(min)||!isFinite(max)) return original
+          if(!isFinite(min)||!isFinite(max)) return computeOriginal()
           const margin=(max-min)*0.05
           return { priceRange:{ minValue:min-margin, maxValue:max+margin } }
-        } catch(e){ return original }
+        } catch(e){ return computeOriginal() }
       }
     })
     const ro=new ResizeObserver(entries=>{
