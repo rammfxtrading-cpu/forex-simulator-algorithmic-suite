@@ -1665,12 +1665,31 @@ if(full||(curr!==prev&&curr!==prev+1)){
       try { engine.pause() } catch {}
       try { setIsPlaying(false) } catch {}
 
-      // Disparar modal de fail tras un pequeño delay para que las inserciones
-      // de trades en BD terminen y el refreshChallengeStatus traiga el state real.
-      setTimeout(() => {
-        refreshChallengeStatus()
+      // Disparar modal de fail DESPUÉS de que el backend confirme el nuevo
+      // estado. Si abriéramos el modal antes, mostraría datos stale (DD %
+      // pre-cierre) y un failureReason incorrecto.
+      //
+      // Estrategia: esperamos suficiente para que la inserción del trade en
+      // BD haya terminado (las llamadas a closePosition arriba son async),
+      // luego refrescamos status y solo entonces abrimos el modal.
+      // Usamos un await encadenado en lugar de setTimeout para tener
+      // control real del orden.
+      ;(async () => {
+        // Pequeño respiro para que las inserts paralelas a sim_trades terminen.
+        await new Promise(r => setTimeout(r, 300))
+        // Reintentamos el refresh hasta 3 veces si el motor backend aún no
+        // ve los nuevos trades (consistencia eventual). En la mayoría de casos
+        // basta el primer intento.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          await refreshChallengeStatus()
+          // Leemos el state recién seteado. challengeStatusRef.current es el
+          // espejo que actualizamos en cada render.
+          const st = challengeStatusRef.current?.evaluation?.status
+          if (st === 'failed_dd_daily' || st === 'failed_dd_total') break
+          await new Promise(r => setTimeout(r, 250))
+        }
         setChallengeModal('failed')
-      }, 600)
+      })()
 
       // Salimos del bucle de velas: ya quemado, no procesamos más.
       break
