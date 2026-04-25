@@ -148,6 +148,12 @@ export default function SessionPage(){
 
   const [session,     setSession]     = useState(null)
   const [challengeStatus, setChallengeStatus] = useState(null) // FTMO-style: {session,config,evaluation} o null si no es challenge
+  // Ref espejo del state — el detector de breach intra-vela necesita leerlo
+  // dentro del onTick del engine (que NO se re-suscribe a cada cambio de state).
+  const challengeStatusRef = useRef(null)
+  // Flag que indica que YA se está procesando un breach en este tick para
+  // evitar disparos duplicados (el modal solo se debe abrir una vez).
+  const challengeBreachFiringRef = useRef(false)
   // Challenge modal state — qué modal mostrar (null = ninguno)
   // 'passed_phase' = pasaste fase intermedia, 'passed_all' = clímax, 'failed' = quemado
   const [challengeModal, setChallengeModal] = useState(null)
@@ -185,6 +191,7 @@ export default function SessionPage(){
   const closePositionRef    = useRef(null)
   const checkSLTPRef        = useRef(null)
   const checkLimitOrdersRef = useRef(null)
+  const checkChallengeBreachRef = useRef(null)
   const balanceRef          = useRef(10000)
   // Order modal
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
@@ -768,6 +775,10 @@ export default function SessionPage(){
         updateChart(pair,engine,false)
         checkSLTPRef.current?.(pair,engine)
         checkLimitOrdersRef.current?.(pair,engine)
+        // Challenge breach intra-vela: si el floating PnL + cerrado supera
+        // el cap diario o total, fuerza cierre de TODAS las posiciones al
+        // precio exacto donde se cruzó el cap. Estilo FTMO real.
+        checkChallengeBreachRef.current?.(pair,engine)
         if(pair===activePairRef.current){
           setCurrentTime(engine.currentTime)
           setProgress(Math.round(engine.progress*100))
@@ -1288,11 +1299,18 @@ if(full||(curr!==prev&&curr!==prev+1)){
   // Keep refs always pointing to latest values/functions
   balanceRef.current = balance
   currentTimeRef.current = currentTime
+  challengeStatusRef.current = challengeStatus
   useEffect(()=>{
     closePositionRef.current    = closePosition
     checkSLTPRef.current        = checkSLTP
     checkLimitOrdersRef.current = checkLimitOrders
+    checkChallengeBreachRef.current = checkChallengeBreach
   })
+
+  // Reset del flag breach al cambiar de sesión (por si se reabre).
+  useEffect(() => {
+    challengeBreachFiringRef.current = false
+  }, [id])
 
   // ── Limit order helpers ──────────────────────────────────────────────────────
 
@@ -1478,6 +1496,186 @@ if(full||(curr!==prev&&curr!==prev+1)){
       setTick(t=>t+1)
     }
   },[])
+
+  // ── Challenge breach detector (FTMO-style) ─────────────────────────────────
+  // Para cada vela en el rango [fromIdx, curIdx]:
+  //   1. Calcula el peor floating PnL posible en la vela usando high/low por posición.
+  //   2. Suma con el realizado total + floating de OTROS pares.
+  //   3. Si esa suma cruza el cap diario o total, el alumno ha quemado el challenge.
+  //   4. Calcula el PRECIO EXACTO donde se cruza el cap (fórmula lineal).
+  //   5. Cierra todas las posiciones a ese precio. Reason = 'DD_BREACH'.
+  //   6. Setea un flag para abrir el modal de fail tras el render.
+  //
+  // Notas:
+  // - Solo opera sobre posiciones del pair actual (las del tick). Posiciones de
+  //   otros pares se cuentan a su PnL "actual" (último precio cerrado), porque
+  //   sus propios ticks ya cerrarán por su lado si su vela las quema.
+  // - Si hay múltiples posiciones del mismo par, la fórmula combinada sigue
+  //   siendo lineal (suma de pnl-por-precio de cada una), así que la solución
+  //   sigue siendo cerrada — no necesita búsqueda binaria.
+  const checkChallengeBreach = useCallback((pair, engine) => {
+    const sess = sessionRef.current
+    if (!sess?.challenge_type) return
+    // Si el challenge ya está terminado (failed/passed), no recheckar.
+    const cs = challengeStatusRef.current
+    if (cs?.evaluation?.status && cs.evaluation.status !== 'active' && cs.evaluation.status !== 'target_reached') return
+    // Si ya se disparó un breach en este tick previo, no recalcular.
+    if (challengeBreachFiringRef.current) return
+
+    const ps = pairState.current[pair]
+    if (!ps?.positions?.length) return
+
+    const cfg = cs?.config
+    if (!cfg) return
+    const capital = Number(sess.capital)
+    if (!(capital > 0)) return
+
+    // Cap total absoluto (suelo fijo desde capital inicial).
+    const ddTotalCapUSD = capital * (cfg.dd_total_pct / 100)
+    // Cap diario relativo (startOfDayBalance × dd_daily_pct).
+    // Como aproximación segura usamos lo que el HUD ya calculó (ddDailyCapUSD).
+    // Si no está disponible, usamos capital × pct como conservador.
+    const ddDailyCapUSD = cs?.evaluation?.ddDailyCapUSD || (capital * (cfg.dd_daily_pct / 100))
+    // PnL realizado del DÍA actual: lo que el HUD ya calculó (ddDailyCurrentUSD
+    // representa la caída ya producida hoy).
+    const ddDailyAlreadyUSD = cs?.evaluation?.ddDailyCurrentUSD || 0
+    // PnL realizado total desde capital inicial: balance actual - capital.
+    const realizedDelta = balanceRef.current - capital
+    // Floating de OTROS pares (no el del tick): suma de su unrealized actual
+    // usando el último close del candle actual del engine. No el high/low —
+    // esos pares tienen sus propios ticks que detectarán su breach localmente.
+    let floatingOtherPairs = 0
+    Object.entries(pairState.current).forEach(([k, ps2]) => {
+      if (k === pair || !ps2?.positions?.length || !ps2.engine) return
+      const candles = ps2.engine.candles || []
+      const idx2 = ps2.engine.currentIndex
+      const lastCandle = candles[idx2]
+      const lastPrice = lastCandle?.close ?? ps2.positions[0].entry
+      ps2.positions.forEach(p => {
+        floatingOtherPairs += calcPnl(p.side, p.entry, lastPrice, p.lots, k)
+      })
+    })
+
+    // Itera velas como hace checkSLTP, desde la última registrada.
+    const curIdx = engine.currentIndex
+    const fromIdx = ps.lastBreachIdx != null ? ps.lastBreachIdx + 1 : curIdx
+    ps.lastBreachIdx = curIdx
+
+    // Para cada vela, calculamos el WORST floating en esa vela:
+    // - BUY pierde más cuando el precio baja: peor PnL al low.
+    // - SELL pierde más cuando el precio sube: peor PnL al high.
+    // Como múltiples posiciones del mismo par pueden tener distinto side,
+    // y el precio se mueve por toda la vela, evaluamos el peor caso EN AMBOS
+    // EXTREMOS y nos quedamos con el peor de los dos.
+    for (let i = fromIdx; i <= curIdx; i++) {
+      const candle = engine.candles[i]
+      if (!candle) continue
+      const { high, low } = candle
+      // Filtramos posiciones que ya estaban abiertas en esta vela.
+      const livePositions = ps.positions.filter(p => p.openTime == null || candle.time >= p.openTime)
+      if (!livePositions.length) continue
+
+      // PnL combinado al low y al high.
+      const pnlAtLow  = livePositions.reduce((s, p) => s + calcPnl(p.side, p.entry, low,  p.lots, pair), 0)
+      const pnlAtHigh = livePositions.reduce((s, p) => s + calcPnl(p.side, p.entry, high, p.lots, pair), 0)
+      // Peor escenario floating de este pair en esta vela.
+      const worstFloating = Math.min(pnlAtLow, pnlAtHigh)
+
+      // Equity worst-case en esta vela = capital + realized + floatingOther + worstFloating
+      const equityWorst = capital + realizedDelta + floatingOtherPairs + worstFloating
+      // Caída total desde capital inicial.
+      const ddTotalAtWorst = Math.max(0, capital - equityWorst)
+      // Caída del DÍA: realized del día (ya producida) + (worst-case que esta
+      // vela podría empeorarlo). Solo cuenta lo NEGATIVO de la combinación.
+      // Aproximación: si la caída total agregada empeora respecto al inicio del
+      // día, ese delta cuenta como ddDaily adicional.
+      // Para simplicidad usamos la métrica de capital base — el motor backend
+      // recalculará exacto al cerrar.
+      const ddDailyAtWorst = ddDailyAlreadyUSD + Math.max(0, -worstFloating - floatingOtherPairs)
+
+      const totalBreach = ddTotalAtWorst >= ddTotalCapUSD - 0.01
+      const dailyBreach = ddDailyAtWorst >= ddDailyCapUSD - 0.01
+
+      if (!totalBreach && !dailyBreach) continue
+
+      // ─── Hay breach. Calcular el precio EXACTO donde el equity tocó el cap ───
+      // Modelamos el PnL combinado de las posiciones del pair como función
+      // lineal del precio: pnl(price) = sum( ±(price - entry_i) × pipMult × lots_i × 10 )
+      // Donde el signo es + si BUY y - si SELL.
+      //   = price × A - B   con A = sum(±pipMult × lots × 10), B = sum(±entry × pipMult × lots × 10)
+      // Resolvemos: pnl(price) = pnlObjetivo  ⇒  price = (pnlObjetivo + B) / A
+      const mult = pipMult(pair)
+      let A = 0, B = 0
+      livePositions.forEach(p => {
+        const sign = p.side === 'BUY' ? 1 : -1
+        const coef = sign * mult * Number(p.lots) * 10
+        A += coef
+        B += coef * Number(p.entry)
+      })
+      // Determinar el pnlObjetivo: el peor de los dos caps (el que se cruce primero).
+      // - Para total breach: pnlObjetivo de pair = -(ddTotalCapUSD - realizedDelta - floatingOtherPairs)
+      // - Para daily breach: pnlObjetivo de pair = -(ddDailyCapUSD - ddDailyAlreadyUSD) - floatingOtherPairs
+      // Tomamos el menos negativo (= se cruza antes).
+      const targetForTotal = -(ddTotalCapUSD) - realizedDelta - floatingOtherPairs
+      const targetForDaily = -(ddDailyCapUSD - ddDailyAlreadyUSD) - floatingOtherPairs
+      // Queremos el target con mayor valor (menos pérdida) — se cruza primero.
+      const pnlObjetivo = Math.max(targetForTotal, targetForDaily)
+      const reasonStr = (targetForDaily > targetForTotal) ? 'DD_DAILY_BREACH' : 'DD_TOTAL_BREACH'
+
+      // Si A es cero (no debería), salimos.
+      if (Math.abs(A) < 1e-9) continue
+      let breachPrice = (pnlObjetivo + B) / A
+      // Empujamos 0.5 pips MÁS ALLÁ del precio de breach exacto para asegurar
+      // que el motor backend detecte el fail (evita falsos negativos por
+      // redondeo IEEE-754 al guardar/leer pnl en BD).
+      const halfPip = 0.5 / mult
+      // Dirección: si el equity worst se da al low (BUY agregado), empujamos
+      // ABAJO. Si se da al high (SELL agregado), empujamos ARRIBA.
+      const pushDown = (pnlAtLow < pnlAtHigh)
+      breachPrice += pushDown ? -halfPip : halfPip
+      // Clampar al rango de la vela [low, high]. Si por error matemático
+      // sale fuera, usamos el extremo más cercano.
+      breachPrice = Math.max(low, Math.min(high, breachPrice))
+
+      // Disparar cierre forzado de TODAS las posiciones de TODOS los pares al
+      // mejor precio disponible (en pair actual = breachPrice; en otros pares
+      // = su último precio conocido). Reason marca el motivo.
+      challengeBreachFiringRef.current = true
+      const reasonLabel = reasonStr === 'DD_DAILY_BREACH' ? 'dd_daily' : 'dd_total'
+
+      // Cierre en pair actual al breachPrice
+      const positionsToClose = [...livePositions]
+      positionsToClose.forEach(p => {
+        try { closePositionRef.current(p.id, reasonStr, pair, breachPrice) } catch(e) { console.error('[breach close]', e) }
+      })
+      // Cierre en otros pares al último precio conocido (close del candle actual)
+      Object.entries(pairState.current).forEach(([k, ps2]) => {
+        if (k === pair || !ps2?.positions?.length || !ps2.engine) return
+        const candles = ps2.engine.candles || []
+        const idx2 = ps2.engine.currentIndex
+        const lastCandle = candles[idx2]
+        const lastPrice = lastCandle?.close ?? ps2.positions[0].entry
+        const otherPositions = [...ps2.positions]
+        otherPositions.forEach(p => {
+          try { closePositionRef.current(p.id, reasonStr, k, lastPrice) } catch(e) { console.error('[breach close other]', e) }
+        })
+      })
+
+      // Pausar el motor — el alumno ha quemado el challenge.
+      try { engine.pause() } catch {}
+      try { setIsPlaying(false) } catch {}
+
+      // Disparar modal de fail tras un pequeño delay para que las inserciones
+      // de trades en BD terminen y el refreshChallengeStatus traiga el state real.
+      setTimeout(() => {
+        refreshChallengeStatus()
+        setChallengeModal('failed')
+      }, 600)
+
+      // Salimos del bucle de velas: ya quemado, no procesamos más.
+      break
+    }
+  }, [refreshChallengeStatus])
 
   // ── Multi-pair ────────────────────────────────────────────────────────────────
   const addPair=useCallback((pair)=>{
