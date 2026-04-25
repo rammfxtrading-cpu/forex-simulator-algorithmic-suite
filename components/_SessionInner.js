@@ -276,10 +276,25 @@ export default function SessionPage(){
         c: customJson || '[]',
         tfMap: Object.keys(tfMap).length > 0 ? tfMap : undefined,
       })
-      await supabase.from('session_drawings').delete().eq('session_id', sid).then(()=>{}).catch(()=>{})
-      await supabase.from('session_drawings').insert(
-        { session_id: sid, user_id: uid, data: combined, updated_at: new Date().toISOString() }
-      ).then(()=>{}).catch(()=>{})
+      // Upsert manual: UPDATE primero, INSERT solo si no existía la fila.
+      // El patrón anterior (delete + insert en dos llamadas) producía 409 cuando
+      // dos saves se solapaban — el delete del segundo aún no había resuelto y
+      // el insert del primero chocaba con la fila vieja. Este patrón es
+      // atómico-por-fila y no requiere constraint UNIQUE en BD (que no
+      // queremos asumir que esté creado).
+      const { data: updated, error: upErr } = await supabase
+        .from('session_drawings')
+        .update({ user_id: uid, data: combined, updated_at: new Date().toISOString() })
+        .eq('session_id', sid)
+        .select('session_id')
+      if (!upErr && (!updated || updated.length === 0)) {
+        // No existía: insert. Si ahora otro tab se nos adelantó y ya creó la
+        // fila entre el UPDATE y el INSERT (carrera muy rara), el catch lo
+        // absorbe — el dato más reciente ya está en BD igualmente.
+        await supabase.from('session_drawings').insert(
+          { session_id: sid, user_id: uid, data: combined, updated_at: new Date().toISOString() }
+        ).then(()=>{}).catch(()=>{})
+      }
     } catch(e) {}
   }, [exportTools, customDrawingsToJSON])
   useEffect(() => { saveDrawingsRef.current = saveSessionDrawings }, [saveSessionDrawings])
@@ -1089,27 +1104,101 @@ if(full||(curr!==prev&&curr!==prev+1)){
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
   },[])
 
+  // ── TF change: re-render chart + reproject drawings anchored on phantoms ────
+  // Cuando el alumno cambia de TF, los drawings cuyo punto cae a la DERECHA del
+  // último precio real (sobre las "phantom candles") se desanclan: el plugin
+  // LWC almacena los puntos por timestamp, pero los timestamps de phantoms del
+  // TF anterior (p.ej. M5: lastReal+300, +600, +900...) no existen en el array
+  // del TF nuevo (p.ej. H1: lastReal'+3600, +7200...). El punto queda colgado
+  // en el aire o se proyecta a una posición arbitraria.
+  //
+  // Solución estilo TradingView: mantener distancia VISUAL (mismas velas a la
+  // derecha del precio actual). Calculamos el offset en velas del punto phantom
+  // respecto al último real del TF anterior, y al aplicar el TF nuevo
+  // recalculamos el timestamp como lastReal_new + offset × tfSecs_new.
+  const prevTfRef = useRef(null)
   useEffect(()=>{
-    if(activePair){
-      const ps=pairState.current[activePair],cr=chartMap.current[activePair]
-      if(ps?.engine&&cr){
-        // Deseleccionar drawings ANTES de re-renderizar el chart con datos del
-        // nuevo TF. Causa: el plugin de line tools intenta calcular geometría
-        // con `minValue` del bucket actual, y al cambiar TF el array de velas
-        // se reconstruye desde cero. Si hay un drawing seleccionado durante
-        // ese ínterin, el plugin lee `undefined.minValue` y crashea toda la
-        // página (race condition más reproducible al BAJAR de TF porque el
-        // array nuevo es más grande y la ventana de race se ensancha).
-        try{ deselectAll() }catch{}
-        cr.prevCount=0;updateChart(activePair,ps.engine,true);setTfKey(k=>k+1)
-        // Scroll to current position after TF change
-        requestAnimationFrame(()=>{
-          try{cr.chart.timeScale().scrollToPosition(8,false)}catch{}
-          requestAnimationFrame(()=>setChartTick(t=>t+1))
-        })
-      }
+    if(!activePair) return
+    const ps=pairState.current[activePair], cr=chartMap.current[activePair]
+    if(!ps?.engine || !cr) return
+
+    const newTf = pairTf[activePair] || 'H1'
+    const oldTf = prevTfRef.current
+
+    // Deseleccionar drawings antes del re-render (mantiene UX limpia y
+    // previene el contraerse del LongShortPosition durante el setData).
+    try{ deselectAll() }catch{}
+
+    // Si hay TF anterior y es distinto, proyectamos drawings con puntos en zona phantom.
+    let projection = null
+    if (oldTf && oldTf !== newTf) {
+      try {
+        const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
+        const oldSecs = TF_SECS[oldTf] || 3600
+        const newSecs = TF_SECS[newTf] || 3600
+        // Último timestamp REAL del TF anterior (NO incluye phantoms).
+        const oldAgg = ps.engine.getAggregated(oldTf)
+        const oldLastReal = oldAgg.length ? oldAgg[oldAgg.length-1].time : null
+        const exportJson = exportTools()
+        const tools = exportJson ? JSON.parse(exportJson) : []
+        if (oldLastReal && tools.length) {
+          // Para cada tool, marcamos qué puntos eran phantom y guardamos su offset.
+          const offsets = tools.map(tool => ({
+            id: tool.id,
+            // points[i].phantomOffset = nº de velas a la derecha del último real.
+            // null si el punto era real (no necesita reproyección).
+            offsets: (tool.points || []).map(p => {
+              if (typeof p?.timestamp !== 'number') return null
+              if (p.timestamp <= oldLastReal) return null  // punto real
+              const offset = Math.round((p.timestamp - oldLastReal) / oldSecs)
+              return offset > 0 ? offset : null
+            })
+          }))
+          projection = { offsets, newSecs }
+        }
+      } catch(e){ /* si algo falla, continuamos sin proyección — mejor que crashear */ }
     }
-  },[pairTf,activePair,updateChart,deselectAll])
+
+    cr.prevCount = 0
+    updateChart(activePair, ps.engine, true)
+    setTfKey(k => k+1)
+
+    // Tras el setData, reaplicamos los timestamps proyectados.
+    if (projection) {
+      try {
+        const newAgg = ps.engine.getAggregated(newTf)
+        const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
+        if (newLastReal) {
+          const exportJson = exportTools()
+          const tools = exportJson ? JSON.parse(exportJson) : []
+          let mutated = false
+          tools.forEach(tool => {
+            const entry = projection.offsets.find(o => o.id === tool.id)
+            if (!entry) return
+            (tool.points || []).forEach((p, idx) => {
+              const off = entry.offsets[idx]
+              if (off == null) return
+              // Proyectamos: timestamp nuevo = último real nuevo + offset × tfSecs nuevo.
+              const newTs = newLastReal + off * projection.newSecs
+              if (typeof p === 'object' && p !== null) {
+                p.timestamp = newTs
+                mutated = true
+              }
+            })
+          })
+          if (mutated) importTools(JSON.stringify(tools))
+        }
+      } catch(e){ /* swallow — drawings se quedarán como antes, sin crash */ }
+    }
+
+    // Scroll a la posición actual tras el cambio de TF.
+    requestAnimationFrame(()=>{
+      try{ cr.chart.timeScale().scrollToPosition(8,false) }catch{}
+      requestAnimationFrame(()=>setChartTick(t => t+1))
+    })
+
+    prevTfRef.current = newTf
+  },[pairTf,activePair,updateChart,deselectAll,exportTools,importTools])
 
   useEffect(()=>{
     if(!activePair) return
