@@ -76,35 +76,60 @@ export default function EquityCurve({ closedTrades = [], sessions = [], initialB
   const [hover, setHover] = useState(null) // {idx, mouseX, mouseY}
 
   // Construimos los puntos: punto 0 = balance inicial, después uno por trade cerrado.
-  const { eqPoints, screenPoints, pathD, areaD, niceY, dateRange } = useMemo(() => {
+  // El eje X se distribuye por TIEMPO REAL: cada punto se posiciona según su
+  // timestamp dentro del rango total. Trades seguidos en el calendario quedan
+  // visualmente cerca, trades distantes generan tramos aplanados (estilo FX
+  // Replay / TradingView).
+  const { eqPoints, screenPoints, pathD, areaD, niceY, tMin, tMax } = useMemo(() => {
     let run = initialBalance
-    const pts = [{ x:0, y:run, trade:null, ts:null }]
-    closedTrades.forEach((t,i) => {
-      run += (t.pnl || 0)
-      const ts = t.closed_at || t.updated_at || t.created_at || null
-      pts.push({ x:i+1, y:run, trade:t, ts })
+    // Resolvemos los timestamps de cada trade. Si alguno no tiene timestamp
+    // (legacy data), lo dejamos en null y luego caemos al modo "por índice"
+    // como fallback para no romper la curva.
+    const trades = closedTrades.map(t => ({
+      pnl: t.pnl || 0,
+      ts: t.closed_at || t.updated_at || t.created_at || null,
+      raw: t,
+    }))
+    const allHaveTs = trades.length > 0 && trades.every(t => t.ts)
+    // Convertimos los timestamps a millis. El punto inicial (índice 0) toma
+    // el timestamp del primer trade — o null si no hay trades.
+    const firstTs = allHaveTs ? new Date(trades[0].ts).getTime() : null
+    const lastTs  = allHaveTs ? new Date(trades[trades.length-1].ts).getTime() : null
+    // Si hay un solo trade o todos en el mismo instante, ampliamos el rango
+    // artificialmente para evitar división por 0.
+    let tMin = firstTs, tMax = lastTs
+    if (allHaveTs && tMin === tMax) { tMin = tMin - 1; tMax = tMax + 1 }
+    const pts = [{ x:0, y:run, trade:null, ts: firstTs ? new Date(firstTs).toISOString() : null, tNum: firstTs }]
+    trades.forEach((t, i) => {
+      run += t.pnl
+      const tNum = t.ts ? new Date(t.ts).getTime() : null
+      pts.push({ x:i+1, y:run, trade:t.raw, ts:t.ts, tNum })
     })
     if (pts.length < 2) {
-      return { eqPoints: pts, screenPoints: [], pathD: '', areaD: '', niceY: { ticks:[], niceMin:0, niceMax:0 }, dateRange: { from:null, to:null } }
+      return { eqPoints: pts, screenPoints: [], pathD: '', areaD: '', niceY: { ticks:[], niceMin:0, niceMax:0 }, tMin:null, tMax:null }
     }
     const ys = pts.map(p => p.y)
     const minY = Math.min(...ys), maxY = Math.max(...ys)
     const niceY = niceTicks(minY, maxY, 5)
     const yRange = niceY.niceMax - niceY.niceMin || 1
-    const screenPoints = pts.map(p => {
-      const x = PAD_L + (p.x/(pts.length-1)) * PLOT_W
+    // Mapeo de X: si todos los trades tienen timestamp, usamos posición
+    // proporcional al tiempo real. Si no, fallback a equiespaciado por índice.
+    const tRange = (tMax!=null && tMin!=null) ? (tMax - tMin) : 0
+    const screenPoints = pts.map((p, i) => {
+      let xRatio
+      if (allHaveTs && tRange > 0) {
+        // p.tNum nunca es null aquí (todos tienen ts)
+        xRatio = (p.tNum - tMin) / tRange
+      } else {
+        xRatio = i / (pts.length - 1)
+      }
+      const x = PAD_L + xRatio * PLOT_W
       const y = PAD_T + PLOT_H - ((p.y - niceY.niceMin) / yRange) * PLOT_H
       return { x, y, balance: p.y, trade: p.trade, ts: p.ts, idx: p.x }
     })
     const pathD = screenPoints.map((p,i) => `${i===0?'M':'L'}${p.x},${p.y}`).join(' ')
     const areaD = `${pathD} L${screenPoints[screenPoints.length-1].x},${PAD_T+PLOT_H} L${screenPoints[0].x},${PAD_T+PLOT_H} Z`
-    // Rango de fechas para los ticks del eje X
-    const tsList = pts.map(p => p.ts).filter(Boolean)
-    const dateRange = {
-      from: tsList.length ? tsList[0] : null,
-      to:   tsList.length ? tsList[tsList.length-1] : null,
-    }
-    return { eqPoints: pts, screenPoints, pathD, areaD, niceY, dateRange }
+    return { eqPoints: pts, screenPoints, pathD, areaD, niceY, tMin, tMax }
   }, [closedTrades, initialBalance])
 
   // Si no hay datos suficientes, no mostramos curva.
@@ -119,13 +144,34 @@ export default function EquityCurve({ closedTrades = [], sessions = [], initialB
     )
   }
 
-  // Ticks del eje X: máximo 6 marcas (incluyendo extremos).
-  const xTickCount = Math.min(6, eqPoints.length)
-  const xTickIndices = []
-  for (let i=0; i<xTickCount; i++) {
-    const idx = Math.round(i * (eqPoints.length-1) / (xTickCount-1))
-    xTickIndices.push(idx)
-  }
+  // Ticks del eje X: 6 fechas equiespaciadas en el RANGO TEMPORAL (no por índice
+  // de trade). Esto significa que si los trades son del 23 al 28 de octubre, los
+  // ticks serán fechas distribuidas entre esos extremos. Si no hay timestamps
+  // disponibles (legacy data), caemos a ticks por índice.
+  const tRange = (tMax!=null && tMin!=null) ? (tMax - tMin) : 0
+  const xTicks = (() => {
+    if (!tRange) {
+      // Fallback: ticks por índice (modo equiespaciado).
+      const n = Math.min(6, eqPoints.length)
+      const ticks = []
+      for (let i=0; i<n; i++) {
+        const idx = Math.round(i * (eqPoints.length-1) / (n-1))
+        const sp = screenPoints[idx]
+        if (sp) ticks.push({ x: sp.x, label: sp.ts ? fmtDate(sp.ts) : (idx === 0 ? 'Inicio' : `#${idx}`) })
+      }
+      return ticks
+    }
+    // Modo temporal: 6 fechas distribuidas entre tMin y tMax.
+    const n = 6
+    const ticks = []
+    for (let i=0; i<n; i++) {
+      const ratio = i / (n-1)
+      const t = tMin + ratio * tRange
+      const x = PAD_L + ratio * PLOT_W
+      ticks.push({ x, label: fmtDate(new Date(t).toISOString()) })
+    }
+    return ticks
+  })()
 
   // Render del tooltip
   const renderTooltip = () => {
@@ -265,22 +311,19 @@ export default function EquityCurve({ closedTrades = [], sessions = [], initialB
             )
           })}
 
-          {/* X axis labels (fechas) */}
-          {xTickIndices.map((idx, i) => {
-            const sp = screenPoints[idx]
-            if (!sp) return null
-            const label = sp.ts ? fmtDate(sp.ts) : (idx === 0 ? 'Inicio' : `#${idx}`)
-            const anchor = i === 0 ? 'start' : i === xTickIndices.length-1 ? 'end' : 'middle'
+          {/* X axis labels (fechas distribuidas en el rango temporal) */}
+          {xTicks.map((tk, i) => {
+            const anchor = i === 0 ? 'start' : i === xTicks.length-1 ? 'end' : 'middle'
             return (
               <g key={`x-${i}`}>
                 <line
-                  x1={sp.x} x2={sp.x}
+                  x1={tk.x} x2={tk.x}
                   y1={PAD_T+PLOT_H} y2={PAD_T+PLOT_H+4}
                   stroke="rgba(255,255,255,0.2)"
                   strokeWidth="1"
                 />
                 <text
-                  x={sp.x}
+                  x={tk.x}
                   y={PAD_T+PLOT_H+16}
                   fontSize="9"
                   fill="rgba(255,255,255,0.45)"
@@ -288,7 +331,7 @@ export default function EquityCurve({ closedTrades = [], sessions = [], initialB
                   fontFamily="Montserrat,sans-serif"
                   fontWeight="600"
                 >
-                  {label}
+                  {tk.label}
                 </text>
               </g>
             )
