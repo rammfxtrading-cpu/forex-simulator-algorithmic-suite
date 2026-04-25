@@ -3,6 +3,54 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ChallengeSetupModal from '../components/ChallengeSetupModal'
 
+/**
+ * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
+ * Devuelve textos, colores y CTAs coherentes para el card del dashboard.
+ * Sesiones que NO son challenge (challenge_type=null) caen en el caso por defecto.
+ */
+function getSessionVisualState(session) {
+  const status = session?.status || 'active'
+  const phase = session?.challenge_phase || 1
+
+  // Sesiones challenge cerradas ───────────────────────────────────────
+  if (status === 'passed_all') {
+    return {
+      badge: 'Passed',
+      badgeColor: '#22c55e',
+      borderColor: 'rgba(34,197,94,0.35)',
+      cta: 'Review Session →',
+      ctaColor: '#22c55e',
+    }
+  }
+  if (status === 'passed_phase') {
+    return {
+      badge: `Phase ${phase} · Cleared`,
+      badgeColor: '#1E90FF',
+      borderColor: 'rgba(30,144,255,0.35)',
+      cta: 'Review Session →',
+      ctaColor: '#1E90FF',
+    }
+  }
+  if (status === 'failed_dd_daily' || status === 'failed_dd_total') {
+    return {
+      badge: status === 'failed_dd_daily' ? 'Failed · Daily DD' : 'Failed · Max DD',
+      badgeColor: '#ef5350',
+      borderColor: 'rgba(239,83,80,0.32)',
+      cta: 'Review Session →',
+      ctaColor: '#ef5350',
+    }
+  }
+
+  // Default: active (challenge o practice) ────────────────────────────
+  return {
+    badge: null,
+    badgeColor: '#1E90FF',
+    borderColor: 'rgba(30,144,255,0.18)',
+    cta: 'Open Session →',
+    ctaColor: '#1E90FF',
+  }
+}
+
 export default function Dashboard() {
   const router = useRouter()
   const bgCanvasRef = useRef(null)
@@ -359,8 +407,10 @@ export default function Dashboard() {
             </div>
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
-              {sessions.map(session => (
-                <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
+              {sessions.map(session => {
+                const vs = getSessionVisualState(session)
+                return (
+                <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:`1px solid ${vs.borderColor}`,borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
                     <button onClick={async()=>{if(!confirm('¿Eliminar sesión y todos sus datos?'))return
@@ -373,8 +423,11 @@ export default function Dashboard() {
                       ])
                       setSessions(p=>p.filter(s=>s.id!==sid))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
-                  <div style={{display:'flex',gap:6}}>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
+                    {vs.badge && (
+                      <span style={{background:vs.badgeColor+'18',border:`1px solid ${vs.badgeColor}55`,color:vs.badgeColor,fontSize:9,fontWeight:800,padding:'2px 8px',borderRadius:4,letterSpacing:1,textTransform:'uppercase'}}>{vs.badge}</span>
+                    )}
                   </div>
                   <div style={{fontSize:11,color:'rgba(255,255,255,0.85)'}}>{session.date_from} → {session.date_to}</div>
                   <div style={{display:'flex',borderTop:'1px solid rgba(30,144,255,0.12)',paddingTop:10}}>
@@ -389,11 +442,12 @@ export default function Dashboard() {
                       </div>
                     </div>
                   </div>
-                  <button onClick={()=>router.push(`/session/${session.id}`)} style={{background:'none',border:'1px solid #1E90FF40',color:'#1E90FF',borderRadius:8,padding:'8px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
-                    Open Session →
+                  <button onClick={()=>router.push(`/session/${session.id}`)} style={{background:'none',border:`1px solid ${vs.ctaColor}40`,color:vs.ctaColor,borderRadius:8,padding:'8px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
+                    {vs.cta}
                   </button>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </>}
@@ -420,8 +474,10 @@ export default function Dashboard() {
             </div>
           ) : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
-              {sessions.map(session => (
-                <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
+              {sessions.map(session => {
+                const vs = getSessionVisualState(session)
+                return (
+                <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:`1px solid ${vs.borderColor}`,borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
                     <button onClick={async()=>{if(!confirm('¿Eliminar sesión y todos sus datos?'))return
@@ -434,8 +490,11 @@ export default function Dashboard() {
                       ])
                       setSessions(p=>p.filter(s=>s.id!==sid))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
-                  <div style={{display:'flex',gap:6}}>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
+                    {vs.badge && (
+                      <span style={{background:vs.badgeColor+'18',border:`1px solid ${vs.badgeColor}55`,color:vs.badgeColor,fontSize:9,fontWeight:800,padding:'2px 8px',borderRadius:4,letterSpacing:1,textTransform:'uppercase'}}>{vs.badge}</span>
+                    )}
                   </div>
                   <div style={{fontSize:11,color:'rgba(255,255,255,0.85)'}}>{session.date_from} → {session.date_to}</div>
                   <div style={{display:'flex',borderTop:'1px solid rgba(30,144,255,0.12)',paddingTop:10}}>
@@ -450,11 +509,12 @@ export default function Dashboard() {
                       </div>
                     </div>
                   </div>
-                  <button onClick={()=>router.push(`/session/${session.id}`)} style={{background:'none',border:'1px solid #1E90FF40',color:'#1E90FF',borderRadius:8,padding:'8px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
-                    Open Session →
+                  <button onClick={()=>router.push(`/session/${session.id}`)} style={{background:'none',border:`1px solid ${vs.ctaColor}40`,color:vs.ctaColor,borderRadius:8,padding:'8px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
+                    {vs.cta}
                   </button>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </>}
