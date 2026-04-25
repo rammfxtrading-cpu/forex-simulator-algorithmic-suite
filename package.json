@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",
+    "chart.js": "^4.4.3",
     "html2canvas": "^1.4.1",
     "lightweight-charts": "^5.1.0",
     "lightweight-charts-line-tools-core": "github:difurious/lightweight-charts-line-tools-core",

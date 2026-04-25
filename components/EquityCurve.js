@@ -1,374 +1,173 @@
-// EquityCurve.js — curva de capital con tooltip al hover + ejes X (fecha) e Y ($).
-// Estilo FX Replay. Reutilizable: se usa en /dashboard (vista del alumno) y en
-// /admin (vista del detalle de cualquier alumno).
+// EquityCurve.js — curva de capital con Chart.js, replicando exactamente el
+// estilo del Journal de Algorithmic Suite. Reutilizable en /dashboard y /admin.
 //
 // Props:
-//   closedTrades:   array de trades cerrados con {pnl, side, pair, rr, session_id, closed_at|created_at}
-//   sessions:       array de sesiones (para resolver el nombre por session_id)
+//   closedTrades:   trades cerrados [{pnl, side, pair, rr, result, session_id, closed_at}]
+//   sessions:       sesiones para el tooltip (resolver nombre por session_id)
 //   initialBalance: balance inicial — punto de partida de la curva
-//
-// El componente calcula sus propios puntos (eqPoints + screenPoints), construye
-// el path SVG, y renderiza ejes + interacción.
 
-import { useState, useMemo } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
+import { Chart, registerables } from 'chart.js'
+Chart.register(...registerables)
 
-// Layout del SVG. viewBox 800x200.
-// Reservamos espacio a la izquierda (eje Y) y abajo (eje X).
-const VB_W = 800
-const VB_H = 200
-const PAD_L = 60   // espacio para labels del eje Y
-const PAD_R = 12
-const PAD_T = 12
-const PAD_B = 28   // espacio para labels del eje X
-const PLOT_W = VB_W - PAD_L - PAD_R
-const PLOT_H = VB_H - PAD_T - PAD_B
-
-// Formateo: $1.2K, $105K, $1.05M, etc.
-function fmtMoney(n) {
-  if (n == null || isNaN(n)) return '—'
-  const abs = Math.abs(n)
-  if (abs >= 1e6) return `$${(n/1e6).toFixed(2)}M`
-  if (abs >= 1e3) return `$${(n/1e3).toFixed(abs >= 1e4 ? 0 : 1)}K`
-  return `$${n.toFixed(0)}`
-}
+// Format: YYYY-MM-DD para los labels del eje X (estilo journal)
 function fmtDate(ts) {
   if (!ts) return ''
   const d = new Date(ts)
   if (isNaN(d.getTime())) return ''
-  // dd/mm/yy
-  const dd = String(d.getDate()).padStart(2,'0')
-  const mm = String(d.getMonth()+1).padStart(2,'0')
-  const yy = String(d.getFullYear()).slice(-2)
-  return `${dd}/${mm}/${yy}`
-}
-function fmtDateTime(ts) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  if (isNaN(d.getTime())) return ''
-  const dd = String(d.getDate()).padStart(2,'0')
-  const mm = String(d.getMonth()+1).padStart(2,'0')
-  const yyyy = d.getFullYear()
-  const hh = String(d.getHours()).padStart(2,'0')
-  const min = String(d.getMinutes()).padStart(2,'0')
-  return `${dd}/${mm}/${yyyy} ${hh}:${min}`
-}
-
-// "nice" axis ticks — algoritmo clásico: redondea step a 1·10^n, 2·10^n, 5·10^n.
-function niceTicks(min, max, target = 5) {
-  if (min === max) { min -= 1; max += 1 }
-  const range = max - min
-  const rough = range / target
-  const pow = Math.pow(10, Math.floor(Math.log10(rough)))
-  const norm = rough / pow
-  let step
-  if (norm < 1.5) step = 1*pow
-  else if (norm < 3) step = 2*pow
-  else if (norm < 7) step = 5*pow
-  else step = 10*pow
-  const niceMin = Math.floor(min/step)*step
-  const niceMax = Math.ceil(max/step)*step
-  const ticks = []
-  for (let v = niceMin; v <= niceMax + step*0.001; v += step) ticks.push(Number(v.toFixed(10)))
-  return { ticks, niceMin, niceMax }
+  return d.toISOString().slice(0,10)
 }
 
 export default function EquityCurve({ closedTrades = [], sessions = [], initialBalance = 0 }) {
-  const [hover, setHover] = useState(null) // {idx, mouseX, mouseY}
+  const canvasRef = useRef(null)
+  const chartRef = useRef(null)
 
-  // Construimos los puntos: punto 0 = balance inicial, después uno por trade cerrado.
-  // El eje X se distribuye por TIEMPO REAL: cada punto se posiciona según su
-  // timestamp dentro del rango total. Trades seguidos en el calendario quedan
-  // visualmente cerca, trades distantes generan tramos aplanados (estilo FX
-  // Replay / TradingView).
-  const { eqPoints, screenPoints, pathD, areaD, niceY, tMin, tMax } = useMemo(() => {
-    let run = initialBalance
-    // Resolvemos los timestamps de cada trade. Si alguno no tiene timestamp
-    // (legacy data), lo dejamos en null y luego caemos al modo "por índice"
-    // como fallback para no romper la curva.
-    const trades = closedTrades.map(t => ({
-      pnl: t.pnl || 0,
-      ts: t.closed_at || t.updated_at || t.created_at || null,
-      raw: t,
-    }))
-    const allHaveTs = trades.length > 0 && trades.every(t => t.ts)
-    // Convertimos los timestamps a millis. El punto inicial (índice 0) toma
-    // el timestamp del primer trade — o null si no hay trades.
-    const firstTs = allHaveTs ? new Date(trades[0].ts).getTime() : null
-    const lastTs  = allHaveTs ? new Date(trades[trades.length-1].ts).getTime() : null
-    // Si hay un solo trade o todos en el mismo instante, ampliamos el rango
-    // artificialmente para evitar división por 0.
-    let tMin = firstTs, tMax = lastTs
-    if (allHaveTs && tMin === tMax) { tMin = tMin - 1; tMax = tMax + 1 }
-    const pts = [{ x:0, y:run, trade:null, ts: firstTs ? new Date(firstTs).toISOString() : null, tNum: firstTs }]
-    trades.forEach((t, i) => {
-      run += t.pnl
-      const tNum = t.ts ? new Date(t.ts).getTime() : null
-      pts.push({ x:i+1, y:run, trade:t.raw, ts:t.ts, tNum })
+  // Dataset memoizado — equity acumulado + colores por trade.
+  const { equity, labels, pointColors, tradesData } = useMemo(() => {
+    // Punto inicial + uno por trade. equity[i] = balance tras el trade i-ésimo.
+    const eq = [initialBalance]
+    const lbls = ['Inicio']
+    closedTrades.forEach(t => {
+      eq.push(eq[eq.length-1] + (t.pnl || 0))
+      lbls.push(fmtDate(t.closed_at || t.created_at) || '—')
     })
-    if (pts.length < 2) {
-      return { eqPoints: pts, screenPoints: [], pathD: '', areaD: '', niceY: { ticks:[], niceMin:0, niceMax:0 }, tMin:null, tMax:null }
-    }
-    const ys = pts.map(p => p.y)
-    const minY = Math.min(...ys), maxY = Math.max(...ys)
-    const niceY = niceTicks(minY, maxY, 5)
-    const yRange = niceY.niceMax - niceY.niceMin || 1
-    // Mapeo de X: si todos los trades tienen timestamp, usamos posición
-    // proporcional al tiempo real. Si no, fallback a equiespaciado por índice.
-    const tRange = (tMax!=null && tMin!=null) ? (tMax - tMin) : 0
-    const screenPoints = pts.map((p, i) => {
-      let xRatio
-      if (allHaveTs && tRange > 0) {
-        // p.tNum nunca es null aquí (todos tienen ts)
-        xRatio = (p.tNum - tMin) / tRange
-      } else {
-        xRatio = i / (pts.length - 1)
-      }
-      const x = PAD_L + xRatio * PLOT_W
-      const y = PAD_T + PLOT_H - ((p.y - niceY.niceMin) / yRange) * PLOT_H
-      return { x, y, balance: p.y, trade: p.trade, ts: p.ts, idx: p.x }
+    // Colores: el primer punto es azul (inicio). Para los demás:
+    //   - azul si balance subió (positivo)
+    //   - rojo si bajó (negativo)
+    //   - amarillo si igual (breakeven)
+    const colors = eq.map((v, i) => {
+      if (i === 0) return '#2d7ef7'
+      if (eq[i] < eq[i-1]) return '#f03e3e'
+      if (eq[i] === eq[i-1]) return '#f59e0b'
+      return '#2d7ef7'
     })
-    const pathD = screenPoints.map((p,i) => `${i===0?'M':'L'}${p.x},${p.y}`).join(' ')
-    const areaD = `${pathD} L${screenPoints[screenPoints.length-1].x},${PAD_T+PLOT_H} L${screenPoints[0].x},${PAD_T+PLOT_H} Z`
-    return { eqPoints: pts, screenPoints, pathD, areaD, niceY, tMin, tMax }
+    return { equity: eq, labels: lbls, pointColors: colors, tradesData: closedTrades }
   }, [closedTrades, initialBalance])
 
-  // Si no hay datos suficientes, no mostramos curva.
-  if (eqPoints.length < 2) {
+  useEffect(() => {
+    if (!canvasRef.current) return
+    if (!equity || equity.length < 2) {
+      // Si no hay datos suficientes destruimos cualquier chart previo
+      if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null }
+      return
+    }
+
+    // Destruir chart anterior antes de crear uno nuevo (cambios de filtro)
+    if (chartRef.current) chartRef.current.destroy()
+
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: equity,
+          borderColor: '#2d7ef7',
+          borderWidth: 2,
+          fill: true,
+          backgroundColor: (ctx) => {
+            // Gradient azul vertical idéntico al journal
+            const canvas = ctx.chart.ctx
+            const gradient = canvas.createLinearGradient(0, 0, 0, 300)
+            gradient.addColorStop(0, 'rgba(45,126,247,0.35)')
+            gradient.addColorStop(1, 'rgba(45,126,247,0.01)')
+            return gradient
+          },
+          pointRadius: 3,
+          pointBackgroundColor: pointColors,
+          pointBorderColor: 'transparent',
+          pointBorderWidth: 0,
+          tension: 0.35, // bezier suavizado
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(4,10,24,0.96)',
+            borderColor: 'rgba(30,144,255,0.4)',
+            borderWidth: 1,
+            padding: 10,
+            displayColors: false,
+            titleColor: '#fff',
+            titleFont: { size: 11, weight: 'bold' },
+            bodyColor: 'rgba(255,255,255,0.85)',
+            bodyFont: { size: 11 },
+            callbacks: {
+              title: (items) => {
+                const i = items[0].dataIndex
+                if (i === 0) return 'Punto inicial'
+                const t = tradesData[i-1]
+                return `Trade #${i} · ${t?.side || ''} ${t?.pair || ''}`.trim()
+              },
+              label: (ctx) => {
+                const i = ctx.dataIndex
+                const balance = equity[i]
+                const lines = [`Balance: $${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`]
+                if (i > 0) {
+                  const t = tradesData[i-1]
+                  if (t) {
+                    const initial = initialBalance || balance
+                    const pct = initial > 0 ? ((balance - initial) / initial * 100) : 0
+                    const pnl = t.pnl || 0
+                    const sign = pnl >= 0 ? '+' : ''
+                    lines.push(`P&L: ${sign}$${pnl.toFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`)
+                    if (t.rr != null) lines.push(`R:R: ${parseFloat(t.rr || 0).toFixed(2)}R`)
+                    const sess = sessions.find(s => s.id === t.session_id)
+                    if (sess) lines.push(sess.name)
+                  }
+                }
+                return lines
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#64748b', font: { size: 9 }, maxRotation: 45, minRotation: 45 },
+            grid: { display: false },
+          },
+          y: {
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: {
+              color: '#64748b',
+              font: { size: 9 },
+              callback: v => '$' + v.toLocaleString()
+            },
+          }
+        }
+      }
+    })
+
+    return () => {
+      if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null }
+    }
+  }, [equity, labels, pointColors, tradesData, sessions, initialBalance])
+
+  // Caso vacío
+  if (!equity || equity.length < 2) {
     return (
       <div style={{borderRadius:12,padding:'20px 24px',marginBottom:20,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)'}}>
-        <div style={{fontSize:11,fontWeight:700,color:'#ffffff',letterSpacing:1,marginBottom:12,textTransform:'uppercase'}}>Equity Curve</div>
-        <div style={{height:200,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,0.4)',fontSize:12}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#ffffff',letterSpacing:1,textTransform:'uppercase'}}>Equity Curve</div>
+          <div style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1}}>USD</div>
+        </div>
+        <div style={{height:240,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,0.4)',fontSize:12}}>
           No hay operaciones suficientes para mostrar la curva.
         </div>
       </div>
     )
   }
 
-  // Ticks del eje X: 6 fechas equiespaciadas en el RANGO TEMPORAL (no por índice
-  // de trade). Esto significa que si los trades son del 23 al 28 de octubre, los
-  // ticks serán fechas distribuidas entre esos extremos. Si no hay timestamps
-  // disponibles (legacy data), caemos a ticks por índice.
-  const tRange = (tMax!=null && tMin!=null) ? (tMax - tMin) : 0
-  const xTicks = (() => {
-    if (!tRange) {
-      // Fallback: ticks por índice (modo equiespaciado).
-      const n = Math.min(6, eqPoints.length)
-      const ticks = []
-      for (let i=0; i<n; i++) {
-        const idx = Math.round(i * (eqPoints.length-1) / (n-1))
-        const sp = screenPoints[idx]
-        if (sp) ticks.push({ x: sp.x, label: sp.ts ? fmtDate(sp.ts) : (idx === 0 ? 'Inicio' : `#${idx}`) })
-      }
-      return ticks
-    }
-    // Modo temporal: 6 fechas distribuidas entre tMin y tMax.
-    const n = 6
-    const ticks = []
-    for (let i=0; i<n; i++) {
-      const ratio = i / (n-1)
-      const t = tMin + ratio * tRange
-      const x = PAD_L + ratio * PLOT_W
-      ticks.push({ x, label: fmtDate(new Date(t).toISOString()) })
-    }
-    return ticks
-  })()
-
-  // Render del tooltip
-  const renderTooltip = () => {
-    if (!hover) return null
-    const pt = screenPoints[hover.idx]
-    if (!pt) return null
-    const tr = pt.trade
-    const sess = tr ? sessions.find(s => s.id === tr.session_id) : null
-    const initial = initialBalance || pt.balance
-    const pct = initial > 0 ? ((pt.balance - initial) / initial * 100) : 0
-    const tipW = 240
-    const tipH = tr ? 130 : 70
-    const cx = hover.mouseX
-    const cy = hover.mouseY
-    let left = cx + 12
-    let top = cy - tipH - 12
-    if (top < 4) top = cy + 16
-    return (
-      <div style={{
-        position:'absolute',
-        left, top,
-        maxWidth: tipW,
-        background:'rgba(4,10,24,0.96)',
-        border:'1px solid rgba(30,144,255,0.4)',
-        borderRadius:8,
-        padding:'10px 12px',
-        pointerEvents:'none',
-        backdropFilter:'blur(20px)',
-        WebkitBackdropFilter:'blur(20px)',
-        boxShadow:'0 4px 20px rgba(0,0,0,0.5)',
-        fontFamily:"'Montserrat',sans-serif",
-        fontSize:11,
-        color:'#fff',
-        zIndex:10,
-      }}>
-        {tr ? (
-          <>
-            <div style={{display:'flex',justifyContent:'space-between',gap:10,marginBottom:6}}>
-              <span style={{color:'rgba(255,255,255,0.6)',fontSize:9,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Trade #{hover.idx}</span>
-              <span style={{color:tr.side==='BUY'?'#1E90FF':'#ef4444',fontSize:9,fontWeight:800}}>{tr.side} {tr.pair}</span>
-            </div>
-            {pt.ts && (
-              <div style={{fontSize:9,color:'rgba(255,255,255,0.5)',marginBottom:6}}>
-                {fmtDateTime(pt.ts)}
-              </div>
-            )}
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-              <span style={{color:'rgba(255,255,255,0.6)'}}>Balance</span>
-              <span style={{fontWeight:700,color:'#fff',fontFamily:'monospace'}}>${pt.balance.toFixed(2)}</span>
-            </div>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-              <span style={{color:'rgba(255,255,255,0.6)'}}>P&L</span>
-              <span style={{fontWeight:700,color:tr.pnl>=0?'#22c55e':'#ef4444',fontFamily:'monospace'}}>{tr.pnl>=0?'+':''}{parseFloat(tr.pnl||0).toFixed(2)} ({pct>=0?'+':''}{pct.toFixed(2)}%)</span>
-            </div>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-              <span style={{color:'rgba(255,255,255,0.6)'}}>R:R</span>
-              <span style={{fontWeight:700,color:'#f59e0b'}}>{parseFloat(tr.rr||0).toFixed(2)}R</span>
-            </div>
-            {sess && (
-              <div style={{borderTop:'1px solid rgba(30,144,255,0.2)',marginTop:6,paddingTop:5,fontSize:9,color:'rgba(255,255,255,0.6)'}}>
-                {sess.name}
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            <div style={{color:'rgba(255,255,255,0.6)',fontSize:9,fontWeight:700,marginBottom:4,letterSpacing:0.5,textTransform:'uppercase'}}>Punto inicial</div>
-            <div style={{display:'flex',justifyContent:'space-between'}}>
-              <span style={{color:'rgba(255,255,255,0.6)'}}>Balance</span>
-              <span style={{fontWeight:700,color:'#fff',fontFamily:'monospace'}}>${pt.balance.toFixed(2)}</span>
-            </div>
-          </>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div style={{borderRadius:12,padding:'20px 24px',marginBottom:20,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)'}}>
-      <div style={{fontSize:11,fontWeight:700,color:'#ffffff',letterSpacing:1,marginBottom:12,textTransform:'uppercase'}}>Equity Curve</div>
-      <div
-        style={{position:'relative',width:'100%',height:200}}
-        onMouseLeave={()=>setHover(null)}
-      >
-        <svg
-          viewBox={`0 0 ${VB_W} ${VB_H}`}
-          style={{width:'100%',height:200,display:'block',overflow:'visible'}}
-          preserveAspectRatio="none"
-          onMouseMove={(e)=>{
-            if (!screenPoints.length) return
-            const rect = e.currentTarget.getBoundingClientRect()
-            const localX = e.clientX - rect.left
-            // Convertir a coords del viewBox (0..VB_W). Ajuste: el área de plot
-            // empieza en PAD_L y termina en VB_W-PAD_R, pero el SVG completo es 0..VB_W.
-            const svgX = (localX/rect.width) * VB_W
-            // Solo activamos hover si está dentro del área de plot.
-            if (svgX < PAD_L || svgX > VB_W-PAD_R) { setHover(null); return }
-            let bestIdx = 0, bestDist = Infinity
-            for (let i=0; i<screenPoints.length; i++) {
-              const d = Math.abs(screenPoints[i].x - svgX)
-              if (d < bestDist) { bestDist = d; bestIdx = i }
-            }
-            setHover({ idx: bestIdx, mouseX: localX, mouseY: e.clientY - rect.top })
-          }}
-        >
-          <defs>
-            <linearGradient id="eqGradGlobal" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1E90FF" stopOpacity="0.4"/>
-              <stop offset="100%" stopColor="#1E90FF" stopOpacity="0"/>
-            </linearGradient>
-          </defs>
-
-          {/* Grid lines + Y axis labels (a la izquierda) */}
-          {niceY.ticks.map((tickVal, i) => {
-            const yRange = niceY.niceMax - niceY.niceMin || 1
-            const y = PAD_T + PLOT_H - ((tickVal - niceY.niceMin) / yRange) * PLOT_H
-            return (
-              <g key={`y-${i}`}>
-                <line
-                  x1={PAD_L} x2={VB_W-PAD_R}
-                  y1={y} y2={y}
-                  stroke="rgba(255,255,255,0.06)"
-                  strokeWidth="1"
-                />
-                <text
-                  x={PAD_L-8}
-                  y={y+3}
-                  fontSize="9"
-                  fill="rgba(255,255,255,0.45)"
-                  textAnchor="end"
-                  fontFamily="Montserrat,sans-serif"
-                  fontWeight="600"
-                >
-                  {fmtMoney(tickVal)}
-                </text>
-              </g>
-            )
-          })}
-
-          {/* X axis labels (fechas distribuidas en el rango temporal) */}
-          {xTicks.map((tk, i) => {
-            const anchor = i === 0 ? 'start' : i === xTicks.length-1 ? 'end' : 'middle'
-            return (
-              <g key={`x-${i}`}>
-                <line
-                  x1={tk.x} x2={tk.x}
-                  y1={PAD_T+PLOT_H} y2={PAD_T+PLOT_H+4}
-                  stroke="rgba(255,255,255,0.2)"
-                  strokeWidth="1"
-                />
-                <text
-                  x={tk.x}
-                  y={PAD_T+PLOT_H+16}
-                  fontSize="9"
-                  fill="rgba(255,255,255,0.45)"
-                  textAnchor={anchor}
-                  fontFamily="Montserrat,sans-serif"
-                  fontWeight="600"
-                >
-                  {tk.label}
-                </text>
-              </g>
-            )
-          })}
-
-          {/* Eje X y eje Y (líneas base) */}
-          <line x1={PAD_L} x2={VB_W-PAD_R} y1={PAD_T+PLOT_H} y2={PAD_T+PLOT_H} stroke="rgba(255,255,255,0.15)" strokeWidth="1"/>
-          <line x1={PAD_L} x2={PAD_L} y1={PAD_T} y2={PAD_T+PLOT_H} stroke="rgba(255,255,255,0.15)" strokeWidth="1"/>
-
-          {/* Curva */}
-          <path d={areaD} fill="url(#eqGradGlobal)"/>
-          <path d={pathD} fill="none" stroke="#1E90FF" strokeWidth="2.5" filter="drop-shadow(0 0 6px rgba(30,144,255,0.6))"/>
-
-          {/* Hover: línea vertical guía + circulo destacado */}
-          {hover && screenPoints[hover.idx] && (
-            <>
-              <line
-                x1={screenPoints[hover.idx].x}
-                x2={screenPoints[hover.idx].x}
-                y1={PAD_T} y2={PAD_T+PLOT_H}
-                stroke="rgba(30,144,255,0.4)"
-                strokeWidth="1"
-                strokeDasharray="3,3"
-              />
-              <circle
-                cx={screenPoints[hover.idx].x}
-                cy={screenPoints[hover.idx].y}
-                r="5"
-                fill="#1E90FF"
-                stroke="#fff"
-                strokeWidth="2"
-                filter="drop-shadow(0 0 8px rgba(30,144,255,0.9))"
-              />
-            </>
-          )}
-        </svg>
-        {renderTooltip()}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,color:'#ffffff',letterSpacing:1,textTransform:'uppercase'}}>Equity Curve</div>
+        <div style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.4)',letterSpacing:1}}>USD</div>
+      </div>
+      <div style={{position:'relative',height:240}}>
+        <canvas ref={canvasRef}/>
       </div>
     </div>
   )
