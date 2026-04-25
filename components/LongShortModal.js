@@ -51,7 +51,7 @@ const isJpy = (pair) => pair?.includes('JPY')
 const pipMult = (pair) => isJpy(pair) ? 100 : 10000
 const pipSize = (pair) => isJpy(pair) ? 0.01 : 0.0001
 
-export default function LongShortModal({ tool, toolId, activePair, balance, initialBalance, onConfirm, onClose, onStyleUpdate }) {
+export default function LongShortModal({ tool, toolId, activePair, balance, initialBalance, isChallenge, onConfirm, onClose, onStyleUpdate }) {
   const [tab, setTab] = useState('data')
 
   // Position data from tool points.
@@ -65,7 +65,20 @@ export default function LongShortModal({ tool, toolId, activePair, balance, init
   const [rawEntry, setRawEntry] = useState(null)
   const [rawStop,  setRawStop]  = useState(null)
   const [rawTarget,setRawTarget]= useState(null)
-  const [accountSize,setAccountSize]  = useState(initialBalance || balance || 10000)
+  // Risk base mode (FTMO-style):
+  // - 'initial' (DEFAULT, siempre activo en challenges): riesgo se calcula sobre el
+  //   capital inicial fijo. 1% siempre = misma cantidad USD, sin importar el balance.
+  //   Esto se alinea con cómo FTMO calcula los caps de DD diario y total.
+  // - 'live' (solo disponible en sesiones libres): riesgo sobre balance vivo.
+  //   Comportamiento clásico MT4: si has ganado, 1% representa más USD.
+  // En challenge el toggle queda OCULTO y se fuerza 'initial'.
+  const [riskBaseMode, setRiskBaseMode] = useState('initial')
+  // El accountSize se deriva del modo. En sesiones libres con modo 'live'
+  // permitimos también edición manual (override) — el usuario puede simular
+  // una cuenta hipotética distinta a su balance real.
+  const accountSize = riskBaseMode === 'initial'
+    ? (initialBalance || balance || 10000)
+    : (balance || initialBalance || 10000)
   const [riskPct,    setRiskPct]      = useState(1)
   const [leverage,   setLeverage]     = useState(100)
 
@@ -154,8 +167,47 @@ export default function LongShortModal({ tool, toolId, activePair, balance, init
               {/* Account */}
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                 <div>
-                  <span style={label}>Tamaño de cuenta</span>
-                  <input style={input} type="number" value={accountSize} onChange={e => setAccountSize(parseFloat(e.target.value))} />
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                    <span style={{...label, marginBottom:0}}>Tamaño de cuenta</span>
+                    {/* Toggle solo visible fuera de challenges. En challenges
+                        el riesgo siempre se calcula sobre capital inicial (FTMO). */}
+                    {!isChallenge && (
+                      <button
+                        type="button"
+                        onClick={() => setRiskBaseMode(m => m === 'initial' ? 'live' : 'initial')}
+                        title={riskBaseMode === 'initial'
+                          ? 'Riesgo sobre capital inicial (estilo FTMO). Click para cambiar a balance vivo.'
+                          : 'Riesgo sobre balance vivo (estilo MT4). Click para cambiar a capital inicial.'}
+                        style={{
+                          background:'rgba(30,144,255,0.1)',
+                          border:'1px solid rgba(30,144,255,0.3)',
+                          borderRadius:6,
+                          padding:'2px 8px',
+                          fontSize:9,
+                          fontWeight:700,
+                          color:'#1E90FF',
+                          cursor:'pointer',
+                          fontFamily:"'Montserrat',sans-serif",
+                          letterSpacing:0.3,
+                          textTransform:'uppercase',
+                        }}>
+                        {riskBaseMode === 'initial' ? 'Inicial' : 'Vivo'}
+                      </button>
+                    )}
+                  </div>
+                  {/* Campo readonly. El valor se deriva del modo (inicial/vivo).
+                      En challenge: siempre initial, sin opción a cambiar. */}
+                  <input
+                    style={{...input, opacity:0.7, cursor:'not-allowed'}}
+                    type="number"
+                    value={accountSize}
+                    readOnly
+                    title={isChallenge
+                      ? 'En challenge el riesgo se calcula sobre el capital inicial (estilo FTMO)'
+                      : (riskBaseMode === 'initial'
+                          ? 'Capital inicial — usa el toggle para cambiar a balance vivo'
+                          : 'Balance vivo — usa el toggle para cambiar a capital inicial')}
+                  />
                 </div>
                 <div>
                   <span style={label}>Riesgo %</span>

@@ -42,6 +42,17 @@ export default function ChallengeFailedModal({ status, onClose, onAdvance, onNew
     ? Math.abs(Number(evaluation.ddDailyWorstPct ?? limitPct))
     : Math.abs(Number(evaluation.ddTotalWorstPct ?? limitPct))
 
+  // Caps y caída actual en USD para mostrar la cifra concreta junto al porcentaje.
+  // El motor backend devuelve ddDailyWorstUSD / ddTotalWorstUSD (magnitud positiva).
+  const hitUSD = isDaily
+    ? Math.abs(Number(evaluation.ddDailyWorstUSD ?? 0))
+    : Math.abs(Number(evaluation.ddTotalWorstUSD ?? 0))
+  const limitUSD = isDaily
+    ? Math.abs(Number(evaluation.ddDailyCapUSD ?? 0))
+    : Math.abs(Number(evaluation.ddTotalCapUSD ?? 0))
+  // Format español: $5.290 / -$5.000
+  const fmtUsd = (n) => '$' + Math.round(n).toLocaleString('es-ES')
+
   const handleNewChallenge = async () => {
     if (advancing) return
     if (onAdvance) await onAdvance()
@@ -88,7 +99,10 @@ export default function ChallengeFailedModal({ status, onClose, onAdvance, onNew
           <div style={s.reason}>
             <div style={s.reasonLabel}>Razón</div>
             <div style={s.reasonText}>
-              DD {isDaily ? 'diario' : 'total'} alcanzado: -{hitPct.toFixed(2)}% (límite: -{limitPct}%)
+              DD {isDaily ? 'diario' : 'total'} alcanzado: -{fmtUsd(hitUSD)} ({hitPct.toFixed(2)}%)
+            </div>
+            <div style={{...s.reasonText, fontSize:11, opacity:0.6, marginTop:4}}>
+              Límite: -{fmtUsd(limitUSD)} ({limitPct}%)
             </div>
           </div>
 

@@ -38,7 +38,11 @@ function chartOpts(w,h){return{
     background:{color:'#000000'},
     textColor:'#ffffff',
     fontFamily:"'Montserrat',sans-serif",
-    fontSize:13,
+    // FontSize 11 (antes 13). LWC calcula la densidad de ticks del eje Y
+    // según el espacio que ocupan los labels. Con fontSize más pequeño caben
+    // más ticks → resolución más fina (cada 25-10-5 pips según zoom),
+    // similar a TradingView. Si subes a 13 vuelven los ticks de 50 en 50.
+    fontSize:11,
   },
   grid:{
     vertLines:{color:'rgba(255,255,255,0.03)',style:0,visible:false},
@@ -566,6 +570,17 @@ export default function SessionPage(){
       if (!res.ok) return
       const data = await res.json()
       setChallengeStatus(data)
+      // Actualizamos también el state `session` con el status vivo de BD.
+      // Sin esto, sessionStatus quedaba congelado en 'active' aunque el motor
+      // hubiera persistido 'failed_dd_daily' — y challengeLocked solo se
+      // activaba parcialmente (vía evalStatus). Tras cualquier breach o pase
+      // de fase, esto garantiza que session.status refleje el estado real.
+      if (data?.session?.status) {
+        setSession(prev => prev ? { ...prev, status: data.session.status, balance: data.session.balance, challenge_phase: data.session.challenge_phase } : prev)
+        if (sessionRef.current) {
+          sessionRef.current = { ...sessionRef.current, status: data.session.status, balance: data.session.balance, challenge_phase: data.session.challenge_phase }
+        }
+      }
     } catch (e) {
       console.error('[challenge/status] error', e)
     }
@@ -1971,6 +1986,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
           activePair={activePair}
           balance={balance}
           initialBalance={initialCapital}
+          isChallenge={!!session?.challenge_type}
           onClose={()=>setLongShortModal(null)}
           onStyleUpdate={(styleOpts)=>{
             const tk='LongShortPosition'
