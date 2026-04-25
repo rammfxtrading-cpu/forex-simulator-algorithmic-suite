@@ -240,7 +240,7 @@ export default function SessionPage(){
   }
   const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, removeAll: removeAllCustom, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
 
-  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
+  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
@@ -908,18 +908,24 @@ export default function SessionPage(){
       if(e.button!==0) return
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
+      const clickY = e.clientY - rect.top
       let clickPrice=null
-      try{ clickPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
+      try{ clickPrice=cr.series.coordinateToPrice(clickY) }catch{}
       if(clickPrice==null||isNaN(clickPrice)) return
       const ps=pairState.current[pair]; if(!ps?.positions?.length) return
-      const pipSz=pair?.includes('JPY')?0.01:0.0001
-      const threshold=pipSz*12
+      // Threshold en PÍXELES, no en pips. Así el área activa es siempre 8px
+      // verticales sin importar el zoom del eje Y, y un click de navegación
+      // 100 pips abajo nunca puede confundirse con la línea.
+      const PIXEL_THRESHOLD = 8
       for(const pos of ps.positions){
-        if(Math.abs(clickPrice-pos.sl)<threshold){
+        let slY=null, tpY=null
+        try{ slY = cr.series.priceToCoordinate(pos.sl) }catch{}
+        try{ tpY = cr.series.priceToCoordinate(pos.tp) }catch{}
+        if(slY!=null && Math.abs(clickY - slY) <= PIXEL_THRESHOLD){
           draggingRef.current={posId:pos.id,pair,type:'sl',pos:{...pos},startX:e.clientX,startY:e.clientY,moved:false}
           e.stopPropagation(); e.preventDefault(); return
         }
-        if(Math.abs(clickPrice-pos.tp)<threshold){
+        if(tpY!=null && Math.abs(clickY - tpY) <= PIXEL_THRESHOLD){
           draggingRef.current={posId:pos.id,pair,type:'tp',pos:{...pos},startX:e.clientX,startY:e.clientY,moved:false}
           e.stopPropagation(); e.preventDefault(); return
         }
@@ -1069,6 +1075,14 @@ if(full||(curr!==prev&&curr!==prev+1)){
     if(activePair){
       const ps=pairState.current[activePair],cr=chartMap.current[activePair]
       if(ps?.engine&&cr){
+        // Deseleccionar drawings ANTES de re-renderizar el chart con datos del
+        // nuevo TF. Causa: el plugin de line tools intenta calcular geometría
+        // con `minValue` del bucket actual, y al cambiar TF el array de velas
+        // se reconstruye desde cero. Si hay un drawing seleccionado durante
+        // ese ínterin, el plugin lee `undefined.minValue` y crashea toda la
+        // página (race condition más reproducible al BAJAR de TF porque el
+        // array nuevo es más grande y la ventana de race se ensancha).
+        try{ deselectAll() }catch{}
         cr.prevCount=0;updateChart(activePair,ps.engine,true);setTfKey(k=>k+1)
         // Scroll to current position after TF change
         requestAnimationFrame(()=>{
@@ -1077,7 +1091,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         })
       }
     }
-  },[pairTf,activePair,updateChart])
+  },[pairTf,activePair,updateChart,deselectAll])
 
   useEffect(()=>{
     if(!activePair) return
@@ -1112,8 +1126,17 @@ if(full||(curr!==prev&&curr!==prev+1)){
       saveProgress(e.currentTime)
       // Also save balance on pause
       if(userIdRef.current) supabase.from('sim_sessions').update({balance:balanceRef.current,last_timestamp:e.currentTime}).eq('id',id).then(()=>{}).catch(()=>{})
-    }else{e.play();setIsPlaying(true)}
-  },[activePair,saveProgress])
+    }else{
+      // Al pulsar PLAY: deseleccionar cualquier drawing activo. Si un
+      // LongShortPosition queda seleccionado durante el replay, sus puntos
+      // azules de edición hacen que el plugin re-calcule la geometría en
+      // cada tick y el rectángulo se "contrae" al ancho de una sola vela.
+      // Deseleccionar al play no afecta el dibujo en sí (sigue ahí), solo
+      // quita los handles de edición.
+      try{ deselectAll() }catch{}
+      e.play();setIsPlaying(true)
+    }
+  },[activePair,saveProgress,deselectAll])
   const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))},[activePair,updateChart])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
 
