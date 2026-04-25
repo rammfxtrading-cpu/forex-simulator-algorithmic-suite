@@ -1238,6 +1238,22 @@ if(full||(curr!==prev&&curr!==prev+1)){
   const realized      = parseFloat((balance - initialCapital).toFixed(2))
   const activeTf      = pairTf[activePair]||'H1'
 
+  // Challenge lockout: no permitir abrir nuevas operaciones si el challenge terminó
+  // o si la fase actual ya alcanzó su target (esperando que el alumno pulse "Submit Phase").
+  // Posiciones abiertas pueden seguir cerrándose normalmente (SL/TP o manual).
+  // Replay puede seguir avanzando (el alumno ve qué hubiera pasado).
+  const sessionStatus = session?.status || 'active'
+  const evalStatus = challengeStatus?.evaluation?.status
+  const challengeLocked = (
+    sessionStatus === 'failed_dd_daily' ||
+    sessionStatus === 'failed_dd_total' ||
+    sessionStatus === 'passed_phase' ||
+    sessionStatus === 'passed_all' ||
+    evalStatus === 'target_reached' ||
+    evalStatus === 'failed_dd_daily' ||
+    evalStatus === 'failed_dd_total'
+  )
+
   // Si el usuario está autenticado pero no tiene acceso al Simulador, bloqueamos.
   if(!authLoading && !hasAccess) return <NoAccess profile={profile} producto="Simulador" />
 
@@ -1434,6 +1450,8 @@ if(full||(curr!==prev&&curr!==prev+1)){
           }}
           onConfirm={(posData)=>{
             setLongShortModal(null)
+            // Challenge lockout: no permitir crear orden desde dibujo si terminó
+            if(challengeLocked) return
             setOrderModal({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData})
           }}
         />
@@ -1597,12 +1615,26 @@ if(full||(curr!==prev&&curr!==prev+1)){
       <div style={s.btmBar}>
         {/* BUY / SELL */}
         <div style={s.tradeActions}>
-          <button style={{...s.buyBtn,...(lastTrade==='BUY'?s.flash:{})}}
-            onClick={()=>setOrderModal({side:'BUY',entry:currentPrice,pair:activePair,isLimit:false})} disabled={!dataReady||!currentPrice}>
+          <button
+            style={{
+              ...s.buyBtn,
+              ...(lastTrade==='BUY'?s.flash:{}),
+              ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
+            }}
+            title={challengeLocked ? 'Challenge terminado — no se pueden abrir nuevas operaciones' : undefined}
+            onClick={()=>setOrderModal({side:'BUY',entry:currentPrice,pair:activePair,isLimit:false})}
+            disabled={!dataReady||!currentPrice||challengeLocked}>
             ▲ Buy
           </button>
-          <button style={{...s.sellBtn,...(lastTrade==='SELL'?s.flash:{})}}
-            onClick={()=>setOrderModal({side:'SELL',entry:currentPrice,pair:activePair,isLimit:false})} disabled={!dataReady||!currentPrice}>
+          <button
+            style={{
+              ...s.sellBtn,
+              ...(lastTrade==='SELL'?s.flash:{}),
+              ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
+            }}
+            title={challengeLocked ? 'Challenge terminado — no se pueden abrir nuevas operaciones' : undefined}
+            onClick={()=>setOrderModal({side:'SELL',entry:currentPrice,pair:activePair,isLimit:false})}
+            disabled={!dataReady||!currentPrice||challengeLocked}>
             ▼ Sell
           </button>
         </div>
@@ -1753,13 +1785,13 @@ if(full||(curr!==prev&&curr!==prev+1)){
           <div style={{position:'fixed',inset:0,zIndex:998}} onClick={()=>setCtxMenu(null)}/>
           <div style={{position:'fixed',left:ctxMenu.x,top:ctxMenu.y,background:'rgba(4,10,24,0.92)',border:'1px solid rgba(30,144,255,0.35)',borderRadius:12,zIndex:999,minWidth:160,overflow:'hidden',boxShadow:'0 8px 40px rgba(0,0,0,0.6)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif"}}>
             <div style={{padding:'8px 14px 6px',fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.92)',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>{ctxMenu.price.toFixed(5)}</div>
-            {ctxMenu.price<(currentPrice||0)&&(
+            {ctxMenu.price<(currentPrice||0)&&!challengeLocked&&(
               <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'BUY',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
                 <span style={{color:'#4da6ff'}}>▲ Buy Limit</span>
                 <span style={{color:'#ffffff',fontSize:9}}>{ctxMenu.price.toFixed(5)}</span>
               </button>
             )}
-            {ctxMenu.price>(currentPrice||0)&&(
+            {ctxMenu.price>(currentPrice||0)&&!challengeLocked&&(
               <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'SELL',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
                 <span style={{color:'#ff6b6b'}}>▼ Sell Limit</span>
                 <span style={{color:'#ffffff',fontSize:9}}>{ctxMenu.price.toFixed(5)}</span>

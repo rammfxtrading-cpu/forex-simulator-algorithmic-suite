@@ -229,6 +229,11 @@ export default async function handler(req, res) {
     challenge_type: session.challenge_type,
     challenge_phase: nextPhase,
     challenge_parent_id: session.id,    // Encadenar con la fase anterior
+    // FTMO-real: el replay NO retrocede. Arranca donde el alumno cerró la fase anterior.
+    // En FTMO real, las credenciales de Fase 2 te llegan el día siguiente al pass de Fase 1;
+    // el mercado sigue donde lo dejaste. El capital sí se resetea (cuenta nueva), pero
+    // el tiempo del mundo no retrocede al 1 de abril.
+    last_timestamp: session.last_timestamp,
   }
 
   const { data: nextSession, error: iErr } = await supabaseAdmin
