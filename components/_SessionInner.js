@@ -26,7 +26,7 @@ import ChallengePassedPhaseModal from './ChallengePassedPhaseModal'
 import ChallengePassedAllModal from './ChallengePassedAllModal'
 import ChallengeFailedModal from './ChallengeFailedModal'
 
-const TF_LIST     = ['M1','M5','M15','M30','H1','H4','D1']
+const TF_LIST     = ['M1','M3','M5','M15','M30','H1','H4','D1']
 const SPEED_OPTS  = [{l:'1×',v:1},{l:'5×',v:5},{l:'15×',v:15},{l:'60×',v:60},{l:'∞',v:500}]
 const LOT_PRESETS = [0.01,0.05,0.1,0.25,0.5,1.0]
 const RR_PRESETS  = [1,1.5,2,3]
@@ -102,8 +102,8 @@ const fmtTs = (ts) => {
 }
 function calcPnl(side,entry,exit,lots,pair){const pips=side==='BUY'?(exit-entry)*pipMult(pair):(entry-exit)*pipMult(pair);return pips*lots*10}
 
-const TF_VALID={'1m':'M1','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D1'}
-const TF_OPTS=[{l:'1m',tf:'M1'},{l:'5m',tf:'M5'},{l:'15m',tf:'M15'},{l:'30m',tf:'M30'},{l:'1h',tf:'H1'},{l:'4h',tf:'H4'},{l:'1d',tf:'D1'}]
+const TF_VALID={'1m':'M1','3m':'M3','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D1'}
+const TF_OPTS=[{l:'1m',tf:'M1'},{l:'3m',tf:'M3'},{l:'5m',tf:'M5'},{l:'15m',tf:'M15'},{l:'30m',tf:'M30'},{l:'1h',tf:'H1'},{l:'4h',tf:'H4'},{l:'1d',tf:'D1'}]
 function TfInputModal({tfInput,activeTf}){
   const match=TF_VALID[tfInput.toLowerCase().trim()]
   const ok=!!match
@@ -453,8 +453,19 @@ export default function SessionPage(){
   },[authUser, hasAccess])
 
   // ── TF keyboard input — TradingView style ─────────────────────────────────────
+  // Atajos:
+  //   - Números solos + Enter → minutos: 1, 3, 5, 15, 30  (no hace falta "m")
+  //   - Con sufijo h/d + Enter → 1h, 4h, 1d
+  // Esto cubre los TFs disponibles: M1, M3, M5, M15, M30, H1, H4, D1.
   useEffect(()=>{
-    const VALID={'1m':'M1','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D1'}
+    const VALID={
+      // minutos (sin sufijo)
+      '1':'M1','3':'M3','5':'M5','15':'M15','30':'M30',
+      // alias con 'm' (compat hacia atrás)
+      '1m':'M1','3m':'M3','5m':'M5','15m':'M15','30m':'M30',
+      // horas y días (con sufijo obligatorio)
+      '1h':'H1','4h':'H4','1d':'D1',
+    }
     const onKey=(e)=>{
       const tag=e.target?.tagName
       if(tag==='INPUT'||tag==='TEXTAREA'||e.target?.contentEditable==='true') return
@@ -481,6 +492,12 @@ export default function SessionPage(){
   // ── Session load ──────────────────────────────────────────────────────────────
   useEffect(()=>{
     if(!id) return
+    // ── FIX: limpiar masterTime global al cambiar de sesión ─────────────────────
+    // window.__algSuiteCurrentTime persiste entre navegaciones SPA (Next.js no
+    // recarga la window al hacer router.push). Si NO la limpiamos, una sesión
+    // nueva de challenge arranca el replay en la fecha donde quedó el challenge
+    // anterior, porque resumeReal la prioriza sobre date_from.
+    if(typeof window!=='undefined') window.__algSuiteCurrentTime = null
     supabase.from('sim_sessions').select('*').eq('id',id).maybeSingle().then(async ({data})=>{
       if(!data){setLoading(false);return}
       sessionRef.current=data
@@ -721,7 +738,11 @@ export default function SessionPage(){
 
       const engine=new ReplayEngine()
       // If there's a master time (another pair already advanced), use that. Otherwise resume saved position.
-      const masterTime = (typeof window !== 'undefined' && window.__algSuiteCurrentTime) || null
+      // Doble protección: además de limpiarla al cambiar id, validamos que
+      // masterTime caiga dentro del rango temporal de ESTA sesión. Si está fuera
+      // (por race condition entre montajes), la ignoramos y caemos al fallback.
+      const rawMaster = (typeof window !== 'undefined' && window.__algSuiteCurrentTime) || null
+      const masterTime = (rawMaster && rawMaster >= replayTs && rawMaster <= toTs) ? rawMaster : null
       // Convert real masterTime/resumeTs to ordinal if needed
       const toOrdinal = (t) => t ?? null  // real timestamps — no conversion needed
       const isOrdinal = (t) => t && t < 1000000000
@@ -864,7 +885,23 @@ export default function SessionPage(){
       setPreview(null)
     })
 
-    // Drag SL/TP — use capture phase on canvas to intercept LWC events
+    // ── Drag SL/TP ──────────────────────────────────────────────────────────────
+    // Use capture phase on canvas to intercept LWC events.
+    //
+    // Bug previo: en algunos casos las líneas SL/TP "saltaban" a la posición de
+    // un click cualquiera del usuario (incluso al hacer click para navegar el
+    // chart). Causas:
+    //   1) Los listeners de mousemove/mouseup se añadían a window SIN cleanup,
+    //      por lo que en re-mounts del par se acumulaban.
+    //   2) onMouseUp hacía early return sin limpiar draggingRef cuando había un
+    //      mismatch de pair (closure stale), dejando un drag "zombi" activo.
+    //   3) Cualquier mousedown+mouseup contaba como drag aunque no hubiera un
+    //      arrastre real (movimiento del ratón mayor a un threshold).
+    //
+    // Fix: registramos los listeners scoped al pair de este mount, los
+    // limpiamos cuando el par se desmonta (guardándolos en `cr.dragCleanup`),
+    // marcamos un flag `moved` que sólo se activa con movimiento real >3px,
+    // y el mouseup siempre resetea draggingRef sin importar el path.
     const getCanvas=()=>el.querySelector('canvas')||el
 
     const onMouseDown=e=>{
@@ -879,53 +916,81 @@ export default function SessionPage(){
       const threshold=pipSz*12
       for(const pos of ps.positions){
         if(Math.abs(clickPrice-pos.sl)<threshold){
-          draggingRef.current={posId:pos.id,pair,type:'sl',pos:{...pos}}
+          draggingRef.current={posId:pos.id,pair,type:'sl',pos:{...pos},startX:e.clientX,startY:e.clientY,moved:false}
           e.stopPropagation(); e.preventDefault(); return
         }
         if(Math.abs(clickPrice-pos.tp)<threshold){
-          draggingRef.current={posId:pos.id,pair,type:'tp',pos:{...pos}}
+          draggingRef.current={posId:pos.id,pair,type:'tp',pos:{...pos},startX:e.clientX,startY:e.clientY,moved:false}
           e.stopPropagation(); e.preventDefault(); return
         }
       }
     }
-    // Use capture:true so we get the event before LWC
     el.addEventListener('mousedown', onMouseDown, {capture:true})
 
-    // mousemove and mouseup on window so drag works even if mouse leaves chart
     const onMouseMove=e=>{
-      if(!draggingRef.current||draggingRef.current.pair!==pair) return
+      const drag=draggingRef.current
+      if(!drag||drag.pair!==pair) return
+      // Sólo consideramos arrastre real si el ratón se ha movido >3px desde el
+      // mousedown. Esto evita que un simple click (sin movimiento) actualice
+      // la línea por error.
+      if(!drag.moved){
+        const dx=Math.abs(e.clientX-drag.startX), dy=Math.abs(e.clientY-drag.startY)
+        if(dx<3&&dy<3) return
+        drag.moved=true
+      }
       const cr=chartMap.current[pair]; if(!cr) return
       const rect=el.getBoundingClientRect()
       let newPrice=null
       try{ newPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
       if(newPrice==null||isNaN(newPrice)) return
-      updatePositionLine(draggingRef.current.posId,pair,draggingRef.current.type,newPrice,draggingRef.current.pos)
+      updatePositionLine(drag.posId,pair,drag.type,newPrice,drag.pos)
     }
+
     const onMouseUp=e=>{
-      if(!draggingRef.current||draggingRef.current.pair!==pair) return
-      const cr=chartMap.current[pair]; if(!cr) return
-      const rect=el.getBoundingClientRect()
-      let newPrice=null
-      try{ newPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
-      if(newPrice!=null&&!isNaN(newPrice)){
-        const{posId,pair:p,type}=draggingRef.current
+      const drag=draggingRef.current
+      // Reset SIEMPRE al final, sin importar si llegamos al return temprano
+      // o no. Esto blinda contra el "drag zombi" que dejaba la línea siguiendo
+      // al ratón en futuros clicks.
+      try{
+        if(!drag||drag.pair!==pair) return
+        // Si nunca hubo movimiento real, no actualizamos nada (era sólo un click).
+        if(!drag.moved) return
+        const cr=chartMap.current[pair]; if(!cr) return
+        const rect=el.getBoundingClientRect()
+        let newPrice=null
+        try{ newPrice=cr.series.coordinateToPrice(e.clientY-rect.top) }catch{}
+        if(newPrice==null||isNaN(newPrice)) return
+        const{posId,pair:p,type}=drag
         const ps=pairState.current[p]
-        if(ps?.positions){
-          const pos=ps.positions.find(x=>x.id===posId)
-          if(pos){
-            const pips=Math.abs((newPrice-pos.entry)*pipMult(p))
-            if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
-            else{pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
-            updatePositionLine(posId,p,type,newPrice,pos)
-            ps.positions=[...ps.positions]
-            setTick(t=>t+1)
-          }
-        }
+        if(!ps?.positions) return
+        const pos=ps.positions.find(x=>x.id===posId)
+        if(!pos) return
+        const pips=Math.abs((newPrice-pos.entry)*pipMult(p))
+        if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
+        else{pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
+        updatePositionLine(posId,p,type,newPrice,pos)
+        ps.positions=[...ps.positions]
+        setTick(t=>t+1)
+      } finally {
+        // Reset incondicional: aunque hubiera early return o exception, siempre
+        // limpiamos para que el siguiente click no herede estado de drag.
+        if(drag&&drag.pair===pair) draggingRef.current=null
       }
-      draggingRef.current=null
     }
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
+
+    // Cleanup: guardamos la función para que se llame cuando este par se
+    // desmonte (cambio de par, recarga). Sin esto, los listeners se acumulan
+    // y en algún momento uno con closure stale dispara comportamiento errático.
+    const cr0=chartMap.current[pair]
+    if(cr0){
+      cr0.dragCleanup=()=>{
+        try{ el.removeEventListener('mousedown', onMouseDown, {capture:true}) }catch{}
+        window.removeEventListener('mousemove', onMouseMove)
+        window.removeEventListener('mouseup', onMouseUp)
+      }
+    }
 
     loadPair(pair)
   }
@@ -937,7 +1002,7 @@ export default function SessionPage(){
     const tf=pairTfRef.current[pair]||'H1'
     const agg=engine.getAggregated(tf); if(!agg.length) return
     const prev=cr.prevCount,curr=agg.length
-    const _tfMap2={'M1':60,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400}
+    const _tfMap2={'M1':60,'M3':180,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400}
     const _tfS2 = _tfMap2[tf]||3600
     const _lastT = agg[agg.length-1].time
     const _lastC = agg[agg.length-1].close
@@ -951,7 +1016,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       if(!cr.hasLoaded){
         cr.hasLoaded=true
         cr.userScrolled=false
-        const _tbars={'M1':80,'M5':70,'M15':60,'M30':50,'H1':60,'H4':50,'D1':40}
+        const _tbars={'M1':80,'M3':75,'M5':70,'M15':60,'M30':50,'H1':60,'H4':50,'D1':40}
         const _show=_tbars[tf]||80
         const _to=agg.length+5
         const _from=Math.max(0,_to-_show)
@@ -1649,28 +1714,8 @@ if(full||(curr!==prev&&curr!==prev+1)){
           </div>
         </div>
 
-        {/* Right: reset + fullscreen */}
+        {/* Right: fullscreen */}
         <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
-          <button style={{...s.iconBtn,color:'rgba(255,255,255,0.5)',fontSize:9,gap:4,padding:'4px 8px'}}
-            title="Reiniciar sesión al inicio"
-            onClick={()=>{
-              if(!confirm('¿Reiniciar la sesión al principio? Las posiciones abiertas se cerrarán.')) return
-              const ps=pairState.current[activePair]; if(!ps?.engine) return
-              // Close all open positions
-              ;[...ps.positions].forEach(p=>closePositionRef.current(p.id,'RESET',activePair,p.entry))
-              ps.positions=[];ps.orders=[]
-              ps.engine.reset()
-              ps.lastSLTPIdx=0; ps.lastLimitIdx=0
-              const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
-              updateChart(activePair,ps.engine,true)
-              setCurrentTime(ps.engine.currentTime);setProgress(0)
-              setIsPlaying(false);setTick(t=>t+1)
-              // Save reset position to DB
-              if(userIdRef.current) supabase.from('sim_sessions').update({last_timestamp:ps.engine.currentTime}).eq('id',id).then(()=>{}).catch(()=>{})
-            }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-            Reset
-          </button>
           <button style={s.fullBtn} onClick={()=>{if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen()}} title="Pantalla completa">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
@@ -2268,10 +2313,15 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
   const {pos,pair}=modal
   const isBuy=pos.side==='BUY'
   const isJpy=pair?.includes('JPY')
-  const PRESETS=[25,50,75,100]
+  const PRESETS=[10,25,50,75,90,100]
   const [pct,setPct]=useState(100)
+  const [customPct,setCustomPct]=useState('')   // input libre 1-100
   const [note,setNote]=useState('')
-  const lotsToClose=parseFloat((pos.lots*pct/100).toFixed(2))
+  // pct efectivo: si el usuario escribió un custom válido, se usa; si no, el preset.
+  const customNum = parseFloat(customPct)
+  const usingCustom = customPct !== '' && !isNaN(customNum) && customNum>0 && customNum<=100
+  const effectivePct = usingCustom ? customNum : pct
+  const lotsToClose=parseFloat((pos.lots*effectivePct/100).toFixed(2))
   const estPnl=calcPnl(pos.side,pos.entry,currentPrice||pos.entry,lotsToClose,pair)
   const fmtP=p=>p?.toFixed(isJpy?3:5)??'—'
   const isProfit=estPnl>=0
@@ -2319,17 +2369,42 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
           {/* % presets */}
           <div style={{marginBottom:14}}>
             <div style={{fontSize:8,fontWeight:700,color:'#ffffff',letterSpacing:1.5,marginBottom:8}}>PORCENTAJE A CERRAR</div>
-            <div style={{display:'flex',gap:4,background:'rgba(255,255,255,0.04)',borderRadius:12,padding:4,marginBottom:10}}>
-              {PRESETS.map(p=>(
-                <button key={p} onClick={()=>setPct(p)} style={{
-                  flex:1,padding:'7px 0',borderRadius:9,border:'none',
-                  background:pct===p?accentColor:'transparent',
-                  color:pct===p?'#fff':'rgba(255,255,255,0.4)',
-                  fontSize:11,fontWeight:800,cursor:'pointer',
-                  fontFamily:"'Montserrat',sans-serif",
-                  boxShadow:pct===p?`0 2px 12px rgba(${accentRgb},0.4)`:'none',
-                }}>{p}%</button>
-              ))}
+            <div style={{display:'flex',gap:6,marginBottom:10}}>
+              <div style={{flex:1,display:'flex',gap:3,background:'rgba(255,255,255,0.04)',borderRadius:12,padding:4}}>
+                {PRESETS.map(p=>(
+                  <button key={p} onClick={()=>{setPct(p);setCustomPct('')}} style={{
+                    flex:1,padding:'7px 0',borderRadius:9,border:'none',
+                    background:(!usingCustom && pct===p)?accentColor:'transparent',
+                    color:(!usingCustom && pct===p)?'#fff':'rgba(255,255,255,0.4)',
+                    fontSize:11,fontWeight:800,cursor:'pointer',
+                    fontFamily:"'Montserrat',sans-serif",
+                    boxShadow:(!usingCustom && pct===p)?`0 2px 12px rgba(${accentRgb},0.4)`:'none',
+                  }}>{p}%</button>
+                ))}
+              </div>
+              {/* Input libre — se ilumina sólo cuando hay un valor válido escrito */}
+              <div style={{
+                display:'flex',alignItems:'center',gap:0,
+                background:usingCustom?`rgba(${accentRgb},0.18)`:'rgba(255,255,255,0.04)',
+                border:`1px solid ${usingCustom?accentColor:'rgba(255,255,255,0.08)'}`,
+                borderRadius:12,padding:'0 8px',width:78,
+                boxShadow:usingCustom?`0 2px 12px rgba(${accentRgb},0.25)`:'none',
+                transition:'all 0.15s ease',
+              }}>
+                <input
+                  type="number" min="1" max="100" step="1"
+                  value={customPct}
+                  onChange={e=>setCustomPct(e.target.value)}
+                  placeholder="—"
+                  style={{
+                    width:'100%',background:'transparent',border:'none',outline:'none',
+                    color:usingCustom?'#fff':'rgba(255,255,255,0.55)',
+                    fontSize:11,fontWeight:800,fontFamily:"'Montserrat',sans-serif",
+                    textAlign:'right',padding:'7px 0',
+                  }}
+                />
+                <span style={{fontSize:10,fontWeight:700,color:usingCustom?'#fff':'rgba(255,255,255,0.4)',marginLeft:2}}>%</span>
+              </div>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               <div>
@@ -2370,7 +2445,7 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
             boxShadow:isProfit?'0 4px 24px rgba(30,144,255,0.3)':'0 4px 24px rgba(239,83,80,0.3)',
             inset:'0 1px 0 rgba(255,255,255,0.2)',
           }}>
-            {pct===100?'Cerrar posición':'Cerrar parcial'} · {estPnl>=0?'+':''}{estPnl.toFixed(2)}
+            {effectivePct===100?'Cerrar posición':`Cerrar ${effectivePct}%`} · {estPnl>=0?'+':''}{estPnl.toFixed(2)}
           </button>
         </div>
       </div>
