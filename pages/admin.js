@@ -3,6 +3,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
+import EquityCurve from '../components/EquityCurve'
 
 export default function Admin() {
   const router = useRouter()
@@ -231,25 +232,13 @@ export default function Admin() {
     closed.forEach(t => { ddRun += (t.pnl||0); if(ddRun>ddPeak)ddPeak=ddRun; const dd=ddPeak-ddRun; if(dd>maxDD)maxDD=dd })
     let maxW=0, maxL=0, curW=0, curL=0
     closed.forEach(t => { if(t.result==='WIN'){curW++;curL=0;if(curW>maxW)maxW=curW}else if(t.result==='LOSS'){curL++;curW=0;if(curL>maxL)maxL=curL} })
-    let eqRun = initialBalance
-    const eqPoints = [{ x:0, y:eqRun }, ...closed.map((t,i) => { eqRun+=(t.pnl||0); return {x:i+1,y:eqRun} })]
-    const buildPath = (pts) => {
-      if (pts.length < 2) return ''
-      const maxY = Math.max(...pts.map(p => p.y)), minY = Math.min(...pts.map(p => p.y)), rng = maxY - minY || 1
-      return pts.map((p,i) => { const x=(p.x/(pts.length-1))*800; const y=200-((p.y-minY)/rng)*170-15; return `${i===0?'M':'L'}${x},${y}` }).join(' ')
-    }
-    const buildArea = (pts) => {
-      const path = buildPath(pts)
-      if (!path) return ''
-      return `${path} L800,220 L0,220 Z`
-    }
+    // Nota: la curva de capital se calcula ahora dentro del componente <EquityCurve>.
     return {
       totalPnl, winRate, avgRR, bestWin, worstLoss, avgWin, avgLoss,
       profitFactor, expectancy, maxDrawdown: maxDD, maxWinStreak: maxW, maxLossStreak: maxL,
       tradesCount: closed.length, winsCount: w.length, lossesCount: l.length, breakevensCount: be.length,
-      equityPath: buildPath(eqPoints), equityArea: buildArea(eqPoints),
-      // closedTrades + sessions: para renderizar el journal de operaciones (mismo formato que dashboard)
-      closedTrades: closed, sessionsList: sessions,
+      // initialBalance + closedTrades + sessions: para el componente <EquityCurve> y el journal.
+      initialBalance, closedTrades: closed, sessionsList: sessions,
       sessionStats: {
         london: filtered.filter(t => t.session_type === 'london').length,
         new_york: filtered.filter(t => t.session_type === 'new_york').length,
@@ -595,20 +584,12 @@ export default function Admin() {
                 <DetailStat label="RACHA MAX" value={`${metrics.maxWinStreak}W / ${metrics.maxLossStreak}L`} color="#fff"/>
               </div>
 
-              {/* Equity curve */}
-              <div style={s.chartBox}>
-                <div style={s.chartTitle}>EQUITY CURVE</div>
-                <svg viewBox="0 0 800 220" style={{ width:'100%', height:220, display:'block' }}>
-                  <defs>
-                    <linearGradient id="adminAreaGrad" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="#1E90FF" stopOpacity="0.25"/>
-                      <stop offset="100%" stopColor="#1E90FF" stopOpacity="0"/>
-                    </linearGradient>
-                  </defs>
-                  {metrics.equityArea && <path d={metrics.equityArea} fill="url(#adminAreaGrad)"/>}
-                  {metrics.equityPath && <path d={metrics.equityPath} stroke="#1E90FF" strokeWidth="2" fill="none"/>}
-                </svg>
-              </div>
+              {/* Equity curve — componente reutilizable con ejes X/Y y tooltip estilo FX Replay */}
+              <EquityCurve
+                closedTrades={metrics.closedTrades}
+                sessions={metrics.sessionsList}
+                initialBalance={metrics.initialBalance}
+              />
 
               {/* Winning / Losing */}
               <div style={s.twoCol}>

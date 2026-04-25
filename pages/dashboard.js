@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ChallengeSetupModal from '../components/ChallengeSetupModal'
+import EquityCurve from '../components/EquityCurve'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -68,8 +69,6 @@ export default function Dashboard() {
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
   const [profile, setProfile] = useState(null)
   const [showChallenge, setShowChallenge] = useState(false)
-  // Tooltip de la equity curve (estilo FX Replay): índice del punto bajo el cursor.
-  const [equityHover, setEquityHover] = useState(null) // {idx, mouseX, mouseY} en coords del container
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -232,29 +231,12 @@ export default function Dashboard() {
     // Streaks
     let maxW=0,maxL=0,curW=0,curL=0
     closed.forEach(t => { if(t.result==='WIN'){curW++;curL=0;if(curW>maxW)maxW=curW}else if(t.result==='LOSS'){curL++;curW=0;if(curL>maxL)maxL=curL} })
-    // Equity curve
-    let eqRun = initialBalance
-    const eqPoints = [{ x:0, y:eqRun, trade:null }, ...closed.map((t,i) => { eqRun+=(t.pnl||0); return {x:i+1,y:eqRun, trade:t} })]
-    // screenPoints: coordenadas SVG (viewBox 800x160) para usar en tooltip al hover.
-    // Mantenemos referencia a eqRun y al trade que provocó cada punto.
-    let screenPoints = []
-    const buildPath = (pts) => {
-      if(pts.length<2) return ''
-      const maxY=Math.max(...pts.map(p=>p.y)), minY=Math.min(...pts.map(p=>p.y)), rng=maxY-minY||1
-      // mismo cálculo que en pts pero guardamos los (x,y) screen para el tooltip
-      screenPoints = pts.map(p => {
-        const x = (p.x/(pts.length-1))*800
-        const y = 160-((p.y-minY)/rng)*140-10
-        return { x, y, balance: p.y, trade: p.trade }
-      })
-      return pts.map((p,i)=>{const x=(p.x/(pts.length-1))*800;const y=160-((p.y-minY)/rng)*140-10;return`${i===0?'M':'L'}${x},${y}`}).join(' ')
-    }
-    const equityPathStr = buildPath(eqPoints)
+    // Nota: la curva de capital se calcula dentro del componente <EquityCurve>.
     return {
       filteredTrades:filtered, closedTrades:closed, wins:w, losses:l, breakevens:be,
       totalPnl, winRate, avgRR, bestWin, worstLoss, avgWin, avgLoss,
       profitFactor, expectancy, maxDrawdown:maxDD, maxWinStreak:maxW, maxLossStreak:maxL,
-      initialBalance, equityPath:equityPathStr, equityScreenPoints:screenPoints,
+      initialBalance,
       sessionStats:{
         london:filtered.filter(t=>t.session_type==='london'),
         new_york:filtered.filter(t=>t.session_type==='new_york'),
@@ -266,7 +248,7 @@ export default function Dashboard() {
 
   const { filteredTrades, closedTrades, wins, losses, breakevens, totalPnl, winRate, avgRR,
     bestWin, worstLoss, avgWin, avgLoss, profitFactor, expectancy, maxDrawdown,
-    maxWinStreak, maxLossStreak, initialBalance, equityPath, equityScreenPoints, sessionStats } = metrics
+    maxWinStreak, maxLossStreak, initialBalance, sessionStats } = metrics
 
   if (loading) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}>
@@ -581,138 +563,8 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* EQUITY CURVE — tooltip estilo FX Replay al hover */}
-            <div style={{borderRadius:12,padding:'20px 24px',marginBottom:20,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#ffffff',letterSpacing:1,marginBottom:12,textTransform:'uppercase'}}>Equity Curve</div>
-              <div style={{position:'relative',width:'100%',height:160}}
-                onMouseLeave={()=>setEquityHover(null)}
-              >
-                <svg
-                  viewBox="0 0 800 160"
-                  style={{width:'100%',height:160,display:'block'}}
-                  preserveAspectRatio="none"
-                  onMouseMove={(e)=>{
-                    if(!equityScreenPoints || equityScreenPoints.length<2) return
-                    // Posición relativa dentro del SVG, traducida a coords viewBox 800.
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const localX = e.clientX - rect.left
-                    const svgX = (localX/rect.width)*800
-                    // Encuentra el punto cuyo screenPoint.x está más cerca de svgX.
-                    let bestIdx = 0, bestDist = Infinity
-                    for(let i=0; i<equityScreenPoints.length; i++){
-                      const d = Math.abs(equityScreenPoints[i].x - svgX)
-                      if(d < bestDist){ bestDist = d; bestIdx = i }
-                    }
-                    setEquityHover({ idx: bestIdx, mouseX: localX, mouseY: e.clientY - rect.top })
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#1E90FF" stopOpacity="0.4"/>
-                      <stop offset="100%" stopColor="#1E90FF" stopOpacity="0"/>
-                    </linearGradient>
-                  </defs>
-                  {equityPath && <>
-                    <path d={`${equityPath} L800,160 L0,160 Z`} fill="url(#eqGrad)"/>
-                    <path d={equityPath} fill="none" stroke="#1E90FF" strokeWidth="2.5" filter="drop-shadow(0 0 6px rgba(30,144,255,0.6))"/>
-                    {/* Punto destacado bajo el cursor + línea vertical guía */}
-                    {equityHover && equityScreenPoints[equityHover.idx] && (
-                      <>
-                        <line
-                          x1={equityScreenPoints[equityHover.idx].x}
-                          x2={equityScreenPoints[equityHover.idx].x}
-                          y1="0" y2="160"
-                          stroke="rgba(30,144,255,0.4)"
-                          strokeWidth="1"
-                          strokeDasharray="3,3"
-                        />
-                        <circle
-                          cx={equityScreenPoints[equityHover.idx].x}
-                          cy={equityScreenPoints[equityHover.idx].y}
-                          r="5"
-                          fill="#1E90FF"
-                          stroke="#fff"
-                          strokeWidth="2"
-                          filter="drop-shadow(0 0 8px rgba(30,144,255,0.9))"
-                        />
-                      </>
-                    )}
-                  </>}
-                </svg>
-                {/* Tooltip flotante con datos del punto */}
-                {equityHover && equityScreenPoints[equityHover.idx] && (() => {
-                  const pt = equityScreenPoints[equityHover.idx]
-                  const tr = pt.trade
-                  const sess = tr ? sessions.find(s=>s.id===tr.session_id) : null
-                  const initial = initialBalance || pt.balance
-                  const pct = initial>0 ? ((pt.balance-initial)/initial*100) : 0
-                  // Posicionamos el tooltip junto al cursor pero con clamp al contenedor.
-                  const tipW = 220
-                  const tipH = tr ? 110 : 60
-                  const cx = equityHover.mouseX
-                  const cy = equityHover.mouseY
-                  const offsetX = 12
-                  let left = cx + offsetX
-                  let top = cy - tipH - 12
-                  // clamp a la derecha / arriba del SVG si se sale
-                  // (no tenemos width/height aquí, calculamos relativo al hover container)
-                  if (top < 4) top = cy + 16
-                  return (
-                    <div style={{
-                      position:'absolute',
-                      left, top,
-                      maxWidth: tipW,
-                      background:'rgba(4,10,24,0.96)',
-                      border:'1px solid rgba(30,144,255,0.4)',
-                      borderRadius:8,
-                      padding:'10px 12px',
-                      pointerEvents:'none',
-                      backdropFilter:'blur(20px)',
-                      WebkitBackdropFilter:'blur(20px)',
-                      boxShadow:'0 4px 20px rgba(0,0,0,0.5)',
-                      fontFamily:"'Montserrat',sans-serif",
-                      fontSize:11,
-                      color:'#fff',
-                      zIndex:10,
-                    }}>
-                      {tr ? (
-                        <>
-                          <div style={{display:'flex',justifyContent:'space-between',gap:10,marginBottom:6}}>
-                            <span style={{color:'rgba(255,255,255,0.6)',fontSize:9,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Trade #{equityHover.idx}</span>
-                            <span style={{color:tr.side==='BUY'?'#1E90FF':'#ef4444',fontSize:9,fontWeight:800}}>{tr.side} {tr.pair}</span>
-                          </div>
-                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-                            <span style={{color:'rgba(255,255,255,0.6)'}}>Balance</span>
-                            <span style={{fontWeight:700,color:'#fff',fontFamily:'monospace'}}>${pt.balance.toFixed(2)}</span>
-                          </div>
-                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-                            <span style={{color:'rgba(255,255,255,0.6)'}}>P&L</span>
-                            <span style={{fontWeight:700,color:tr.pnl>=0?'#22c55e':'#ef4444',fontFamily:'monospace'}}>{tr.pnl>=0?'+':''}{parseFloat(tr.pnl||0).toFixed(2)} ({pct>=0?'+':''}{pct.toFixed(2)}%)</span>
-                          </div>
-                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-                            <span style={{color:'rgba(255,255,255,0.6)'}}>R:R</span>
-                            <span style={{fontWeight:700,color:'#f59e0b'}}>{parseFloat(tr.rr||0).toFixed(2)}R</span>
-                          </div>
-                          {sess && (
-                            <div style={{borderTop:'1px solid rgba(30,144,255,0.2)',marginTop:6,paddingTop:5,fontSize:9,color:'rgba(255,255,255,0.6)'}}>
-                              {sess.name}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <div style={{color:'rgba(255,255,255,0.6)',fontSize:9,fontWeight:700,marginBottom:4,letterSpacing:0.5,textTransform:'uppercase'}}>Punto inicial</div>
-                          <div style={{display:'flex',justifyContent:'space-between'}}>
-                            <span style={{color:'rgba(255,255,255,0.6)'}}>Balance</span>
-                            <span style={{fontWeight:700,color:'#fff',fontFamily:'monospace'}}>${pt.balance.toFixed(2)}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )
-                })()}
-              </div>
-            </div>
+            {/* EQUITY CURVE — componente reutilizable con ejes y tooltip estilo FX Replay */}
+            <EquityCurve closedTrades={closedTrades} sessions={sessions} initialBalance={initialBalance}/>
 
             {/* SUMMARY CARDS */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
