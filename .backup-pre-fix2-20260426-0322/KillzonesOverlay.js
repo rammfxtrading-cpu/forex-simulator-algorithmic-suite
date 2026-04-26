@@ -89,47 +89,39 @@ function loadCfg() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// KillzonesOverlay v4 — cached sessions + drag-aware redraw
+// KillzonesOverlay v3 — canvas-rendered boxes, JSX UI for settings panel
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// MEJORAS RESPECTO A v3:
+// PROBLEMA QUE RESUELVE: en la versión anterior las cajas eran <div>s con
+// posición absoluta y estado React. El handler de subscribeVisibleLogicalRangeChange
+// hacía setBoxes(...) → React re-render → commit DOM, que añade 1-3 frames
+// de retraso respecto al redibujado del chart. El usuario veía las cajas
+// "desancladas" durante el pan/zoom y luego "engancharse" un par de frames
+// después.
 //
-// 1. CACHE DE SESIONES (filtered): calcSessions() recorre TODAS las velas,
-//    O(n × 4 sesiones). En M5/M1 con datasets largos, ejecutar eso en cada
-//    frame de pan bloquea el hilo y se siente "no fluido". Ahora calcSessions
-//    sólo se ejecuta cuando cambia realLen, dataReady o cfg. El draw() se
-//    queda con un trabajo trivial: 4 conversiones por sesión visible.
+// SOLUCIÓN: dibujar las cajas en un <canvas> y redibujar SÍNCRONAMENTE en
+// el handler de subscribeVisibleLogicalRangeChange (sin rAF, sin setState).
+// Las coordenadas se calculan y se dibujan en el mismo frame que el chart,
+// así no hay desfase.
 //
-// 2. DRAG VERTICAL DE LA ESCALA DE PRECIOS: lightweight-charts NO dispara
-//    subscribeVisibleLogicalRangeChange cuando el usuario arrastra la escala
-//    de precios (cambio vertical). Sólo lo dispara para horizontal.
-//    Solución: mientras el botón del ratón está pulsado sobre el chart,
-//    arrancar un loop de rAF que redibuja en cada frame. Al soltar, parar.
-//    Esto cubre: drag horizontal, drag vertical, drag de escala de precios,
-//    drag de escala de tiempo. Coste: ~16 lookups por frame durante drag,
-//    insignificante.
-//
-// El resto de mejoras de v3 (canvas en lugar de divs, sin setState en
-// el path crítico) se mantienen.
+// El panel de configuración (toggles, inputs) sigue siendo JSX porque
+// es UI interactiva. No afecta al posicionamiento de las cajas.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf, tick }) {
+export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf }) {
   const canvasRef                 = useRef(null)
   const [cfg, setCfg]             = useState(loadCfg)
   const [hovered, setHovered]     = useState(false)
   const [showPanel, setShowPanel] = useState(false)
   const panelRef                  = useRef(null)
 
-  // Refs frescos
+  // Refs siempre frescos para que draw() (que vive fuera del ciclo React)
+  // pueda leer la configuración actual sin pasar por dependencias del effect.
   const cfgRef         = useRef(cfg);         cfgRef.current = cfg
   const tfAllowed = !currentTf || cfg.tfs[currentTf] !== false
   const tfAllowedRef   = useRef(tfAllowed);   tfAllowedRef.current = tfAllowed
   const activePairRef  = useRef(activePair);  activePairRef.current = activePair
   const dataReadyRef   = useRef(dataReady);   dataReadyRef.current = dataReady
-
-  // Cache de sesiones calculadas (logical coords: time/price). Se rellena
-  // en un useEffect que depende de los datos, NO se recalcula en cada draw.
-  const cachedSessionsRef = useRef([])
 
   // Persistir cfg
   useEffect(() => {
@@ -144,7 +136,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     return () => document.removeEventListener('mousedown', fn)
   }, [showPanel])
 
-  // Resize del canvas con devicePixelRatio
+  // ── Resize del canvas con devicePixelRatio para nitidez ─────────────────
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -159,31 +151,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   }, [])
 
-  // ── Recalcular sesiones cuando cambien datos/cfg/tick ──────────────────
-  // Esta es la operación pesada: recorre todas las velas. Se hace 1 vez
-  // por cambio de dataset/tick/cfg, NO en cada frame de pan.
-  useEffect(() => {
-    if (!cfg.visible || !tfAllowed || !dataReady || !activePair) {
-      cachedSessionsRef.current = []
-      return
-    }
-    const allData = typeof window !== 'undefined' ? window.__algSuiteSeriesData : null
-    const realLen = typeof window !== 'undefined' ? window.__algSuiteRealDataLen : null
-    if (!allData || !realLen) {
-      cachedSessionsRef.current = []
-      return
-    }
-    const candles = allData.slice(0, realLen)
-    const sessions = calcSessions(candles, cfg)
-    // Limitar a las N más recientes por tipo
-    const counts = {}
-    cachedSessionsRef.current = sessions.reverse().filter(s => {
-      counts[s.key] = (counts[s.key] || 0) + 1
-      return counts[s.key] <= cfg.history
-    }).reverse()
-  }, [cfg, tfAllowed, dataReady, activePair, tick])
-
-  // ── draw — solo lookup de coords y dibujo ─────────────────────────────
+  // ── draw — función crítica, síncrona, sin React state ───────────────────
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -195,12 +163,22 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     if (!c.visible || !tfAllowedRef.current || !dataReadyRef.current || !ap) return
     const cr = chartMap.current[ap]
     if (!cr?.chart || !cr?.series) return
+    const allData = typeof window !== 'undefined' ? window.__algSuiteSeriesData : null
+    const realLen = typeof window !== 'undefined' ? window.__algSuiteRealDataLen : null
+    if (!allData || !realLen) return
 
-    const sessions = cachedSessionsRef.current
-    if (!sessions.length) return
+    const candles = allData.slice(0, realLen)
+    const sessions = calcSessions(candles, c)
+
+    // Limitar a las N sesiones más recientes por tipo
+    const counts = {}
+    const filtered = sessions.reverse().filter(s => {
+      counts[s.key] = (counts[s.key] || 0) + 1
+      return counts[s.key] <= c.history
+    }).reverse()
 
     const ts = cr.chart.timeScale()
-    for (const s of sessions) {
+    for (const s of filtered) {
       let x1, x2, y1, y2
       try {
         x1 = ts.timeToCoordinate(s.startTime)
@@ -216,15 +194,18 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
       const height = Math.max(Math.abs(y2 - y1), 1)
       if (width < 2) continue
 
+      // Fill
       ctx.fillStyle = s.bg
       ctx.fillRect(left, top, width, height)
 
+      // Border (dashed)
       ctx.strokeStyle = s.border
       ctx.lineWidth = 1
       ctx.setLineDash([4, 3])
       ctx.strokeRect(left + 0.5, top + 0.5, Math.max(width - 1, 0), Math.max(height - 1, 0))
       ctx.setLineDash([])
 
+      // Label
       if (c.showLabel && height > 14) {
         ctx.font = "700 9px 'Montserrat', sans-serif"
         ctx.fillStyle = s.text
@@ -236,7 +217,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     }
   }, [chartMap])
 
-  // ── Subscripciones al chart + listeners de mouse para drag vertical ────
+  // ── Subscripción al chart: redibuja sincrónicamente en cada pan/zoom ────
   useEffect(() => {
     if (!activePair) return
     const cr = chartMap.current[activePair]
@@ -249,8 +230,10 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     const ro = new ResizeObserver(() => { resizeCanvas(); draw() })
     if (canvasRef.current) ro.observe(canvasRef.current)
 
-    // Handler síncrono — para cambios horizontales de range
+    // Handler síncrono — sin rAF, sin setState. Dibuja en el mismo frame
+    // que el chart. Este es el cambio clave que elimina el desanclado.
     const handler = () => draw()
+
     let unsubA = null, unsubB = null
     try {
       tsApi.subscribeVisibleLogicalRangeChange(handler)
@@ -261,67 +244,16 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
       unsubB = () => { try { tsApi.unsubscribeSizeChange(handler) } catch {} }
     } catch {}
 
-    // ── Drag-aware redraw ───────────────────────────────────────────────
-    // Mientras el ratón esté pulsado sobre el chart, redibujamos en cada
-    // frame. Esto captura cambios verticales (drag de escala de precios,
-    // drag general del chart con cambio de price scale) que NO disparan
-    // subscribeVisibleLogicalRangeChange.
-    let dragRafId = null
-    let dragging = false
-
-    const dragLoop = () => {
-      if (!dragging) { dragRafId = null; return }
-      draw()
-      dragRafId = requestAnimationFrame(dragLoop)
-    }
-
-    const chartEl = (() => {
-      try { return cr.chart.chartElement() } catch { return null }
-    })()
-
-    const onMouseDown = (e) => {
-      // Solo nos interesa drag con botón izquierdo y dentro del chart
-      if (e.button !== 0) return
-      if (!chartEl || !chartEl.contains(e.target)) return
-      dragging = true
-      if (dragRafId == null) dragRafId = requestAnimationFrame(dragLoop)
-    }
-    const onMouseUp = () => {
-      dragging = false
-      // Un draw final por si quedó algún frame por capturar
-      draw()
-    }
-
-    // También wheel (zoom con rueda dispara el horizontal handler, pero
-    // por si acaso forzamos un draw extra)
-    const onWheel = () => { draw() }
-
-    if (chartEl) {
-      chartEl.addEventListener('mousedown', onMouseDown)
-      chartEl.addEventListener('wheel', onWheel, { passive: true })
-    }
-    window.addEventListener('mouseup', onMouseUp)
-
     return () => {
       ro.disconnect()
       if (unsubA) unsubA()
       if (unsubB) unsubB()
-      if (dragRafId != null) cancelAnimationFrame(dragRafId)
-      if (chartEl) {
-        chartEl.removeEventListener('mousedown', onMouseDown)
-        chartEl.removeEventListener('wheel', onWheel)
-      }
-      window.removeEventListener('mouseup', onMouseUp)
     }
   }, [activePair, chartMap, dataReady, draw, resizeCanvas])
 
-  // Redibujar cuando cambia config (no afecta posicionamiento, solo qué
-  // se muestra y cómo se pinta)
+  // Redibujar cuando cambia la config (no afecta al posicionamiento, solo
+  // a qué cajas se muestran o cómo se pintan).
   useEffect(() => { draw() }, [cfg, tfAllowed, draw])
-
-  // Redibujar cuando cambia el tick (avance del replay → nuevas sesiones
-  // ya están en el cache via el otro effect, aquí solo redibujamos)
-  useEffect(() => { draw() }, [tick, draw])
 
   // ── UI ──────────────────────────────────────────────────────────────────
   const Toggle = ({ label, k }) => (
@@ -353,7 +285,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5, overflow: 'hidden' }}>
 
-      {/* Capa 1: Canvas de cajas */}
+      {/* Capa 1: Canvas de cajas — sincronizado al frame con el chart */}
       <canvas
         ref={canvasRef}
         style={{
@@ -363,7 +295,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
         }}
       />
 
-      {/* Capa 2: Indicator label */}
+      {/* Capa 2: Indicator label — TradingView style — JSX (interactivo) */}
       <div
         style={{
           position: 'absolute', top: 20, left: 6, pointerEvents: 'all',

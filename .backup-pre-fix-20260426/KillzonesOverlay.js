@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 // NY offset: EDT = UTC-4 (Mar-Nov), EST = UTC-5 (Nov-Mar)
 function getNYOffset(utcTs) {
@@ -24,11 +24,14 @@ const SESSIONS = [
   { key: 'nypm',   label: 'NY PM KZ',   hStart: 13, mStart: 30,hEnd: 16, mEnd: 0,  bg: 'rgba(255,255,255,0.06)', border: 'rgba(220,220,220,0.4)', text: '#ffffff', crossesMidnight: false },
 ]
 
+// Lista de TFs en las que se puede mostrar/ocultar killzones (estilo TV)
 const TF_LIST = ['M1','M3','M5','M15','M30','H1','H4','D1']
 
 function inSession(nyH, nyM, sess) {
   const cur = toMinutes(nyH, nyM)
-  if (sess.crossesMidnight) return cur >= toMinutes(sess.hStart, sess.mStart)
+  if (sess.crossesMidnight) {
+    return cur >= toMinutes(sess.hStart, sess.mStart)
+  }
   return cur >= toMinutes(sess.hStart, sess.mStart) && cur < toMinutes(sess.hEnd, sess.mEnd)
 }
 
@@ -66,16 +69,22 @@ function calcSessions(candles, cfg) {
   return boxes
 }
 
+// Default config — todas las TFs activas excepto D1.
 const DEF = {
   visible: true,
   asia: true, london: true, nyam: true, nypm: false,
   showLabel: true,
   history: 5,
+  // Visibilidad por temporalidad. Por defecto: M1-H4 sí, D1 no.
+  // Las velas D1 son tan grandes que las KZ pierden sentido visual.
   tfs: { M1: true, M3: true, M5: true, M15: true, M30: true, H1: true, H4: true, D1: false },
 }
 
 const STORAGE_KEY = 'killzones_cfg_v2'
 
+// Carga config desde localStorage si existe; si no, default.
+// Hacemos merge con DEF para no romper si guardamos una versión vieja
+// que aún no tiene `tfs` o cualquier campo nuevo añadido más adelante.
 function loadCfg() {
   if (typeof window === 'undefined') return DEF
   try {
@@ -88,55 +97,22 @@ function loadCfg() {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// KillzonesOverlay v4 — cached sessions + drag-aware redraw
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// MEJORAS RESPECTO A v3:
-//
-// 1. CACHE DE SESIONES (filtered): calcSessions() recorre TODAS las velas,
-//    O(n × 4 sesiones). En M5/M1 con datasets largos, ejecutar eso en cada
-//    frame de pan bloquea el hilo y se siente "no fluido". Ahora calcSessions
-//    sólo se ejecuta cuando cambia realLen, dataReady o cfg. El draw() se
-//    queda con un trabajo trivial: 4 conversiones por sesión visible.
-//
-// 2. DRAG VERTICAL DE LA ESCALA DE PRECIOS: lightweight-charts NO dispara
-//    subscribeVisibleLogicalRangeChange cuando el usuario arrastra la escala
-//    de precios (cambio vertical). Sólo lo dispara para horizontal.
-//    Solución: mientras el botón del ratón está pulsado sobre el chart,
-//    arrancar un loop de rAF que redibuja en cada frame. Al soltar, parar.
-//    Esto cubre: drag horizontal, drag vertical, drag de escala de precios,
-//    drag de escala de tiempo. Coste: ~16 lookups por frame durante drag,
-//    insignificante.
-//
-// El resto de mejoras de v3 (canvas en lugar de divs, sin setState en
-// el path crítico) se mantienen.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf, tick }) {
-  const canvasRef                 = useRef(null)
-  const [cfg, setCfg]             = useState(loadCfg)
-  const [hovered, setHovered]     = useState(false)
+export default function KillzonesOverlay({ chartMap, activePair, tick, chartTick, dataReady, currentTf }) {
+  const debounceRef = useRef(null)
+  const [boxes, setBoxes]       = useState([])
+  // cfg arranca con lo que haya guardado el usuario en localStorage (lazy init).
+  const [cfg, setCfg]           = useState(loadCfg)
+  const [hovered, setHovered]   = useState(false)
   const [showPanel, setShowPanel] = useState(false)
-  const panelRef                  = useRef(null)
+  const panelRef = useRef(null)
+  // Tick interno para forzar recálculo cuando el chart hace pan/zoom.
+  const [scrollTick, setScrollTick] = useState(0)
 
-  // Refs frescos
-  const cfgRef         = useRef(cfg);         cfgRef.current = cfg
-  const tfAllowed = !currentTf || cfg.tfs[currentTf] !== false
-  const tfAllowedRef   = useRef(tfAllowed);   tfAllowedRef.current = tfAllowed
-  const activePairRef  = useRef(activePair);  activePairRef.current = activePair
-  const dataReadyRef   = useRef(dataReady);   dataReadyRef.current = dataReady
-
-  // Cache de sesiones calculadas (logical coords: time/price). Se rellena
-  // en un useEffect que depende de los datos, NO se recalcula en cada draw.
-  const cachedSessionsRef = useRef([])
-
-  // Persistir cfg
+  // Persistir cfg en localStorage cada vez que cambia.
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)) } catch {}
   }, [cfg])
 
-  // Cerrar panel al click fuera
   useEffect(() => {
     if (!showPanel) return
     const fn = e => { if (panelRef.current && !panelRef.current.contains(e.target)) setShowPanel(false) }
@@ -144,186 +120,87 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     return () => document.removeEventListener('mousedown', fn)
   }, [showPanel])
 
-  // Resize del canvas con devicePixelRatio
-  const resizeCanvas = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const dpr = window.devicePixelRatio || 1
-    const w = canvas.offsetWidth
-    const h = canvas.offsetHeight
-    canvas.width  = w * dpr
-    canvas.height = h * dpr
-    canvas.style.width  = w + 'px'
-    canvas.style.height = h + 'px'
-    const ctx = canvas.getContext('2d')
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  }, [])
-
-  // ── Recalcular sesiones cuando cambien datos/cfg/tick ──────────────────
-  // Esta es la operación pesada: recorre todas las velas. Se hace 1 vez
-  // por cambio de dataset/tick/cfg, NO en cada frame de pan.
-  useEffect(() => {
-    if (!cfg.visible || !tfAllowed || !dataReady || !activePair) {
-      cachedSessionsRef.current = []
-      return
-    }
-    const allData = typeof window !== 'undefined' ? window.__algSuiteSeriesData : null
-    const realLen = typeof window !== 'undefined' ? window.__algSuiteRealDataLen : null
-    if (!allData || !realLen) {
-      cachedSessionsRef.current = []
-      return
-    }
-    const candles = allData.slice(0, realLen)
-    const sessions = calcSessions(candles, cfg)
-    // Limitar a las N más recientes por tipo
-    const counts = {}
-    cachedSessionsRef.current = sessions.reverse().filter(s => {
-      counts[s.key] = (counts[s.key] || 0) + 1
-      return counts[s.key] <= cfg.history
-    }).reverse()
-  }, [cfg, tfAllowed, dataReady, activePair, tick])
-
-  // ── draw — solo lookup de coords y dibujo ─────────────────────────────
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight)
-
-    const c  = cfgRef.current
-    const ap = activePairRef.current
-    if (!c.visible || !tfAllowedRef.current || !dataReadyRef.current || !ap) return
-    const cr = chartMap.current[ap]
-    if (!cr?.chart || !cr?.series) return
-
-    const sessions = cachedSessionsRef.current
-    if (!sessions.length) return
-
-    const ts = cr.chart.timeScale()
-    for (const s of sessions) {
-      let x1, x2, y1, y2
-      try {
-        x1 = ts.timeToCoordinate(s.startTime)
-        x2 = ts.timeToCoordinate(s.endTime)
-        y1 = cr.series.priceToCoordinate(s.high)
-        y2 = cr.series.priceToCoordinate(s.low)
-      } catch { continue }
-      if (x1 == null || x2 == null || y1 == null || y2 == null) continue
-
-      const left   = Math.min(x1, x2)
-      const top    = Math.min(y1, y2)
-      const width  = Math.abs(x2 - x1)
-      const height = Math.max(Math.abs(y2 - y1), 1)
-      if (width < 2) continue
-
-      ctx.fillStyle = s.bg
-      ctx.fillRect(left, top, width, height)
-
-      ctx.strokeStyle = s.border
-      ctx.lineWidth = 1
-      ctx.setLineDash([4, 3])
-      ctx.strokeRect(left + 0.5, top + 0.5, Math.max(width - 1, 0), Math.max(height - 1, 0))
-      ctx.setLineDash([])
-
-      if (c.showLabel && height > 14) {
-        ctx.font = "700 9px 'Montserrat', sans-serif"
-        ctx.fillStyle = s.text
-        ctx.globalAlpha = 0.85
-        ctx.textBaseline = 'bottom'
-        ctx.fillText(s.label, left + 4, top + height - 2)
-        ctx.globalAlpha = 1
-      }
-    }
-  }, [chartMap])
-
-  // ── Subscripciones al chart + listeners de mouse para drag vertical ────
+  // --- Suscripción al timeScale del chart ---
+  // Sin esto, las cajas se quedan flotando cuando el usuario hace pan/zoom
+  // hasta que llega el próximo tick de la simulación. Con `forceRecalc()`
+  // recalculamos en el siguiente frame de animación, así las cajas siguen
+  // al chart sin lag perceptible.
+  const forceRecalc = useRef(null)
   useEffect(() => {
     if (!activePair) return
     const cr = chartMap.current[activePair]
     if (!cr?.chart) return
-    const tsApi = cr.chart.timeScale()
-
-    resizeCanvas()
-    draw()
-
-    const ro = new ResizeObserver(() => { resizeCanvas(); draw() })
-    if (canvasRef.current) ro.observe(canvasRef.current)
-
-    // Handler síncrono — para cambios horizontales de range
-    const handler = () => draw()
-    let unsubA = null, unsubB = null
-    try {
-      tsApi.subscribeVisibleLogicalRangeChange(handler)
-      unsubA = () => { try { tsApi.unsubscribeVisibleLogicalRangeChange(handler) } catch {} }
-    } catch {}
-    try {
-      tsApi.subscribeSizeChange(handler)
-      unsubB = () => { try { tsApi.unsubscribeSizeChange(handler) } catch {} }
-    } catch {}
-
-    // ── Drag-aware redraw ───────────────────────────────────────────────
-    // Mientras el ratón esté pulsado sobre el chart, redibujamos en cada
-    // frame. Esto captura cambios verticales (drag de escala de precios,
-    // drag general del chart con cambio de price scale) que NO disparan
-    // subscribeVisibleLogicalRangeChange.
-    let dragRafId = null
-    let dragging = false
-
-    const dragLoop = () => {
-      if (!dragging) { dragRafId = null; return }
-      draw()
-      dragRafId = requestAnimationFrame(dragLoop)
+    const ts = cr.chart.timeScale()
+    let rafId = null
+    const handler = () => {
+      // Coalescer múltiples eventos en un único recálculo por frame
+      if (rafId) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        if (forceRecalc.current) forceRecalc.current()
+      })
     }
-
-    const chartEl = (() => {
-      try { return cr.chart.chartElement() } catch { return null }
-    })()
-
-    const onMouseDown = (e) => {
-      // Solo nos interesa drag con botón izquierdo y dentro del chart
-      if (e.button !== 0) return
-      if (!chartEl || !chartEl.contains(e.target)) return
-      dragging = true
-      if (dragRafId == null) dragRafId = requestAnimationFrame(dragLoop)
-    }
-    const onMouseUp = () => {
-      dragging = false
-      // Un draw final por si quedó algún frame por capturar
-      draw()
-    }
-
-    // También wheel (zoom con rueda dispara el horizontal handler, pero
-    // por si acaso forzamos un draw extra)
-    const onWheel = () => { draw() }
-
-    if (chartEl) {
-      chartEl.addEventListener('mousedown', onMouseDown)
-      chartEl.addEventListener('wheel', onWheel, { passive: true })
-    }
-    window.addEventListener('mouseup', onMouseUp)
-
+    try { ts.subscribeVisibleLogicalRangeChange(handler) } catch {}
+    try { ts.subscribeSizeChange(handler) } catch {}
     return () => {
-      ro.disconnect()
-      if (unsubA) unsubA()
-      if (unsubB) unsubB()
-      if (dragRafId != null) cancelAnimationFrame(dragRafId)
-      if (chartEl) {
-        chartEl.removeEventListener('mousedown', onMouseDown)
-        chartEl.removeEventListener('wheel', onWheel)
-      }
-      window.removeEventListener('mouseup', onMouseUp)
+      if (rafId) cancelAnimationFrame(rafId)
+      try { ts.unsubscribeVisibleLogicalRangeChange(handler) } catch {}
+      try { ts.unsubscribeSizeChange(handler) } catch {}
     }
-  }, [activePair, chartMap, dataReady, draw, resizeCanvas])
+  }, [activePair, chartMap, chartTick, dataReady])
 
-  // Redibujar cuando cambia config (no afecta posicionamiento, solo qué
-  // se muestra y cómo se pinta)
-  useEffect(() => { draw() }, [cfg, tfAllowed, draw])
+  // --- Determinar si las KZ deben mostrarse en la TF actual ---
+  // Si cfg.tfs[currentTf] === false, ocultamos. currentTf viene del padre.
+  const tfAllowed = !currentTf || cfg.tfs[currentTf] !== false
 
-  // Redibujar cuando cambia el tick (avance del replay → nuevas sesiones
-  // ya están en el cache via el otro effect, aquí solo redibujamos)
-  useEffect(() => { draw() }, [tick, draw])
+  // Función pura de recálculo: lee datos actuales y devuelve cajas con coords píxel.
+  // Se usa tanto desde el useEffect (cambios de cfg/tick/data) como desde el
+  // handler rAF (cambios de pan/zoom).
+  const computeBoxes = () => {
+    if (!cfg.visible || !tfAllowed || !dataReady || !activePair) return []
+    const cr = chartMap.current[activePair]
+    if (!cr?.chart || !cr?.series) return []
+    const allData = window.__algSuiteSeriesData
+    const realLen = window.__algSuiteRealDataLen
+    if (!allData || !realLen) return []
 
-  // ── UI ──────────────────────────────────────────────────────────────────
+    const candles = allData.slice(0, realLen)
+    const sessions = calcSessions(candles, cfg)
+
+    const counts = {}
+    const filtered = sessions.reverse().filter(s => {
+      counts[s.key] = (counts[s.key] || 0) + 1
+      return counts[s.key] <= cfg.history
+    }).reverse()
+
+    const ts = cr.chart.timeScale()
+    const nb = []
+    for (const s of filtered) {
+      try {
+        const x1 = ts.timeToCoordinate(s.startTime)
+        const x2 = ts.timeToCoordinate(s.endTime)
+        const y1 = cr.series.priceToCoordinate(s.high)
+        const y2 = cr.series.priceToCoordinate(s.low)
+        if (x1 == null || x2 == null || y1 == null || y2 == null) continue
+        const left  = Math.min(x1, x2)
+        const width = Math.abs(x2 - x1)
+        const top   = Math.min(y1, y2)
+        const height = Math.abs(y2 - y1)
+        if (width < 2 || height < 1) continue
+        nb.push({ ...s, left, top, width, height })
+      } catch {}
+    }
+    return nb
+  }
+
+  // Wire up forceRecalc para que el handler de timeScale pueda llamar computeBoxes
+  // sin pasar por el useEffect (que tiene latencia de React).
+  forceRecalc.current = () => setBoxes(computeBoxes())
+
+  useEffect(() => {
+    setBoxes(computeBoxes())
+  }, [chartTick, dataReady, activePair, cfg, tfAllowed])
+
   const Toggle = ({ label, k }) => (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
       <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>{label}</span>
@@ -336,6 +213,8 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     </div>
   )
 
+  // Chip compacto para TFs. Al pulsar se alterna su visibilidad.
+  // Encendido = azul; apagado = gris transparente.
   const TfChip = ({ tf }) => (
     <div onClick={() => setCfg(p => ({ ...p, tfs: { ...p.tfs, [tf]: !p.tfs[tf] } }))}
       style={{
@@ -353,17 +232,27 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5, overflow: 'hidden' }}>
 
-      {/* Capa 1: Canvas de cajas */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: 'absolute', inset: 0,
-          width: '100%', height: '100%',
-          pointerEvents: 'none',
-        }}
-      />
+      {/* Session boxes */}
+      {boxes.map((b, i) => (
+        <div key={b.key + b.startTime} style={{
+          position: 'absolute', left: b.left, top: b.top,
+          width: b.width, height: Math.max(b.height, 1),
+          background: b.bg,
+          border: `1px dashed ${b.border}`,
+          boxSizing: 'border-box', pointerEvents: 'none'
+        }}>
+          {cfg.showLabel && b.height > 14 && (
+            <span style={{
+              position: 'absolute', left: 4, bottom: 2,
+              fontSize: 9, fontWeight: 700, color: b.text,
+              fontFamily: "'Montserrat',sans-serif", lineHeight: 1,
+              opacity: 0.85, pointerEvents: 'none'
+            }}>{b.label}</span>
+          )}
+        </div>
+      ))}
 
-      {/* Capa 2: Indicator label */}
+      {/* Indicator label — TradingView style */}
       <div
         style={{
           position: 'absolute', top: 20, left: 6, pointerEvents: 'all',
@@ -380,6 +269,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
         <span style={{ display: 'flex', alignItems: 'center', gap: 1,
           opacity: hovered || showPanel ? 1 : 0, transition: 'opacity .12s', marginLeft: 2 }}>
 
+          {/* Eye */}
           <button title={cfg.visible ? 'Ocultar' : 'Mostrar'}
             onClick={() => setCfg(p => ({ ...p, visible: !p.visible }))}
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px',
@@ -390,6 +280,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
             }
           </button>
 
+          {/* Settings */}
           <button title="Configuración" onClick={() => setShowPanel(p => !p)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px',
               color: 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center' }}>
@@ -400,6 +291,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
           </button>
         </span>
 
+        {/* Settings panel */}
         {showPanel && (
           <div ref={panelRef} style={{
             position: 'absolute', top: '100%', left: 0, marginTop: 4,
@@ -424,6 +316,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
                 onChange={e => setCfg(p => ({ ...p, history: Math.max(1, Math.min(20, +e.target.value || 1)) }))} />
             </div>
 
+            {/* Visibilidad por TF (estilo TradingView) */}
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10, marginTop: 4 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)',
                 letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' }}>Visible en</div>

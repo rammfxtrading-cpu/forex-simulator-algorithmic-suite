@@ -6032,6 +6032,23 @@ class BaseLineTool extends PriceDataSource {
         // Nullify references to LWCharts APIs to prevent memory leaks / stale closures.
         // This is important because chart/series APIs might hold references back to the primitive.
         // Cast to `any` only where strictly necessary for re-assigning readonly properties for cleanup.
+        // [DEFENSIVE GUARD] Propagate detach to PaneViews. They hold their own
+        // _chart/_series/_tool refs (set in their constructor) which would otherwise
+        // outlive this detach call and crash on the next chart redraw with NPEs
+        // like "Cannot read properties of null (reading 'timeScale')".
+        if (this._paneViews && this._paneViews.length) {
+            this._paneViews.forEach(pv => {
+                try {
+                    if (pv && pv._renderer && pv._renderer.clear) pv._renderer.clear();
+                } catch (e) {}
+                if (pv) {
+                    pv._chart = null;
+                    pv._series = null;
+                    pv._tool = null;
+                    pv._invalidated = false;
+                }
+            });
+        }
         this._chart = null;
         this._series = null;
         this._horzScaleBehavior = null;
@@ -6448,6 +6465,10 @@ class BaseLineTool extends PriceDataSource {
      * @returns A {@link Point} with screen coordinates, or `null` if conversion fails.
      */
     pointToScreenPoint(point) {
+        // [DEFENSIVE GUARD] After detached(), this._chart / this._series are nulled.
+        // PaneViews can still hold stale refs and ask for coords during the next
+        // chart redraw. Return null to skip cleanly instead of crashing with NPE.
+        if (!this._chart || !this._series) return null;
         const timeScale = this._chart.timeScale();
         // CORRECTED: Assert point.timestamp as UTCTimestamp to match the 'Time' type expectation.
         const logicalIndex = interpolateLogicalIndexFromTime(this._chart, this._series, point.timestamp);
@@ -8482,6 +8503,12 @@ class LineToolPaneView {
      */
     renderer() {
         if (this._invalidated) {
+            // [DEFENSIVE GUARD] PaneView's _chart/_tool refs may outlive the tool's
+            // detached() call. If the underlying tool was detached, skip rendering.
+            if (!this._chart || !this._tool || !this._tool._chart) {
+                this._renderer.clear();
+                return null;
+            }
             const chartElement = this._chart.chartElement();
             const height = chartElement.clientHeight;
             const width = chartElement.clientWidth;
@@ -8505,9 +8532,13 @@ class LineToolPaneView {
      * @protected
      */
     _updatePoints() {
+        // [DEFENSIVE GUARD] If the parent tool was detached, _chart on the tool
+        // is null and pointToScreenPoint will return null. We also guard our own
+        // _chart ref in case this PaneView outlived its chart entirely.
+        if (!this._chart || !this._tool || !this._tool._chart) return false;
         const timeScaleApi = this._chart.timeScale();
         const priceScale = this._tool.priceScale();
-        if (timeScaleApi.getVisibleLogicalRange() === null || !priceScale) {
+        if (!timeScaleApi || timeScaleApi.getVisibleLogicalRange() === null || !priceScale) {
             return false;
         }
         this._points = [];

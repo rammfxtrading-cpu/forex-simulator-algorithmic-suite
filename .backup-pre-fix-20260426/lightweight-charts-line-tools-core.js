@@ -1533,6 +1533,7 @@ logicalIndex) {
  * @returns An object containing `from` (bottom price) and `to` (top price), or `null` if the chart isn't ready.
  */
 function getExtendedVisiblePriceRange(tool) {
+    if(!tool._series) return null;
     const chart = tool.getChart();
     const series = tool.getSeries();
     // 1. Get total widget height from the root element
@@ -3566,13 +3567,9 @@ function setLineStyle(ctx, style) {
  * @returns A numeric multiplier to be applied to the base decoration size.
  */
 function computeEndLineSize(lineWidth) {
-    switch (lineWidth) {
-        case 1: return 3.5;
-        case 2: return 2;
-        case 3: return 1.5;
-        case 4: return 1.25;
-        default: return 1; // For other widths, use 1
-    }
+    // Constant multiplier — arrow scales proportionally with line width
+    // width=1 → 6px, width=2 → 12px, width=3 → 18px
+    return 1.2;
 }
 /**
  * Draws a pixel-perfect horizontal line on the canvas.
@@ -5248,6 +5245,7 @@ class LineToolPriceAxisLabelView extends PriceAxisView {
         paneRendererData.visible = false;
         const toolOptions = this._tool.options();
         const priceScaleApi = this._tool.priceScale();
+        if(!this._tool._series){ axisRendererData.visible=false; paneRendererData.visible=false; return; }
         const series = this._tool.getSeries();
         const point = this._tool.getPoint(this._pointIndex);
         const labelId = this._tool.id() + '-p' + this._pointIndex;
@@ -6034,23 +6032,6 @@ class BaseLineTool extends PriceDataSource {
         // Nullify references to LWCharts APIs to prevent memory leaks / stale closures.
         // This is important because chart/series APIs might hold references back to the primitive.
         // Cast to `any` only where strictly necessary for re-assigning readonly properties for cleanup.
-        // [DEFENSIVE GUARD] Propagate detach to PaneViews. They hold their own
-        // _chart/_series/_tool refs (set in their constructor) which would otherwise
-        // outlive this detach call and crash on the next chart redraw with NPEs
-        // like "Cannot read properties of null (reading 'timeScale')".
-        if (this._paneViews && this._paneViews.length) {
-            this._paneViews.forEach(pv => {
-                try {
-                    if (pv && pv._renderer && pv._renderer.clear) pv._renderer.clear();
-                } catch (e) {}
-                if (pv) {
-                    pv._chart = null;
-                    pv._series = null;
-                    pv._tool = null;
-                    pv._invalidated = false;
-                }
-            });
-        }
         this._chart = null;
         this._series = null;
         this._horzScaleBehavior = null;
@@ -6467,10 +6448,6 @@ class BaseLineTool extends PriceDataSource {
      * @returns A {@link Point} with screen coordinates, or `null` if conversion fails.
      */
     pointToScreenPoint(point) {
-        // [DEFENSIVE GUARD] After detached(), this._chart / this._series are nulled.
-        // PaneViews can still hold stale refs and ask for coords during the next
-        // chart redraw. Return null to skip cleanly instead of crashing with NPE.
-        if (!this._chart || !this._series) return null;
         const timeScale = this._chart.timeScale();
         // CORRECTED: Assert point.timestamp as UTCTimestamp to match the 'Time' type expectation.
         const logicalIndex = interpolateLogicalIndexFromTime(this._chart, this._series, point.timestamp);
@@ -8505,12 +8482,6 @@ class LineToolPaneView {
      */
     renderer() {
         if (this._invalidated) {
-            // [DEFENSIVE GUARD] PaneView's _chart/_tool refs may outlive the tool's
-            // detached() call. If the underlying tool was detached, skip rendering.
-            if (!this._chart || !this._tool || !this._tool._chart) {
-                this._renderer.clear();
-                return null;
-            }
             const chartElement = this._chart.chartElement();
             const height = chartElement.clientHeight;
             const width = chartElement.clientWidth;
@@ -8534,13 +8505,9 @@ class LineToolPaneView {
      * @protected
      */
     _updatePoints() {
-        // [DEFENSIVE GUARD] If the parent tool was detached, _chart on the tool
-        // is null and pointToScreenPoint will return null. We also guard our own
-        // _chart ref in case this PaneView outlived its chart entirely.
-        if (!this._chart || !this._tool || !this._tool._chart) return false;
         const timeScaleApi = this._chart.timeScale();
         const priceScale = this._tool.priceScale();
-        if (!timeScaleApi || timeScaleApi.getVisibleLogicalRange() === null || !priceScale) {
+        if (timeScaleApi.getVisibleLogicalRange() === null || !priceScale) {
             return false;
         }
         this._points = [];

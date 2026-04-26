@@ -76,13 +76,6 @@ function chartOpts(w,h){return{
     fixRightEdge:false,
     ticksVisible:true,
     lockVisibleTimeRangeOnResize:true,
-    // CRÍTICO: por defecto, lightweight-charts desplaza el rango visible
-    // cuando aparece una nueva vela. Eso causaba el "martillazo lateral"
-    // (chart se va a la izquierda, vuelve a la derecha) cada vez que se
-    // formaba una nueva vela del TF actual durante el replay. Lo
-    // desactivamos para que el rango quede fijo y el usuario controle
-    // siempre la posición del scroll.
-    shiftVisibleRangeOnNewBar:false,
     tickMarkFormatter:(time,tickMarkType,locale)=>{
       const d=new Date(time*1000)
       const days=['Dom','Lun','Mar','Mie','Jue','Vie','Sab']
@@ -1110,27 +1103,32 @@ if(full||(curr!==prev&&curr!==prev+1)){
         }
       }
     } else if(curr===prev+1){
-      // ── Cambio de bucket TF: nueva vela del TF actual aparece ───────────
-      // Antes este branch hacía únicamente `update(agg[ult])`, pero el array
-      // `cr.phantom` seguía con timestamps anclados al `_lastT` ANTERIOR. El
-      // primer phantom tenía exactamente el mismo timestamp que la nueva vela
-      // real (oldLastT + tfS = newLastT), provocando un conflicto interno
-      // en lightweight-charts.
-      //
-      // El "martillazo lateral" (chart se va a la izquierda, vuelve a la
-      // derecha) lo causaba la opción `shiftVisibleRangeOnNewBar` (default
-      // true) de lightweight-charts, que desplaza automáticamente el rango
-      // al añadir nueva vela. Lo desactivamos en chartOpts. Con eso ya no
-      // hace falta restaurar el rango con un rAF posterior — lo que en sí
-      // mismo era lo que se veía como martillazo (rango se va, vuelve).
-      cr.phantom = Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
-      cr.phantomBaseTime = _lastT
-      try {
-        cr.series.setData([...agg, ...cr.phantom])
-      } catch {}
-      if(typeof window!=='undefined'){
-        window.__algSuiteSeriesData = [...agg, ...cr.phantom]
-        window.__algSuiteRealDataLen = agg.length
+      // Use update() — avoids setData jump when new TF candle forms
+      if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
+      try{
+        // Save range, update, restore — prevents chart from scrolling
+        const _rng=cr.userScrolled?cr.chart.timeScale().getVisibleLogicalRange():null
+        cr.series.update(agg[agg.length-1])
+        // [DEBUG TEMP] Log para investigar bug long/short se contrae al play
+        if(typeof window!=='undefined' && window.__algSuiteDebugLS){
+          const _expJson = (typeof window.__algSuiteExportTools === 'function') ? window.__algSuiteExportTools() : null
+          const _tools = _expJson ? JSON.parse(_expJson) : []
+          const _ls = _tools.find(t => t.toolType === 'LongShortPosition')
+          if(_ls){
+            console.log('[LS-DEBUG] new candle', {
+              tf, agg_len: agg.length, last_real_t: _lastT,
+              phantom_first_t: cr.phantom?.[0]?.time, phantom_last_t: cr.phantom?.[cr.phantom.length-1]?.time,
+              ls_points: _ls.points,
+            })
+          }
+        }
+        if(_rng) requestAnimationFrame(()=>{try{cr.chart.timeScale().setVisibleLogicalRange(_rng)}catch{}})
+      }catch{
+        // Fallback
+        cr.phantom=Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
+        const _r2=cr.chart.timeScale().getVisibleLogicalRange()
+        cr.series.setData([...agg,...cr.phantom])
+        if(_r2) requestAnimationFrame(()=>{ try{cr.chart.timeScale().setVisibleLogicalRange(_r2)}catch{} })
       }
     } else {
       // Within-bucket update — only last candle changed, use update() — 100x faster than setData

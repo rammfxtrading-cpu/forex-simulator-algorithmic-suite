@@ -15,17 +15,13 @@ class ReplayEngine {
     this.candles      = []
     this._currentTime = null
     this.isPlaying    = false
-    this.speed        = 1       // velas M1 efectivas por segundo de tiempo real
-    this.tickMs       = 1000    // legado: ya no se usa para play(), preservado por compat
-    this.interval     = null    // legado: limpiado por _clearTimers() si quedara colgando
+    this.speed        = 1
+    this.tickMs       = 1000
+    this.interval     = null
     this.onTick       = null
     this.onEnd        = null
     // Aggregation cache — avoids O(n) full scan on every tick
     this._aggCache    = null  // { tf, index, result: [] }
-    // rAF play loop state
-    this._rafId       = null
-    this._lastFrameTs = null  // performance.now() del frame anterior
-    this._fracAcc     = 0     // acumulador fraccional de velas M1
   }
 
   // ── Carga ──────────────────────────────────────────────────────────────────
@@ -173,85 +169,23 @@ class ReplayEngine {
   }
 
   // ── Controles ─────────────────────────────────────────────────────────────
-  //
-  // Diseño del loop de reproducción (v3 - rAF):
-  // ─────────────────────────────────────────────────────────────────────────
-  // El motor avanza `speed` velas M1 por segundo de tiempo real, pero
-  // distribuye ese avance en frames de ~16ms (60fps) en vez de un único
-  // salto cada 1000ms. Esto elimina los "martillazos" laterales que se
-  // producían cuando speed=60 saltaba 60 velas M1 de golpe (= 1 vela H1
-  // entera) cada segundo, haciendo que el último close cambiara
-  // drásticamente entre frame y frame.
-  //
-  // Características clave:
-  //   - Throughput idéntico al anterior: speed=N → N velas M1/segundo real.
-  //   - El avance se calcula con delta-time real (`performance.now()`),
-  //     así una pestaña en background (que rAF pausa) no acumula deuda
-  //     ni produce un sprint al volver a foreground (clamp a 250ms).
-  //   - Acumulador fraccional: cuando speed=1, cada frame añade ~0.016
-  //     velas; cuando llega a 1.0 se avanza una vela y se conserva el
-  //     resto. Así no se pierden velas por redondeo.
-  //   - Si una pestaña se queda sin frames durante un rato, al volver
-  //     se ejecuta como mucho 1 vela en ese frame (clamp 250ms) y el
-  //     siguiente frame continúa normalmente — sin sprint visible.
-  //   - onTick se llama en cada vela avanzada, igual que antes, así
-  //     SLTP/limit checks se siguen ejecutando para cada M1.
 
   play() {
     if (this.isPlaying) return
     this.isPlaying = true
-    this._fracAcc = 0
-    this._lastFrameTs = null
-    this._loop()
-  }
-
-  _loop() {
-    if (!this.isPlaying) return
-    this._rafId = (typeof requestAnimationFrame !== 'undefined')
-      ? requestAnimationFrame(ts => this._tickFrame(ts))
-      : setTimeout(() => this._tickFrame(performance.now()), 16)
-  }
-
-  _tickFrame(now) {
-    if (!this.isPlaying) return
-    if (this._lastFrameTs === null) {
-      this._lastFrameTs = now
-      this._loop()
-      return
-    }
-    // Delta de tiempo real entre frames, clamped para evitar sprints
-    // tras una pestaña en background o un breakpoint del debugger.
-    const rawDelta = now - this._lastFrameTs
-    const delta = Math.min(rawDelta, 250)  // 250ms = ~15 frames de margen
-    this._lastFrameTs = now
-
-    // velas-M1 a avanzar en este frame: speed × (delta/1000)
-    this._fracAcc += this.speed * (delta / 1000)
-    let stepsThisFrame = Math.floor(this._fracAcc)
-    if (stepsThisFrame > 0) {
-      this._fracAcc -= stepsThisFrame
-      // Avanzamos vela a vela para que onTick (y por tanto SLTP/limit
-      // checks) se ejecute con cada M1. nextCandle() devuelve false al
-      // llegar al final, en cuyo caso el loop se autodetiene.
-      while (stepsThisFrame-- > 0) {
-        if (!this.nextCandle(1)) return
-      }
-    }
-    this._loop()
+    this.interval = setInterval(() => {
+      if (!this.nextCandle()) this.pause()
+    }, this.tickMs)
   }
 
   pause() {
     this.isPlaying = false
-    this._clearTimers()
-    this._lastFrameTs = null
-    this._fracAcc = 0
+    this._clearInterval()
   }
 
   setSpeed(speed) {
     this.speed = speed
-    // No reseteamos el loop: el cambio de speed se aplica en el siguiente
-    // frame de forma natural (this.speed se lee fresh cada frame). Esto
-    // evita el parpadeo de pause+play que tenía la versión anterior.
+    if (this.isPlaying) { this.pause(); this.play() }
   }
 
   reset() {
@@ -261,21 +195,9 @@ class ReplayEngine {
     if (this.onTick) this.onTick()
   }
 
-  _clearTimers() {
-    if (this._rafId != null) {
-      try {
-        if (typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(this._rafId)
-        else clearTimeout(this._rafId)
-      } catch {}
-      this._rafId = null
-    }
-    // Compat: si una versión vieja de load() todavía referencia this.interval
-    if (this.interval) { try { clearInterval(this.interval) } catch {}; this.interval = null }
+  _clearInterval() {
+    if (this.interval) { clearInterval(this.interval); this.interval = null }
   }
-
-  // Compat alias — antes existía _clearInterval. Si algo externo lo llamara
-  // (no debería, es interno), seguimos respondiendo correctamente.
-  _clearInterval() { this._clearTimers() }
 }
 
 // Timeframes en minutos
