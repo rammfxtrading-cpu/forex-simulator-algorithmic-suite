@@ -40,3 +40,4 @@ next-env.d.ts
 data_m1/
 .env.local.save
 .env*
+.backup-*/
