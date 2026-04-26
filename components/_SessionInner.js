@@ -72,6 +72,7 @@ function chartOpts(w,h){return{
     barSpacing:12,
     rightBarStaysOnScroll:true,
     minBarSpacing:3,
+    shiftVisibleRangeOnNewBar:false,
     fixLeftEdge:false,
     fixRightEdge:false,
     ticksVisible:true,
@@ -1113,12 +1114,25 @@ if(full||(curr!==prev&&curr!==prev+1)){
         }
       }
     } else if(curr===prev+1){
-      // Use update() — avoids setData jump when new TF candle forms
+      // Una vela TF nueva se ha cerrado. Regeneramos las phantoms ANTES de
+      // escribir __algSuiteSeriesData para evitar dos cosas críticas:
+      //   1. Timestamps DUPLICADOS: si no se regenera, phantom[0].time
+      //      coincide con agg[last].time (ambos = _oldLastT + _tfS2). Eso
+      //      rompe la búsqueda binaria de interpolateLogicalIndexFromTime
+      //      en el plugin de drawings → al arrastrar un rectángulo cerca
+      //      de la vela actual, se "estira" hacia el infinito porque el
+      //      logical index resuelve a posiciones ambiguas.
+      //   2. OHLC desfasado: las phantoms quedarían ancladas al close de
+      //      la vela TF anterior → cola plana visible a la derecha.
+      const _phN = cr.phantom?.length || 10
+      cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
       try{
         // Save range, update, restore — prevents chart from scrolling
         const _rng=cr.userScrolled?cr.chart.timeScale().getVisibleLogicalRange():null
         cr.series.update(agg[agg.length-1])
+        // Re-aplicar phantoms en el chart (10 update() son irrelevantes en perf)
+        for(const ph of cr.phantom){ try{ cr.series.update(ph) }catch{} }
         // [DEBUG TEMP] Log para investigar bug long/short se contrae al play
         if(typeof window!=='undefined' && window.__algSuiteDebugLS){
           const _expJson = (typeof window.__algSuiteExportTools === 'function') ? window.__algSuiteExportTools() : null
@@ -1138,15 +1152,28 @@ if(full||(curr!==prev&&curr!==prev+1)){
         cr.phantom=Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
         const _r2=cr.chart.timeScale().getVisibleLogicalRange()
         cr.series.setData([...agg,...cr.phantom])
+        if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
         if(_r2) requestAnimationFrame(()=>{ try{cr.chart.timeScale().setVisibleLogicalRange(_r2)}catch{} })
       }
     } else {
-      // Within-bucket update — only last candle changed, use update() — 100x faster than setData
+      // Within-bucket update — solo cambió la última vela. Refrescamos las
+      // phantoms in-place si _lastC se ha movido, para que la cola a la
+      // derecha siga el precio actual y no se quede anclada al close viejo.
+      // Esto era el bloque ALGSUITE_PHANTOM_REFRESH y es CRÍTICO en TFs
+      // grandes (H1, M30) donde una vela tarda mucho en cerrar.
       try{
         cr.series.update(agg[agg.length-1])
-        // Update last real candle in-place in the global array (no new allocation)
         if(typeof window!=='undefined'&&window.__algSuiteSeriesData){
           window.__algSuiteSeriesData[agg.length-1]=agg[agg.length-1]
+        }
+        if(cr.phantom){
+          for(let i=0;i<cr.phantom.length;i++){
+            const ph=cr.phantom[i]
+            if(ph.close!==_lastC){
+              ph.open=_lastC; ph.high=_lastC; ph.low=_lastC; ph.close=_lastC
+              try{ cr.series.update(ph) }catch{}
+            }
+          }
         }
       }catch{
         // Fallback to setData if update fails
@@ -1885,7 +1912,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
             }}
           >{d.metadata?.text||''}</div>
         })}
-        <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} chartTick={chartTick} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'}/>
+        <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} chartTick={chartTick} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'} currentTime={currentTime}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
         {!dataReady&&(

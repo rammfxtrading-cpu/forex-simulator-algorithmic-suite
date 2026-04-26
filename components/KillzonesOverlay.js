@@ -113,7 +113,7 @@ function loadCfg() {
 // el path crítico) se mantienen.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf, tick }) {
+export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf, tick, currentTime }) {
   const canvasRef                 = useRef(null)
   const [cfg, setCfg]             = useState(loadCfg)
   const [hovered, setHovered]     = useState(false)
@@ -159,9 +159,16 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   }, [])
 
-  // ── Recalcular sesiones cuando cambien datos/cfg/tick ──────────────────
+  // ── Recalcular sesiones cuando cambien datos/cfg/tick/currentTime ──────
   // Esta es la operación pesada: recorre todas las velas. Se hace 1 vez
   // por cambio de dataset/tick/cfg, NO en cada frame de pan.
+  //
+  // currentTime: bucketed a 30 min para que el replay (que avanza segundo
+  // a segundo) no dispare un recálculo en cada vela M1, pero sí cuando
+  // entre/salga de un horario de killzone (todas las KZ están alineadas a
+  // intervalos de 30 min en hora NY). Esto cubre el caso de "estoy haciendo
+  // replay y la sesión actual no aparece hasta que cambio de TF".
+  const ctBucket = currentTime ? Math.floor(currentTime / 1800) : 0
   useEffect(() => {
     if (!cfg.visible || !tfAllowed || !dataReady || !activePair) {
       cachedSessionsRef.current = []
@@ -181,7 +188,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
       counts[s.key] = (counts[s.key] || 0) + 1
       return counts[s.key] <= cfg.history
     }).reverse()
-  }, [cfg, tfAllowed, dataReady, activePair, tick])
+  }, [cfg, tfAllowed, dataReady, activePair, tick, ctBucket])
 
   // ── draw — solo lookup de coords y dibujo ─────────────────────────────
   const draw = useCallback(() => {
@@ -322,6 +329,14 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
   // Redibujar cuando cambia el tick (avance del replay → nuevas sesiones
   // ya están en el cache via el otro effect, aquí solo redibujamos)
   useEffect(() => { draw() }, [tick, draw])
+
+  // Redibujar también conforme avanza el replay — esto hace que la sesión
+  // activa "crezca" visualmente durante el replay. Bucket de 60s para no
+  // saturar React a velocidades altas (∞ = 500 vel M1/seg). Visualmente,
+  // un step de 1 minuto en una caja de killzone de varias horas es
+  // imperceptible.
+  const ctRedrawBucket = currentTime ? Math.floor(currentTime / 60) : 0
+  useEffect(() => { draw() }, [ctRedrawBucket, draw])
 
   // ── UI ──────────────────────────────────────────────────────────────────
   const Toggle = ({ label, k }) => (

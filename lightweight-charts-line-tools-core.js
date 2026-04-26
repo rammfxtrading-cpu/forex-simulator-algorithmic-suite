@@ -1596,12 +1596,16 @@ function interpolateLogicalIndexFromTime(chart, series, timestamp) {
             return (cachedData.length - 1) + (givenTimeNum - lastTime) / interval;
         }
         let lo = 0, hi = cachedData.length - 1;
-        while (lo < hi) {
-            const mid = (lo + hi + 1) >> 1;
+        while (lo < hi - 1) {
+            const mid = (lo + hi) >> 1;
             if (Number(cachedData[mid].time) <= givenTimeNum) lo = mid;
-            else hi = mid - 1;
+            else hi = mid;
         }
-        return lo;
+        const tLo = Number(cachedData[lo].time);
+        const tHi = Number(cachedData[hi].time);
+        if (tHi === tLo || givenTimeNum <= tLo) return lo;
+        if (givenTimeNum >= tHi) return hi;
+        return lo + (givenTimeNum - tLo) / (tHi - tLo);
     }
     // Fallback: linear interpolation with first two data points
     const dataAtIndex0 = series.dataByIndex(0, 0);
@@ -6462,6 +6466,11 @@ class BaseLineTool extends PriceDataSource {
      * @returns A {@link Point} with screen coordinates, or `null` if conversion fails.
      */
     pointToScreenPoint(point) {
+        // Guard: si la tool fue detached/destroyed, _chart o _series son null.
+        // LWC todavía puede llamar a hit-test después del detach (race condition
+        // entre el destroy() y el siguiente recalc del crosshair). Sin este guard
+        // crashea cada frame durante el replay.
+        if (!this._chart || !this._series || !point) return null;
         const timeScale = this._chart.timeScale();
         // CORRECTED: Assert point.timestamp as UTCTimestamp to match the 'Time' type expectation.
         const logicalIndex = interpolateLogicalIndexFromTime(this._chart, this._series, point.timestamp);
