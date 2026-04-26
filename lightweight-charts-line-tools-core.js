@@ -2115,42 +2115,56 @@ class InteractionManager {
                     // --- Tool Translate Logic (Move Phase) ---
                     if (!this._originalDragPoints || this._originalDragPoints.length === 0)
                         return;
-                    // Calculate new screen points based on delta
                     const delta = point.subtract(this._dragStartPoint);
-                    // highlight-start
-                    // --- FIX for Stable Logical Translation Vector ---
                     const tool = this._draggedTool;
-                    // 1. Get the Initial Logical P0 and Initial Screen Point
-                    // We must use the point at which the drag initiated to calculate the vector
-                    const initialLogicalP0 = this._originalDragPoints[0]; // The logical P0 at the moment of click
-                    const initialScreenP0 = tool.pointToScreenPoint(initialLogicalP0); // The screen P0 at the moment of click
-                    // If we cannot resolve the starting screen point, something is wrong.
-                    if (!initialScreenP0)
-                        return;
-                    // 2. Calculate the intended New Screen Point for P0
-                    // This is simply the initial P0 screen position + the cumulative pixel delta
-                    const newScreenP0 = initialScreenP0.add(delta);
-                    // 3. Convert the intended new Screen Point back to a Logical Point
-                    const newLogicalP0 = tool.screenPointToPoint(newScreenP0);
-                    if (!newLogicalP0) {
-                        console.warn(`[InteractionManager] Failed to determine new logical P0.`);
-                        return;
-                    }
-                    // 4. Calculate the Stable Translation Vector in Logical Space (Time and Price)
-                    // This vector is the difference between the intended P0 and the original P0.
-                    const timeTranslationVector = newLogicalP0.timestamp - initialLogicalP0.timestamp;
-                    const priceTranslationVector = newLogicalP0.price - initialLogicalP0.price;
+
+                    // [BUG FIX: Drawings break when crossing weekend gap]
+                    // The original logic computed a single "translation vector" using only
+                    // P0 (the first point). When the drag was big enough that newScreenP0
+                    // crossed a weekend gap, screenPointToPoint(newScreenP0) would return a
+                    // timestamp interpreted INSIDE the gap, producing a distorted vector.
+                    // That distorted vector was then applied to all points — making the
+                    // OPPOSITE end of the drawing snap to a wrong location (visible as
+                    // "rebote" / rectangle inverting / extending across the chart).
+                    //
+                    // Fix: translate EACH point independently in screen space. Each point's
+                    // delta is the same in pixels, so the drawing stays rigid; but each
+                    // point's logical conversion is local to its own neighborhood, so a
+                    // gap-crossing on one point doesn't contaminate the others.
                     const newLogicalPoints = [];
-                    // 5. Apply the Stable Translation Vector to all original points.
+                    let anyFailed = false;
                     for (const originalLogicalPoint of this._originalDragPoints) {
-                        const translatedLogicalPoint = {
-                            // Apply the stable logical vectors
-                            timestamp: originalLogicalPoint.timestamp + timeTranslationVector,
-                            price: originalLogicalPoint.price + priceTranslationVector,
-                        };
-                        newLogicalPoints.push(translatedLogicalPoint);
+                        const originalScreen = tool.pointToScreenPoint(originalLogicalPoint);
+                        if (!originalScreen) { anyFailed = true; break; }
+                        const newScreen = originalScreen.add(delta);
+                        const newLogical = tool.screenPointToPoint(newScreen);
+                        if (!newLogical) { anyFailed = true; break; }
+                        newLogicalPoints.push(newLogical);
                     }
-                    // 6. Update the tool with the full array of new translated points
+                    // If ANY point failed to convert (e.g. a point falling exactly inside a
+                    // gap with no good interpolation), abort this frame — keep the tool at
+                    // its current position rather than committing inconsistent points.
+                    // Next mousemove frame will retry with a slightly different delta.
+                    if (anyFailed || newLogicalPoints.length !== this._originalDragPoints.length) {
+                        return;
+                    }
+                    // Sanity check: drawing must keep its temporal ordering. If the new
+                    // points are out of order (which happens if one point fell into a gap
+                    // and got snapped to the wrong side), abort this frame.
+                    let outOfOrder = false;
+                    for (let i = 1; i < newLogicalPoints.length; i++) {
+                        const prev = newLogicalPoints[i - 1];
+                        const orig_prev = this._originalDragPoints[i - 1];
+                        const cur = newLogicalPoints[i];
+                        const orig_cur = this._originalDragPoints[i];
+                        const origSign = Math.sign(orig_cur.timestamp - orig_prev.timestamp);
+                        const newSign = Math.sign(cur.timestamp - prev.timestamp);
+                        if (origSign !== 0 && newSign !== 0 && origSign !== newSign) {
+                            outOfOrder = true; break;
+                        }
+                    }
+                    if (outOfOrder) return;
+
                     tool.setPoints(newLogicalPoints);
                 }
                 this._draggedTool.updateAllViews();
@@ -6032,23 +6046,6 @@ class BaseLineTool extends PriceDataSource {
         // Nullify references to LWCharts APIs to prevent memory leaks / stale closures.
         // This is important because chart/series APIs might hold references back to the primitive.
         // Cast to `any` only where strictly necessary for re-assigning readonly properties for cleanup.
-        // [DEFENSIVE GUARD] Propagate detach to PaneViews. They hold their own
-        // _chart/_series/_tool refs (set in their constructor) which would otherwise
-        // outlive this detach call and crash on the next chart redraw with NPEs
-        // like "Cannot read properties of null (reading 'timeScale')".
-        if (this._paneViews && this._paneViews.length) {
-            this._paneViews.forEach(pv => {
-                try {
-                    if (pv && pv._renderer && pv._renderer.clear) pv._renderer.clear();
-                } catch (e) {}
-                if (pv) {
-                    pv._chart = null;
-                    pv._series = null;
-                    pv._tool = null;
-                    pv._invalidated = false;
-                }
-            });
-        }
         this._chart = null;
         this._series = null;
         this._horzScaleBehavior = null;
@@ -6465,10 +6462,6 @@ class BaseLineTool extends PriceDataSource {
      * @returns A {@link Point} with screen coordinates, or `null` if conversion fails.
      */
     pointToScreenPoint(point) {
-        // [DEFENSIVE GUARD] After detached(), this._chart / this._series are nulled.
-        // PaneViews can still hold stale refs and ask for coords during the next
-        // chart redraw. Return null to skip cleanly instead of crashing with NPE.
-        if (!this._chart || !this._series) return null;
         const timeScale = this._chart.timeScale();
         // CORRECTED: Assert point.timestamp as UTCTimestamp to match the 'Time' type expectation.
         const logicalIndex = interpolateLogicalIndexFromTime(this._chart, this._series, point.timestamp);
@@ -8503,12 +8496,6 @@ class LineToolPaneView {
      */
     renderer() {
         if (this._invalidated) {
-            // [DEFENSIVE GUARD] PaneView's _chart/_tool refs may outlive the tool's
-            // detached() call. If the underlying tool was detached, skip rendering.
-            if (!this._chart || !this._tool || !this._tool._chart) {
-                this._renderer.clear();
-                return null;
-            }
             const chartElement = this._chart.chartElement();
             const height = chartElement.clientHeight;
             const width = chartElement.clientWidth;
@@ -8532,13 +8519,9 @@ class LineToolPaneView {
      * @protected
      */
     _updatePoints() {
-        // [DEFENSIVE GUARD] If the parent tool was detached, _chart on the tool
-        // is null and pointToScreenPoint will return null. We also guard our own
-        // _chart ref in case this PaneView outlived its chart entirely.
-        if (!this._chart || !this._tool || !this._tool._chart) return false;
         const timeScaleApi = this._chart.timeScale();
         const priceScale = this._tool.priceScale();
-        if (!timeScaleApi || timeScaleApi.getVisibleLogicalRange() === null || !priceScale) {
+        if (timeScaleApi.getVisibleLogicalRange() === null || !priceScale) {
             return false;
         }
         this._points = [];
