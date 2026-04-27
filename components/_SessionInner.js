@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
+import { fetchSessionCandles } from '../lib/sessionData'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -737,52 +738,12 @@ export default function SessionPage(){
   const loadPair=useCallback(async(pair)=>{
     const sess=sessionRef.current
     if(!sess||pairState.current[pair]?.ready) return
-    const clean=pair.replace('/','')
-    const replayTs=sess.date_from?Math.floor(new Date(sess.date_from).getTime()/1000):Math.floor(new Date('2023-01-01').getTime()/1000)
-    const toTs=sess.date_to?Math.floor(new Date(sess.date_to+'T23:59:59').getTime()/1000):Math.floor(new Date('2023-12-31T23:59:59').getTime()/1000)
-    const ctxTs=replayTs-6*30*24*60*60
-    const ctxYear=new Date(ctxTs*1000).getFullYear()
-    const toYear=new Date(toTs*1000).getFullYear()
-    // Build list of ALL years needed: from ctxYear to toYear
-    const years=[]
-    for(let y=ctxYear;y<=toYear;y++) years.push(y)
     try{
-      let all=[]
-      for(const yr of years){
-        const yStart=Math.max(ctxTs,Math.floor(new Date(`${yr}-01-01`).getTime()/1000))
-        const yEnd=yr===toYear?toTs:Math.floor(new Date(`${yr}-12-31T23:59:59`).getTime()/1000)
-        const r=await fetch(`/api/candles?pair=${clean}&timeframe=M1&from=${yStart}&to=${yEnd}&year=${yr}`)
-        const j=await r.json()
-        if(j.candles?.length) all=all.concat(j.candles)
-      }
-      const seen=new Set()
-      all=all.filter(c=>{if(seen.has(c.time))return false;seen.add(c.time);return true}).sort((a,b)=>a.time-b.time)
-      if(!all.length) return
-
-      // ── Remove weekend gaps ──────────────────────────────────────────────
-      // Forex en Dukascopy cierra ~21:00 UTC viernes y abre ~21:00 UTC domingo.
-      // (Confirmado empíricamente vs FX Replay — ambos usan los mismos datos
-      //  de Dukascopy y el cierre está alrededor de 20:58, apertura 21:54).
-      // El filtro anterior era incorrecto en dos sentidos:
-      //   1. Permitía velas viernes >= 21:00 UTC (mercado ya cerrado).
-      //   2. Filtraba domingo < 22:00 UTC, pero el mercado abre a 21:00 UTC
-      //      en verano (DST) → perdíamos ~1h de velas líquidas cada domingo.
-      // Esto causaba que faltara la primera hora de actividad del domingo
-      // y descuadraba dibujos colocados cerca del fin de semana.
-      const filtered = all.filter(c => {
-        const d = new Date(c.time * 1000)
-        const day = d.getUTCDay()
-        const hour = d.getUTCHours()
-        if (day === 6) return false                       // Sábado entero
-        if (day === 5 && hour >= 21) return false         // Viernes >= 21:00 UTC
-        if (day === 0 && hour < 21)  return false         // Domingo < 21:00 UTC
-        return true
+      const result = await fetchSessionCandles({
+        pair, dateFrom: sess.date_from, dateTo: sess.date_to
       })
-      // Use real timestamps — weekend candles already filtered above
-      // LWC renders whatever candles it receives sequentially (no gaps for missing bars)
-      const ordinalToReal = null   // not needed — real timestamps used directly
-      const realToOrdinal = null
-      const ordinalCandles = filtered
+      if (!result) return
+      const { candles: ordinalCandles, replayTs, toTs } = result
 
       const engine=new ReplayEngine()
       // If there's a master time (another pair already advanced), use that. Otherwise resume saved position.
@@ -812,7 +773,7 @@ export default function SessionPage(){
         }
       }
       engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(engine.currentTime)}}
-      const ps={engine,ready:true,positions:[],trades:[],ordinalToReal,realToOrdinal,
+      const ps={engine,ready:true,positions:[],trades:[],
         lastSLTPIdx: engine.currentIndex,   // start from current — don't re-check history
         lastLimitIdx: engine.currentIndex,
       }
