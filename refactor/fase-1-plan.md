@@ -56,9 +56,9 @@
 
 | # | Línea | Qué hay hoy | Qué pasa a haber |
 |---|---|---|---|
-| 13 | L527 | `window.__algSuiteCurrentTime = null` (en session load) | `clearCurrentTime()` |
-| 14 | L811 | `if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime` (en engine.onTick) | `setCurrentTime(engine.currentTime)` |
-| 15 | L1266 | mismo write (en effect de cambio de activePair) | `setCurrentTime(ps.engine.currentTime)` |
+| 13 | L528 | `window.__algSuiteCurrentTime = null` (en session load) | `clearCurrentTime()` |
+| 14 | L772 | `if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime` (en engine.onTick) | `setCurrentTime(engine.currentTime)` |
+| 15 | L1225 | mismo write (en effect de cambio de activePair) | `setCurrentTime(ps.engine.currentTime)` |
 
 ### 2.3 Lecturas que NO se tocan en fase 1 (lista explícita)
 
@@ -66,13 +66,13 @@
 
 | Archivo | Línea | Lo que lee |
 |---|---|---|
-| `_SessionInner.js` | 792 | `window.__algSuiteCurrentTime` (validación masterTime al cargar par) |
+| `_SessionInner.js` | 753 | `window.__algSuiteCurrentTime` (validación masterTime al cargar par) |
 | `_SessionInner.js` | 815 | `window.__algSuiteSeriesData` (autoscaleInfoProvider) |
 | `_SessionInner.js` | 816 | `window.__algSuiteRealDataLen` (autoscaleInfoProvider) |
 | `_SessionInner.js` | 858 | `window.__chartMap` (autoscaleInfoProvider) — fuera de alcance, no es `__algSuite*` |
 | `_SessionInner.js` | 1138 | `window.__algSuiteDebugLS` y `__algSuiteExportTools` — debug muerto, fase de limpieza |
-| `_SessionInner.js` | 1259 | `window.__algSuiteCurrentTime` (sync engine al cambiar par) |
-| `_SessionInner.js` | 567 | `window.__algSuiteCurrentTime` (refreshChallengeStatus fallback) |
+| `_SessionInner.js` | 1218 | `window.__algSuiteCurrentTime` (sync engine al cambiar par) |
+| `_SessionInner.js` | 568 | `window.__algSuiteCurrentTime` (refreshChallengeStatus fallback) |
 | `_SessionInner.js` | 144 | `window.__chartMap = chartMap` (write — pero es ref a un ref, no a __algSuite*) |
 | `lib/chartCoords.js` | 9, 11, 89, 96 | `__algSuiteSeriesData / __algSuiteRealDataLen` |
 | `components/RulerOverlay.js` | 28, 30 | `__algSuiteSeriesData / __algSuiteRealDataLen` |
