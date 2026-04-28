@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
-import { fetchSessionCandles } from '../lib/sessionData'
+import { fetchSessionCandles, setSeriesData, updateSeriesAt } from '../lib/sessionData'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1054,7 +1054,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       let _savedRange=null
       try{ if(cr.hasLoaded) _savedRange=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
       cr.series.setData([...agg,...cr.phantom])
-      if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
+      setSeriesData([...agg, ...cr.phantom], agg.length)
       if(!cr.hasLoaded){
         cr.hasLoaded=true
         cr.userScrolled=false
@@ -1087,7 +1087,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       //      la vela TF anterior → cola plana visible a la derecha.
       const _phN = cr.phantom?.length || 10
       cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
-      if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
+      setSeriesData([...agg, ...cr.phantom], agg.length)
       try{
         // Save range, update, restore — prevents chart from scrolling
         const _rng=cr.userScrolled?cr.chart.timeScale().getVisibleLogicalRange():null
@@ -1113,7 +1113,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         cr.phantom=Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
         const _r2=cr.chart.timeScale().getVisibleLogicalRange()
         cr.series.setData([...agg,...cr.phantom])
-        if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
+        setSeriesData([...agg, ...cr.phantom], agg.length)
         if(_r2) requestAnimationFrame(()=>{ try{cr.chart.timeScale().setVisibleLogicalRange(_r2)}catch{} })
       }
     } else {
@@ -1124,9 +1124,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       // grandes (H1, M30) donde una vela tarda mucho en cerrar.
       try{
         cr.series.update(agg[agg.length-1])
-        if(typeof window!=='undefined'&&window.__algSuiteSeriesData){
-          window.__algSuiteSeriesData[agg.length-1]=agg[agg.length-1]
-        }
+        updateSeriesAt(agg.length - 1, agg[agg.length - 1])
         if(cr.phantom){
           for(let i=0;i<cr.phantom.length;i++){
             const ph=cr.phantom[i]
@@ -1139,7 +1137,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       }catch{
         // Fallback to setData if update fails
         cr.series.setData([...agg,...cr.phantom])
-        if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}
+        setSeriesData([...agg, ...cr.phantom], agg.length)
       }
     }
     cr.prevCount=curr
