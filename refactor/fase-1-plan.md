@@ -465,3 +465,105 @@ La fase 1 está completa cuando se cumplen TODAS estas condiciones:
 - **0 cambios funcionales esperados**: el sistema debe verse y comportarse exactamente igual.
 - **Validación**: Ramón prueba manualmente cada sub-fase antes de pasar a la siguiente. **Antes de cada commit, le enseño el `git diff` completo y espero OK explícito** (ver §3.1, §3.2, §3.3 → "Validación final").
 - **Rama**: `refactor/fase-1-data-layer`. Ya creada. Sin push.
+
+---
+
+## 8. Lecciones operativas (sesión 27/4 noche, sub-fase 1a aplicada)
+
+> Surgieron al ejecutar la sub-fase 1a. Se documentan aquí para que las sub-fases 1b, 1c y las fases siguientes no vuelvan a tropezar.
+
+### 8.1 NUNCA `npm run build` con `npm run dev` corriendo sobre el mismo `.next/`
+
+**Qué pasó (27/4):** durante la validación pre-commit de sub-fase 1a, se intentó `npm run build` con el dev server activo en paralelo. El build de producción sobrescribió chunks dentro de `.next/server/...` con la versión de prod (hashes nuevos), pero el dev server seguía sirviendo los nombres de chunk cacheados de la versión de desarrollo. Resultado: 404 en el navegador para `main.js`, `react-refresh.js`, `_app.js`, `_error.js`. El chart no cargó.
+
+**Causa raíz:** dev y build comparten `.next/`. El build prod no es idempotente con el dev: machaca chunks con hashes distintos. El dev no recompila al vuelo si los archivos en disco ya están "actualizados" pero apuntan al artefacto equivocado.
+
+**Recovery aplicado el 27/4:** matar PIDs de node, `rm -rf .next/`, relanzar dev como daemon (`nohup npm run dev > /tmp/forex-dev.log 2>&1 &; disown`).
+
+**Protocolo correcto para validación pre-commit en sub-fases siguientes:**
+
+```bash
+# 1. Identificar PID del dev server
+ps aux | grep "next dev" | grep -v grep
+
+# 2. Matar dev
+kill <PID>
+
+# 3. (Opcional) limpiar .next/ para empezar de cero
+rm -rf .next/
+
+# 4. Build prod
+npm run build
+# verificar: exit 0 + cero warnings
+
+# 5. Si OK, relanzar dev en background
+nohup npm run dev > /tmp/forex-dev.log 2>&1 &
+disown
+
+# 6. Verificar arranque
+tail -20 /tmp/forex-dev.log
+```
+
+**Alternativa futura (no urgente):** `git worktree` con dos copias del repo, una solo para dev, otra solo para builds ad-hoc. No se aplica en fase 1.
+
+### 8.2 Inventario de variables huérfanas ANTES de mover bloques entre módulos
+
+**Qué pasó (27/4):** la sub-fase 1a movió `replayTs / toTs / ctxTs / ctxYear / toYear / years / all / seen / filtered / ordinalCandles` desde `_SessionInner.js:740–786` a `lib/sessionData.js`. Tras aplicar los 4 edits, al recargar el navegador apareció en consola:
+
+```
+loadPair EUR/USD ReferenceError: replayTs is not defined
+    at eval (_SessionInner.js:759:101)
+```
+
+**Causa raíz:** el plan §2.2 listó las líneas a borrar pero **no buscó referencias hacia atrás desde el resto del archivo** a las variables que vivían dentro de ese bloque. `replayTs` y `toTs` se usaban en L755 (validación `masterTime`) y L759 (fallback `resumeReal`), fuera del bloque borrado. Al moverlos al nuevo módulo, esas referencias quedaron huérfanas.
+
+**Fix aplicado:** Opción A — `fetchSessionCandles` devuelve `{candles, replayTs, toTs}` en vez de solo `{candles}`, y el caller hace destructuring. Las referencias en L755/L759 quedan resueltas en scope sin tocar nada más.
+
+**Protocolo preventivo para sub-fases 1b, 1c y fases 2–6:**
+
+ANTES de aprobar cualquier `str_replace` que mueva bloques de código a otro archivo:
+
+1. Listar todas las variables/constantes declaradas en el bloque a mover.
+2. Para cada una, ejecutar:
+```bash
+   grep -nE "\b<varname>\b" components/_SessionInner.js
+```
+   (extender al resto de archivos del repo si hay sospecha de uso cruzado).
+3. Filtrar matches:
+   - Dentro del bloque borrado → irrelevantes.
+   - Fuera del bloque → críticos. Decidir: (a) exportar desde el nuevo módulo, (b) descartar como falso positivo, o (c) replicar localmente.
+4. Documentar las decisiones en el plan ANTES de ejecutar el `str_replace`.
+
+### 8.2.1 Aplicación a sub-fase 1b (próxima)
+
+Sub-fase 1b va a centralizar `__algSuiteSeriesData` y `__algSuiteRealDataLen`. ANTES de cualquier edit, ejecutar:
+
+```bash
+grep -nE "__algSuiteSeriesData" components/_SessionInner.js
+grep -nE "__algSuiteSeriesData" lib/chartCoords.js
+grep -nE "__algSuiteSeriesData" components/CustomDrawingsOverlay.js
+grep -nE "__algSuiteSeriesData" components/RulerOverlay.js
+
+grep -nE "__algSuiteRealDataLen" components/_SessionInner.js
+grep -nE "__algSuiteRealDataLen" lib/chartCoords.js
+grep -nE "__algSuiteRealDataLen" components/CustomDrawingsOverlay.js
+grep -nE "__algSuiteRealDataLen" components/RulerOverlay.js
+```
+
+Inventariar tanto escrituras como lecturas. Plasmar el output en el plan §3.2 antes de ejecutar el primer `str_replace`.
+
+### 8.3 macOS no tiene `timeout` por defecto
+
+**Lección menor:** los scripts bash que usen `timeout 60 bash -c '...'` fallan en macOS con `command not found: timeout`. Alternativas:
+
+- `brew install coreutils` y usar `gtimeout`.
+- Workaround bash puro: `(sleep 60 && kill -9 $$) & ; <comando>`.
+- Confiar en heurística (sleep + check).
+
+No es crítico, solo se apunta para evitar reintento en futuras sub-fases.
+
+### 8.4 Comandos git como operaciones SEPARADAS, no encadenadas con `&&`
+
+**Qué pasó (27/4):** en el commit del plan táctico (`0180b6f`) se metieron `git add + git commit + echo --- + git log --oneline -4` en una sola Bash encadenada con `&&`. Eso significa un único permiso para 4 operaciones distintas, lo cual rompe la regla de granularidad de control de Ramón (CLAUDE.md §5.3).
+
+**Protocolo:** en sub-fases siguientes, pedir y ejecutar cada operación git como Bash separada. `git add` aparte. `git commit` aparte. `git log` aparte. Cada una con su permiso individual. Ya se respetó en el commit `6f7d829` de sub-fase 1a — mantener para 1b, 1c y fases 2–6.
