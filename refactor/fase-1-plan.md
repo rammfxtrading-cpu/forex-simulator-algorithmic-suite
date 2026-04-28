@@ -495,43 +495,225 @@ refactor(fase-1b): centralizar escritura de __algSuiteSeriesData/RealDataLen
 
 ### 3.3 Sub-fase 1c — Centralización de `__algSuiteCurrentTime`
 
-**Tamaño:** ~5 líneas tocadas + ~15 nuevas. **Sesiones:** 0.5. **Riesgo:** bajo-medio.
+**Tamaño:** ~3 líneas tocadas en `_SessionInner.js` (0 neto, 3 sustituciones 1:1 con guard externo absorbido en la API) + ~25 añadidas en `lib/sessionData.js`. **Total +25 líneas.** **Sesiones:** 0.5. **Riesgo:** bajo-medio.
+
+**Por qué bajo-medio:**
+- Las 3 escrituras viven en lugares heterogéneos: `useEffect` de session load (L528), callback `engine.onTick` (L772, en cada tick del replay), `useEffect` de cambio activePair (L1225). Una excepción en cualquiera de ellos puede afectar al sync entre engines de pares distintos.
+- L1225 es **línea compuesta** con 3 sentencias separadas por `;` (`setCurrentPrice(...);setDataReady(true);if(...) window.__algSuiteCurrentTime=...`). El `str_replace` debe tocar SOLO la 3ª sentencia, preservando las 2 primeras intactas.
+- Alcance del cluster: las 3 lecturas que NO se tocan (L568, L753, L1218) son justo las que dependen de que el global esté actualizado para que `seekToTime(masterTime)` sincronice el engine del par nuevo. Si por error `setCurrentTime` no escribe el global, esas lecturas leen `undefined` y el sync entre pares se rompe (par nuevo arranca en su `date_from` en lugar del masterTime).
+
+#### Decisión: extender `lib/sessionData.js`, NO crear archivo nuevo
+
+Mismo razonamiento que sub-fase 1b. Justificación:
+
+- Plan §2.1 declara "1 archivo nuevo: `lib/sessionData.js`". Crear un módulo aparte introduce divergencia injustificada respecto al contrato aprobado.
+- Las 2 funciones nuevas suman ~25 líneas (con JSDoc completo). Crear módulo aparte por 25 líneas es premature factoring (YAGNI).
+- "Data layer" como concepto unificado: fetch + filter (1a) + state global derivado (1b/1c).
+- Si fase 2 (eliminar globales) lo requiere, separamos entonces.
+
+#### API expuesta (2 funciones, NO 3)
+
+`getCurrentTime()` queda **descartada** en 1c: las 3 lecturas (L568, L753, L1218) seguirán leyendo `window.__algSuiteCurrentTime` directamente como acordado en §1 del plan. Exportar un getter sin uso desde el módulo es API muerta. Si fase 2 lo requiere, se añade entonces.
+
+```js
+/**
+ * Escribe el global __algSuiteCurrentTime con el timestamp actual del replay.
+ * Usado por engine.onTick y por el effect de cambio de activePair.
+ * Guard interno SSR (typeof window check).
+ *
+ * @param {number} t - Timestamp UNIX en segundos del momento actual del replay.
+ *                     Equivale a engine.currentTime de ReplayEngine.
+ */
+export function setCurrentTime(t) {
+  if (typeof window === 'undefined') return
+  window.__algSuiteCurrentTime = t
+}
+
+/**
+ * Resetea el global __algSuiteCurrentTime a null.
+ * Usado en session load (efecto inicial del componente) para asegurar
+ * que el global no persiste entre navegaciones SPA con valor stale.
+ * Guard interno SSR (typeof window check).
+ */
+export function clearCurrentTime() {
+  if (typeof window === 'undefined') return
+  window.__algSuiteCurrentTime = null
+}
+```
+
+#### Las 3 escrituras a sustituir (líneas reales post-1b verificadas con grep PASO A)
+
+> ⚠️ Antes del `str_replace` sobre L1225 (sustitución #3), Claude Code debe ejecutar `Read` de `_SessionInner.js` con rango L1224-L1226 y pegar output literal a Ramón. Quiero ver la línea compuesta completa para verificar que el `old_string` aísla SOLO la 3ª sentencia (`if(typeof window!=='undefined') window.__algSuiteCurrentTime=ps.engine.currentTime`) y deja `setCurrentPrice(...)` y `setDataReady(true)` intactos.
+
+| # | Línea | Indentación | Contenido actual exacto | Sustitución propuesta |
+|---|---|---|---|---|
+| 1 | L528 | 4 esp | `if(typeof window!=='undefined') window.__algSuiteCurrentTime = null` (en session load) | `clearCurrentTime()` |
+| 2 | L772 | 10 esp | `if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime` (en engine.onTick) | `setCurrentTime(engine.currentTime)` |
+| 3 | L1225 | 6 esp | línea compuesta `setCurrentPrice(...);setDataReady(true);if(typeof window!=='undefined') window.__algSuiteCurrentTime=ps.engine.currentTime` (effect activePair) — sustituir SOLO la 3ª sentencia | `setCurrentPrice(...);setDataReady(true);setCurrentTime(ps.engine.currentTime)` |
+
+**Cambio neto en `_SessionInner.js`:** 0 líneas (3 sustituciones 1:1 + 1 modificación de import). Solo 1 línea compuesta donde solo la 3ª sentencia cambia.
+
+#### Lecturas NO se tocan en 1c — justificación
+
+Las 3 lecturas inventoriadas en §2.3 (L568, L753, L1218) **se quedan tal cual leyendo `window.__algSuiteCurrentTime`** directamente.
+
+- **Alcance del plan:** §1 dice literalmente *"No reescribir las lecturas (siguen leyendo `window.__algSuite*` directamente — eso es fase 2/3)"*.
+- **Es seguro:** `setCurrentTime()` y `clearCurrentTime()` escriben/limpian el global con valores idénticos a la versión pre-1c. Los consumers ven exactamente lo mismo. Cero cambio observable.
+- **Es peligroso tocarlas ahora:** implica diseñar getter síncrono en `lib/sessionData.js`, modificar 3 sitios en `_SessionInner.js`, y verificar que el sync entre pares (que depende críticamente de que la lectura sea actual) no se descoloca. Eso es alcance de fase 2.
+- **Mezclar 1c + 2 rompe** el principio "sub-fase mergeable sola" del §3.2.
+
+**Archivos creados:** ninguno (se añade a `lib/sessionData.js`).
 
 **Archivos modificados:**
-- `lib/sessionData.js` — añadir `setCurrentTime(t)`, `clearCurrentTime()`, `getCurrentTime()` (este último solo si lo necesitamos para alguna lectura interna del módulo).
+- `lib/sessionData.js` — añadir las 2 funciones de arriba (`setCurrentTime`, `clearCurrentTime`).
 - `components/_SessionInner.js`:
-  - L527 → `clearCurrentTime()`
-  - L811 → `setCurrentTime(engine.currentTime)`
-  - L1266 → `setCurrentTime(ps.engine.currentTime)`
-  - Añadir imports.
+  - Añadir al import existente: `import { fetchSessionCandles, setSeriesData, updateSeriesAt, setCurrentTime, clearCurrentTime } from '../lib/sessionData'`.
+  - 3 sustituciones según tabla anterior.
 
-**Archivos NO tocados:** todo lo de §2.4 + las lecturas L567, L792, L1259.
+**Archivos NO tocados en esta sub-fase:** todo lo de §2.4 + las 14 lecturas inventoriadas en §2.3 (incluyendo las 3 lecturas de `__algSuiteCurrentTime` en L568, L753, L1218).
 
-**Pruebas manuales (Ramón):**
-1. **Cambio de par sincronizado**: cargar EUR/USD, avanzar replay 50 velas, cambiar a GBP/USD, comprobar que GBP/USD aparece en el mismo timestamp.
-2. **Apertura de sesión limpia**: abrir sesión A, avanzar, navegar a otra sesión B (mismo par o distinto). B debe arrancar en su `date_from`, no en el currentTime de A.
-3. **Challenge HUD día Madrid**: en una sesión challenge, avanzar replay cruzando medianoche Madrid, ver que el DD diario se resetea (esto usa `currentTimeRef.current` directamente, no el global, pero confirma el flujo).
+**Cuidado clave (orden de operaciones):** a diferencia de 1b, las 3 escrituras de 1c NO viven en `updateChart` ni interactúan con la series LWC. Se ejecutan en lugares aislados (session load effect, engine.onTick, activePair effect). Por tanto, NO hay un orden estricto que mantener — la única invariante es que el global siga apuntando al mismo valor que antes en cada uno de esos 3 momentos.
 
-**Señales de rotura:**
-- Sesión nueva arranca en una fecha rara (currentTime stale del anterior).
-- Cambio de par hace `seekToTime(masterTime)` con un valor incorrecto y el GBP/USD aparece en otro año.
+#### Baseline pre-1c (Ramón captura ANTES de empezar 1c)
 
-**Rollback:** revert.
+**Protocolo:**
+
+1. **Cmd+R completo** en la sesión "test code" para asegurar estado fresco.
+   > **Importante:** NO haberle dado play a la sesión entre ahora y la captura. Si la sesión ha avanzado, `last_timestamp` será distinto y el baseline no será comparable al carácter.
+2. Esperar a que el chart cargue completamente, **sin tocar play**, en TF M1.
+3. Abrir DevTools → Console y ejecutar (snippet de **7 valores**: 6 del cluster `__algSuiteSeriesData/RealDataLen` + 1 nuevo `__algSuiteCurrentTime`):
+
+```js
+({
+  seriesDataLen: window.__algSuiteSeriesData?.length,
+  realDataLen:   window.__algSuiteRealDataLen,
+  phantomCount:  (window.__algSuiteSeriesData?.length ?? 0) - (window.__algSuiteRealDataLen ?? 0),
+  firstTime:     window.__algSuiteSeriesData?.[0]?.time,
+  lastRealTime:  window.__algSuiteSeriesData?.[window.__algSuiteRealDataLen - 1]?.time,
+  lastTotalTime: window.__algSuiteSeriesData?.[window.__algSuiteSeriesData.length - 1]?.time,
+  currentTime:   window.__algSuiteCurrentTime
+})
+```
+
+4. Anotar los 7 valores. Tras aplicar 1c, repetir en idéntica situación (misma sesión, mismo TF, **Cmd+R fresco**, sin haber tocado play). Si los 7 valores cuadran al carácter, replicación perfecta.
+
+**Justificación de los 7 valores:**
+- Los 6 primeros validan **no-regresión** de 1b (el cluster `__algSuiteSeriesData/RealDataLen` debe seguir intacto).
+- El 7º (`currentTime`) valida que **el refactor de 1c es transparente** — `setCurrentTime` y `clearCurrentTime` escriben/limpian el global con valores idénticos al pre-1c.
+
+**Ventaja:** cero edit efímero. Los globales son accesibles directamente desde consola.
+
+#### Protocolo build/dev (regla §8.1)
+
+```bash
+# 1. Identificar PID del dev (si está corriendo)
+ps aux | grep "next dev" | grep -v grep
+
+# 2. Matar dev
+kill <PID>
+
+# 3. (Opcional) limpiar .next/
+rm -rf .next/
+
+# 4. Build prod
+npm run build
+# Esperado: exit 0, cero warnings, hashes de chunks idénticos al post-1b
+```
+
+#### Verificaciones automáticas pre-commit (1 grep)
+
+```bash
+grep -nE "window\.__algSuiteCurrentTime\s*=" components/_SessionInner.js
+```
+
+**Esperado:** cero matches. Si aparece alguno, hay una escritura olvidada.
+
+> Diferencia con 1b: solo 1 grep, no 3. Razón: `__algSuiteCurrentTime` es un primitivo (number/null), no admite mutación in-place ni acceso indexed.
+
+#### Pruebas manuales mini-comprobación (Ramón, post-edits y post-build)
+
+Tras `npm run build` exit 0, relanzar dev (`nohup npm run dev > /tmp/forex-dev.log 2>&1 &; disown`) + Cmd+R en navegador:
+
+1. **Sesión "test code" carga**, chart visible.
+2. **Baseline post-1c cuadra**: ejecutar el snippet de **7 valores** (con Cmd+R fresco, sin play). Comparar contra baseline pre-1c. **Los 7 valores deben cuadrar al carácter.**
+3. **Cambio TF M1→H1**: chart se redibuja sin huecos.
+4. **Cambio TF H1→M1**: vuelve a M1 sin descolocar nada.
+5. **Cambio de par durante sesión** (ESPECÍFICO DE 1c): cargar la sesión, cambiar entre EUR/USD ↔ GBP/USD (si están ambos disponibles, o entre dos pares cualesquiera). Verificar:
+   - El segundo par carga sin saltar de fecha (ej. si EUR/USD está en 2024-08-23 y cambias a GBP/USD, GBP/USD aparece también en 2024-08-23, no en su `date_from`).
+   - `seekToTime(masterTime)` debe disparar correctamente — esto valida que la lectura `L1218 const masterTime = window.__algSuiteCurrentTime` sigue leyendo el valor correcto que `setCurrentTime` escribe.
+
+**Criterio de paso:** los 5 puntos OK + baseline cuadra → 1c validada.
+**Criterio de fallo:** chart vacío, error en consola tipo `Cannot read properties of undefined`, baseline NO cuadra, par nuevo aparece en fecha incorrecta tras cambio → revert.
+
+**Señales de rotura específicas de 1c:**
+- Sesión nueva arranca en una fecha rara (currentTime stale del anterior — `clearCurrentTime` no se llamó al cargar la sesión).
+- Cambio de par hace `seekToTime(masterTime)` con un valor incorrecto y el par nuevo aparece en otra fecha.
+- Error `Cannot read properties of undefined` al cambiar de par (el global está stale y la lectura L1218 lee `undefined`).
+- Baseline post-1c NO cuadra con baseline pre-1c en el 7º valor (`currentTime`).
+
+**Rollback:** revert del commit. Toca solo `lib/sessionData.js` (+25 líneas) y `_SessionInner.js` (cambios mínimos en 4 líneas: 1 import + 3 sustituciones). `git revert <hash>` deja exactamente el estado post-1b. Cero coordinación con otros archivos.
+
+#### Riesgos identificados (específicos de 1c)
+
+> Adapto la estructura del §4. Ordenados por gravedad descendente.
+
+**R1 — Romper el sync entre engines de pares distintos. (CRÍTICO)**
+- Síntoma: cambio de par hace que `seekToTime(masterTime)` salte a una fecha incorrecta. El par nuevo aparece en su `date_from` en lugar del momento actual del replay.
+- Análisis: la lectura L1218 (`const masterTime = window.__algSuiteCurrentTime`) depende de que `setCurrentTime` haya escrito el global correctamente desde `engine.onTick` (L772). Si `setCurrentTime` falla silenciosamente (guard mal puesto, asignación a propiedad equivocada), `masterTime` queda stale o `undefined`.
+- Mitigaciones:
+  1. `setCurrentTime` es función pura de asignación. Sin async, sin I/O.
+  2. Cuerpo trivial verificable (3 líneas).
+  3. Mini-comprobación punto 5 valida explícitamente cambio EUR/USD ↔ GBP/USD.
+  4. Si falla, rollback atómico (`git revert <hash>`).
+
+**R2 — L1225 es línea compuesta — riesgo de pisar otras sentencias.**
+- Síntoma: si el `str_replace` toca por error las sentencias `setCurrentPrice(...)` o `setDataReady(true)`, el flujo de cambio de par se rompe (el precio actual no se actualiza, o el flag `dataReady` no se setea, lo que afecta a otros effects que dependen de él).
+- Mitigaciones:
+  1. Read previo de L1224-L1226 obligatorio antes del str_replace #3 (aviso ⚠️ en la tabla).
+  2. El `old_string` debe aislar SOLO `if(typeof window!=='undefined') window.__algSuiteCurrentTime=ps.engine.currentTime` (sin `;` antes ni después).
+  3. Verificación del diff visual antes del commit.
+
+**R3 — Olvido de alguna de las 3 escrituras.**
+- Síntoma: una de las 3 ramas (L528, L772, L1225) sigue escribiendo el global "a pelo" mientras las otras 2 lo hacen vía la nueva API. Inconsistencia silenciosa.
+- Mitigación: el `grep -nE "window\.__algSuiteCurrentTime\s*=" components/_SessionInner.js` debe devolver 0 matches.
+
+**R4 — Imports circulares / break del bundle.**
+- Síntoma: `Cannot access 'X' before initialization` en runtime, o build falla con error de resolución.
+- Análisis: `lib/sessionData.js` ya importa `./supabase` y NO importa nada de `components/`. Las 2 nuevas funciones no requieren imports adicionales. `_SessionInner.js` ya importa `setSeriesData/updateSeriesAt`; añadir 2 imports más al mismo `import` es trivial.
+- Mitigación: `npm run build` lo detecta antes del commit.
+
+**R5 — `clearCurrentTime` no se llama al cargar la sesión.**
+- Síntoma: el global persiste entre navegaciones SPA. Si Ramón abre sesión A, avanza, navega a sesión B (sin reload completo), B podría arrancar con `currentTime` stale de A.
+- Análisis: el guard de L568 (`refreshChallengeStatus` fallback) y el guard de L753 (`rawMaster` al cargar par) ambos comprueban truthy del global. Si el global es null, ambos caen al fallback siguiente. La lectura L1218 (`masterTime` al cambiar par) NO tiene guard — si el global es null, `masterTime = null`, lo que redirecta el flujo a `seekToTime(null)` que maneja el caso (en `replayEngine.js`).
+- Mitigación: la sustitución #1 (L528 → `clearCurrentTime()`) es justamente lo que evita este problema. La verificación es validar mini-comprobación punto 5.
+
+**R6 — Bug #6 ("Object is disposed") puede manifestarse al hacer pruebas rápidas de cambio de sesión.**
+- Síntoma: error en consola al navegar rápido entre sesiones.
+- Análisis: bug preexistente del CLAUDE.md §9, no causado por 1c. Si Ramón observa este error durante mini-comprobación, anotarlo en `core-analysis.md §5` para fase 3/4 — NO arreglar en 1c.
+- Mitigación: documentado como pre-existente, NO cuenta como rotura de 1c.
 
 **Validación final antes del commit:**
 1. `npm run build` en local. Si falla, no propongo commit.
-2. `grep -n "__algSuiteCurrentTime\s*=" components/_SessionInner.js` → debe devolver **cero matches**.
+2. Grep automático de cero residuos (`grep -nE "window\.__algSuiteCurrentTime\s*=" components/_SessionInner.js` → 0 matches).
 3. Enseño `git diff` completo a Ramón.
-4. Espero **OK explícito**.
-5. Solo entonces ejecuto `git commit`.
+4. Mini-comprobación manual de Ramón en navegador con baseline post-1c (7 valores cuadran al carácter).
+5. Espero **OK explícito**.
+6. Solo entonces ejecuto `git commit`.
 
 **Commit message sugerido:**
 ```
 refactor(fase-1c): centralizar escritura de __algSuiteCurrentTime
 
-- lib/sessionData.js expone setCurrentTime/clearCurrentTime
-- 3 sitios en _SessionInner.js usan la nueva API (session load, onTick, activePair effect)
-- Lecturas siguen direct — fase 2
+- lib/sessionData.js expone setCurrentTime(t) y clearCurrentTime() —
+  ambos con guard SSR interno
+- _SessionInner.js delega las 3 escrituras a la nueva API:
+  · L528 → clearCurrentTime() (session load)
+  · L772 → setCurrentTime(engine.currentTime) (engine.onTick)
+  · L1225 (3ª sentencia de línea compuesta) → setCurrentTime(ps.engine.currentTime) (activePair effect)
+- Lecturas siguen direct (L568 fallback challenge, L753 rawMaster, L1218 masterTime sync engine) — fase 2
+- Sin cambios funcionales: global escrito con valores idénticos al
+  pre-refactor (validado por baseline al carácter en sesión 'test code',
+  7 valores incluyendo currentTime)
 ```
 
 ---
