@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
-import { fetchSessionCandles, setSeriesData, updateSeriesAt } from '../lib/sessionData'
+import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime } from '../lib/sessionData'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -525,7 +525,7 @@ export default function SessionPage(){
     // recarga la window al hacer router.push). Si NO la limpiamos, una sesión
     // nueva de challenge arranca el replay en la fecha donde quedó el challenge
     // anterior, porque resumeReal la prioriza sobre date_from.
-    if(typeof window!=='undefined') window.__algSuiteCurrentTime = null
+    clearCurrentTime()
     supabase.from('sim_sessions').select('*').eq('id',id).maybeSingle().then(async ({data})=>{
       if(!data){setLoading(false);return}
       sessionRef.current=data
@@ -769,7 +769,7 @@ export default function SessionPage(){
         if(pair===activePairRef.current){
           setCurrentTime(engine.currentTime)
           setProgress(Math.round(engine.progress*100))
-          if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime
+          setMasterTime(engine.currentTime)
         }
       }
       engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(engine.currentTime)}}
@@ -1222,7 +1222,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       setIsPlaying(ps.engine.isPlaying);setCurrentTime(ps.engine.currentTime)
       setProgress(Math.round(ps.engine.progress*100))
       const agg=ps.engine.getAggregated(pairTfRef.current[activePair]||'H1')
-      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);if(typeof window!=='undefined') window.__algSuiteCurrentTime=ps.engine.currentTime
+      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);setMasterTime(ps.engine.currentTime)
     }else{setDataReady(false);if(sessionRef.current)loadPair(activePair)}
     setTick(t=>t+1)
   },[activePair,loadPair])
