@@ -57,8 +57,8 @@
 | # | Línea | Qué hay hoy | Qué pasa a haber |
 |---|---|---|---|
 | 13 | L528 | `window.__algSuiteCurrentTime = null` (en session load) | `clearCurrentTime()` |
-| 14 | L772 | `if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime` (en engine.onTick) | `setCurrentTime(engine.currentTime)` |
-| 15 | L1225 | mismo write (en effect de cambio de activePair) | `setCurrentTime(ps.engine.currentTime)` |
+| 14 | L772 | `if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime` (en engine.onTick) | `setMasterTime(engine.currentTime)` |
+| 15 | L1225 | mismo write (en effect de cambio de activePair) | `setMasterTime(ps.engine.currentTime)` |
 
 ### 2.3 Lecturas que NO se tocan en fase 1 (lista explícita)
 
@@ -500,7 +500,7 @@ refactor(fase-1b): centralizar escritura de __algSuiteSeriesData/RealDataLen
 **Por qué bajo-medio:**
 - Las 3 escrituras viven en lugares heterogéneos: `useEffect` de session load (L528), callback `engine.onTick` (L772, en cada tick del replay), `useEffect` de cambio activePair (L1225). Una excepción en cualquiera de ellos puede afectar al sync entre engines de pares distintos.
 - L1225 es **línea compuesta** con 3 sentencias separadas por `;` (`setCurrentPrice(...);setDataReady(true);if(...) window.__algSuiteCurrentTime=...`). El `str_replace` debe tocar SOLO la 3ª sentencia, preservando las 2 primeras intactas.
-- Alcance del cluster: las 3 lecturas que NO se tocan (L568, L753, L1218) son justo las que dependen de que el global esté actualizado para que `seekToTime(masterTime)` sincronice el engine del par nuevo. Si por error `setCurrentTime` no escribe el global, esas lecturas leen `undefined` y el sync entre pares se rompe (par nuevo arranca en su `date_from` en lugar del masterTime).
+- Alcance del cluster: las 3 lecturas que NO se tocan (L568, L753, L1218) son justo las que dependen de que el global esté actualizado para que `seekToTime(masterTime)` sincronice el engine del par nuevo. Si por error `setMasterTime` no escribe el global, esas lecturas leen `undefined` y el sync entre pares se rompe (par nuevo arranca en su `date_from` en lugar del masterTime).
 
 #### Decisión: extender `lib/sessionData.js`, NO crear archivo nuevo
 
@@ -524,7 +524,7 @@ Mismo razonamiento que sub-fase 1b. Justificación:
  * @param {number} t - Timestamp UNIX en segundos del momento actual del replay.
  *                     Equivale a engine.currentTime de ReplayEngine.
  */
-export function setCurrentTime(t) {
+export function setMasterTime(t) {
   if (typeof window === 'undefined') return
   window.__algSuiteCurrentTime = t
 }
@@ -548,8 +548,8 @@ export function clearCurrentTime() {
 | # | Línea | Indentación | Contenido actual exacto | Sustitución propuesta |
 |---|---|---|---|---|
 | 1 | L528 | 4 esp | `if(typeof window!=='undefined') window.__algSuiteCurrentTime = null` (en session load) | `clearCurrentTime()` |
-| 2 | L772 | 10 esp | `if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime` (en engine.onTick) | `setCurrentTime(engine.currentTime)` |
-| 3 | L1225 | 6 esp | línea compuesta `setCurrentPrice(...);setDataReady(true);if(typeof window!=='undefined') window.__algSuiteCurrentTime=ps.engine.currentTime` (effect activePair) — sustituir SOLO la 3ª sentencia | `setCurrentPrice(...);setDataReady(true);setCurrentTime(ps.engine.currentTime)` |
+| 2 | L772 | 10 esp | `if(typeof window!=='undefined') window.__algSuiteCurrentTime=engine.currentTime` (en engine.onTick) | `setMasterTime(engine.currentTime)` |
+| 3 | L1225 | 6 esp | línea compuesta `setCurrentPrice(...);setDataReady(true);if(typeof window!=='undefined') window.__algSuiteCurrentTime=ps.engine.currentTime` (effect activePair) — sustituir SOLO la 3ª sentencia | `setCurrentPrice(...);setDataReady(true);setMasterTime(ps.engine.currentTime)` |
 
 **Cambio neto en `_SessionInner.js`:** 0 líneas (3 sustituciones 1:1 + 1 modificación de import). Solo 1 línea compuesta donde solo la 3ª sentencia cambia.
 
@@ -558,16 +558,16 @@ export function clearCurrentTime() {
 Las 3 lecturas inventoriadas en §2.3 (L568, L753, L1218) **se quedan tal cual leyendo `window.__algSuiteCurrentTime`** directamente.
 
 - **Alcance del plan:** §1 dice literalmente *"No reescribir las lecturas (siguen leyendo `window.__algSuite*` directamente — eso es fase 2/3)"*.
-- **Es seguro:** `setCurrentTime()` y `clearCurrentTime()` escriben/limpian el global con valores idénticos a la versión pre-1c. Los consumers ven exactamente lo mismo. Cero cambio observable.
+- **Es seguro:** `setMasterTime()` y `clearCurrentTime()` escriben/limpian el global con valores idénticos a la versión pre-1c. Los consumers ven exactamente lo mismo. Cero cambio observable.
 - **Es peligroso tocarlas ahora:** implica diseñar getter síncrono en `lib/sessionData.js`, modificar 3 sitios en `_SessionInner.js`, y verificar que el sync entre pares (que depende críticamente de que la lectura sea actual) no se descoloca. Eso es alcance de fase 2.
 - **Mezclar 1c + 2 rompe** el principio "sub-fase mergeable sola" del §3.2.
 
 **Archivos creados:** ninguno (se añade a `lib/sessionData.js`).
 
 **Archivos modificados:**
-- `lib/sessionData.js` — añadir las 2 funciones de arriba (`setCurrentTime`, `clearCurrentTime`).
+- `lib/sessionData.js` — añadir las 2 funciones de arriba (`setMasterTime`, `clearCurrentTime`).
 - `components/_SessionInner.js`:
-  - Añadir al import existente: `import { fetchSessionCandles, setSeriesData, updateSeriesAt, setCurrentTime, clearCurrentTime } from '../lib/sessionData'`.
+  - Añadir al import existente: `import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime } from '../lib/sessionData'`.
   - 3 sustituciones según tabla anterior.
 
 **Archivos NO tocados en esta sub-fase:** todo lo de §2.4 + las 14 lecturas inventoriadas en §2.3 (incluyendo las 3 lecturas de `__algSuiteCurrentTime` en L568, L753, L1218).
@@ -599,7 +599,7 @@ Las 3 lecturas inventoriadas en §2.3 (L568, L753, L1218) **se quedan tal cual l
 
 **Justificación de los 7 valores:**
 - Los 6 primeros validan **no-regresión** de 1b (el cluster `__algSuiteSeriesData/RealDataLen` debe seguir intacto).
-- El 7º (`currentTime`) valida que **el refactor de 1c es transparente** — `setCurrentTime` y `clearCurrentTime` escriben/limpian el global con valores idénticos al pre-1c.
+- El 7º (`currentTime`) valida que **el refactor de 1c es transparente** — `setMasterTime` y `clearCurrentTime` escriben/limpian el global con valores idénticos al pre-1c.
 
 **Ventaja:** cero edit efímero. Los globales son accesibles directamente desde consola.
 
@@ -640,7 +640,7 @@ Tras `npm run build` exit 0, relanzar dev (`nohup npm run dev > /tmp/forex-dev.l
 4. **Cambio TF H1→M1**: vuelve a M1 sin descolocar nada.
 5. **Cambio de par durante sesión** (ESPECÍFICO DE 1c): cargar la sesión, cambiar entre EUR/USD ↔ GBP/USD (si están ambos disponibles, o entre dos pares cualesquiera). Verificar:
    - El segundo par carga sin saltar de fecha (ej. si EUR/USD está en 2024-08-23 y cambias a GBP/USD, GBP/USD aparece también en 2024-08-23, no en su `date_from`).
-   - `seekToTime(masterTime)` debe disparar correctamente — esto valida que la lectura `L1218 const masterTime = window.__algSuiteCurrentTime` sigue leyendo el valor correcto que `setCurrentTime` escribe.
+   - `seekToTime(masterTime)` debe disparar correctamente — esto valida que la lectura `L1218 const masterTime = window.__algSuiteCurrentTime` sigue leyendo el valor correcto que `setMasterTime` escribe.
 
 **Criterio de paso:** los 5 puntos OK + baseline cuadra → 1c validada.
 **Criterio de fallo:** chart vacío, error en consola tipo `Cannot read properties of undefined`, baseline NO cuadra, par nuevo aparece en fecha incorrecta tras cambio → revert.
@@ -659,9 +659,9 @@ Tras `npm run build` exit 0, relanzar dev (`nohup npm run dev > /tmp/forex-dev.l
 
 **R1 — Romper el sync entre engines de pares distintos. (CRÍTICO)**
 - Síntoma: cambio de par hace que `seekToTime(masterTime)` salte a una fecha incorrecta. El par nuevo aparece en su `date_from` en lugar del momento actual del replay.
-- Análisis: la lectura L1218 (`const masterTime = window.__algSuiteCurrentTime`) depende de que `setCurrentTime` haya escrito el global correctamente desde `engine.onTick` (L772). Si `setCurrentTime` falla silenciosamente (guard mal puesto, asignación a propiedad equivocada), `masterTime` queda stale o `undefined`.
+- Análisis: la lectura L1218 (`const masterTime = window.__algSuiteCurrentTime`) depende de que `setMasterTime` haya escrito el global correctamente desde `engine.onTick` (L772). Si `setMasterTime` falla silenciosamente (guard mal puesto, asignación a propiedad equivocada), `masterTime` queda stale o `undefined`.
 - Mitigaciones:
-  1. `setCurrentTime` es función pura de asignación. Sin async, sin I/O.
+  1. `setMasterTime` es función pura de asignación. Sin async, sin I/O.
   2. Cuerpo trivial verificable (3 líneas).
   3. Mini-comprobación punto 5 valida explícitamente cambio EUR/USD ↔ GBP/USD.
   4. Si falla, rollback atómico (`git revert <hash>`).
@@ -704,12 +704,12 @@ Tras `npm run build` exit 0, relanzar dev (`nohup npm run dev > /tmp/forex-dev.l
 ```
 refactor(fase-1c): centralizar escritura de __algSuiteCurrentTime
 
-- lib/sessionData.js expone setCurrentTime(t) y clearCurrentTime() —
+- lib/sessionData.js expone setMasterTime(t) y clearCurrentTime() —
   ambos con guard SSR interno
 - _SessionInner.js delega las 3 escrituras a la nueva API:
   · L528 → clearCurrentTime() (session load)
-  · L772 → setCurrentTime(engine.currentTime) (engine.onTick)
-  · L1225 (3ª sentencia de línea compuesta) → setCurrentTime(ps.engine.currentTime) (activePair effect)
+  · L772 → setMasterTime(engine.currentTime) (engine.onTick)
+  · L1225 (3ª sentencia de línea compuesta) → setMasterTime(ps.engine.currentTime) (activePair effect)
 - Lecturas siguen direct (L568 fallback challenge, L753 rawMaster, L1218 masterTime sync engine) — fase 2
 - Sin cambios funcionales: global escrito con valores idénticos al
   pre-refactor (validado por baseline al carácter en sesión 'test code',
