@@ -262,75 +262,233 @@ refactor(fase-1a): extraer fetch+filter a lib/sessionData.js
 
 ### 3.2 Sub-fase 1b — Centralización de `__algSuiteSeriesData` y `__algSuiteRealDataLen`
 
-**Tamaño:** ~30 líneas tocadas en `_SessionInner.js` + ~30 añadidas en `lib/sessionData.js`. **Sesiones:** 1. **Riesgo:** medio.
+**Tamaño:** ~10 líneas tocadas en `_SessionInner.js` (-2 neto) + ~12 añadidas en `lib/sessionData.js`. **Total +10 líneas.** **Sesiones:** 1. **Riesgo:** medio.
 
-**Por qué medio:** estas escrituras viven dentro de `updateChart`, que es la función más caliente del replay. Si invertimos accidentalmente el orden de operaciones (ej. escribir el global ANTES de `cr.series.setData`), el `autoscaleInfoProvider` puede leer datos stale en el primer frame y reescalar el eje Y.
+**Por qué medio:**
+- Las 5 escrituras viven dentro de `updateChart`, función más caliente del replay. Cualquier excepción en una de sus ramas mata el render del chart.
+- Si invertimos accidentalmente el orden de operaciones (ej. escribir el global ANTES de `cr.series.setData`), el `autoscaleInfoProvider` puede leer datos stale en el primer frame y reescalar el eje Y.
+- El plan §2.2 enumera 5 sustituciones; un olvido (escritura "a pelo" residual) crea inconsistencia silenciosa difícil de detectar sin grep automático.
+
+#### Decisión: extender `lib/sessionData.js`, NO crear archivo nuevo
+
+Considerada la opción de crear `lib/seriesData.js` separado, descartada. Justificación:
+
+- El plan §2.1 declara "1 archivo nuevo: `lib/sessionData.js`". Crear un módulo aparte introduce divergencia injustificada respecto al contrato aprobado.
+- Las 2 funciones nuevas suman ~12 líneas. Crear módulo aparte por 12 líneas es premature factoring (YAGNI).
+- "Data layer" como concepto unificado: fetch + filter (1a) + state global derivado (1b) + currentTime (1c). Mismo módulo para todo.
+- Si fase 2 (eliminar globales) lo requiere, separamos entonces. Mover funciones es trivial; deshacer una separación prematura es más caro.
+
+#### API expuesta (2 funciones, NO 3)
+
+`clearSeriesData` queda **descartada** en 1b: ninguna de las 5 escrituras a sustituir requiere "limpiar" los globales. El plan §3.2 anterior la proponía por simetría con `clearCurrentTime` (1c), pero introducirla sin uso real es API muerta. Si 1c o fase de limpieza la pide, se añade entonces.
+
+```js
+/**
+ * Escribe los globals __algSuiteSeriesData y __algSuiteRealDataLen.
+ * Único punto de "rebuild completo" de ambos globals.
+ * Guard interno SSR (typeof window check).
+ *
+ * @param {Object[]} allData - Array de candles (real + phantom). Asignación por referencia,
+ *                             el caller NO debe mutar el array tras pasarlo.
+ * @param {number}   realLen - Longitud de la parte real (sin phantoms).
+ *                             Invariante: realLen <= allData.length.
+ */
+export function setSeriesData(allData, realLen) {
+  if (typeof window === 'undefined') return
+  window.__algSuiteSeriesData = allData
+  window.__algSuiteRealDataLen = realLen
+}
+
+/**
+ * Mutación in-place de un candle dentro de __algSuiteSeriesData.
+ * NO modifica __algSuiteRealDataLen (asimetría intencional, replica L1128 pre-1b).
+ * Guards internos: window undefined (SSR) o array no inicializado → no-op silencioso.
+ *
+ * @param {number} index   - Índice dentro de __algSuiteSeriesData.
+ * @param {Object} candle  - Nuevo candle a colocar en esa posición.
+ */
+export function updateSeriesAt(index, candle) {
+  if (typeof window === 'undefined') return
+  if (!window.__algSuiteSeriesData) return
+  window.__algSuiteSeriesData[index] = candle
+}
+```
+
+#### Las 5 escrituras a sustituir (líneas reales post-1a verificadas con grep PASO 2)
+
+> ⚠️ Antes de cualquier `str_replace` sobre L1127–L1128 (sustitución #4), Claude Code debe ejecutar `Read` de `_SessionInner.js` con rango L1124–L1132 y pegar output literal a Ramón. Quiero ver el patrón completo (apertura `if(...){` + asignación + cierre `}`) antes de aprobar ese `str_replace` concreto.
+
+| # | Línea(s) real | Contenido actual exacto | Sustitución propuesta |
+|---|---|---|---|
+| 1 | L1057 | `if(typeof window!=='undefined'){window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length}` | `setSeriesData([...agg, ...cr.phantom], agg.length)` |
+| 2 | L1090 | idem #1 | idem #1 |
+| 3 | L1116 | idem #1 | idem #1 |
+| 4 | L1127–L1128 (3 líneas) | apertura `if(typeof window!=='undefined'&&window.__algSuiteSeriesData){`, asignación `window.__algSuiteSeriesData[agg.length-1]=agg[agg.length-1]`, cierre `}` | `updateSeriesAt(agg.length - 1, agg[agg.length - 1])` (guard SSR + null-check internos en `updateSeriesAt`) |
+| 5 | L1142 | idem #1 | idem #1 |
+
+**Cambio neto en `_SessionInner.js`:** -2 líneas (4 sustituciones uno-a-uno + 1 sustitución de 3 líneas a 1).
+
+#### Lecturas NO se tocan en 1b — justificación
+
+Las 14 lecturas inventoriadas en §2.3 (en 3 archivos: `_SessionInner.js`, `lib/chartCoords.js`, `components/RulerOverlay.js`) **se quedan tal cual leyendo `window.__algSuite*`** directamente.
+
+- **Alcance del plan:** §1 dice literalmente *"No reescribir las lecturas (siguen leyendo `window.__algSuite*` directamente — eso es fase 2/3)"*.
+- **Es seguro:** `setSeriesData()` escribe el global con valores idénticos a la versión pre-1b. Los consumers ven exactamente lo mismo. Cero cambio observable.
+- **Es peligroso tocarlas ahora:** implica modificar 4 archivos, diseñar getter síncrono, verificar que ningún consumer queda con valor stale. Eso es alcance de fase 2 (`fase-1-plan.md §6.2`).
+- **Mezclar 1b + 2 rompe** el principio "sub-fase mergeable sola" del §3.2.
 
 **Archivos creados:** ninguno (se añade a `lib/sessionData.js`).
 
 **Archivos modificados:**
-- `lib/sessionData.js` — añadir:
-  ```js
-  export function setSeriesData(allData, realLen) {
-    if (typeof window === 'undefined') return
-    window.__algSuiteSeriesData = allData
-    window.__algSuiteRealDataLen = realLen
-  }
-  export function updateSeriesAt(index, candle) {
-    if (typeof window === 'undefined' || !window.__algSuiteSeriesData) return
-    window.__algSuiteSeriesData[index] = candle
-  }
-  export function clearSeriesData() {
-    if (typeof window === 'undefined') return
-    window.__algSuiteSeriesData = undefined
-    window.__algSuiteRealDataLen = undefined
-  }
-  // (getters readonly opcionales, ver §3.4)
-  ```
+- `lib/sessionData.js` — añadir las 2 funciones de arriba (`setSeriesData`, `updateSeriesAt`).
 - `components/_SessionInner.js`:
-  - Sustituir L1096, L1129, L1155, L1181 → `setSeriesData([...agg, ...cr.phantom], agg.length)`
-  - Sustituir L1166–1168 → `updateSeriesAt(agg.length - 1, agg[agg.length - 1])`
-  - Añadir import `import { setSeriesData, updateSeriesAt } from '../lib/sessionData'`
+  - Añadir al import existente: `import { fetchSessionCandles, setSeriesData, updateSeriesAt } from '../lib/sessionData'`.
+  - 5 sustituciones según tabla anterior.
 
-**Archivos NO tocados:** todo lo de §2.4 + las 14 lecturas listadas en §2.3.
+**Archivos NO tocados en esta sub-fase:** todo lo de §2.4 + las 14 lecturas inventoriadas en §2.3.
 
 **Cuidado clave (orden de escritura):** en cada rama de `updateChart`, el orden actual es:
 1. `cr.phantom = ...` (regenerar phantoms)
 2. `cr.series.setData(...)` o `cr.series.update(...)` (LWC)
-3. Escribir `window.__algSuite*`
+3. Escribir `window.__algSuite*` (a sustituir por `setSeriesData(...)`)
 
 Mantenemos ESE orden exacto. La función `setSeriesData` solo escribe los globales — no toca `cr.series`. Así garantizamos cero cambio observable.
 
-**Pruebas manuales (Ramón):**
-1. **Drawings no se mueven al cambiar de TF**: dibujar un TrendLine en M1, cambiar M1→H1→M5→H4→M1. La línea debe quedarse en el mismo timestamp/precio.
-2. **Replay funciona**: play en M5 a velocidad 60×, ver que avanzan velas, no hay errores en consola.
-3. **Within-bucket update visible**: en H1, sin avanzar a la siguiente hora, observar que la última vela se mueve con el precio (cola del replay). Esto es la rama L1166-1168.
-4. **Cambio de par durante replay**: cambiar EUR/USD ↔ GBP/USD durante play — el sync de engines sigue funcionando.
-5. **Posiciones se ven**: abrir un BUY, verificar que las líneas SL/TP se renderizan en el sitio correcto.
+#### Baseline pre-1b (Ramón captura ANTES de empezar 1b)
+
+**Protocolo:**
+
+1. **Cmd+R completo** en la sesión "test code" para asegurar estado fresco.
+   > **Importante:** NO haberle dado play a la sesión entre ahora y la captura. Si la sesión ha avanzado, `last_timestamp` será distinto y el baseline no será comparable al carácter.
+2. Esperar a que el chart cargue completamente, **sin tocar play**, en TF M1.
+3. Abrir DevTools → Console y ejecutar:
+
+```js
+({
+  seriesDataLen: window.__algSuiteSeriesData?.length,
+  realDataLen:   window.__algSuiteRealDataLen,
+  phantomCount:  (window.__algSuiteSeriesData?.length ?? 0) - (window.__algSuiteRealDataLen ?? 0),
+  firstTime:     window.__algSuiteSeriesData?.[0]?.time,
+  lastRealTime:  window.__algSuiteSeriesData?.[window.__algSuiteRealDataLen - 1]?.time,
+  lastTotalTime: window.__algSuiteSeriesData?.[window.__algSuiteSeriesData.length - 1]?.time
+})
+```
+
+4. Anotar los 6 valores. Tras aplicar 1b, repetir en idéntica situación (misma sesión, mismo TF, **Cmd+R fresco**, sin haber tocado play). Si los 6 valores cuadran al carácter, replicación perfecta.
+
+**Ventaja:** cero edit efímero. Los globales son accesibles directamente desde consola. Cero contaminación de la rama.
+
+#### Protocolo build/dev (regla §8.1)
+
+```bash
+# 1. Identificar PID del dev (si está corriendo)
+ps aux | grep "next dev" | grep -v grep
+
+# 2. Matar dev
+kill <PID>
+
+# 3. (Opcional) limpiar .next/
+rm -rf .next/
+
+# 4. Build prod
+npm run build
+# Esperado: exit 0, cero warnings, hashes de chunks idénticos al post-1a
+```
+
+#### Verificaciones automáticas pre-commit
+
+```bash
+grep -nE "window\.__algSuiteSeriesData\s*=" components/_SessionInner.js
+grep -nE "window\.__algSuiteRealDataLen\s*=" components/_SessionInner.js
+grep -nE "window\.__algSuiteSeriesData\[" components/_SessionInner.js
+```
+
+**Esperado:** cero matches en los 3. Si aparece alguno, hay una escritura olvidada o una mutación residual.
+
+#### Pruebas manuales mini-comprobación (Ramón, post-edits y post-build)
+
+Tras `npm run build` exit 0, relanzar dev (`nohup npm run dev > /tmp/forex-dev.log 2>&1 &; disown`) + Cmd+R en navegador:
+
+1. **Sesión "test code" carga**, chart visible.
+2. **Baseline post-1b cuadra**: ejecutar el snippet del baseline (con Cmd+R fresco, sin play). Comparar contra baseline pre-1b. **Los 6 valores deben cuadrar al carácter.**
+3. **Cambio TF M1→H1**: chart se redibuja sin huecos.
+4. **Cambio TF H1→M1**: vuelve a M1 sin descolocar nada.
+5. **Drawings (si hay alguno previo en BD)**: se ven y no se mueven al cambio TF.
+
+**Criterio de paso:** los 5 puntos OK + baseline cuadra → 1b validada.
+**Criterio de fallo:** chart vacío, error en consola tipo `Cannot read properties of undefined`, baseline NO cuadra, drawings descolocados → revert.
 
 **Señales de rotura:**
-- Drawings se descolocan inmediatamente al cambiar TF (más que antes).
+- Chart queda en blanco tras cargar la sesión.
 - Error `Cannot read properties of undefined (reading 'minValue')` en consola — el autoscaleInfoProvider está leyendo el global antes de que esté seteado.
-- Chart se queda en blanco tras un cambio de TF.
+- Drawings se descolocan inmediatamente al cambiar TF (más que antes).
 - Drawings que estaban a la derecha del precio (zona phantom) desaparecen.
+- Baseline post-1b NO cuadra con baseline pre-1b.
 
-**Rollback:** revert del commit. Como solo se tocan 5 líneas en `_SessionInner.js` y se añaden ~15 en `sessionData.js`, el revert es seguro.
+**Rollback:** revert del commit. Toca solo `lib/sessionData.js` (+12 líneas) y `_SessionInner.js` (-2 líneas neto). `git revert <hash>` deja exactamente el estado post-1a. Cero coordinación con otros archivos.
+
+#### Riesgos identificados (específicos de 1b)
+
+> Adapto la estructura del §4. Ordenados por gravedad descendente.
+
+**R1 — Romper `updateChart()` invalida el chart entero. (CRÍTICO)**
+- Síntoma: chart en blanco, drawings desaparecen, autoscale falla con `Cannot read properties of undefined (reading 'minValue')`.
+- Mitigaciones (capa por capa):
+  1. `setSeriesData / updateSeriesAt` son funciones puras de asignación. Sin async, sin I/O, sin React refs. Categoría imposible de race conditions.
+  2. Cuerpo trivial verificable (3-4 líneas cada una).
+  3. Mantener orden EXACTO de operaciones en cada rama de updateChart: phantoms → setData/update → `setSeriesData(...)`. Solo se sustituye el paso 3.
+  4. Verificación pre-commit: `git diff` visual rama-por-rama + `grep` automático de cero residuos + `npm run build` exit 0.
+  5. Mini-comprobación manual de Ramón (chart se ve + drawings no se mueven).
+  6. Rollback atómico: `git revert <hash>` deja post-1a limpio.
+
+**R2 — Asimetría de L1128: `updateSeriesAt` NO debe escribir RealDataLen.**
+- Síntoma: si `updateSeriesAt` actualizase `__algSuiteRealDataLen`, el `autoscaleInfoProvider` y `chartCoords.timeToLogical` calcularían rangos con length erróneo. Drawings podrían desplazarse 1 vela.
+- Mitigaciones: JSDoc documenta explícitamente "NO modifica __algSuiteRealDataLen". Verificación visual del cuerpo de `updateSeriesAt` antes del commit.
+
+**R3 — Olvido de alguna de las 5 escrituras.**
+- Síntoma: una rama de `updateChart` sigue escribiendo el global "a pelo" mientras las otras 4 lo hacen vía `setSeriesData`. Inconsistencia silenciosa.
+- Mitigación: el `grep -nE "window\.__algSuite(SeriesData|RealDataLen)\s*=" components/_SessionInner.js` debe devolver 0 matches. Red de seguridad principal.
+
+**R4 — Imports circulares / break del bundle.**
+- Síntoma: `Cannot access 'X' before initialization` en runtime, o build falla con error de resolución.
+- Análisis: `lib/sessionData.js` ya importa `./supabase`. Las 2 nuevas funciones no requieren imports adicionales. `_SessionInner.js` ya importa `fetchSessionCandles` desde `lib/sessionData.js`.
+- Mitigación: `npm run build` lo detecta antes del commit.
+
+**R5 — Pérdida del guard de L1127.**
+- Síntoma: si `updateSeriesAt` se llama antes de que `setSeriesData` haya sido invocada al menos una vez, `window.__algSuiteSeriesData[index] = candle` lanzaría `TypeError`.
+- Análisis: `updateSeriesAt` incluye los 2 guards internos (`typeof window` + `!window.__algSuiteSeriesData`). Equivalente funcional al guard original L1127.
+- Mitigación: documentado en JSDoc + verificación visual del cuerpo de `updateSeriesAt`.
+
+**R6 — Bug #1 / #2 / #5 / #6 vuelve más visible o se enmascara.**
+- Síntoma: drawings al cambiar TF se ven mejor o peor. Freeze en M1 a velocidad máxima cambia. Errores `Series not attached to tool` aparecen con frecuencia distinta.
+- Mitigación: durante mini-comprobación, anotar cualquier cambio observable. Apuntar en `core-analysis.md §5` para fase 3/4. NO arreglar nada en 1b.
+
+**R7 — HMR durante desarrollo (preexistente, NO regresión).**
+- Documentado en cabecera §3. Cmd+R como protocolo. NO cuenta como rotura de 1b.
 
 **Validación final antes del commit:**
 1. `npm run build` en local. Si falla, no propongo commit.
-2. `grep -n "__algSuiteSeriesData\s*=\|__algSuiteRealDataLen\s*=" components/_SessionInner.js` → debe devolver **cero matches** (ya no hay escrituras directas).
+2. Greps automáticos de cero residuos (sección "Verificaciones automáticas pre-commit").
 3. Enseño `git diff` completo a Ramón.
-4. Espero **OK explícito**.
-5. Solo entonces ejecuto `git commit`.
+4. Mini-comprobación manual de Ramón en navegador con baseline post-1b.
+5. Espero **OK explícito**.
+6. Solo entonces ejecuto `git commit`.
 
 **Commit message sugerido:**
 ```
 refactor(fase-1b): centralizar escritura de __algSuiteSeriesData/RealDataLen
 
-- lib/sessionData.js expone setSeriesData/updateSeriesAt/clearSeriesData
-- updateChart en _SessionInner.js delega las 5 escrituras a la nueva API
-- Las lecturas (autoscaleInfoProvider, chartCoords) siguen direct — fase 2
-- Sin cambios funcionales
+- lib/sessionData.js expone setSeriesData(allData, realLen) y
+  updateSeriesAt(index, candle) — ambos con guard SSR interno
+- _SessionInner.js:updateChart delega las 5 escrituras a la nueva API:
+  · L1057, L1090, L1116, L1142 → setSeriesData([...agg, ...cr.phantom], agg.length)
+  · L1127–L1128 (guard + mutación in-place) → updateSeriesAt(agg.length - 1, agg[agg.length - 1])
+- Lecturas siguen direct (chartCoords L9/L11/L89/L96, RulerOverlay L28/L30,
+  _SessionInner L815/L816) — fase 2
+- updateSeriesAt NO modifica __algSuiteRealDataLen (asimetría intencional,
+  replica comportamiento pre-1b de L1128)
+- Sin cambios funcionales: globals escritos con valores idénticos al
+  pre-refactor (validado por baseline al carácter en sesión "test code")
 ```
 
 ---
