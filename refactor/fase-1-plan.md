@@ -46,11 +46,11 @@
 
 | # | Línea | Qué hay hoy | Qué pasa a haber |
 |---|---|---|---|
-| 8 | L1096 | `window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length` (rama "full") | `setSeriesData([...agg, ...cr.phantom], agg.length)` |
-| 9 | L1129 | mismo write (rama "vela TF nueva") | `setSeriesData(...)` |
-| 10 | L1155 | mismo write (fallback dentro de "vela TF nueva") | `setSeriesData(...)` |
-| 11 | L1166–1168 | `window.__algSuiteSeriesData[agg.length-1] = agg[agg.length-1]` (within-bucket, mutación in-place) | `updateSeriesAt(agg.length-1, agg[agg.length-1])` |
-| 12 | L1181 | mismo write completo (fallback within-bucket) | `setSeriesData(...)` |
+| 8 | L1057 | `window.__algSuiteSeriesData=[...agg,...cr.phantom];window.__algSuiteRealDataLen=agg.length` (rama "full") | `setSeriesData([...agg, ...cr.phantom], agg.length)` |
+| 9 | L1090 | mismo write (rama "vela TF nueva") | `setSeriesData(...)` |
+| 10 | L1116 | mismo write (fallback dentro de "vela TF nueva") | `setSeriesData(...)` |
+| 11 | L1127–1128 | `window.__algSuiteSeriesData[agg.length-1] = agg[agg.length-1]` (within-bucket, mutación in-place) | `updateSeriesAt(agg.length-1, agg[agg.length-1])` |
+| 12 | L1142 | mismo write completo (fallback within-bucket) | `setSeriesData(...)` |
 
 **Sub-fase 1c — escritura de `__algSuiteCurrentTime`:**
 
@@ -67,14 +67,15 @@
 | Archivo | Línea | Lo que lee |
 |---|---|---|
 | `_SessionInner.js` | 792 | `window.__algSuiteCurrentTime` (validación masterTime al cargar par) |
-| `_SessionInner.js` | 854 | `window.__algSuiteSeriesData` (autoscaleInfoProvider) |
-| `_SessionInner.js` | 855 | `window.__algSuiteRealDataLen` (autoscaleInfoProvider) |
+| `_SessionInner.js` | 815 | `window.__algSuiteSeriesData` (autoscaleInfoProvider) |
+| `_SessionInner.js` | 816 | `window.__algSuiteRealDataLen` (autoscaleInfoProvider) |
 | `_SessionInner.js` | 858 | `window.__chartMap` (autoscaleInfoProvider) — fuera de alcance, no es `__algSuite*` |
 | `_SessionInner.js` | 1138 | `window.__algSuiteDebugLS` y `__algSuiteExportTools` — debug muerto, fase de limpieza |
 | `_SessionInner.js` | 1259 | `window.__algSuiteCurrentTime` (sync engine al cambiar par) |
 | `_SessionInner.js` | 567 | `window.__algSuiteCurrentTime` (refreshChallengeStatus fallback) |
 | `_SessionInner.js` | 144 | `window.__chartMap = chartMap` (write — pero es ref a un ref, no a __algSuite*) |
 | `lib/chartCoords.js` | 9, 11, 89, 96 | `__algSuiteSeriesData / __algSuiteRealDataLen` |
+| `components/RulerOverlay.js` | 28, 30 | `__algSuiteSeriesData / __algSuiteRealDataLen` |
 
 ### 2.4 Archivos que NO se tocan en TODA la fase 1
 
