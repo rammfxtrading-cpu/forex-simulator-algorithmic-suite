@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { getSeriesData, getRealLen } from '../lib/sessionData'
 
 // NY offset: EDT = UTC-4 (Mar-Nov), EST = UTC-5 (Nov-Mar)
 function getNYOffset(utcTs) {
@@ -174,8 +175,8 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
       cachedSessionsRef.current = []
       return
     }
-    const allData = typeof window !== 'undefined' ? window.__algSuiteSeriesData : null
-    const realLen = typeof window !== 'undefined' ? window.__algSuiteRealDataLen : null
+    const allData = getSeriesData()
+    const realLen = getRealLen()
     if (!allData || !realLen) {
       cachedSessionsRef.current = []
       return

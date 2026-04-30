@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { getSeriesData, getRealLen } from '../lib/sessionData'
 
 function formatDuration(seconds) {
   if (!seconds || seconds <= 0) return '0m'
@@ -25,9 +26,9 @@ export default function RulerOverlay({ active, onDeactivate, chartMap, activePai
     try {
       const price   = cr.series.coordinateToPrice(y)
       const logical = cr.chart.timeScale().coordinateToLogical(x)
-      const data    = window.__algSuiteSeriesData
+      const data    = getSeriesData()
       if (price == null || logical == null || !data?.length) return null
-      const realLen = window.__algSuiteRealDataLen || data.length
+      const realLen = getRealLen() || data.length
       const idx     = Math.max(0, Math.min(Math.round(logical), realLen - 1))
       const time    = data[idx]?.time ?? null
       return { price, logical, time, idx, x, y }
