@@ -908,3 +908,13 @@ No es crítico, solo se apunta para evitar reintento en futuras sub-fases.
 **Qué pasó (27/4):** en el commit del plan táctico (`0180b6f`) se metieron `git add + git commit + echo --- + git log --oneline -4` en una sola Bash encadenada con `&&`. Eso significa un único permiso para 4 operaciones distintas, lo cual rompe la regla de granularidad de control de Ramón (CLAUDE.md §5.3).
 
 **Protocolo:** en sub-fases siguientes, pedir y ejecutar cada operación git como Bash separada. `git add` aparte. `git commit` aparte. `git log` aparte. Cada una con su permiso individual. Ya se respetó en el commit `6f7d829` de sub-fase 1a — mantener para 1b, 1c y fases 2–6.
+
+### 8.5 Inventarios siempre con `grep -rn` recursivo, nunca acotado a archivos esperados
+
+> Lección retrospectiva añadida 30 abr 2026, originada en error del propio §2.3 de este mismo plan.
+
+El inventario "14 lecturas en 4 archivos" del `fase-1-plan.md §2.3` (commit `0180b6f`, 27 abr 2026) omitió `components/KillzonesOverlay.js`, que tenía 2 lecturas de `__algSuite*` en L177–L178 desde el commit `ae132d5` (26 abr 2026, 20 h antes del plan). El error fue acotar el grep a los archivos que ya se sospechaban, en lugar de barrer `components/ pages/ lib/` recursivamente. Resultado: KillzonesOverlay quedó fuera del alcance declarado de fase 2 hasta que la verificación previa al `fase-2-plan.md` (30 abr 2026) lo destapó.
+
+**Norma:** todo inventario de globales/lecturas/escrituras se hace con `grep -rn <patrón> components/ pages/ lib/` (o equivalente recursivo) y se compara con cualquier listado existente. Si hay divergencia, **la divergencia es el inventario, no el grep.**
+
+**Materialización operativa adoptada en fase 2:** el `fase-2-plan.md §3.0 PASO 0` obliga a re-ejecutar los 3 greps recursivos justo antes del primer commit de sub-fase 2a, no antes de la aprobación del plan. Razón: `main` puede haber cambiado entre redacción del plan y arranque del primer commit; el grep es la única fuente de verdad en el momento del cambio. Esta práctica se adopta también para fases 3–7.

@@ -509,6 +509,8 @@ Cualquier acceso a `cr.series` o `cr.chart` después del `chart.remove()` lanza 
 > Cada fase aterriza en una rama propia (`refactor/fase-N-...`).
 > Cada fase debe poder mergearse a `main` sola, sin romper lo demás.
 
+> **Nota sobre el orden de fases (29 abr 2026).** El orden original de este §6 (redactado en la auditoría inicial) tenía: fase 1 data layer, fase 2 viewport, fase 3 render, fase 4 drawings, fase 5 trading, fase 6 reducir `_SessionInner.js`. Tras cerrar fase 1 en producción el 28 abr 2026 (sub-fases 1a/1b/1c, HEAD `125ad4b`) reordenamos: insertamos una **fase 2 nueva = "cerrar el data layer (lecturas)"**, y desplazamos viewport/render/drawings/trading/reducir a 3/4/5/6/7. Razón: fase 1 solo centralizó las 3 escrituras de `window.__algSuite*`; las 14 lecturas siguieron leyendo el global directo (decisión consciente de §1 del `fase-1-plan.md`). Saltar a viewport sin cerrar el círculo de data layer dejaría dos capas a medio aislar a la vez. La disciplina "una capa cada vez" del §1 del propio análisis pide cerrar data layer entera antes de tocar viewport. El coste aceptado: B2 (drawings descolocadas en Review Session) y B3 (TF reset al entrar Review) viven en viewport+drawings y siguen sin atacar hasta fase 3+ del nuevo orden.
+
 ### Fase 0 — Preparación (sin cambios funcionales)
 
 - Crear `refactor/` (hecho).
@@ -517,30 +519,81 @@ Cualquier acceso a `cr.series` o `cr.chart` después del `chart.remove()` lanza 
 - Crear rama `refactor/fase-1-data-layer` para arrancar la fase 1.
 
 **Riesgo:** ninguno. **Tamaño:** 0 líneas tocadas.
+**Estado:** ✅ cerrada.
 
 ---
 
-### Fase 1 — Aislar la "data layer"
+### Fase 1 — Aislar la "data layer" (escrituras)
 
-**Objetivo:** un único módulo `lib/sessionData.js` que:
-- Recibe `{pair, dateFrom, dateTo}` y devuelve `{candles, realLen}` ya filtradas (sin fines de semana).
-- Es la única fuente que escribe `window.__algSuiteSeriesData` y `__algSuiteRealDataLen` (o, mejor, **lo elimina** y publica los datos vía un store/contexto).
-- Expone un getter `getCandles(pair)` y `getRealLen(pair)` síncrono.
+**Objetivo realmente ejecutado (28 abr 2026, HEAD `125ad4b`):**
 
-**Cambios concretos:**
-- Mover el bloque de fetch + filter weekend de `loadPair` (L737-783) a `sessionData.js`.
-- `chartCoords.js` recibe los datos por parámetro, no los lee de `window`.
-- `autoscaleInfoProvider` recibe los datos por closure / param.
+Centralizar en un único módulo `lib/sessionData.js` el fetch+filter y las **3 escrituras** de globales `window.__algSuite*`. Las 14 lecturas se aparcaron a fase 2 (decisión consciente de `fase-1-plan.md §1`: "No reescribir las lecturas — eso es fase 2/3").
 
-**Riesgo:** medio. Es la primera vez que tocamos el cableado global.
+**Sub-fases ejecutadas:**
 
-**Cómo probamos:** cargar una sesión, cambiar de TF, comprobar que las velas son las mismas y que los drawings se quedan en su sitio. Si algo falla, revertir la fase entera (git revert del commit).
+- **1a** (`6f7d829`): `fetchSessionCandles` + `filterWeekends` extraídos de `_SessionInner.js:loadPair` (L737–783) a `lib/sessionData.js`. Eliminado `ordinalToReal/realToOrdinal/ordinalCandles` (verificado 0 lecturas).
+- **1b** (`0f644f8`): `setSeriesData(allData, realLen)` y `updateSeriesAt(index, candle)` en `lib/sessionData.js`. 5 escrituras en `_SessionInner.js:updateChart` delegadas a la nueva API (L1057, L1090, L1116, L1127–L1128, L1142).
+- **1c** (`7c47bdb`): `setMasterTime(time)` y `clearCurrentTime()` en `lib/sessionData.js`. 3 escrituras en `_SessionInner.js` delegadas (L528, L772, L1225 — esta última línea compuesta, solo la 3ª sentencia tocada).
 
-**Tamaño estimado:** ~150 líneas movidas + 200 nuevas en `sessionData.js`.
+**Lo que NO se hizo en fase 1 (alcance fase 2):**
+
+Las lecturas directas de `window.__algSuite*` se aparcaron a fase 2 (decisión consciente de `fase-1-plan.md §1`: "No reescribir las lecturas — eso es fase 2/3"). Al cierre de fase 1 el inventario declarado era "14 lecturas en 4 archivos" según `fase-1-plan.md §2.3`. Verificación posterior con `grep -rn` recursivo en HEAD `125ad4b` (30 abr 2026, durante preparación de fase 2) detectó que el inventario real es 13 lecturas en 4 archivos: la cifra "14" mezclaba sin querer lecturas del cluster `__algSuite*` con globales auxiliares (`__chartMap`, `__algSuiteDebugLS`, `__algSuiteExportTools`), y el archivo `components/KillzonesOverlay.js` (2 lecturas) no estaba inventariado. Alcance real detallado en Fase 2.
+
+**Validación:** 10 pruebas manuales pasadas, >700.000 velas escaneadas sin regresiones. Detalles en `HANDOFF-pruebas-resultado.md`.
+
+**Estado:** ✅ cerrada y deployada en producción (Vercel verde, HEAD `125ad4b`).
 
 ---
 
-### Fase 2 — Aislar la "viewport layer"
+### Fase 2 — Cerrar la "data layer" (lecturas)
+
+**Objetivo:** cerrar el círculo abierto en fase 1. Que `lib/sessionData.js` sea no solo el único módulo que **escribe** los globales `__algSuiteSeriesData`, `__algSuiteRealDataLen` y `__algSuiteCurrentTime`, sino también el único que expone **lecturas** (vía getters síncronos o equivalente). Tras fase 2, el data layer queda totalmente aislado en un único archivo.
+
+**Decisión arquitectónica pendiente (a resolver en el plan táctico de fase 2):**
+
+- Opción I: getters síncronos `getSeriesData()`, `getRealLen()`, `getMasterTime()` que internamente leen del global. El global se mantiene como almacén pero ningún consumer fuera de `sessionData.js` lo lee directamente.
+- Opción II: store/contexto que publique los datos sin pasar por `window`. El global desaparece como source of truth.
+- Decisión Ramón en `core-analysis.md §7` (auditoría original): los globales se MANTIENEN. Por tanto, la opción I es la coherente con esa decisión. La opción II es alcance posterior, si llegamos a quitar globales del todo.
+
+**Cambios concretos (alcance):**
+
+13 lecturas en 4 archivos (inventario verificado al carácter con grep sobre HEAD `125ad4b`, 30 abr 2026):
+
+- `components/_SessionInner.js`: 5 lecturas
+  - L568: `__algSuiteCurrentTime` (refreshChallengeStatus fallback)
+  - L753: `__algSuiteCurrentTime` (validación masterTime al cargar par)
+  - L815: `__algSuiteSeriesData` (autoscaleInfoProvider)
+  - L816: `__algSuiteRealDataLen` (autoscaleInfoProvider)
+  - L1218: `__algSuiteCurrentTime` (sync engine al cambiar par)
+- `lib/chartCoords.js`: 4 lecturas
+  - L9: `__algSuiteSeriesData` (timeToLogical)
+  - L11: `__algSuiteRealDataLen` (timeToLogical)
+  - L89: `__algSuiteSeriesData` (fromScreenCoords)
+  - L96: `__algSuiteRealDataLen` (fromScreenCoords)
+- `components/RulerOverlay.js`: 2 lecturas
+  - L28: `__algSuiteSeriesData`
+  - L30: `__algSuiteRealDataLen`
+- `components/KillzonesOverlay.js`: 2 lecturas
+  - L177: `__algSuiteSeriesData`
+  - L178: `__algSuiteRealDataLen`
+
+Adicionalmente, dentro del mismo alcance fase 2 (coste cero, coherencia documental):
+
+- Actualizar 2 comentarios en `components/_SessionInner.js` que referencian la API antigua por nombre (L524, L566 — ambos mencionan `window.__algSuiteCurrentTime`) para que reflejen la API nueva tras la decisión Opción I/II.
+
+**Fuera de alcance de fase 2:**
+
+3 globales auxiliares (`__chartMap`, `__algSuiteDebugLS`, `__algSuiteExportTools`) catalogados como fase de limpieza separada en `HANDOFF.md §9`. NO entran en fase 2.
+
+**Riesgo:** medio-alto. Las lecturas son consumidas en caminos críticos: `autoscaleInfoProvider` (cada frame del chart), `chartCoords` (cada drawing recalculado), `RulerOverlay` (cada hover del ratón), `KillzonesOverlay` (cada repintado de killzones), sync engine al cambiar par (`__algSuiteCurrentTime` debe estar actualizado o el par nuevo arranca en `date_from` en lugar del masterTime).
+
+**Cómo probamos:** baselines numéricos pre/post al carácter (mismas velas, mismas longitudes, mismas conversiones time↔pixel), validación manual de los criterios "está hecho" del CLAUDE.md §4.3 que afecten al data layer (drawings al cambiar TF, sync entre pares).
+
+**Tamaño estimado:** se calculará en el plan táctico (`fase-2-plan.md`) con desglose en sub-fases por archivo, similar a la disciplina de fase 1.
+
+---
+
+### Fase 3 — Aislar la "viewport layer"
 
 **Objetivo:** un módulo `lib/chartViewport.js` que sea el ÚNICO que llame a `chart.timeScale().setVisibleLogicalRange/scrollToPosition`. Encapsula:
 - Init del rango visible al cargar par.
@@ -551,13 +604,15 @@ Cualquier acceso a `cr.series` o `cr.chart` después del `chart.remove()` lanza 
 - Mover toda la gestión de `_savedRange`, `userScrolled`, `hasLoaded`, `isAutoSettingRange` de `_SessionInner.js` a `chartViewport.js`.
 - `updateChart` queda más limpio: solo `setData` + `update`.
 
-**Riesgo:** medio. Pero es bueno aislar este antes de tocar drawings.
+**Riesgo:** medio. Es buena posición para aislar antes de tocar drawings.
 
 **Tamaño estimado:** ~80 líneas movidas + 150 nuevas.
 
+**Bugs que esta fase puede atacar:** B3 (TF reset al entrar Review), posiblemente B2 (drawings descolocadas — depende de si la causa es viewport o drawings).
+
 ---
 
-### Fase 3 — Aislar el "render layer" (updateChart) y desacoplar del onTick
+### Fase 4 — Aislar el "render layer" (updateChart) y desacoplar del onTick
 
 **Objetivo:**
 - `updateChart` se convierte en una clase/módulo `ChartRenderer` con métodos `mount(pair, candles, tf)`, `update(newCandles)`, `dispose()`.
@@ -577,7 +632,7 @@ Cualquier acceso a `cr.series` o `cr.chart` después del `chart.remove()` lanza 
 
 ---
 
-### Fase 4 — Aislar los drawings (lifecycle del plugin)
+### Fase 5 — Aislar los drawings (lifecycle del plugin)
 
 **Objetivo:**
 - El plugin LWC se destruye correctamente al cambiar de par o al desmontar.
@@ -591,9 +646,11 @@ Cualquier acceso a `cr.series` o `cr.chart` después del `chart.remove()` lanza 
 
 **Tamaño estimado:** ~150 líneas + posible patch al plugin del fork.
 
+**Bugs que esta fase puede atacar:** B2 (drawings descolocadas, si no se resolvió en fase 3), B5 (409 en `session_drawings`), B6 (plugin LWC se reinicializa varias veces).
+
 ---
 
-### Fase 5 — Aislar el dominio "trading" del componente
+### Fase 6 — Aislar el dominio "trading" del componente
 
 **Objetivo:**
 - `pairState.current[pair]` se parte en dos: `pairReplay` (engine, ready) y `pairTrading` (positions, trades, orders, lastIdxs).
@@ -607,11 +664,11 @@ Cualquier acceso a `cr.series` o `cr.chart` después del `chart.remove()` lanza 
 
 ---
 
-### Fase 6 — Reducir `_SessionInner.js`
+### Fase 7 — Reducir `_SessionInner.js`
 
 **Objetivo:** que el componente sea solo JSX + estado UI + dispatch de acciones. Idealmente ≤700 líneas.
 
-**Riesgo:** bajo si las fases 1-5 fueron bien. Es la cosecha.
+**Riesgo:** bajo si las fases 1-6 fueron bien. Es la cosecha.
 
 ---
 
