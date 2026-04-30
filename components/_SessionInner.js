@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
-import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime } from '../lib/sessionData'
+import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime, getMasterTime } from '../lib/sessionData'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -521,10 +521,10 @@ export default function SessionPage(){
   useEffect(()=>{
     if(!id) return
     // ── FIX: limpiar masterTime global al cambiar de sesión ─────────────────────
-    // window.__algSuiteCurrentTime persiste entre navegaciones SPA (Next.js no
-    // recarga la window al hacer router.push). Si NO la limpiamos, una sesión
+    // el masterTime persiste entre navegaciones SPA (Next.js no
+    // recarga la window al hacer router.push). Si NO lo limpiamos, una sesión
     // nueva de challenge arranca el replay en la fecha donde quedó el challenge
-    // anterior, porque resumeReal la prioriza sobre date_from.
+    // anterior, porque resumeReal lo prioriza sobre date_from.
     clearCurrentTime()
     supabase.from('sim_sessions').select('*').eq('id',id).maybeSingle().then(async ({data})=>{
       if(!data){setLoading(false);return}
@@ -563,9 +563,9 @@ export default function SessionPage(){
       // Pasamos currentTime del simulador: así el motor sabe qué día es HOY en el backtest.
       // El DD diario se resetea en el día Madrid de esta vela, no de la fecha real del ordenador.
       // Leemos currentTimeRef (state de React, se inicializa al cargar el engine).
-      // Fallback adicional a window.__algSuiteCurrentTime por si acaso.
+      // Fallback adicional a getMasterTime() por si acaso.
       const ct = currentTimeRef.current
-        || (typeof window !== 'undefined' && window.__algSuiteCurrentTime)
+        || getMasterTime()
         || null
       const qs = ct ? `?session_id=${id}&current_time=${ct}` : `?session_id=${id}`
       const res = await fetch(`/api/challenge/status${qs}`)
@@ -750,7 +750,7 @@ export default function SessionPage(){
       // Doble protección: además de limpiarla al cambiar id, validamos que
       // masterTime caiga dentro del rango temporal de ESTA sesión. Si está fuera
       // (por race condition entre montajes), la ignoramos y caemos al fallback.
-      const rawMaster = (typeof window !== 'undefined' && window.__algSuiteCurrentTime) || null
+      const rawMaster = getMasterTime()
       const masterTime = (rawMaster && rawMaster >= replayTs && rawMaster <= toTs) ? rawMaster : null
       // Convert real masterTime/resumeTs to ordinal if needed
       const toOrdinal = (t) => t ?? null  // real timestamps — no conversion needed
@@ -1215,7 +1215,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
     const ps=pairState.current[activePair]
     if(ps?.engine){
       // Sync this pair's engine to the current master time (from whichever pair was active before)
-      const masterTime = window.__algSuiteCurrentTime
+      const masterTime = getMasterTime()
       if(masterTime && Math.abs(ps.engine.currentTime - masterTime) > 60) {
         ps.engine.seekToTime(masterTime)
       }
