@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
-import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime, getMasterTime } from '../lib/sessionData'
+import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime, getMasterTime, getSeriesData, getRealLen } from '../lib/sessionData'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -812,8 +812,8 @@ export default function SessionPage(){
           try { return originalFn() } catch { return null }
         }
         try {
-          const data = window.__algSuiteSeriesData
-          const realLen = window.__algSuiteRealDataLen
+          const data = getSeriesData()
+          const realLen = getRealLen()
           if(!data||!realLen) return computeOriginal()
           // Get visible range from chart (stored on chartMap)
           const cr = window.__chartMap?.current?.[pair]
