@@ -1212,10 +1212,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
     setTfKey(k => k+1)
 
     // Scroll a la posición actual tras el cambio de TF.
-    requestAnimationFrame(()=>{
-      try{ cr.chart.timeScale().scrollToPosition(8,false) }catch{}
-      requestAnimationFrame(()=>setChartTick(t => t+1))
-    })
+    scrollToTail(cr, 8, () => setChartTick(t => t+1))
 
     prevTfRef.current = newTf
   },[pairTf,activePair,updateChart,deselectAll,exportTools])
