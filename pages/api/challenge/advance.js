@@ -57,7 +57,11 @@ export default async function handler(req, res) {
   if (!auth) return
   const { user, supabaseAdmin } = auth
 
-  const { session_id, outcome, end_timestamp } = req.body || {}
+  const { session_id, outcome, end_timestamp, open_positions: openPositionsRaw } = req.body || {}
+  // B1: el cliente envía las posiciones vivas en el momento del cierre.
+  // Servidor las descarta sin persistirlas (doctrina "fase nueva = virgen").
+  // No validamos estructura porque NO se persiste — solo se loguea.
+  const open_positions = Array.isArray(openPositionsRaw) ? openPositionsRaw : []
   if (!session_id || typeof session_id !== 'string') {
     return res.status(400).json({ error: 'session_id requerido' })
   }
@@ -213,6 +217,17 @@ export default async function handler(req, res) {
   // ── Pass parcial: cerrar fase actual y crear la siguiente.
   //     Transacción manual: marcamos la actual y luego insertamos la siguiente.
   //     Si el insert falla, revertimos el update (best-effort).
+
+  // B1: loggear flotantes descartados antes de cerrar la fase. NO se persisten
+  // en sim_trades ni se contabilizan en balance. La hija nace virgen.
+  if (open_positions.length > 0) {
+    console.log('[challenge/advance] descarte de flotantes en passed_phase', {
+      session_id,
+      user_id: user.id,
+      discarded_positions: open_positions.length,
+      positions: open_positions,
+    })
+  }
   const { data: closed, error: uErr } = await supabaseAdmin
     .from('sim_sessions')
     .update({

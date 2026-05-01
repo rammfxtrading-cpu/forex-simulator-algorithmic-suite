@@ -672,6 +672,29 @@ export default function SessionPage(){
     }
   }, [challengeStatus, challengeModal, id])
 
+  // B1: recolecta posiciones vivas de todos los pares para enviarlas al backend
+  // en el momento del cierre de fase. El servidor las descarta sin persistir
+  // (doctrina "fase nueva = virgen"). Se envían solo para trazabilidad/logs.
+  const collectOpenPositions = () => {
+    const out = []
+    Object.entries(pairState.current).forEach(([pair, ps]) => {
+      if (!ps?.positions?.length) return
+      ps.positions.forEach(p => {
+        out.push({
+          position_id: p.id,
+          pair,
+          side: p.side,
+          entry_price: p.entry,
+          lots: p.lots,
+          opened_at: p.openTime
+            ? new Date(p.openTime * 1000).toISOString()
+            : null,
+        })
+      })
+    })
+    return out
+  }
+
   // Llamada al endpoint /api/challenge/advance.
   // outcome='pass' o 'fail' según contexto. Devuelve el nextSession (si aplica).
   const callChallengeAdvance = useCallback(async (outcome) => {
@@ -685,6 +708,7 @@ export default function SessionPage(){
           session_id: id,
           outcome,
           end_timestamp: getMasterTime(),   // B4: endTime real del cierre, fuente de verdad cliente
+          open_positions: collectOpenPositions(),   // B1: flotantes vivos en el momento del cierre, servidor los descarta
         }),
       })
       const data = await res.json()
@@ -1338,6 +1362,16 @@ if(full||(curr!==prev&&curr!==prev+1)){
   // Reset del flag breach al cambiar de sesión (por si se reabre).
   useEffect(() => {
     challengeBreachFiringRef.current = false
+  }, [id])
+
+  // B1: Reset de pairState al cambiar de sesión.
+  // useRef sobrevive al cambio de URL /session/[id] (Next.js reutiliza el componente),
+  // y el loader de la sesión reutiliza el slot del par si ya existe — heredando
+  // positions/orders/engine vivos de la sesión anterior. Esto era el mecanismo del
+  // bug B1 lado cliente: tras router.push a la fase hija, el chart de la hija
+  // mostraba el flotante de la madre. Reset explícito al cambiar id soluciona.
+  useEffect(() => {
+    pairState.current = {}
   }, [id])
 
   // ── Limit order helpers ──────────────────────────────────────────────────────
