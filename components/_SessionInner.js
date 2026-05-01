@@ -1102,9 +1102,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       const _phN = cr.phantom?.length || 10
       cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       setSeriesData([...agg, ...cr.phantom], agg.length)
-      try{
-        // Save range, update, restore — prevents chart from scrolling
-        const _rng=cr.userScrolled?cr.chart.timeScale().getVisibleLogicalRange():null
+      restoreOnNewBar(cr, () => {
         cr.series.update(agg[agg.length-1])
         // Re-aplicar phantoms en el chart (10 update() son irrelevantes en perf)
         for(const ph of cr.phantom){ try{ cr.series.update(ph) }catch{} }
@@ -1121,15 +1119,13 @@ if(full||(curr!==prev&&curr!==prev+1)){
             })
           }
         }
-        if(_rng) requestAnimationFrame(()=>{try{cr.chart.timeScale().setVisibleLogicalRange(_rng)}catch{}})
-      }catch{
-        // Fallback
-        cr.phantom=Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
-        const _r2=cr.chart.timeScale().getVisibleLogicalRange()
-        cr.series.setData([...agg,...cr.phantom])
-        setSeriesData([...agg, ...cr.phantom], agg.length)
-        if(_r2) requestAnimationFrame(()=>{ try{cr.chart.timeScale().setVisibleLogicalRange(_r2)}catch{} })
-      }
+      }, {
+        agg,
+        mkPhantom: _mkPhantom,
+        lastT: _lastT,
+        tfS2: _tfS2,
+        setSeriesData,
+      })
     } else {
       // Within-bucket update — solo cambió la última vela. Refrescamos las
       // phantoms in-place si _lastC se ha movido, para que la cola a la
