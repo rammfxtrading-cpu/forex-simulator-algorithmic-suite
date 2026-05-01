@@ -57,12 +57,23 @@ export default async function handler(req, res) {
   if (!auth) return
   const { user, supabaseAdmin } = auth
 
-  const { session_id, outcome } = req.body || {}
+  const { session_id, outcome, end_timestamp } = req.body || {}
   if (!session_id || typeof session_id !== 'string') {
     return res.status(400).json({ error: 'session_id requerido' })
   }
   if (outcome !== 'pass' && outcome !== 'fail') {
     return res.status(400).json({ error: "outcome debe ser 'pass' o 'fail'" })
+  }
+  // B4: end_timestamp es el momento exacto del cierre del trade que disparó la
+  // transición de fase. Lo envía el cliente leyendo getMasterTime() de la API
+  // del data layer (lib/sessionData.js, fase 2a). Sin este campo no podemos
+  // persistir el last_timestamp correcto en la sesión que se cierra.
+  if (!Number.isInteger(end_timestamp) || end_timestamp <= 0) {
+    return res.status(400).json({ error: 'end_timestamp requerido (integer > 0)' })
+  }
+  const maxAllowed = Math.floor(Date.now() / 1000) + 86400
+  if (end_timestamp > maxAllowed) {
+    return res.status(400).json({ error: 'end_timestamp fuera de rango razonable' })
   }
 
   // ── 1. Cargar la sesión
@@ -151,6 +162,7 @@ export default async function handler(req, res) {
       .update({
         status: newStatus,
         balance: evaluation.balanceNow,
+        last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
       })
       .eq('id', session_id)
       .select('*')
@@ -180,6 +192,7 @@ export default async function handler(req, res) {
       .update({
         status: 'passed_all',
         balance: evaluation.balanceNow,
+        last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
       })
       .eq('id', session_id)
       .select('*')
@@ -205,6 +218,7 @@ export default async function handler(req, res) {
     .update({
       status: 'passed_phase',
       balance: evaluation.balanceNow,
+      last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
     })
     .eq('id', session_id)
     .select('*')
@@ -233,7 +247,10 @@ export default async function handler(req, res) {
     // En FTMO real, las credenciales de Fase 2 te llegan el día siguiente al pass de Fase 1;
     // el mercado sigue donde lo dejaste. El capital sí se resetea (cuenta nueva), pero
     // el tiempo del mundo no retrocede al 1 de abril.
-    last_timestamp: session.last_timestamp,
+    // B4: usar end_timestamp (cliente) en lugar de session.last_timestamp (stale en BD).
+    // Garantiza que la hija nace con el cursor en el momento exacto del cierre, sin
+    // depender del timing del último PATCH asíncrono del cliente.
+    last_timestamp: end_timestamp,
   }
 
   const { data: nextSession, error: iErr } = await supabaseAdmin

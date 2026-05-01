@@ -681,7 +681,11 @@ export default function SessionPage(){
       const res = await fetch('/api/challenge/advance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: id, outcome }),
+        body: JSON.stringify({
+          session_id: id,
+          outcome,
+          end_timestamp: getMasterTime(),   // B4: endTime real del cierre, fuente de verdad cliente
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
