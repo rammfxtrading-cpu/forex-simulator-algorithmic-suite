@@ -152,10 +152,12 @@ grep -n "getMasterTime" lib/sessionData.js
 
 | Archivo | Capa | Tamaño cambio estimado |
 |---|---|---|
-| `pages/api/challenge/advance.js` | Backend | +1 línea por path (path `pass` y posiblemente path `fail`) |
+| `pages/api/challenge/advance.js` | Backend | ~6 líneas: +3 líneas (validación end_timestamp), +3 modificaciones a UPDATEs (passed_phase, passed_all, failed_dd_*), +1 modificación a nextPayload.last_timestamp |
 | `components/_SessionInner.js` | Cliente | +1 línea (añadir `end_timestamp` al body del POST) |
 
-**Total estimado:** 2-3 líneas funcionales + comentarios + JSDoc opcional.
+**Total estimado:** 7-8 líneas funcionales + comentarios + JSDoc opcional.
+
+**Hallazgo del PASO 0 (1 may 2026):** el inventario al carácter de `advance.js` (273 líneas) destapó que la línea L236 (`nextPayload.last_timestamp: session.last_timestamp`) hereda el `last_timestamp` stale de BD a la sesión hija. Si solo arreglamos los UPDATEs de cierre, la hija sigue dependiendo del flujo asíncrono de PATCH del cliente — comportamiento estructuralmente frágil. Op 6 (sustituir L236 por `last_timestamp: end_timestamp`) cierra esto. Coste: 1 línea. Beneficio: la sesión hija nace con el cursor exacto, sin depender del timing de PATCHes previos. Plan original tenía 5 ops; tras PASO 0 son 6.
 
 **Sin archivos nuevos. Sin migraciones Supabase. Sin deps nuevas.**
 
@@ -172,6 +174,7 @@ grep -n "getMasterTime" lib/sessionData.js
 | 3 | UPDATE path `pass` | `.update({ status: 'passed_phase', balance: evaluation.balanceNow })` | `.update({ status: 'passed_phase', balance: evaluation.balanceNow, last_timestamp: end_timestamp })` |
 | 4 | UPDATE path `pass` última fase | (similar al anterior, cierra como `passed_all`) | + `last_timestamp: end_timestamp` |
 | 5 | UPDATE path `fail` | (cierra como `failed_dd_daily` o `failed_dd_total`) | + `last_timestamp: end_timestamp` |
+| 6 | `nextPayload.last_timestamp` (L236, herencia a sesión hija) | `last_timestamp: session.last_timestamp` | `last_timestamp: end_timestamp` |
 
 **Cliente — `components/_SessionInner.js`:**
 
@@ -311,6 +314,33 @@ const res = await fetch('/api/challenge/advance', {
 })
 ```
 
+**Op 6 — Backend, `nextPayload.last_timestamp` en herencia a sesión hija (L236).**
+
+Hallazgo del PASO 0: la línea L236 hereda `session.last_timestamp` (el valor stale leído en L69-73) a la sesión hija del path passed_phase. Esto significa que aunque arreglemos el UPDATE de cierre de la madre (Op 2), la hija sigue naciendo con un `last_timestamp` que depende del último PATCH asíncrono del cliente, no del endTime real del cierre. Estructuralmente frágil.
+
+Antes (`pages/api/challenge/advance.js` L232-236, dentro del nextPayload):
+
+```js
+    // FTMO-real: el replay NO retrocede. Arranca donde el alumno cerró la fase anterior.
+    // En FTMO real, las credenciales de Fase 2 te llegan el día siguiente al pass de Fase 1;
+    // el mercado sigue donde lo dejaste. El capital sí se resetea (cuenta nueva), pero
+    // el tiempo del mundo no retrocede al 1 de abril.
+    last_timestamp: session.last_timestamp,
+```
+
+Después:
+
+```js
+    // FTMO-real: el replay NO retrocede. Arranca donde el alumno cerró la fase anterior.
+    // En FTMO real, las credenciales de Fase 2 te llegan el día siguiente al pass de Fase 1;
+    // el mercado sigue donde lo dejaste. El capital sí se resetea (cuenta nueva), pero
+    // el tiempo del mundo no retrocede al 1 de abril.
+    // B4: usar end_timestamp (cliente) en lugar de session.last_timestamp (stale en BD).
+    // Garantiza que la hija nace con el cursor en el momento exacto del cierre, sin
+    // depender del timing del último PATCH asíncrono del cliente.
+    last_timestamp: end_timestamp,
+```
+
 #### Verificaciones automáticas pre-commit
 
 Después de aplicar Op 1-5, antes del commit, ejecutar y pegar literal:
@@ -404,25 +434,33 @@ Si esto falla, B4 ha roto algo no relacionado y hay que diagnosticar antes de se
 #### Commit message sugerido
 
 ```
-fix(b4): persistir last_timestamp al cerrar fase en /api/challenge/advance
+fix(b4): persistir last_timestamp real al cerrar fase y al heredar a fase hija
 
-Antes: el endpoint hacía UPDATE a {status, balance} sin tocar last_timestamp,
-dejando la sesión cerrada con el último valor de pause/tick previo. Resultado:
-sesiones passed_phase/passed_all/failed_dd_* tenían last_timestamp desalineado
-del momento real del cierre, causando que Review Session cargara el chart en
-posición incorrecta (bug A1 reportado por alumno, diagnosticado en
-HANDOFF-verificacion-A1.md §3).
+Antes: el endpoint /api/challenge/advance hacía UPDATE a {status, balance}
+sin tocar last_timestamp, dejando la sesión cerrada con el último valor de
+pause/tick previo. Adicionalmente, el nextPayload de la sesión hija heredaba
+session.last_timestamp (valor stale leído de BD), no el endTime real del
+cierre. Resultado: sesiones passed_phase/passed_all/failed_dd_* tenían
+last_timestamp desalineado del momento real, y la sesión hija dependía del
+timing del último PATCH asíncrono del cliente para nacer en el cursor
+correcto. Bug A1 reportado por alumno, diagnosticado en
+HANDOFF-verificacion-A1.md §3.
 
 Después: el cliente envía end_timestamp = getMasterTime() en el body del POST.
-El servidor valida (entero > 0, <= now+1d) y lo persiste como last_timestamp en
-los 3 UPDATEs (passed_phase, passed_all, failed_dd_*).
+El servidor valida (entero > 0, <= now+1d) y lo usa en 4 sitios:
+- UPDATE passed_phase: + last_timestamp: end_timestamp
+- UPDATE passed_all:   + last_timestamp: end_timestamp
+- UPDATE failed_dd_*:  + last_timestamp: end_timestamp
+- nextPayload de hija: last_timestamp: end_timestamp (antes era
+  session.last_timestamp stale)
 
 Decisión arquitectónica: Opción A (cliente envía endTime). Opciones B y C
 descartadas en b4-plan.md §0.4 por race condition / sobreingeniería.
 
 Cambios:
 - pages/api/challenge/advance.js: aceptar end_timestamp en body, validar,
-  persistirlo en los 3 UPDATEs.
+  persistirlo en los 3 UPDATEs y en el nextPayload (Op 6 añadida tras
+  inventario PASO 0).
 - components/_SessionInner.js: callChallengeAdvance envía end_timestamp.
 
 Saneamiento de histórico (sesiones ya cerradas con last_timestamp desalineado)
