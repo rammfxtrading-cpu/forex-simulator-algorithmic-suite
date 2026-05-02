@@ -1109,7 +1109,6 @@ if(full||(curr!==prev&&curr!==prev+1)){
         mkPhantom: _mkPhantom,
         lastT: _lastT,
         tfS2: _tfS2,
-        setSeriesData,
       })
     } else {
       // Within-bucket: actualiza última vela + phantoms in-place (ver applyTickUpdate JSDoc).
