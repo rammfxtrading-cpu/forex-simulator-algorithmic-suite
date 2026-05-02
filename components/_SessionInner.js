@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
 import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime, getMasterTime, getSeriesData, getRealLen } from '../lib/sessionData'
 import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar, scrollToTail, markUserScrollIfReal } from '../lib/chartViewport'
+import { applyFullRender } from '../lib/chartRender'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1081,8 +1082,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       cr._phantomsNeeded = null  // consumir, vuelve a default en próxima llamada
       cr.phantom=Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       const _savedRange = captureSavedRange(cr)
-      cr.series.setData([...agg,...cr.phantom])
-      setSeriesData([...agg, ...cr.phantom], agg.length)
+      applyFullRender(cr, agg, cr.phantom)
       if(!cr.hasLoaded){
         initVisibleRange(cr, tf, agg.length)
       } else {
@@ -1145,9 +1145,8 @@ if(full||(curr!==prev&&curr!==prev+1)){
           }
         }
       }catch{
-        // Fallback to setData if update fails
-        cr.series.setData([...agg,...cr.phantom])
-        setSeriesData([...agg, ...cr.phantom], agg.length)
+        // Fallback: full rebuild if update fails
+        applyFullRender(cr, agg, cr.phantom)
       }
     }
     cr.prevCount=curr
