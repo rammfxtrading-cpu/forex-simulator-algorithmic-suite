@@ -110,6 +110,22 @@ const fmtTs = (ts) => {
 }
 function calcPnl(side,entry,exit,lots,pair){const pips=side==='BUY'?(exit-entry)*pipMult(pair):(entry-exit)*pipMult(pair);return pips*lots*10}
 
+// Default 10 phantoms (mínimo visual). Si algún drawing tiene un point.timestamp
+// más allá de lastT, añade ceil((maxTs - lastT) / tfSecs) + 10 de colchón
+// para que el plugin LWC pueda mapear ese timestamp a logical index.
+function computePhantomsNeeded(tools, lastT, tfSecs){
+  let maxTs = lastT
+  tools.forEach(tool => {
+    (tool.points || []).forEach(p => {
+      if (typeof p?.timestamp === 'number' && p.timestamp > maxTs) {
+        maxTs = p.timestamp
+      }
+    })
+  })
+  if (maxTs > lastT) return Math.ceil((maxTs - lastT) / tfSecs) + 10
+  return 10
+}
+
 const TF_VALID={'1m':'M1','3m':'M3','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D1'}
 const TF_OPTS=[{l:'1m',tf:'M1'},{l:'3m',tf:'M3'},{l:'5m',tf:'M5'},{l:'15m',tf:'M15'},{l:'30m',tf:'M30'},{l:'1h',tf:'H1'},{l:'4h',tf:'H4'},{l:'1d',tf:'D1'}]
 function TfInputModal({tfInput,activeTf}){
@@ -1099,7 +1115,13 @@ if(full||(curr!==prev&&curr!==prev+1)){
       //      logical index resuelve a posiciones ambiguas.
       //   2. OHLC desfasado: las phantoms quedarían ancladas al close de
       //      la vela TF anterior → cola plana visible a la derecha.
-      const _phN = cr.phantom?.length || 10
+      let _phN
+      try {
+        const tools = JSON.parse(exportTools() || '[]')
+        _phN = computePhantomsNeeded(tools, _lastT, _tfS2)
+      } catch {
+        _phN = cr.phantom?.length || 10
+      }
       cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       setSeriesData([...agg, ...cr.phantom], agg.length)
       restoreOnNewBar(cr, () => {
@@ -1152,20 +1174,8 @@ if(full||(curr!==prev&&curr!==prev+1)){
       const newAgg = ps.engine.getAggregated(newTf)
       const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
       if (newLastReal) {
-        const exportJson = exportTools()
-        const tools = exportJson ? JSON.parse(exportJson) : []
-        let maxTs = newLastReal
-        tools.forEach(tool => {
-          (tool.points || []).forEach(p => {
-            if (typeof p?.timestamp === 'number' && p.timestamp > maxTs) {
-              maxTs = p.timestamp
-            }
-          })
-        })
-        if (maxTs > newLastReal) {
-          // +10 de colchón para que el chart respire visualmente a la derecha
-          phantomsNeeded = Math.ceil((maxTs - newLastReal) / newSecs) + 10
-        }
+        const tools = JSON.parse(exportTools() || '[]')
+        phantomsNeeded = computePhantomsNeeded(tools, newLastReal, newSecs)
       }
     } catch(e){ /* swallow — fallback al default 10 */ }
 
