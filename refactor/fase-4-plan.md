@@ -1,8 +1,9 @@
-# Plan táctico fase 4 — render layer (v1)
+# Plan táctico fase 4 — render layer (v2)
 
 > Fecha: 2 mayo 2026, sesión "simulador 11".
 > Autor: Claude Opus 4.7 (chat web, CTO/revisor) + Ramón Tarinas (pegamento humano).
-> Estado al redactar: `main` HEAD = `aad131b` (fase 3 cerrada y deployada en producción Vercel). Working tree limpio. Pendiente de OK Ramón sobre este plan v1 antes de comitear y crear rama feature.
+> Estado al redactar v2: rama `refactor/fase-4-render-layer` activa, HEAD = `d45c8da` (commit del plan v1). Working tree limpio. Pendiente de comitear v2 sobre rama feature antes de Op 4a-1.
+> **v2 refina v1.** Cambios documentados en §13. Los bytes en disco del repo no han cambiado entre v1 y v2 — solo la precisión de los números de línea registrados en el plan, tras detección por Claude Code al lanzar greps verificadores PRE-Op.
 
 ---
 
@@ -17,86 +18,53 @@ PASO 0 ejecutado al inicio de la sesión 11 con greps recursivos sobre bytes en 
 | # | Línea | API | Rama | Contexto |
 |---|---|---|---|---|
 | 1 | L1084 | `cr.series.setData` | init/full | Primera carga del par o TF change. Full rebuild. |
-| 2 | L1106 | `cr.series.update` | one-bar-new (happy) | Una vela TF nueva — actualizar última real. |
-| 3 | L1108 | `cr.series.update × N` | one-bar-new (happy) | Bucle phantoms tras vela nueva (typ N=10). |
-| 4 | L1112 | `cr.series.update` | within-bucket | Tick simple — actualizar última real (mismo bucket). |
-| 5 | L1118 | `cr.series.update` | within-bucket | Bucle phantoms in-place si `_lastC` cambió. |
-| 6 | L1124 | `cr.series.setData` | within-bucket fallback (catch) | Fallback si el `try` de within-bucket falla. |
+| 2 | L1106 | `cr.series.update` | one-bar-new (happy) | Una vela TF nueva — actualizar última real (dentro del callback `applyUpdates` de `restoreOnNewBar`). |
+| 3 | L1108 | `cr.series.update × N` | one-bar-new (happy) | Bucle phantoms tras vela nueva (typ N=10), dentro del mismo callback. |
+| 4 | L1136 | `cr.series.update` | within-bucket | Tick simple — actualizar última real (mismo bucket TF). |
+| 5 | L1143 | `cr.series.update` | within-bucket | Bucle phantoms in-place si `_lastC` cambió. |
+| 6 | L1149 | `cr.series.setData` | within-bucket fallback (catch) | Fallback si el `try` de within-bucket falla. |
 
-Ocurrencias internas a `lib/chartViewport.js` (NO se tocan en fase 4):
-- L152: `cr.series.setData` dentro del fallback de `restoreOnNewBar` (decisión §0.2.A).
+Ocurrencias internas a `lib/chartViewport.js` (NO se tocan en fase 4 fuera de Op 4a-6):
+- L152: `cr.series.setData` dentro del fallback de `restoreOnNewBar` (alcance §0.2.A Camino X).
 
-### §0.2 Decisiones técnicas pendientes — requieren OK explícito Ramón antes de Op 1
+### §0.2 Decisiones técnicas pendientes — RESUELTAS por Ramón antes de comitear v2
 
-#### §0.2.A — Camino X o Y para `chartViewport.js:152`
+#### §0.2.A — Camino X (RESUELTO)
 
-`chartViewport.js` tiene una llamada `cr.series.setData` dentro del fallback de `restoreOnNewBar` (L152). Es la única escritura al render layer fuera de `_SessionInner.js`.
+`chartViewport.js:152` se sustituirá en Op 4a-6 por una llamada a `applyFullRender(cr, agg, cr.phantom)`. Render layer queda 100% aislado en `lib/chartRender.js`. ChartViewport pasa a depender de chartRender (acoplamiento unidireccional, sin ciclos).
 
-**Camino X (mi voto):** `chartViewport` llama a `applyFullRender(cr, agg, phantoms)` desde su fallback. El render layer queda 100% aislado en `chartRender.js`. ChartViewport pasa a depender de chartRender.
+**Verificación de no-ciclo:** chartRender importa de sessionData. ChartViewport importará de chartRender. Ningún módulo importa de chartViewport. Cero ciclos.
 
-**Camino Y:** ChartViewport sigue haciendo `setData` directamente en su fallback. El render layer queda con una pequeña fuga conceptual (1 setData fuera de chartRender) pero las dependencias entre módulos quedan más limpias.
+#### §0.2.B — Opción B (RESUELTO)
 
-**Voto:** Camino X. Razones: el fallback de `restoreOnNewBar` es de hecho un mini-render full, no un viewport thing. Aislar el render al carácter (cero `setData` fuera de chartRender) facilita debug futuro y deja el invariante grep-verificable nítido. El acoplamiento que añade es trivial (chartViewport → chartRender → sessionData) y unidireccional, sin ciclos.
+El bloque `[DEBUG TEMP]` (gateado por flag `window.__algSuiteDebugLS`) se migra dentro de `applyNewBarUpdate` en sub-fase 4c. Performance neutral si flag false. Consolida toda la rama "una vela TF nueva" en un solo sitio (chartRender), facilitando el ataque al bug "salta al play" en sesión post-fase-4.
 
-**Verificación de no-ciclo:** chartRender importa de sessionData. ChartViewport importará de chartRender + (opcionalmente) sessionData. Ningún módulo importa de chartViewport. Cero ciclos.
+#### §0.2.C — Mutación in-place ACEPTADA (RESUELTO)
 
-**Pendiente OK Ramón:** Camino X o Y.
+La mutación in-place de `cr.phantom[i].open/high/low/close = lastClose` ocurre dentro de `applyTickUpdate` en `lib/chartRender.js`. El caller pasa `lastClose` como parámetro; el render decide cómo aplicarlo. Opción B estricta no prohíbe que chartRender mute el array recibido — prohíbe que chartRender posea el ciclo de vida del array.
 
-#### §0.2.B — Destino del bloque `[DEBUG TEMP]` en `_SessionInner.js:1109-1124`
+#### §0.2.D — Nombre `lib/chartRender.js` (RESUELTO)
 
-El bloque está dentro del callback de `restoreOnNewBar` en la rama "una vela TF nueva". Está gateado por `window.__algSuiteDebugLS` (flag global) → si la flag es false, performance neutral. El bloque hace introspección al export de drawings buscando un `LongShortPosition` y loggea timestamps de phantoms.
-
-**Razón de existir:** instrumentación específica del bug "long/short se contrae al play" que un sesión previa (Ramón + Claude previo) montó para debuggear. Es exactamente el bug que tu mensaje del CTO §3 vincula al de Luis "salta al play".
-
-3 opciones:
-
-- **Opción A — mantener inline donde está.** El bloque se queda en `_SessionInner.js:1109-1124`, fuera del callback de `restoreOnNewBar` migrado. La rama "una vela TF nueva" del render queda dividida: la API encapsula update + bucle phantoms, el debug log se queda inline con la flag.
-- **Opción B (mi voto) — migrar dentro de `applyNewBarUpdate`.** El bloque entero (con su flag y su gating) se mueve dentro de la nueva función de chartRender. Quedará gateado igual, performance neutral si flag false. La función recibe los pocos extras que el log necesita (`tf`, `lastT`) por parámetro.
-- **Opción C — limpiar.** Eliminar el bloque por completo. Riesgo: perdemos instrumentación útil para el bug que vamos a atacar en sesión post-fase-4. **Descartada.**
-
-**Voto:** Opción B. Razones: mantener instrumentación viva para sesión post-fase-4, y consolidar todo el código de la rama "una vela nueva" en un solo sitio (chartRender) facilita el ataque al bug.
-
-**Pendiente OK Ramón:** A, B o C.
-
-#### §0.2.C — Mutación in-place de `cr.phantom` dentro de `applyTickUpdate`
-
-La rama within-bucket muta el array `cr.phantom` in-place si `_lastC` cambió (L1115-L1119):
-```js
-ph.open=_lastC; ph.high=_lastC; ph.low=_lastC; ph.close=_lastC
-```
-
-**Pregunta:** ¿la mutación se queda dentro de `applyTickUpdate` (chartRender), o se mueve a `_SessionInner.js` antes de llamar a `applyTickUpdate` con el array ya mutado?
-
-**Voto:** mutación dentro de `applyTickUpdate`. Razones: (a) el caller queda más limpio — solo pasa `lastClose` como parámetro, el render decide cómo aplicarlo; (b) la mutación está acoplada con el `cr.series.update(ph)` que la sigue, separarlos genera estado intermedio raro; (c) Opción B estricta no prohíbe que chartRender mute el array recibido — prohíbe que chartRender posea el ciclo de vida del array.
-
-**Pendiente OK Ramón:** acepto / muevo fuera.
-
-#### §0.2.D — Nombre del módulo: `lib/chartRender.js` o `lib/renderLayer.js`
-
-Convención hasta ahora: `lib/sessionData.js` (fase 2), `lib/chartViewport.js` (fase 3), `lib/chartCoords.js` (pre-existente del refactor de drawings).
-
-**Voto:** `lib/chartRender.js`. Mantiene el patrón `chart*` de chartViewport y chartCoords.
-
-**Pendiente OK Ramón:** chartRender / renderLayer / otro.
+Sigue patrón `chart*` de chartViewport y chartCoords. Coherencia con resto del codebase.
 
 ### §0.3 Conteos finales tras PASO 0
 
-- **Escrituras al chart en `_SessionInner.js`:** 6 (todas dentro de `updateChart`).
-- **Escrituras al chart fuera de `_SessionInner.js`:** 1 (en `chartViewport.js:152`, alcance §0.2.A).
-- **Función `updateChart`:** L1058-L1218 (160 líneas). Es la zona quirúrgica.
-- **Llamadas a `setSeriesData` dentro de `updateChart`:** 4 (L1085, L1104, L1113, L1125). Acompañan a las escrituras del chart porque mantenemos el array global sincronizado con lo que ve LWC.
+- **Escrituras al chart en `_SessionInner.js`:** 6 (todas dentro de `updateChart`, L1058-L1218).
+- **Escrituras al chart fuera de `_SessionInner.js`:** 1 (en `chartViewport.js:152`, alcance §0.2.A Camino X — se elimina en Op 4a-6).
+- **Función `updateChart`:** L1058-L1218 (160 líneas). Es la zona quirúrgica de fase 4.
+- **Llamadas a `setSeriesData` (data layer fase 2) dentro de `updateChart`:** 3 invocaciones reales (L1085 init/full, L1104 one-bar-new pre-callback, L1150 fallback within-bucket catch) + 1 paso por referencia como propiedad de `fallbackCtx` (L1127, dentro del objeto pasado a `restoreOnNewBar` para el fallback de chartViewport). Cada invocación acompaña a su escritura `cr.series.setData` correspondiente — el invariante es que el global `__algSuiteSeriesData` se mantiene sincronizado con lo que LWC ve en pantalla.
+- **Llamadas a `updateSeriesAt`:** 1 (L1112 — within-bucket happy path tras `cr.series.update(agg[agg.length-1])`). Esta queda encapsulada dentro de `applyTickUpdate` en sub-fase 4b.
 - **Tamaño actual `_SessionInner.js`:** 2988 líneas (post-fase 3).
 - **Tamaño actual `lib/chartViewport.js`:** 204 líneas.
 - **Tamaño actual `lib/sessionData.js`:** 186 líneas.
 - **Tamaño actual `lib/chartCoords.js`:** 117 líneas.
 
-### §0.4 Lo que NO se toca en fase 4 (quedan inline o en sus módulos actuales)
+### §0.4 Lo que NO se toca en fase 4 (queda inline o en sus módulos actuales)
 
 - **`_mkPhantom`** (factory de phantoms) — local dentro de `updateChart`. Lógica de creación, no de render. Se queda.
 - **`_phantomsNeeded`** (campo de cr) — gestión del tamaño del buffer. Se queda.
 - **Cálculo de `phantomsNeeded` en effect TF change** (L1184-L1209) — toca `exportTools()` (drawings). Se queda.
 - **`cr.phantom`** (array de phantoms) — propiedad de `chartMap.current[pair]`. Se queda gestionada por `_SessionInner.js`. ChartRender la recibe como parámetro.
-- **`updateSeriesAt`** (escritura puntual al data layer global) — API de fase 2 (sessionData). Se sigue llamando, ahora desde dentro de chartRender.
 - **`captureSavedRange`, `initVisibleRange`, `restoreSavedRange`, `restoreOnNewBar`, `scrollToTail`, `markUserScrollIfReal`** — API de fase 3 (chartViewport). Se siguen llamando desde `_SessionInner.js`, no se tocan.
 - **Effect engine init (L791, L810), handleStep (L1264), seek por click (L2178)** — call sites de `updateChart`. La signatura de `updateChart` no cambia → no se tocan.
 
@@ -114,7 +82,7 @@ Vamos a hacer la fase 4 del refactor del simulador. **Igual que con fase 2 y fas
 
 **Bonus posible (sin promesa):** durante fase 4 vamos a mantener vivo el bloque de logging que ya estaba puesto para investigar el bug "long/short se contrae al play" (que es el mismo bug que reportó Luis). Si durante la migración descubrimos algo relevante sobre el bug, lo anotamos para la sesión post-cierre.
 
-**Tiempo estimado:** rango 4-10 horas según cómo de fluida sea la ejecución. Si fase 4 se complica más de lo esperado, paramos donde validemos. Tu ventana de tiempo es amplia hoy → estimación honesta debería caber.
+**Tiempo estimado:** rango 4-10 horas según cómo de fluida sea la ejecución. Si fase 4 se complica más de lo esperado, paramos donde validemos.
 
 ---
 
@@ -131,13 +99,12 @@ Un solo módulo `lib/chartRender.js` que encapsula:
 **Contra:** acopla render con drawings (porque el cálculo de `phantomsNeeded` necesita `exportTools()`). Riesgo similar al que descartamos en fase 3.5 plan v2.
 **Veredicto:** descartada. Misma razón que en fase 3 plan v2 §0.2 (Opción A descartada).
 
-### §2.2 Opción B — render layer "estricto" (voto)
+### §2.2 Opción B — render layer "estricto" (ELEGIDA)
 
-Un módulo `lib/chartRender.js` que encapsula SOLO las 6 escrituras al chart + `setSeriesData` que las acompaña + mutación in-place de phantoms cuando hace falta para que el render sea correcto. Gestión del array `cr.phantom` (creación / regeneración) y cálculo de `phantomsNeeded` se quedan en `_SessionInner.js`.
+Un módulo `lib/chartRender.js` que encapsula SOLO las 6 escrituras al chart + `setSeriesData`/`updateSeriesAt` que las acompañan + mutación in-place de phantoms cuando hace falta para que el render sea correcto. Gestión del array `cr.phantom` (creación / regeneración) y cálculo de `phantomsNeeded` se quedan en `_SessionInner.js`.
 
 **Pro:** alcance acotado, blast radius pequeño, simétrica con fase 3 (chartViewport encapsula escrituras al viewport, chartRender encapsula escrituras al chart).
 **Contra:** queda lógica de phantoms inline en `_SessionInner.js` que será raro de leer hasta que se haga fase 4.5 / fase 5.
-**Veredicto:** **voto Opción B.**
 
 ### §2.3 Opción C — render layer + phantom buffer en paralelo
 
@@ -149,21 +116,19 @@ Dos módulos nuevos: `lib/chartRender.js` (escrituras al chart) + `lib/phantomBu
 
 ### §2.4 Decisión
 
-**Opción B — render layer "estricto".** Sub-fases 4a / 4b / 4c / 4d como detallado en §4.
+**Opción B — render layer "estricto".** Sub-fases 4a / 4b / 4c como detallado en §4.
 
 ---
 
 ## §3. API de `lib/chartRender.js`
 
-Asumo §0.2.A = Camino X y §0.2.B = Opción B y §0.2.C = mutación in-place y §0.2.D = `chartRender.js`. Si Ramón vota distinto, esta sección se ajusta antes de Op 1.
-
 ### §3.1 Header del módulo
 
 Estructura simétrica al header de `chartViewport.js`:
 
-- Documento que el módulo es el ÚNICO punto del proyecto que escribe a `cr.series.setData` y `cr.series.update`.
+- Documenta que el módulo es el ÚNICO punto del proyecto que escribe a `cr.series.setData` y `cr.series.update`.
 - Documenta que el array `cr.phantom` NO vive aquí — es propiedad de `chartMap.current[pair]` y se recibe por parámetro.
-- Documenta que `setSeriesData` (data layer fase 2) se llama desde dentro de la API porque está acoplado con cada escritura al chart (mantener el array global sincronizado con LWC).
+- Documenta que `setSeriesData` / `updateSeriesAt` (data layer fase 2) se llaman desde dentro de la API porque están acoplados con cada escritura al chart (mantener el array global sincronizado con LWC).
 - Lista de funciones públicas con su responsabilidad.
 - Anota explícitamente lo que NO está en alcance: creación/regeneración de phantoms, cálculo de `phantomsNeeded`, viewport reads/writes (fase 3), drawings (fase 5).
 
@@ -175,7 +140,7 @@ Encapsula el patrón `setData + setSeriesData` para full rebuild del chart.
 
 **Reemplaza:**
 - `_SessionInner.js:1084-1085` (rama init/full)
-- `_SessionInner.js:1124-1125` (fallback within-bucket catch)
+- `_SessionInner.js:1149-1150` (fallback within-bucket catch)
 - `chartViewport.js:152-153` (fallback `restoreOnNewBar`, alcance §0.2.A Camino X)
 
 **Pseudocódigo:**
@@ -192,49 +157,13 @@ export function applyFullRender(cr, agg, phantoms) {
 - No toca `cr.prevCount` ni `cr.hasLoaded` — estado de session, no de render.
 - Sin try/catch — si LWC falla aquí, queremos que el error suba al caller.
 
-#### `applyTickUpdate(cr, lastCandle, phantoms, lastClose)`
+#### `applyTickUpdate(cr, agg, phantoms, lastClose)`
 
-Encapsula el patrón "tick simple" — actualizar la última vela y refrescar phantoms in-place si el close cambió.
+Encapsula la rama "within-bucket" — actualizar la última vela y refrescar phantoms in-place si el close cambió.
 
-**Reemplaza:**
-- `_SessionInner.js:1110-1126` (rama within-bucket completa, incluido fallback try/catch).
+**Reemplaza:** rama `else` within-bucket completa de `updateChart` (incluido try/catch externo). **Rango exacto verificar al carácter al ejecutar Op 4b-3 — estimación L1129-L1152.**
 
 **Pseudocódigo:**
-```js
-export function applyTickUpdate(cr, lastCandle, phantoms, lastClose) {
-  if (!cr || !cr.series) return
-  try {
-    cr.series.update(lastCandle)
-    updateSeriesAt(/* index */, lastCandle)  // index = realLen - 1 = aggLen - 1
-    if (phantoms) {
-      for (let i = 0; i < phantoms.length; i++) {
-        const ph = phantoms[i]
-        if (ph.close !== lastClose) {
-          ph.open = lastClose
-          ph.high = lastClose
-          ph.low = lastClose
-          ph.close = lastClose
-          try { cr.series.update(ph) } catch {}
-        }
-      }
-    }
-  } catch {
-    // Fallback: full rebuild si el update incremental falla
-    applyFullRender(cr, /* agg ??? */, phantoms)
-  }
-}
-```
-
-**Punto crítico de diseño — el fallback necesita `agg`, no solo `lastCandle`:**
-
-El fallback hace `setData([...agg, ...phantoms])` — necesita el array entero, no solo la última vela. Hay 2 caminos:
-
-- **A:** la API recibe `agg` y `lastCandle` por separado. El caller pasa los dos (`agg` para fallback, `lastCandle = agg[agg.length-1]` para happy path).
-- **B:** la API recibe solo `agg`, calcula `lastCandle = agg[agg.length-1]` internamente.
-
-**Voto:** B. Más limpio, el caller pasa una sola fuente de verdad.
-
-**Pseudocódigo final ajustado:**
 ```js
 export function applyTickUpdate(cr, agg, phantoms, lastClose) {
   if (!cr || !cr.series || !agg?.length) return
@@ -263,13 +192,13 @@ export function applyTickUpdate(cr, agg, phantoms, lastClose) {
 **Notas:**
 - Mutación in-place de `phantoms` aceptada (§0.2.C).
 - Try/catch interno preservado del original.
+- El fallback llama a `applyFullRender` (no duplica `setData` + `setSeriesData`).
 
 #### `applyNewBarUpdate(cr, agg, phantoms, debugCtx)`
 
-Encapsula el patrón "una vela TF nueva" — actualizar la última vela real + re-aplicar todas las phantoms al chart. Incluye el bloque [DEBUG TEMP] gateado por flag (§0.2.B Opción B).
+Encapsula el callback de `restoreOnNewBar` — actualizar la última vela real + re-aplicar todas las phantoms al chart. Incluye el bloque [DEBUG TEMP] gateado por flag (§0.2.B Opción B).
 
-**Reemplaza:**
-- `_SessionInner.js:1106-1124` (callback `applyUpdates` que se pasa a `restoreOnNewBar`).
+**Reemplaza:** callback `applyUpdates` de `restoreOnNewBar`. **Rango exacto verificar al carácter al ejecutar Op 4c-3 — estimación L1105-L1124, cierre antes del `}, { agg, mkPhantom...}`.**
 
 **Pseudocódigo:**
 ```js
@@ -308,15 +237,17 @@ export function applyNewBarUpdate(cr, agg, phantoms, debugCtx) {
 ```
 
 **Notas:**
-- Sin try/catch principal — el catch de `restoreOnNewBar` (en chartViewport.js:144-162) sigue siendo el fallback global. El callback que pasamos solo hace updates incrementales, igual que antes.
+- Sin try/catch principal — el catch de `restoreOnNewBar` (en chartViewport.js) sigue siendo el fallback global.
 - `debugCtx` opcional. Si no se pasa, el log no rompe (usa `?.`).
-- El log se envuelve en un try/catch propio para no romper el render si la flag está activa pero el export de drawings falla por algún motivo.
+- El log se envuelve en su propio try/catch para no romper el render si la flag está activa pero el export de drawings falla.
 
-### §3.3 Importaciones del módulo
+### §3.3 Importaciones del módulo — política
 
-```js
-import { setSeriesData, updateSeriesAt } from './sessionData'
-```
+**Cada Op de creación importa SOLO lo que su función pública nueva usa.** No se anticipa import de funciones que aún no se usan, aunque vayan a usarse en Op posteriores. Razones: (a) cada commit auto-contenido; (b) evitar warning de unused import en `npm run build`; (c) diff entre commits más limpio.
+
+- **Op 4a-1 (creación):** `import { setSeriesData } from './sessionData'`.
+- **Op 4b-1 (extender):** ampliar import a `import { setSeriesData, updateSeriesAt } from './sessionData'`.
+- **Op 4c-1 (extender):** sin cambios en import si `applyNewBarUpdate` no usa nada nuevo.
 
 Sin imports de `chartViewport` (no se necesita). Sin imports de `chartCoords` (no se necesita).
 
@@ -336,10 +267,10 @@ Patrón heredado de fase 3: cada sub-fase es un commit atómico con baselines pr
 
 **Operaciones:**
 
-- **Op 4a-1 — crear `lib/chartRender.js`** con header JSDoc + función `applyFullRender` exportada + import de `setSeriesData` y `updateSeriesAt` de `sessionData`. Aprobación.
+- **Op 4a-1 — crear `lib/chartRender.js`** con header JSDoc + función `applyFullRender` exportada + `import { setSeriesData } from './sessionData'`. Aprobación.
 - **Op 4a-2 — extender import en `_SessionInner.js:13`** añadiendo `applyFullRender` desde `'../lib/chartRender'`. Aprobación.
 - **Op 4a-3 — sustituir L1084-L1085** (rama init/full) por `applyFullRender(cr, agg, cr.phantom)`. Aprobación.
-- **Op 4a-4 — sustituir L1124-L1125** (fallback within-bucket catch) por `applyFullRender(cr, agg, cr.phantom)`. Aprobación.
+- **Op 4a-4 — sustituir L1149-L1150** (fallback within-bucket catch) por `applyFullRender(cr, agg, cr.phantom)`. Aprobación.
 - **Op 4a-5 — extender import en `lib/chartViewport.js`** añadiendo `applyFullRender` desde `'./chartRender'`. Aprobación.
 - **Op 4a-6 — sustituir `lib/chartViewport.js:152-153`** (fallback `restoreOnNewBar`) por `applyFullRender(cr, agg, cr.phantom)`. Aprobación.
 
@@ -358,14 +289,15 @@ Patrón heredado de fase 3: cada sub-fase es un commit atómico con baselines pr
 
 **Operaciones:**
 
-- **Op 4b-1 — extender `lib/chartRender.js`** con `applyTickUpdate(cr, agg, phantoms, lastClose)`. La función incluye el try/catch propio con fallback a `applyFullRender`. Aprobación.
+- **Op 4b-1 — extender `lib/chartRender.js`** con `applyTickUpdate(cr, agg, phantoms, lastClose)`. Ampliar import a incluir `updateSeriesAt`. La función incluye el try/catch propio con fallback a `applyFullRender`. Aprobación.
 - **Op 4b-2 — extender import en `_SessionInner.js:13`** añadiendo `applyTickUpdate`. Aprobación.
-- **Op 4b-3 — sustituir L1110-L1126** (rama `else` within-bucket completa, incluyendo el try/catch externo) por `applyTickUpdate(cr, agg, cr.phantom, _lastC)`. Aprobación.
+- **Op 4b-3 — sustituir rama `else` within-bucket completa** (try/catch externo + bucle phantoms in-place) por `applyTickUpdate(cr, agg, cr.phantom, _lastC)`. **Rango exacto verificar al carácter al ejecutar (estimación L1129-L1152, abrir desde `} else {` hasta cierre del `}` de la rama).** Aprobación.
 
-**Punto delicado:** la rama within-bucket actual tiene un `try/catch` externo que envuelve update + bucle. La nueva API mete ese try/catch DENTRO de `applyTickUpdate`. **Verificar al carácter que la sustitución preserve la semántica:** la línea entera `} else { try{ ... }catch{ ... } }` se sustituye por `} else { applyTickUpdate(cr, agg, cr.phantom, _lastC) }`.
+**Punto delicado:** la rama within-bucket actual tiene un `try/catch` externo que envuelve update + bucle. La nueva API mete ese try/catch DENTRO de `applyTickUpdate`. **Verificar al carácter en momento de Op que la sustitución preserve la semántica:** la línea entera `} else { try{ ... }catch{ ... } }` se sustituye por `} else { applyTickUpdate(cr, agg, cr.phantom, _lastC) }`.
 
 **Verificadores 4b:**
 - Grep: `grep -rn "series.update" components/ pages/ lib/ | grep -v "lib/chartRender.js" | grep -v "lib/chartViewport.js"` → cero líneas en `_SessionInner.js`.
+- Grep: `grep -rn "updateSeriesAt" components/ pages/ lib/ | grep -v "lib/chartRender.js" | grep -v "lib/sessionData.js"` → vacío.
 - `npm run build` verde.
 - Pruebas manuales: play a velocidad media en TF M5, ver que las phantoms siguen el precio en tiempo real (cola plana visible a la derecha sin lag ni saltos).
 
@@ -381,7 +313,7 @@ Patrón heredado de fase 3: cada sub-fase es un commit atómico con baselines pr
 
 - **Op 4c-1 — extender `lib/chartRender.js`** con `applyNewBarUpdate(cr, agg, phantoms, debugCtx)`. Incluye el bloque [DEBUG TEMP] migrado al pseudocódigo de §3.2. Aprobación.
 - **Op 4c-2 — extender import en `_SessionInner.js:13`** añadiendo `applyNewBarUpdate`. Aprobación.
-- **Op 4c-3 — sustituir el callback `applyUpdates`** de `restoreOnNewBar` (L1105-L1124) por `() => applyNewBarUpdate(cr, agg, cr.phantom, { tf, lastT: _lastT })`. Mantener intacto el resto de la llamada a `restoreOnNewBar` (los argumentos `cr` y `fallbackCtx` no cambian). Aprobación.
+- **Op 4c-3 — sustituir el callback `applyUpdates`** de `restoreOnNewBar` por `() => applyNewBarUpdate(cr, agg, cr.phantom, { tf, lastT: _lastT })`. Mantener intacto el resto de la llamada a `restoreOnNewBar` (los argumentos `cr` y `fallbackCtx` no cambian). **Rango exacto verificar al carácter al ejecutar (estimación L1105-L1124, cerrar antes del `}, { agg, mkPhantom...}`).** Aprobación.
 
 **Verificadores 4c:**
 - Grep: `grep -rn "DEBUG TEMP\|LS-DEBUG" components/ pages/ lib/` → solo aparece en `lib/chartRender.js`, NO en `_SessionInner.js`.
@@ -404,9 +336,7 @@ Patrón heredado de fase 3: cada sub-fase es un commit atómico con baselines pr
 - Firma de `restoreOnNewBar` cuyo `fallbackCtx` puede simplificarse si chartViewport ahora llama a `applyFullRender` y ya no necesita `mkPhantom`/`lastT`/`tfS2` por separado.
 - Posibles renames o ajustes de tipos.
 
-**Operaciones:** se redactan en plan v2 (refinamiento post-PASO 0 sobre rama feature) si fueran necesarias. Por defecto, esta sub-fase **NO existe** y fase 4 cierra con 4a + 4b + 4c.
-
-**Pendiente:** decisión durante 4c sobre si fallbackCtx de `restoreOnNewBar` puede simplificarse. Si sí, va a 4d. Si no, no hay 4d.
+**Operaciones:** se decide durante 4c. Por defecto, esta sub-fase **NO existe** y fase 4 cierra con 4a + 4b + 4c.
 
 ---
 
@@ -421,11 +351,9 @@ grep -rn "series.setData" components/ pages/ lib/ | grep -v "lib/chartRender.js"
 → vacío
 
 grep -rn "series.update" components/ pages/ lib/ | grep -v "lib/chartRender.js" | grep -v "lib/chartViewport.js"
-→ vacío
+→ vacío (matches en chartViewport solo en JSDoc, son comentarios)
 
-# chartViewport conserva matches en JSDoc (header) — se ignoran si son comentarios.
-# Verificación adicional: solo matches en líneas no-comentario fuera de chartRender.
-grep -rn "cr.series.update\|cr\.series\.setData" components/ pages/ lib/ | grep -v "lib/chartRender.js" | grep -v "^[^:]*://"
+grep -rn "updateSeriesAt" components/ pages/ lib/ | grep -v "lib/chartRender.js" | grep -v "lib/sessionData.js"
 → vacío
 ```
 
@@ -439,7 +367,7 @@ npm run build
 ### §5.3 Diff completo revisado y comportamiento idéntico
 
 - `git diff main..refactor/fase-4-render-layer` revisado por Ramón en chat web.
-- Cero archivos tocados fuera de alcance. Archivos esperados: `lib/chartRender.js` (nuevo), `lib/chartViewport.js` (1 línea modificada en fallback), `components/_SessionInner.js` (2 imports + 4-5 sustituciones), `refactor/fase-4-plan.md` (este plan).
+- Cero archivos tocados fuera de alcance. Archivos esperados: `lib/chartRender.js` (nuevo), `lib/chartViewport.js` (1 línea modificada en fallback), `components/_SessionInner.js` (1 import + 4-5 sustituciones), `refactor/fase-4-plan.md` (este plan v2).
 - Pruebas manuales:
   - Cargar par EURUSD, ver que se renderiza igual que antes.
   - Cambiar TF M5 → H1 → M15, ver que el chart re-renderiza correctamente con phantoms.
@@ -474,14 +402,14 @@ Decisión Ramón explícita en sesión 11: Opción 3 → fase 4 estricta + sesi�
 
 1. **Reproducción al carácter:** Ramón reproduce en producción con TF bajo (M1) + speed máxima + crear LongShortPosition. Activa flag `window.__algSuiteDebugLS = true` antes de play. Captura logs de `[LS-DEBUG] new candle`.
 2. **Análisis de logs:** comparar `phantom_first_t` y `phantom_last_t` de cada nueva vela contra los `ls_points` del LongShortPosition. Si hay timestamps de drawing fuera del rango cubierto por phantoms, hipótesis confirmada.
-3. **Hipótesis de fix:** la regeneración de phantoms en la rama "una vela TF nueva" (L1102-L1103 en `_SessionInner.js` actual, post-fase-4 dentro de `_SessionInner.js` antes de llamar a `applyNewBarUpdate`) usa `_phN = cr.phantom?.length || 10`. Si las phantoms previas tenían longitud 10 (default), pero en el TF actual hay drawings que necesitan más, el bucle se queda corto. Posible fix: re-leer drawings antes de regenerar y recalcular `phantomsNeeded`. Esto contamina con drawings → puede empezar a parecer fase 5.
+3. **Hipótesis de fix:** la regeneración de phantoms en la rama "una vela TF nueva" usa `_phN = cr.phantom?.length || 10`. Si las phantoms previas tenían longitud 10 (default), pero en el TF actual hay drawings que necesitan más, el bucle se queda corto. Posible fix: re-leer drawings antes de regenerar y recalcular `phantomsNeeded`. Esto contamina con drawings → puede empezar a parecer fase 5.
 4. **Decisión arquitectónica de la sesión post-fase-4:** si el fix es trivial y queda dentro del render, se hace en una mini-rama `fix/limit-desaparece-al-play`. Si requiere tocar drawings significativamente, se posterga a fase 5 con plan dedicado.
 
 ---
 
 ## §7. Decisión sobre `[DEBUG TEMP]` (resumen)
 
-Voto Opción B en §0.2.B → bloque migrado dentro de `applyNewBarUpdate` en sub-fase 4c, gateado por flag global `window.__algSuiteDebugLS`. Performance neutral si flag false.
+§0.2.B Opción B → bloque migrado dentro de `applyNewBarUpdate` en sub-fase 4c, gateado por flag global `window.__algSuiteDebugLS`. Performance neutral si flag false.
 
 **Cuándo se limpia:** tras cerrar el bug "salta al play" en sesión post-fase-4 (o sesión posterior si se posterga). El cierre del bug incluye eliminar el bloque [DEBUG TEMP] como último Op de esa sesión.
 
@@ -492,7 +420,7 @@ Voto Opción B en §0.2.B → bloque migrado dentro de `applyNewBarUpdate` en su
 ## §8. Lo que NO entra en alcance de fase 4
 
 - **Fase 4.5 / fase 5 — drawings lifecycle.** Reorganizar suscripciones de `CustomDrawingsOverlay`, `DrawingToolbar`, `KillzonesOverlay`. Tampoco tocar el cálculo de `phantomsNeeded` en effect TF change (acopla con drawings).
-- **Fase 6 — trading layer.** Aislar entries / exits / SL / TP / pending orders. No se toca aunque haya escrituras al chart relacionadas con trading (no las hay directamente — las series.update son de velas, no de orders).
+- **Fase 6 — trading layer.** Aislar entries / exits / SL / TP / pending orders.
 - **Fase 7 — reducir `_SessionInner.js`.** Tras fase 4 se queda en ~2800 líneas estimado. La reducción significativa vendrá tras fases 5/6.
 - **Fix bug "salta al play".** Sesión inmediata post-fase-4 (§6).
 - **B2 — drawings descolocadas Review.** Backlog. Probable cierre tras fase 5.
@@ -516,7 +444,7 @@ git checkout lib/chartViewport.js
 rm lib/chartRender.js
 ```
 
-Working tree vuelve a estado pre-4a (HEAD de rama = aún el commit del plan v1).
+Working tree vuelve a estado pre-4a (HEAD de rama = commit del plan v2).
 
 ### §9.2 Rollback de 4a comiteado (antes de 4b)
 
@@ -537,7 +465,7 @@ git reset --hard <hash-merge-fase-3-cierre>
 git branch -D refactor/fase-4-render-layer  # opcional
 ```
 
-Pierde el merge commit y los 3 commits de sub-fase. El plan v1 queda comiteado en main por separado, no se pierde.
+Pierde el merge commit y los 3 commits de sub-fase. Los planes v1 y v2 quedan comiteados en main por separado, no se pierden.
 
 ### §9.5 Rollback total post-push a producción
 
@@ -556,47 +484,48 @@ Patrón heredado de fase 3 §12. Reparto de roles:
 
 - **Ramón (pegamento humano):** ejecuta comandos shell, pega outputs crudos al chat web, da OK explícitos antes de cada Edit, verifica al carácter con greps/sed/cat desde shell zsh nativo.
 - **Claude Opus 4.7 (chat web, CTO/revisor):** lee bytes literales, redacta este plan, valida cada Edit propuesto por Claude Code antes de Ramón aprobar, lleva la cuenta de qué se ha hecho, escribe HANDOFF al cierre.
-- **Claude Code (driver técnico):** ejecuta los Edits propuestos sobre el código una vez tenga OK explícito de Ramón. Solo entra en escena cuando hay plan v1 comiteado y rama feature creada.
+- **Claude Code (driver técnico):** ejecuta los Edits propuestos sobre el código una vez tenga OK explícito de Ramón.
 
-### §10.1 Pre-arranque (chat web)
+### §10.1 Pre-arranque (chat web — completado)
 
-1. Ramón aprueba este plan v1 con decisiones §0.2.A/B/C/D resueltas.
-2. Ramón comitea este plan en main: `refactor/fase-4-plan.md` con commit `docs(fase-4): redactar plan táctico fase-4-plan.md`.
-3. Ramón crea rama feature: `git checkout -b refactor/fase-4-render-layer`.
+1. ✅ Plan v1 redactado, comiteado en main como `d45c8da`.
+2. ✅ Rama feature `refactor/fase-4-render-layer` creada desde `d45c8da`.
+3. ✅ Decisiones §0.2.A/B/C/D aprobadas por Ramón.
+4. Pendiente: comitear este plan v2 sobre rama feature antes de Op 4a-1.
 
 ### §10.2 Arranque (Claude Code)
 
-4. Verificar rama `refactor/fase-4-render-layer` activa, HEAD = commit del plan v1.
-5. Greps verificadores PRE-Op (ejecutados al inicio de la sesión Claude Code):
-   - `grep -rn "series.setData" components/ pages/ lib/ | grep -v "lib/chartViewport.js"` → debe matchar L1084, L1124 (en `_SessionInner.js`).
-   - `grep -rn "series.update" components/ pages/ lib/ | grep -v "lib/chartViewport.js"` → debe matchar L1106, L1108, L1112, L1118 (en `_SessionInner.js`).
+5. Verificar rama `refactor/fase-4-render-layer` activa, HEAD = commit del plan v2 sobre la rama.
+6. Greps verificadores PRE-Op (ejecutados al inicio de la sesión Claude Code):
+   - `grep -rn "series.setData" components/ pages/ lib/ | grep -v "lib/chartViewport.js"` → debe matchar L1084 y L1149 en `_SessionInner.js`.
+   - `grep -rn "series.update" components/ pages/ lib/ | grep -v "lib/chartViewport.js"` → debe matchar L1106, L1108, L1136, L1143 en `_SessionInner.js`.
 
 ### §10.3 Ejecución
 
-6. Op 4a-1 → 4a-6 (sub-fase 4a). Cada Op con aprobación explícita Ramón → Edit Claude Code → validación al carácter Ramón desde shell. Tras Op 4a-6: commit 4a.
-7. Pruebas 4a (§4.1 verificadores). Si OK → arrancar 4b. Si KO → diagnóstico + rollback §9.
-8. Op 4b-1 → 4b-3. Tras Op 4b-3: commit 4b. Pruebas 4b.
-9. Op 4c-1 → 4c-3. Tras Op 4c-3: commit 4c. Pruebas 4c.
-10. (Condicional) Sub-fase 4d si aparecen loose ends.
+7. Op 4a-1 → 4a-6 (sub-fase 4a). Cada Op con aprobación explícita Ramón → Edit Claude Code → validación al carácter Ramón desde shell. Tras Op 4a-6: commit 4a.
+8. Pruebas 4a (§4.1 verificadores). Si OK → arrancar 4b. Si KO → diagnóstico + rollback §9.
+9. Op 4b-1 → 4b-3. Tras Op 4b-3: commit 4b. Pruebas 4b.
+10. Op 4c-1 → 4c-3. Tras Op 4c-3: commit 4c. Pruebas 4c.
+11. (Condicional) Sub-fase 4d si aparecen loose ends.
 
 ### §10.4 Validación pre-merge
 
-11. Greps verificadores §5.1.
-12. `npm run build`.
-13. `git diff main..refactor/fase-4-render-layer` revisado por Ramón en chat web.
-14. OK explícito Ramón sobre el diff entero.
+12. Greps verificadores §5.1.
+13. `npm run build`.
+14. `git diff main..refactor/fase-4-render-layer` revisado por Ramón en chat web.
+15. OK explícito Ramón sobre el diff entero.
 
 ### §10.5 Merge + push
 
-15. Decidir push hoy o mañana en frío (lección §8.4 fase 2).
-16. Si OK: `git checkout main && git merge refactor/fase-4-render-layer && git push origin main`. Vercel re-deploya.
-17. Smoke check producción Ramón (cargar simulador, par, TF, play breve).
+16. Decidir push hoy o mañana en frío (lección §8.4 fase 2).
+17. Si OK: `git checkout main && git merge refactor/fase-4-render-layer && git push origin main`. Vercel re-deploya.
+18. Smoke check producción Ramón (cargar simulador, par, TF, play breve).
 
 ### §10.6 Cierre
 
-18. Redactar `HANDOFF-cierre-fase-4.md` (chat web).
-19. Comitear HANDOFF en main + push.
-20. Si decisión Ramón: arrancar sesión post-fase-4 para bug "salta al play" (§6).
+19. Redactar `HANDOFF-cierre-fase-4.md` (chat web).
+20. Comitear HANDOFF en main + push.
+21. Si decisión Ramón: arrancar sesión post-fase-4 para bug "salta al play" (§6).
 
 ---
 
@@ -617,56 +546,114 @@ Sin cambios respecto a `HANDOFF.md` v3 §7 + `CLAUDE.md` §3 + lecciones HANDOFF
 
 ---
 
-## §12. Cómo arrancar Op 1 — checklist Ramón
+## §12. Cómo arrancar Op 4a-1 — checklist final
 
-### §12.1 Decisiones pendientes que Ramón debe responder antes de Op 1
+### §12.1 Estado actual al firmar plan v2
 
-- [ ] §0.2.A — Camino X (mi voto) o Y para `chartViewport.js:152`.
-- [ ] §0.2.B — Opción A / B (mi voto) / C para bloque [DEBUG TEMP].
-- [ ] §0.2.C — Mutación in-place de `cr.phantom` dentro de `applyTickUpdate` (mi voto: aceptar) o moverla fuera.
-- [ ] §0.2.D — Nombre del módulo: `chartRender.js` (mi voto) / `renderLayer.js` / otro.
+- ✅ Rama `refactor/fase-4-render-layer` activa, HEAD = `d45c8da` (plan v1).
+- ✅ Working tree limpio.
+- ⏳ Plan v2 pendiente de mover a `refactor/fase-4-plan.md` (sobrescribir v1) y comitear sobre rama feature.
 
-### §12.2 Si Ramón vota igual que mis votos
+### §12.2 Pasos para comitear plan v2 y arrancar Op 4a-1
 
-Plan v1 queda como está. Pasos:
-
-1. Ramón da OK explícito en chat web.
-2. Mover `fase-4-plan.md` al directorio `refactor/` del repo.
+1. Mover `fase-4-plan.md` (descargado, contiene v2) a `refactor/fase-4-plan.md`, sobrescribiendo v1.
+2. `git status` → debe mostrar `refactor/fase-4-plan.md` como modificado.
 3. `git add refactor/fase-4-plan.md`.
-4. `git commit -m "docs(fase-4): redactar plan táctico fase-4-plan.md"`.
-5. `git checkout -b refactor/fase-4-render-layer`.
-6. Abrir Claude Code en el repo, prompt de arranque adjunto en §12.4.
+4. `git commit -m "docs(fase-4): refinar plan tras inventario PASO 0 con bytes literales"`. (Mensaje literal heredado de fase 3 plan v2.)
+5. `git log --oneline -3` → debe mostrar el nuevo commit en HEAD seguido de `d45c8da` (plan v1) y `aad131b` (HANDOFF fase 3).
+6. Abrir Claude Code en el repo, prompt de arranque adjunto en §12.3.
 
-### §12.3 Si Ramón vota distinto en alguna decisión §0.2
-
-Refinamos plan v1 → plan v2 sobre la rama feature (patrón fase 3 plan v1 → v2). El plan v2 ajusta §3 API + §4 sub-fases + §5 verificadores según las decisiones distintas. Tras refinamiento, comiteamos plan v2 sobre rama feature antes de Op 1.
-
-### §12.4 Prompt sugerido para arrancar Claude Code en sub-fase 4a
+### §12.3 Prompt sugerido para arrancar Claude Code en sub-fase 4a
 
 ```
-Hola. Soy Ramón, retomo fase 4 del refactor.
-Estado: rama refactor/fase-4-render-layer activa, HEAD = commit del plan v1 (o v2).
-Working tree limpio.
+Hola. Soy Ramón, retomo el simulador. Arrancamos sub-fase 4a del refactor data-layer.
 
-Plan táctico: refactor/fase-4-plan.md (leelo entero, especialmente §0 PASO 0,
-§3 API de chartRender, §4.1 sub-fase 4a, §10 workflow bicapa, §11 reglas absolutas).
+Estado al carácter:
+- Repo: /Users/principal/Desktop/forex-simulator-algorithmic-suite
+- Rama activa: refactor/fase-4-render-layer
+- HEAD = commit del plan v2 (refinamiento)
+- main local = d45c8da (plan v1, vive solo en local)
+- origin/main = aad131b (fase 3 cerrada, sin tocar)
+- Working tree limpio.
 
-Reglas absolutas:
-- NO Edit sin que Ramón haya dado OK explícito previo.
-- Cada Op = Edit propuesto → mostrar a Ramón → Ramón valida con Claude web →
-  Ramón aprueba → ejecutar Edit.
-- NO usar Claude Code para validación de bytes (colapsa outputs). Ramón valida
-  desde shell zsh nativo.
-- Greps verificadores PRE-Op antes de tocar nada (§10.2).
+Plan táctico: refactor/fase-4-plan.md (versión v2, refina v1).
+Léelo entero antes de proponer nada. En particular, atiende a:
+- §0 PASO 0 (inventario al carácter ya hecho desde shell por Ramón).
+- §0.2 decisiones técnicas (todas resueltas).
+- §3 API de chartRender (incluye §3.3 política de imports — solo lo que cada Op usa).
+- §4.1 sub-fase 4a.
+- §10 workflow bicapa.
+- §11 reglas absolutas heredadas.
+- §13 transición v1 → v2 (qué cambió y por qué).
+
+REGLAS ABSOLUTAS — no negociables:
+1. NO Edit sin OK explícito previo de Ramón.
+2. NO uses tu propia output para validar bytes — colapsa con "+N lines (ctrl+o)".
+3. Greps verificadores PRE-Op antes de tocar nada (§10.2).
+4. Sub-fase 4a tiene 6 ops (4a-1 a 4a-6) que van TODAS en un solo commit al final
+   de 4a, no uno por op.
+5. NO push a origin sin OK explícito.
 
 Cuando hayas leído el plan, dime:
-1. Qué entendiste de la sub-fase 4a en una frase.
-2. Resultados de los 2 greps verificadores PRE-Op de §10.2.
-3. Propón Op 4a-1 (crear lib/chartRender.js) y espera mi OK explícito.
+1. Qué entendiste de la sub-fase 4a en una frase llana.
+2. Lanza los 2 greps verificadores PRE-Op de §10.2 y compáralos con lo esperado.
+3. Propón Op 4a-1: crear lib/chartRender.js con header + applyFullRender +
+   import { setSeriesData } from './sessionData' (SOLO setSeriesData, sin
+   updateSeriesAt — política §3.3 del plan v2).
+   Muéstrame el contenido completo del archivo a crear y espera mi OK.
+
+NO empieces hasta que yo te apruebe el contenido propuesto.
 ```
+
+### §12.4 Op 4a-1 ya tiene OK condicional dado por Ramón en sesión 11
+
+Claude Code propuso contenido completo de `lib/chartRender.js` antes del refinamiento v2. La propuesta fue auditada al carácter por Claude Opus 4.7 web. Modificación pedida: import reducido a solo `setSeriesData` (política §3.3 plan v2). Con esa modificación, **OK Op 4a-1 firmado por Ramón**. Claude Code puede ejecutar tras leer plan v2.
 
 ---
 
-**Fin del plan táctico fase 4 v1.**
+## §13. Transición v1 → v2
 
-Pendiente OK Ramón sobre §0.2.A/B/C/D + plan completo antes de comitear el plan a main y arrancar la rama feature.
+### §13.1 Por qué existe v2
+
+Al lanzar los greps verificadores PRE-Op (§10.2) sobre los bytes en disco antes de Op 4a-1, Claude Code detectó que **4 números de línea en plan v1 no coincidían con los bytes reales**:
+
+| # | Plan v1 | Real | Sección afectada |
+|---|---|---|---|
+| 1 | L1112 (update within-bucket) | **L1136** | §0.1 tabla #4 |
+| 2 | L1118 (update × N within-bucket) | **L1143** | §0.1 tabla #5 |
+| 3 | L1124 (setData fallback within-bucket) | **L1149** | §0.1 tabla #6 + §3.2 + §4.1 + §10.2 |
+| 4 | "4 setSeriesData (L1085, L1104, L1113, L1125)" | **3 invocaciones (L1085, L1104, L1150) + 1 paso por referencia (L1127)** | §0.3 conteos |
+
+### §13.2 Causa raíz
+
+**No fue error del PASO 0 ni de los outputs de Ramón.** Ramón pegó bytes literales correctos del shell. El error fue de Claude Opus 4.7 web al transcribir los bytes a la tabla §0.1 — aproximación inferida en lugar de copia al carácter. Violación directa de la disciplina §9.4 ("distinguir lo verificado de lo inferido"), redactada por el propio Claude pocos minutos antes en el plan v1.
+
+### §13.3 Aprendizaje
+
+- **Disciplina §9.4 aplica también al CTO/revisor**, no solo a Claude Code o al pegamento humano. Cuando se redacta un plan, los números deben copiarse al carácter desde los outputs de shell, NO sintetizarse.
+- **La bicapa funciona.** Claude Code lanzó greps PRE-Op sobre bytes en disco y detectó la discrepancia inmediatamente. Sin esa verificación, los Ops 4a-4, 4b-3 y 4c-3 habrían tropezado al ejecutar.
+- **El refinamiento v1 → v2 es práctica saludable, no penalización.** Ya pasó en fase 3 (commits `e99571c` v1 → `688c07e` v2). Forma parte del proceso de "PASO 0 con bytes literales antes de redactar API". El plan v1 capturó la arquitectura correcta; v2 ajusta los punteros precisos al código.
+
+### §13.4 Cambios literales aplicados en v2
+
+1. §0.1 tabla — 3 números corregidos (#4 L1112→L1136, #5 L1118→L1143, #6 L1124→L1149).
+2. §0.3 conteos — línea de setSeriesData reescrita: "3 invocaciones reales (L1085, L1104, L1150) + 1 paso por referencia (L1127)". Añadido bullet sobre `updateSeriesAt`.
+3. §3.2 applyFullRender JSDoc — "L1124-1125" → "L1149-1150".
+4. §3.3 política de imports — sección nueva explicitando que cada Op importa solo lo que su función pública usa. Decisión Ramón sesión 11: import en Op 4a-1 reducido a solo `setSeriesData`.
+5. §4.1 Op 4a-4 — "L1124-L1125" → "L1149-L1150".
+6. §4.2 Op 4b-3 — añadida nota "rango exacto verificar al carácter al ejecutar Op (estimación L1129-L1152)".
+7. §4.3 Op 4c-3 — añadida nota "rango exacto verificar al carácter al ejecutar Op (estimación L1105-L1124, cerrar antes del `}, { agg, mkPhantom...}`)".
+8. §10.2 greps esperados — 3 números corregidos.
+9. §10.1 pre-arranque — actualizado a estado real (plan v1 ya comiteado, rama ya creada, decisiones aprobadas).
+10. §12 reescrito — checklist final adaptado al estado actual de sesión 11.
+11. §13 nuevo — esta sección, autoría honesta de la transición.
+
+### §13.5 Estado de los bytes en disco
+
+**Sin cambios entre v1 y v2.** Los bytes en `_SessionInner.js`, `lib/chartViewport.js`, `lib/sessionData.js`, `lib/chartCoords.js` son los mismos que cuando se redactó v1. Solo cambia el documento `refactor/fase-4-plan.md`.
+
+---
+
+**Fin del plan táctico fase 4 v2.**
+
+Pendiente: mover archivo, comitear v2 sobre rama feature, abrir Claude Code con prompt §12.3, ejecutar Op 4a-1 con import corregido (solo `setSeriesData`).
