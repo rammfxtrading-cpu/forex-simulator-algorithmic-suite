@@ -12,7 +12,7 @@ import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
 import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime, getMasterTime, getSeriesData, getRealLen } from '../lib/sessionData'
 import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar, scrollToTail, markUserScrollIfReal } from '../lib/chartViewport'
-import { applyFullRender, applyTickUpdate } from '../lib/chartRender'
+import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1103,22 +1103,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       setSeriesData([...agg, ...cr.phantom], agg.length)
       restoreOnNewBar(cr, () => {
-        cr.series.update(agg[agg.length-1])
-        // Re-aplicar phantoms en el chart (10 update() son irrelevantes en perf)
-        for(const ph of cr.phantom){ try{ cr.series.update(ph) }catch{} }
-        // [DEBUG TEMP] Log para investigar bug long/short se contrae al play
-        if(typeof window!=='undefined' && window.__algSuiteDebugLS){
-          const _expJson = (typeof window.__algSuiteExportTools === 'function') ? window.__algSuiteExportTools() : null
-          const _tools = _expJson ? JSON.parse(_expJson) : []
-          const _ls = _tools.find(t => t.toolType === 'LongShortPosition')
-          if(_ls){
-            console.log('[LS-DEBUG] new candle', {
-              tf, agg_len: agg.length, last_real_t: _lastT,
-              phantom_first_t: cr.phantom?.[0]?.time, phantom_last_t: cr.phantom?.[cr.phantom.length-1]?.time,
-              ls_points: _ls.points,
-            })
-          }
-        }
+        applyNewBarUpdate(cr, agg, cr.phantom, { tf, lastT: _lastT })
       }, {
         agg,
         mkPhantom: _mkPhantom,
