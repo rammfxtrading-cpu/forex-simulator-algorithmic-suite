@@ -12,7 +12,7 @@ import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
 import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime, getMasterTime, getSeriesData, getRealLen } from '../lib/sessionData'
 import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar, scrollToTail, markUserScrollIfReal } from '../lib/chartViewport'
-import { applyFullRender } from '../lib/chartRender'
+import { applyFullRender, applyTickUpdate } from '../lib/chartRender'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1127,27 +1127,8 @@ if(full||(curr!==prev&&curr!==prev+1)){
         setSeriesData,
       })
     } else {
-      // Within-bucket update — solo cambió la última vela. Refrescamos las
-      // phantoms in-place si _lastC se ha movido, para que la cola a la
-      // derecha siga el precio actual y no se quede anclada al close viejo.
-      // Esto era el bloque ALGSUITE_PHANTOM_REFRESH y es CRÍTICO en TFs
-      // grandes (H1, M30) donde una vela tarda mucho en cerrar.
-      try{
-        cr.series.update(agg[agg.length-1])
-        updateSeriesAt(agg.length - 1, agg[agg.length - 1])
-        if(cr.phantom){
-          for(let i=0;i<cr.phantom.length;i++){
-            const ph=cr.phantom[i]
-            if(ph.close!==_lastC){
-              ph.open=_lastC; ph.high=_lastC; ph.low=_lastC; ph.close=_lastC
-              try{ cr.series.update(ph) }catch{}
-            }
-          }
-        }
-      }catch{
-        // Fallback: full rebuild if update fails
-        applyFullRender(cr, agg, cr.phantom)
-      }
+      // Within-bucket: actualiza última vela + phantoms in-place (ver applyTickUpdate JSDoc).
+      applyTickUpdate(cr, agg, cr.phantom, _lastC)
     }
     cr.prevCount=curr
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
