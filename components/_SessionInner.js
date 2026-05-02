@@ -11,6 +11,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
 import { fetchSessionCandles, setSeriesData, updateSeriesAt, setMasterTime, clearCurrentTime, getMasterTime, getSeriesData, getRealLen } from '../lib/sessionData'
+import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar, scrollToTail, markUserScrollIfReal } from '../lib/chartViewport'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -869,7 +870,7 @@ export default function SessionPage(){
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{
       const _cr=chartMap.current[pair]
-      if(_cr?.hasLoaded&&!_cr?.isAutoSettingRange) _cr.userScrolled=true
+      markUserScrollIfReal(_cr)
       setChartTick(t=>t+1)
     })
 
@@ -1079,28 +1080,13 @@ if(full||(curr!==prev&&curr!==prev+1)){
       const _phN = cr._phantomsNeeded || 10
       cr._phantomsNeeded = null  // consumir, vuelve a default en próxima llamada
       cr.phantom=Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
-      let _savedRange=null
-      try{ if(cr.hasLoaded) _savedRange=cr.chart.timeScale().getVisibleLogicalRange() }catch{}
+      const _savedRange = captureSavedRange(cr)
       cr.series.setData([...agg,...cr.phantom])
       setSeriesData([...agg, ...cr.phantom], agg.length)
       if(!cr.hasLoaded){
-        cr.hasLoaded=true
-        cr.userScrolled=false
-        const _tbars={'M1':80,'M3':75,'M5':70,'M15':60,'M30':50,'H1':60,'H4':50,'D1':40}
-        const _show=_tbars[tf]||80
-        const _to=agg.length+5
-        const _from=Math.max(0,_to-_show)
-        requestAnimationFrame(()=>{
-          try{cr.chart.timeScale().setVisibleLogicalRange({from:_from,to:_to})}catch{}
-        })
+        initVisibleRange(cr, tf, agg.length)
       } else {
-        // TF change or rebuild — restore previous range
-        if(full) cr.userScrolled=false
-        if(_savedRange){
-          requestAnimationFrame(()=>{
-            try{ cr.chart.timeScale().setVisibleLogicalRange(_savedRange) }catch{}
-          })
-        }
+        restoreSavedRange(cr, _savedRange, {full})
       }
     } else if(curr===prev+1){
       // Una vela TF nueva se ha cerrado. Regeneramos las phantoms ANTES de
@@ -1116,9 +1102,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       const _phN = cr.phantom?.length || 10
       cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       setSeriesData([...agg, ...cr.phantom], agg.length)
-      try{
-        // Save range, update, restore — prevents chart from scrolling
-        const _rng=cr.userScrolled?cr.chart.timeScale().getVisibleLogicalRange():null
+      restoreOnNewBar(cr, () => {
         cr.series.update(agg[agg.length-1])
         // Re-aplicar phantoms en el chart (10 update() son irrelevantes en perf)
         for(const ph of cr.phantom){ try{ cr.series.update(ph) }catch{} }
@@ -1135,15 +1119,13 @@ if(full||(curr!==prev&&curr!==prev+1)){
             })
           }
         }
-        if(_rng) requestAnimationFrame(()=>{try{cr.chart.timeScale().setVisibleLogicalRange(_rng)}catch{}})
-      }catch{
-        // Fallback
-        cr.phantom=Array.from({length:10},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
-        const _r2=cr.chart.timeScale().getVisibleLogicalRange()
-        cr.series.setData([...agg,...cr.phantom])
-        setSeriesData([...agg, ...cr.phantom], agg.length)
-        if(_r2) requestAnimationFrame(()=>{ try{cr.chart.timeScale().setVisibleLogicalRange(_r2)}catch{} })
-      }
+      }, {
+        agg,
+        mkPhantom: _mkPhantom,
+        lastT: _lastT,
+        tfS2: _tfS2,
+        setSeriesData,
+      })
     } else {
       // Within-bucket update — solo cambió la última vela. Refrescamos las
       // phantoms in-place si _lastC se ha movido, para que la cola a la
@@ -1230,10 +1212,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
     setTfKey(k => k+1)
 
     // Scroll a la posición actual tras el cambio de TF.
-    requestAnimationFrame(()=>{
-      try{ cr.chart.timeScale().scrollToPosition(8,false) }catch{}
-      requestAnimationFrame(()=>setChartTick(t => t+1))
-    })
+    scrollToTail(cr, 8, () => setChartTick(t => t+1))
 
     prevTfRef.current = newTf
   },[pairTf,activePair,updateChart,deselectAll,exportTools])
