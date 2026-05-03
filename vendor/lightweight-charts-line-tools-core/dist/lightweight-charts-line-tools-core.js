@@ -1605,7 +1605,10 @@ function interpolateLogicalIndexFromTime(chart, series, timestamp) {
         const tHi = Number(cachedData[hi].time);
         if (tHi === tLo || givenTimeNum <= tLo) return lo;
         if (givenTimeNum >= tHi) return hi;
-        return lo + (givenTimeNum - tLo) / (tHi - tLo);
+        // Deuda 4.6: snap al floor (lo) cuando timestamp cae entre dos velas existentes.
+        // Devolver fractIdx hace que logicalToCoordinate de LWC core devuelva 0
+        // (borde izquierdo) en vez de interpolar. Equivale al floor de TradingView.
+        return lo;
     }
     // Fallback: linear interpolation with first two data points
     const dataAtIndex0 = series.dataByIndex(0, 0);
