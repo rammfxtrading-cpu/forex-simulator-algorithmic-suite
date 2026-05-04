@@ -1,9 +1,9 @@
-# refactor/fase-5-plan.md — v1
+# refactor/fase-5-plan.md — v2
 
 > **Plan táctico de fase 5 — Drawings lifecycle.**
-> Redactado: 4 mayo 2026, sesión 17 (CTO/revisor).
-> Estado: **v1 — borrador para revisión.** Puede haber detalles que refinar en sesión 18 tras inventario más profundo de bytes.
-> HEAD del repo al redactar: `29d0b0f` (HANDOFF sesión 16).
+> Redactado: 4 mayo 2026, sesión 17 (CTO/revisor). Versión 2 — incorpora inventario al carácter realizado al cierre de sesión 17.
+> v1 (commit `195d02b`) se conserva en histórico git. v2 es la versión vigente.
+> HEAD del repo al redactar v2: `195d02b` (rama `refactor/fase-5-drawings-lifecycle`).
 
 ---
 
@@ -37,20 +37,20 @@ Cierre limpio de 6 deudas UX que hoy viven repartidas y se interfieren entre sí
 
 - **NO toca trading domain** (positions, orders, balance) — eso es fase 6.
 - **NO reduce `_SessionInner.js`** a su tamaño objetivo — eso es fase 7.
-- **NO elimina los globales `window.__algSuite*`** salvo el documentado muerto (`__algSuiteExportTools`). El resto sigue siendo decisión de fase 7 (limpieza final).
+- **NO elimina los globales `window.__algSuite*`** salvo el documentado muerto (`__algSuiteExportTools`). El resto sigue siendo decisión de fase 7.
 - **NO toca el replay engine** ni el viewport core (fases 3 y 4 ya cerradas, sus invariantes deben mantenerse intactas en cada commit).
 
 ---
 
 ## §2 — Inventario al carácter (verificado en sesión 17)
 
-> Lo siguiente está verificado al carácter desde la shell zsh nativa de Ramón en la sesión 17. Lo demás (referencias a `core-analysis.md` o HANDOFFs) es inferencia documental y debe re-verificarse al carácter en sub-fase concreta.
+> Todo lo siguiente está verificado al carácter desde la shell zsh nativa de Ramón en la sesión 17. Lo demás (referencias a `core-analysis.md` o HANDOFFs) es inferencia documental y debe re-verificarse al carácter en sub-fase concreta.
 
 ### §2.1 Estado del repo
 
-- Rama: `main`. Working tree limpio.
-- HEAD: `29d0b0f docs(sesion-16): cerrar sesion 16 ...`.
-- Sincronizado con `origin/main`.
+- Rama feature activa: `refactor/fase-5-drawings-lifecycle`.
+- Commit más reciente: `195d02b docs(fase-5): plan v1 ...` sobre `29d0b0f` (HANDOFF sesión 16).
+- Working tree limpio (al cierre de redacción de v2 habrá un nuevo HANDOFF y v2 untracked, pendientes de comitear).
 
 ### §2.2 Invariantes fase 4 (deben mantenerse intactas)
 
@@ -71,16 +71,77 @@ Cierre limpio de 6 deudas UX que hoy viven repartidas y se interfieren entre sí
 
 ### §2.4 Plugin LWC en `useDrawingTools.js`
 
-- Init asíncrono: `initPlugin` hace 6 dynamic imports (core, lines, path, rectangle, fib, long-short-position) y monta `createLineToolsPlugin(cr.chart, cr.series)`. Registra 6 tipos de tool. Setea `pluginRef.current = plugin` y `setPluginReady(true)`.
-- **Teardown del plugin al cambiar par: NO existe.** El `useEffect` con dependencia `[activePair]` solo hace:
-  ```js
-  pluginRef.current = null
-  setPluginReady(false)
-  ```
-  El plugin viejo queda vivo en memoria con sus listeners enchufados al chart anterior. **Ésta es la causa raíz** de los errores `Series not attached to tool` y `Object is disposed` documentados en CLAUDE.md §9.
-- API expuesta: `addTool`, `removeSelected`, `removeAll`, `deselectAll`, `exportTools`, `importTools`, `onAfterEdit/offAfterEdit`, `onDoubleClick/offDoubleClick`, `getSelected`, `applyToTool`, `setToolVisible`, `updateToolConfig`. Todas envuelven llamadas a `pluginRef.current?.<método>`.
+#### §2.4.1 Inicialización
 
-### §2.5 Persistencia drawings (tabla `session_drawings`)
+`initPlugin` (en `useDrawingTools.js`) hace:
+
+1. 6 dynamic imports: core, lines, path, rectangle, fib (custom local), long-short-position.
+2. Monta `createLineToolsPlugin(cr.chart, cr.series)`.
+3. Registra 6 tipos de tool con `plugin.registerLineTool(...)`.
+4. Setea `pluginRef.current = plugin` y `setPluginReady(true)`.
+
+#### §2.4.2 Teardown — confirmado: NO existe
+
+El `useEffect` con dependencia `[activePair]` solo hace:
+
+```js
+pluginRef.current = null
+setPluginReady(false)
+```
+
+El plugin viejo **queda vivo en memoria** con sus listeners enchufados al chart anterior. **Ésta es la causa raíz** de los errores `Series not attached to tool` y `Object is disposed` documentados en CLAUDE.md §9.
+
+#### §2.4.3 API expuesta por `useDrawingTools`
+
+`addTool`, `removeSelected`, `removeAll`, `deselectAll`, `exportTools`, `importTools`, `onAfterEdit/offAfterEdit`, `onDoubleClick/offDoubleClick`, `getSelected`, `applyToTool`, `setToolVisible`, `updateToolConfig`. Todas envuelven llamadas a `pluginRef.current?.<método>`.
+
+### §2.5 Plugin LWC vendor — análisis para 5b (NUEVO en v2)
+
+#### §2.5.1 Estructura del archivo `lightweight-charts-line-tools-core.js`
+
+- 8737 líneas, NO minificado.
+- Clase `LineToolsCorePlugin` (plugin global) en L2929.
+- Clase `BaseLineTool` (cada herramienta individual) — origen exacto pendiente de verificar al carácter en sesión 19.
+- Factory `createLineToolsPlugin(chart, series)` en L8681.
+
+#### §2.5.2 Métodos de cleanup encontrados
+
+`grep` en el archivo devolvió 11 sitios con `destroy/dispose/detach/cleanup/removeAllLineTools/unsubscribe`:
+
+| Línea | Contexto | Notas |
+|---|---|---|
+| L379 | `unsubscribe(callback)` | Delegate genérico |
+| L393 | `unsubscribeAll(linkedObject)` | Delegate genérico |
+| L429 | `destroy()` | Probablemente Delegate o componente helper. Verificar al carácter en sesión 19. |
+| L1814 | `detachTool(tool)` | InteractionManager — desengancha tool individual |
+| L3066 | `this._interactionManager.detachTool(tool)` | Llamada interna desde plugin global |
+| L3067 | `tool.destroy()` | Llamada interna después del detach |
+| **L3127** | **`removeAllLineTools()`** | **Cleanup global de todas las herramientas. Es lo más cercano a un "destroy" del plugin que existe.** |
+| L3298 | `unsubscribeLineToolsDoubleClick` | API pública del plugin |
+| L3329 | `unsubscribeLineToolsAfterEdit` | API pública del plugin |
+| L6051 | `detached()` | Hook lifecycle de LWCharts en BaseLineTool |
+| L6575 | `destroy()` | De `BaseLineTool` (cleanup interno por tool) |
+
+#### §2.5.3 Hallazgo clave
+
+**`LineToolsCorePlugin` (la clase del plugin global) NO tiene un método `destroy()` propio.** El cleanup más completo disponible es `removeAllLineTools()` (L3127), cuya documentación dice: *"performs a full cleanup, detaching every tool from the chart's series"*.
+
+Cadena interna confirmada: `removeAllLineTools` → por cada tool → `detachTool` (InteractionManager) → `tool.destroy()` (BaseLineTool).
+
+**Lo que `removeAllLineTools` probablemente NO hace:**
+- Desuscribir `_doubleClickDelegate` y `_afterEditDelegate` del propio plugin.
+- Soltar referencias a `_chart` y `_series` que tiene `LineToolsCorePlugin` internamente.
+
+#### §2.5.4 Implicación para sub-fase 5b
+
+Dos caminos viables:
+
+- **Camino 5b-A — sin parche al fork:** llamar `pluginRef.current.removeAllLineTools()` antes de `pluginRef.current = null`. Más simple, sin tocar `vendor/`. Riesgo: si los delegates colgando o las refs `_chart`/`_series` causan los warnings, no se cierra del todo.
+- **Camino 5b-B — parche al fork (recomendado si A no basta):** añadir un método `destroy()` a `LineToolsCorePlugin` (~10 líneas: llamar `removeAllLineTools`, vaciar delegates, nulificar refs). Sigue patrón ya usado en commit `2851ef7`. Cierre arquitectónicamente limpio.
+
+**Decisión de v2:** intentar 5b-A primero. Si tras 5b-A los warnings persisten o aparecen errores nuevos, escalar a 5b-B. Documentar resultado.
+
+### §2.6 Persistencia drawings (tabla `session_drawings`)
 
 Definida en `_SessionInner.js`:
 - L297: `saveSessionDrawings = useCallback(async () => {...})`.
@@ -89,7 +150,7 @@ Definida en `_SessionInner.js`:
 - L338: `.from('session_drawings').select('data')...maybeSingle()` (carga inicial).
 - L331: `saveDrawingsRef.current = saveSessionDrawings` (ref para event handlers).
 
-### §2.6 Handler de cambio de TF (`_SessionInner.js` L1154-L1192)
+### §2.7 Handler de cambio de TF (`_SessionInner.js` L1154-L1192)
 
 Este es el **nodo crítico de coordinación de fase 5.** Hoy hace 6 cosas dentro de un único `useEffect`:
 
@@ -100,29 +161,59 @@ Este es el **nodo crítico de coordinación de fase 5.** Hoy hace 6 cosas dentro
 5. **Incrementar `tfKey`** — `setTfKey(k => k+1)` (re-render de hooks dependientes).
 6. **Scroll a tail + tick** — `scrollToTail(cr, 8, () => setChartTick(t => t+1))`.
 
-**Problema arquitectónico:** estas 6 acciones deben ejecutarse en orden específico, pero ese orden no está documentado en ninguna parte. Cualquier modificación (como la deuda 5.1 de sesión 16) puede romper el timing de overlays externos sin previo aviso.
+**Problema arquitectónico:** estas 6 acciones deben ejecutarse en orden específico, pero ese orden no está documentado. Cualquier modificación (como la deuda 5.1 de sesión 16) puede romper el timing de overlays externos sin previo aviso.
 
-### §2.7 `chartTick` — múltiples disparadores, contrato confuso
+### §2.8 Disparadores de `chartTick` (NUEVO en v2 — verificado al carácter)
 
-`chartTick` es un `useState(0)` en `_SessionInner.js:237` que se incrementa para notificar cambios de viewport a overlays HTML. Disparadores:
+`chartTick` es un `useState(0)` declarado en `_SessionInner.js:237`. Tiene **2 disparadores** verificados al carácter:
 
-- L891: `setChartTick(t=>t+1)` (sitio A — pendiente identificar contexto exacto en sub-fase).
-- L1189: `setChartTick(t => t+1)` (sitio B — handler de TF, dentro del callback de `scrollToTail`).
-- `lib/chartViewport.js:168`: comentario menciona "onScrolled dispara setChartTick".
+#### Disparador A — automático (L888-L892)
 
-**Y aquí el descubrimiento crítico de sesión 17:**
+Dentro de la suscripción `subscribeVisibleLogicalRangeChange` registrada al montar cada par:
 
 ```js
-// _SessionInner.js L1865
-<KillzonesOverlay chartMap={...} activePair={...} tick={tick} chartTick={chartTick} ... />
-
-// KillzonesOverlay.js L117
-export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf, tick, currentTime }) {
+chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{
+  const _cr=chartMap.current[pair]
+  markUserScrollIfReal(_cr)
+  setChartTick(t=>t+1)
+})
 ```
 
-`KillzonesOverlay` recibe `chartTick` como prop pero **NO lo destructura ni lo lee.** Lo que dispara su redibujado es otro mecanismo (probablemente el `subscribeVisibleLogicalRangeChange` interno, o el `tick` que sí lee). Esto explica la regresión de sesión 16: el fix 5.1 disparaba `setChartTick` esperando que Killzones reaccionara, pero Killzones nunca lo hizo — su recalculado venía por la cadena interna de LWC que en ese punto del flujo aún tenía viewport intermedio.
+Se dispara cada vez que el chart cambia su rango visible (zoom, pan, scroll del usuario, o cambios programáticos del viewport vía API LWC).
 
-**Implicación para fase 5:** el contrato entre handler de TF, `chartTick`, y overlays está **roto desde antes de sesión 16**. La regresión de 16 solo expuso el problema. Cualquier fase 5 honesta debe rediseñar este contrato.
+#### Disparador B — manual (L1189)
+
+Dentro del callback de `scrollToTail`, al final del handler de cambio de TF:
+
+```js
+scrollToTail(cr, 8, () => setChartTick(t => t+1))
+```
+
+Se dispara explícitamente cuando termina la operación de cambio de TF.
+
+#### Contrato implícito
+
+> *"si cambia el viewport — sea por interacción del usuario o por código — `chartTick` se incrementa".*
+
+**Es contrato razonable** pero no está escrito en ninguna parte y no todos los overlays lo respetan (ver §2.9). El fix 5.1 de sesión 16 disparaba `setChartTick` **fuera del rAF**, antes de que LWC aplicara el `setVisibleRange` interno → Killzones leían viewport intermedio. Esto no contradice el contrato, simplemente lo expone como insuficiente: el contrato debe especificar **timing** (después de qué momento se dispara).
+
+### §2.9 Mapa de overlays sensibles al viewport (NUEVO en v2)
+
+Verificado al carácter. **4 overlays totales**, cada uno con un mecanismo distinto de reactividad al viewport:
+
+| Overlay | Ubicación | Firma | Recibe `chartTick`? | Reactividad real al viewport |
+|---|---|---|---|---|
+| `KillzonesOverlay` | archivo propio | `{chartMap, activePair, dataReady, currentTf, tick, currentTime}` | Sí (L1865) pero **NO lo destructura** → ignorado | `tick` + suscripción interna LWC (presumible, verificar 5d) |
+| `RulerOverlay` | archivo propio | `{active, onDeactivate, chartMap, activePair}` | No | Suscripción interna LWC (presumible, verificar 5d) |
+| `CustomDrawingsOverlay` | archivo propio | `{drawings, chartMap, activePair, tfKey}` | No | `tfKey` + suscripción `subscribeVisibleLogicalRangeChange` (verificado al carácter en `CustomDrawingsOverlay.js`) |
+| `PositionOverlay` | helper local en `_SessionInner.js` L2796 | `{positions, pendingOrders, chartMap, activePair, dataReady, onClosePos, onCancelOrder, onDragEnd}` | No | Por verificar al carácter en sesión 21 |
+
+**Hallazgo crítico:** ninguno de los 4 overlays consume `chartTick` directamente. Cada uno improvisó su propio mecanismo. Esto es la **causa raíz arquitectónica** de la regresión Killzones de sesión 16 — el fix esperaba que un canal funcionara que en realidad no estaba conectado.
+
+### §2.10 Componentes secundarios
+
+- **DrawingToolbar** (`components/DrawingToolbar.js`): UI de selección de tool, no toca lifecycle.
+- **CustomDrawingsOverlay** dibuja TEXT (vía DOM) y RULER (vía canvas). El RULER del overlay y el `RulerOverlay` independiente **son cosas distintas**: el primero es persistido como drawing custom, el segundo es regla temporal estilo TradingView (no persistida).
 
 ---
 
@@ -132,9 +223,11 @@ Cinco problemas arquitectónicos vivos en el dominio drawings/overlays, ordenado
 
 ### Problema 1 — Plugin LWC no se destruye al cambiar par
 
-**Síntoma observable:** errores `Series not attached to tool` y `Object is disposed` en consola al cerrar pares con drawings o cambiar sesiones rápidamente. **Causa raíz confirmada al carácter en §2.4.**
+**Síntoma observable:** errores `Series not attached to tool` y `Object is disposed` en consola al cerrar pares con drawings o cambiar sesiones rápidamente. **Causa raíz confirmada al carácter en §2.4.2.**
 
 **Severidad:** alta. Es bug histórico del CLAUDE.md §9.
+
+**Ruta de cierre:** sub-fase 5b. Camino A primero (sin parche), B si A no basta.
 
 ### Problema 2 — Handler de cambio de TF acoplado en exceso
 
@@ -142,11 +235,23 @@ Cinco problemas arquitectónicos vivos en el dominio drawings/overlays, ordenado
 
 **Severidad:** alta. Bloquea futuras intervenciones (incluida la deuda 5.1 que sigue abierta).
 
+**Ruta de cierre:** sub-fase 5c.
+
 ### Problema 3 — Contrato `chartTick` ↔ overlays roto
 
-`chartTick` se dispara desde múltiples sitios, llega como prop a `KillzonesOverlay` que **no lo lee**. No hay contrato claro de quién observa qué. Posiblemente otros overlays (RulerOverlay, PositionOverlay) tengan el mismo problema — pendiente verificar al carácter en sesión 18 con sub-fase 5d.
+**Diagnóstico afilado tras inventario al carácter en sesión 17:**
 
-**Severidad:** alta. Es la causa raíz de la regresión Killzones de sesión 16, y bloquea la deuda 5.1.
+- **El contrato existe implícitamente** ("chartTick se incrementa cuando cambia el viewport") pero no está documentado y no especifica timing.
+- **Ningún overlay lo consume.** Los 4 overlays usan 3 mecanismos distintos:
+  - KillzonesOverlay: `tick` + suscripción LWC interna (recibe `chartTick` pero lo ignora).
+  - RulerOverlay: solo suscripción interna.
+  - CustomDrawingsOverlay: `tfKey` + suscripción interna.
+  - PositionOverlay: por verificar.
+- **Implicación:** disparar `setChartTick` no notifica a nadie efectivamente. Es equivalente a NOOP para los overlays, salvo efectos colaterales por cascada de re-renders de React.
+
+**Severidad:** alta. Es la causa raíz arquitectónica de la regresión Killzones de sesión 16, y bloquea la deuda 5.1.
+
+**Ruta de cierre:** sub-fase 5d. Rediseño del contrato + adopción explícita por los 4 overlays.
 
 ### Problema 4 — Drawings descolocados al cambiar TF (parche 4.6 vivo)
 
@@ -154,11 +259,15 @@ Parche `2851ef7` (snap timestamp al floor en `interpolateLogicalIndexFromTime` d
 
 **Severidad:** media. No es bloqueante. Decisión: mantener tal cual hasta sub-fase 5e, donde se evalúa.
 
+**Ruta de cierre:** sub-fase 5e.
+
 ### Problema 5 — Persistencia con race condition (B5)
 
 `POST /session_drawings 409 Conflict` aparece esporádicamente al guardar drawings. Hipótesis (sin verificar al carácter): saves concurrentes desde múltiples disparadores (`onAfterEdit`, autosave, cambio de par) sin debounce/lock.
 
 **Severidad:** baja-media. No corrompe datos (Supabase rechaza el segundo). Apuntado para sub-fase 5f.
+
+**Ruta de cierre:** sub-fase 5f.
 
 ---
 
@@ -177,9 +286,9 @@ Fase 5 está cerrada cuando se cumplen TODOS estos criterios sin excepción:
 
 ### Criterios arquitectónicos
 
-7. **Plugin LWC tiene teardown explícito** al cambiar par. Listeners viejos desconectados antes de montar el plugin nuevo.
+7. **Plugin LWC tiene teardown explícito** al cambiar par (vía `removeAllLineTools` o vía `destroy()` parcheado). Listeners viejos desconectados antes de montar el plugin nuevo.
 8. **Handler de cambio de TF documentado y testeable.** Las 6 responsabilidades actuales separadas en funciones nombradas, con orden explícito.
-9. **Contrato `chartTick` ↔ overlays explícito.** Documentado quién dispara, quién observa, cuándo. Killzones (y el resto de overlays) reaccionan correctamente.
+9. **Contrato `chartTick` ↔ overlays explícito.** Documentado quién dispara, quién observa, cuándo. Los 4 overlays adaptados.
 10. **Deuda 5.1 cerrable.** El rediseño de fase 5 debe permitir que mantener vista al cambiar TF sea una operación de 1-3 líneas, no una intervención frágil.
 11. **B2 (drawings descolocadas en Review) y B6 (plugin reinicializado) cerrados** o explícitamente documentados como no aplicables tras el refactor.
 
@@ -193,30 +302,52 @@ Fase 5 está cerrada cuando se cumplen TODOS estos criterios sin excepción:
 
 ## §5 — Sub-fases propuestas
 
-Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomizables, cada una commit propio en rama feature `refactor/fase-5-drawings-lifecycle`. Merge a `main` se hace solo al cerrar la fase completa con smoke producción OK.
+Fase 5 se reparte en sub-fases atomizables, cada una commit propio en rama feature `refactor/fase-5-drawings-lifecycle`. Merge a `main` se hace solo al cerrar la fase completa con smoke producción OK.
 
 ### Sub-fase 5b — Lifecycle del plugin LWC al cambiar par
 
 **Objetivo:** plugin viejo se destruye explícitamente antes de montar el nuevo al cambiar `activePair`.
 
-**Scope:**
-- `components/useDrawingTools.js`: añadir teardown en el `useEffect` con dependencia `[activePair]`.
-- Si el plugin del fork de difurious **no expone `destroy()`/`dispose()`**: parche al vendor vía `patch-package` (procedimiento ya usado en deuda 4.6 commit `2851ef7`). **Verificar al carácter en sesión 18 antes de empezar 5b.**
-- Posible polish en `_SessionInner.js`: revisar consumers que asumen plugin vivo durante transición.
+#### Estrategia — dos caminos secuenciales
 
-**Riesgo:** alto. Si rompemos algo, drawings desaparecen al cambiar par. Mitigación: smoke local exhaustivo cambio par × 30 ciclos antes de commit.
+**Camino 5b-A (intentar primero, sin parche):**
+- En `useDrawingTools.js`, en el `useEffect` con dependencia `[activePair]`:
+  - Antes de `pluginRef.current = null`, llamar `pluginRef.current?.removeAllLineTools()` (con try/catch).
+  - Verificar al carácter que la función existe en el plugin antes de la primera llamada.
+- Smoke local exhaustivo: cambio par × 30 ciclos con drawings activos. Verificar consola limpia.
 
-**Tamaño estimado:** ~30-50 líneas en `useDrawingTools.js` + posible patch al vendor.
+**Camino 5b-B (escalar si A no basta):**
+- Parche al fork de difurious vía edición directa de `vendor/lightweight-charts-line-tools-core/dist/lightweight-charts-line-tools-core.js`.
+- Añadir método `destroy()` a `LineToolsCorePlugin` (~10 líneas):
+  ```js
+  destroy() {
+    this.removeAllLineTools()
+    this._doubleClickDelegate = new Delegate()
+    this._afterEditDelegate = new Delegate()
+    this._chart = null
+    this._series = null
+    this._interactionManager = null
+  }
+  ```
+- En `useDrawingTools.js` llamar `pluginRef.current?.destroy()` en lugar de `removeAllLineTools`.
+
+**Decisión criterio:** si tras 5b-A persisten warnings o errores en consola tras smoke local, escalar a 5b-B en commit separado.
+
+**Riesgo:** alto. Si rompemos algo, drawings desaparecen al cambiar par. Mitigación: smoke local exhaustivo cambio par × 30 ciclos con drawings de los 6 tipos antes de commit.
+
+**Tamaño estimado:**
+- Camino A: ~10 líneas en `useDrawingTools.js`.
+- Camino B: ~10 líneas en `useDrawingTools.js` + ~10 líneas en `vendor/`.
 
 **Cobertura:** Problema 1 (§3). Cierra warning `_requestUpdate is not set`, errores `Series not attached`/`Object is disposed`.
 
 ### Sub-fase 5c — Descomposición del handler de cambio de TF
 
-**Objetivo:** las 6 responsabilidades del handler (§2.6) extraídas a funciones nombradas con orden explícito documentado.
+**Objetivo:** las 6 responsabilidades del handler (§2.7) extraídas a funciones nombradas con orden explícito documentado.
 
 **Scope:**
 - `components/_SessionInner.js` L1154-L1192: refactor del `useEffect`.
-- Posible nuevo módulo `lib/tfTransition.js` que orqueste el flujo (decidible en sesión 18).
+- Crear funciones nombradas para cada paso (probablemente helpers locales en `_SessionInner.js` o en un nuevo módulo `lib/tfTransition.js` — decisión al inicio de sesión 20 según tamaño).
 - Cero cambios funcionales en este commit — solo extracción y documentación. Comportamiento idéntico al actual.
 
 **Riesgo:** medio-alto. Es un nodo de coordinación frágil. Mitigación: cero cambios de comportamiento, solo restructuración. Smoke local exhaustivo (cambio TF × todas las combinaciones M1↔M3↔M5↔M15↔M30↔H1↔H4↔D1).
@@ -229,18 +360,48 @@ Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomi
 
 **Objetivo:** definir contrato explícito entre handler de TF, `chartTick`, y overlays HTML. Cerrar deuda 5.1 (mantener vista al cambiar TF) como aplicación natural del contrato.
 
-**Scope:**
-- Inventario al carácter de TODOS los overlays consumers de `chartTick` (KillzonesOverlay, RulerOverlay, PositionOverlay, posibles otros). Sesión 18 PASO 0.
-- Decisión de contrato (propuesta v1, refinable):
-  - **Un único disparador** de `chartTick` por evento de viewport.
-  - **Disparado SIEMPRE dentro del rAF** posterior a la operación que altera viewport.
-  - **Overlays observan `chartTick` explícitamente** — Killzones lo lee y reacciona, RulerOverlay/PositionOverlay igual.
-- Aplicación a `KillzonesOverlay`: destructurar `chartTick`, añadir `useEffect` que recalcule sesiones cuando cambie.
-- Cierre deuda 5.1: añadir `captureSavedTimeRange` + `restoreSavedTimeRange` (ya diseñadas en sesión 16, revertidas) al handler descompuesto en 5c, con `setChartTick` disparado dentro del rAF post-restore.
+#### Sub-pasos
 
-**Riesgo:** alto. Cambia el contrato de varios consumers a la vez. Mitigación: smoke local de cada overlay tras cada sub-paso (5d.1 inventario, 5d.2 contrato KillzonesOverlay, 5d.3 contrato RulerOverlay, 5d.4 contrato PositionOverlay, 5d.5 reaplicar deuda 5.1).
+**5d.1 — Inventario al carácter de overlays:**
+- Verificar al carácter cómo cada uno de los 4 overlays reacciona al viewport hoy.
+- Para `RulerOverlay`, `CustomDrawingsOverlay` y `PositionOverlay`: leer `useEffect` que se suscribe a `subscribeVisibleLogicalRangeChange` (si existe) y confirmar comportamiento.
+- Para `KillzonesOverlay`: confirmar al carácter que `tick` (NO `chartTick`) es el canal que lo redibuja.
 
-**Tamaño estimado:** ~30 líneas en `chartViewport.js` (3 funciones nuevas), ~20 en `_SessionInner.js`, ~10-15 en cada overlay.
+**5d.2 — Definir contrato v1 propuesto:**
+- **Un único canal de notificación:** `chartTick`.
+- **Disparado SIEMPRE dentro del rAF posterior a la operación que altera viewport.**
+- **Overlays observan `chartTick` explícitamente** vía destructuring + `useEffect` con dependencia `[chartTick]`.
+- **Documentado en `_SessionInner.js`** con comentario de bloque arriba del `chartTick` state.
+
+**5d.3 — Adoptar contrato en KillzonesOverlay:**
+- Destructurar `chartTick`.
+- Añadir `useEffect([chartTick, ...])` que recalcule sesiones / fuerce redraw.
+- Smoke local: cambio TF en zona pasada → Killzones bien colocadas (test crítico de regresión sesión 16).
+
+**5d.4 — Adoptar contrato en RulerOverlay:**
+- Pasar `chartTick` desde `_SessionInner.js`.
+- Adaptar lógica interna.
+
+**5d.5 — Adoptar contrato en CustomDrawingsOverlay:**
+- Reemplazar dependencia de `tfKey` por `chartTick` (o documentar por qué se mantiene `tfKey` si el caso lo justifica).
+
+**5d.6 — Adoptar contrato en PositionOverlay:**
+- Pasar `chartTick` desde `_SessionInner.js`.
+- Adaptar render de SL/TP/entrada.
+
+**5d.7 — Cierre deuda 5.1 (UX viewport):**
+- Reaplicar las 3 funciones de `chartViewport.js` diseñadas en sesión 16 (`captureSavedTimeRange`, `restoreSavedTimeRange`, `resetViewportToDefault`).
+- Integrar en handler de TF descompuesto (5c).
+- `setChartTick` se dispara dentro del rAF posterior al `restoreSavedTimeRange`.
+- Smoke local de los 4 tests de sesión 16 (cambio TF rango pasado, cambio durante play, cambio extremo, cambio en phantoms).
+
+**5d.8 — Atajo Opt+R / Alt+R (sub-Op D pendiente de sesión 16):**
+- Implementar el atajo que llama `resetViewportToDefault`.
+- Smoke local: tras cambio de TF, Opt+R devuelve viewport al final del chart.
+
+**Riesgo:** alto. Cambia el contrato de varios consumers a la vez. Mitigación: cada sub-paso es commit propio. Smoke local de cada overlay tras cada sub-paso.
+
+**Tamaño estimado:** ~30 líneas en `chartViewport.js` (3 funciones nuevas), ~20 en `_SessionInner.js`, ~10-15 en cada overlay → total ~100 líneas.
 
 **Cobertura:** Problema 3 (§3) + deuda 5.1 + regresión Killzones de sesión 16.
 
@@ -248,12 +409,13 @@ Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomi
 
 **Objetivo:** decidir si el parche `snap timestamp al floor` en plugin LWC vendor (commit `2851ef7`) sigue siendo necesario tras 5b/5c/5d, o si el rediseño lo hace redundante.
 
-**Scope:**
-- Reproducir caso original (M5 → M15 con LongShortPosition en timestamp intermedio) sin el parche, sobre fase 5 ya parcialmente rediseñada.
-- Decisión:
-  - **Si sigue siendo necesario:** mantener tal cual.
-  - **Si el rediseño lo hace redundante:** revertirlo en commit aparte con justificación documentada.
-  - **Si el rediseño permite arreglarlo más arriba (en `useDrawingTools` o nuevo módulo):** rediseño limpio, parche borrado.
+**Procedimiento:**
+1. Reproducir caso original (M5 → M15 con LongShortPosition en timestamp intermedio) **con el parche activo** (estado actual). Confirmar que funciona.
+2. Revertir el parche en una rama experimental local. Reproducir el caso. Si vuelve el bug → parche sigue siendo necesario.
+3. Decisión:
+   - **Si sigue siendo necesario:** mantener tal cual. Cerrar 5e con commit de no-acción + nota.
+   - **Si ya no es necesario:** revertir el parche en commit aparte con justificación documentada.
+   - **Si el rediseño de 5b/5c/5d permite arreglarlo más arriba (en `useDrawingTools` o en módulo nuevo):** rediseño limpio, parche borrado.
 
 **Riesgo:** medio. Mitigación: cualquier cambio aquí pasa por smoke producción de la matriz completa de TFs (3x3 transiciones) con 6 tipos de drawings.
 
@@ -265,10 +427,13 @@ Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomi
 
 **Objetivo:** absorber deudas chicas que viven en este dominio.
 
-**Scope:**
-- **Deuda 4.5:** borrar `__algSuiteExportTools` del bloque debug (`_SessionInner.js:1138` según `core-analysis.md §7 punto 5`). Verificar al carácter antes.
-- **B5 (409 Conflict en `session_drawings`):** investigar disparadores concurrentes. Hipótesis a verificar: añadir debounce/single-flight a `saveSessionDrawings`.
-- **Polling 300ms `getSelected()`:** investigar por qué se puso (CLAUDE.md §7 punto 6). Si `subscribeLineToolsAfterEdit` no cubre cambios de selección sin edición, sustituir por evento sintético o suscripción al fork.
+**Sub-pasos:**
+
+**5f.1 — Deuda 4.5:** borrar `__algSuiteExportTools` del bloque debug (`_SessionInner.js:1138` aproximado, según `core-analysis.md §7 punto 5`). Verificar al carácter antes.
+
+**5f.2 — Polling 300ms `getSelected()`:** investigar por qué se puso (CLAUDE.md §7 punto 6). Si `subscribeLineToolsAfterEdit` no cubre cambios de selección sin edición, sustituir por evento sintético o suscripción al fork.
+
+**5f.3 — B5 (409 Conflict en `session_drawings`):** investigar disparadores concurrentes. Hipótesis a verificar: añadir debounce/single-flight a `saveSessionDrawings`.
 
 **Riesgo:** bajo cada elemento por separado. Commit por elemento.
 
@@ -292,11 +457,11 @@ Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomi
 
 ### Riesgo 1 — Romper drawings durante 5b (lifecycle plugin)
 
-**Mitigación:** smoke local cambio par × 30 ciclos con drawings activos antes de cualquier commit. Si fallan, revert inmediato y diagnóstico.
+**Mitigación:** smoke local cambio par × 30 ciclos con drawings activos antes de cualquier commit. Si fallan, revert inmediato y diagnóstico. Camino A primero (sin parche al fork) reduce superficie de cambio.
 
 ### Riesgo 2 — Romper Killzones (otra vez) durante 5d
 
-**Mitigación:** smoke local de Killzones es **test crítico obligatorio** tras CADA sub-paso de 5c y 5d. Lección de sesión 16 grabada.
+**Mitigación:** smoke local de Killzones es **test crítico obligatorio** tras CADA sub-paso de 5c y 5d. Cada sub-paso de 5d es commit propio. Lección de sesión 16 grabada.
 
 ### Riesgo 3 — Sub-fase 5e (parche 4.6) introduce regresión
 
@@ -304,7 +469,7 @@ Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomi
 
 ### Riesgo 4 — Tamaño de fase 5 supera capacidad de sesiones
 
-**Mitigación:** cada sub-fase es commit atómico mergeable a su rama feature. Si fase 5 tarda 6 sesiones en lugar de 4, no pasa nada — la rama feature aguanta. Solo se mergea a main al cierre completo.
+**Mitigación:** cada sub-fase es commit atómico mergeable a su rama feature. Si fase 5 tarda 8 sesiones en lugar de 6, no pasa nada — la rama feature aguanta. Solo se mergea a main al cierre completo.
 
 ### Riesgo 5 — Errores §9.4 del CTO durante fase 5
 
@@ -313,6 +478,12 @@ Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomi
 ### Riesgo 6 — Petición fuera de orden durante fase 5
 
 **Mitigación:** si Ramón pide atacar deuda UX no asignada a sub-fase actual, **CTO advierte una vez con razón clara**. Si Ramón insiste tras advertencia, ejecuta y documenta como excepción. NO inventar urgencia operativa para justificar desvío.
+
+### Riesgo 7 (NUEVO en v2) — `removeAllLineTools` borra drawings vivos en cambio de par
+
+Si en sub-fase 5b camino A llamamos `removeAllLineTools()` antes de cambiar par, **se borran los drawings del par actual de la vista del plugin**. Pero los drawings persistidos en BD (`session_drawings`) y los re-importados al volver al par siguen intactos porque el flujo de `loadPair` reimporta vía `importTools(json)`.
+
+**Mitigación:** verificar al carácter en sesión 19 que el flujo "cambiar par → volver al par anterior" reimporta correctamente los drawings desde BD. Si hay race condition o falta de re-import, ajustar lógica.
 
 ---
 
@@ -329,9 +500,9 @@ Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomi
 7. **NO** mergear a `main` durante la fase. Solo commits en `refactor/fase-5-drawings-lifecycle`.
 8. **NO** hacer push antes del cierre de fase salvo que Ramón lo apruebe explícitamente.
 9. **NO** atacar deudas UX que no estén en §1.2 bajo justificación de "scope acotado, encajemos".
-10. **NO** usar Claude Code en sesión 17 ni 18. Sesiones 17-18 son planificación. Implementación a partir de sesión 19.
-11. **NO** comitear si los 3 greps de invariantes fase 4 (§2.2) fallan.
-12. **NO** documentar/comentar código que ya funciona "porque ya estoy aquí". Solo cambios funcionales necesarios.
+10. **NO** comitear si los 3 greps de invariantes fase 4 (§2.2) fallan.
+11. **NO** documentar/comentar código que ya funciona "porque ya estoy aquí". Solo cambios funcionales necesarios.
+12. **NO** escalar de 5b camino A a 5b camino B sin smoke completo del camino A primero.
 
 ---
 
@@ -341,59 +512,61 @@ Fase 5 es **el bloque más grande del refactor** y se reparte en sub-fases atomi
 
 | Sesión | Sub-fase | Tipo | Tiempo estimado |
 |---|---|---|---|
-| 17 | PASO 0 + plan v1 | Planificación | ~3-4h (en curso) |
-| 18 | Plan v2 + inventario más profundo | Planificación | ~2-3h |
-| 19 | 5b — lifecycle plugin LWC | Implementación | ~2-3h |
+| 17 | PASO 0 + plan v1 + plan v2 + inventario al carácter | Planificación | ~5-6h (en curso) |
+| 18 | Validación pasiva o arranque 5b | Decisión Ramón | — |
+| 19 | 5b — lifecycle plugin LWC (camino A primero) | Implementación | ~2-3h |
 | 20 | 5c — handler TF descomposición | Implementación | ~2-3h |
-| 21 | 5d — contrato chartTick + deuda 5.1 | Implementación | ~3-4h (la más grande) |
-| 22 | 5e — decisión parche 4.6 | Implementación | ~1-2h |
-| 23 | 5f — limpieza | Implementación | ~2h |
-| 24 | 5g — cierre + smoke producción + HANDOFF | Cierre | ~2-3h |
+| 21 | 5d.1-5d.4 — contrato chartTick + KillzonesOverlay + RulerOverlay | Implementación | ~3-4h |
+| 22 | 5d.5-5d.8 — CustomDrawingsOverlay + PositionOverlay + deuda 5.1 + atajo Opt+R | Implementación | ~3-4h |
+| 23 | 5e — decisión parche 4.6 | Implementación | ~1-2h |
+| 24 | 5f — limpieza | Implementación | ~2h |
+| 25 | 5g — cierre + smoke producción + HANDOFF | Cierre | ~2-3h |
 
-**Total estimado:** 8 sesiones (~17-24h de trabajo).
+**Total estimado:** 8 sesiones de implementación sobre lo ya hecho (~17-25h adicionales).
 
 **Importante:** este calendario es propuesta. Ramón decide ritmo. Si en algún momento decide pausar fase 5 para validación pasiva en producción (estilo cierre de fase 4d), la rama feature aguanta.
 
 ---
 
-## §9 — Material pendiente para sesión 18 (plan v2)
+## §9 — Material aún pendiente para sesión 19+ (corto)
 
-Ramón, esto es lo que **falta verificar al carácter** antes de empezar implementación:
+La mayor parte del inventario al carácter ya está hecho en sesión 17. Lo que queda pendiente, a verificar al inicio de cada sub-fase concreta:
 
-### §9.1 Inventario al carácter pendiente
+### Para sub-fase 5b (sesión 19)
 
-1. **`vendor/lightweight-charts-line-tools-core/dist/lightweight-charts-line-tools-core.js`** — ¿expone `destroy()` o `dispose()` el plugin? Decide si necesitamos parche al fork en sub-fase 5b.
-2. **`components/_SessionInner.js` L891** — qué dispara `setChartTick` en este sitio (segundo disparador detectado).
-3. **`components/RulerOverlay.js`** y **`components/PositionOverlay.js`** — ¿reciben `chartTick` como prop? ¿lo leen? Necesario para sub-fase 5d.
-4. **Polling 300ms `getSelected()`** — localizar al carácter (mencionado en `core-analysis.md §7 punto 6`, probablemente en `_SessionInner.js` o `useDrawingTools.js`).
-5. **Bloque debug `__algSuiteExportTools`** — localizar al carácter (`core-analysis.md` apunta a L1138 pero verificar).
-6. **Race B5 — disparadores de `saveSessionDrawings`** — qué eventos lo gatillan. Hipótesis: `onAfterEdit` + autosave. Verificar.
+1. Confirmar al carácter que `LineToolsCorePlugin.prototype.removeAllLineTools` existe y no requiere argumentos (probablemente sí — está documentado en L3127 — pero verificar antes del Edit).
+2. Verificar que el flujo "cambiar par → volver" reimporta drawings (Riesgo 7).
 
-### §9.2 Decisiones pendientes
+### Para sub-fase 5c (sesión 20)
 
-1. **Sub-fase 5b — ¿parche al fork o no?** Depende de §9.1.1.
-2. **Sub-fase 5c — ¿módulo nuevo `lib/tfTransition.js` o función dentro de `chartViewport.js`?** Depende del tamaño y de si la lógica reutiliza otras del módulo.
-3. **Sub-fase 5e — decisión parche 4.6.** No se puede tomar hasta tener 5b/5c/5d implementadas.
+1. Decidir si los helpers extraídos viven en `_SessionInner.js` (locales) o en `lib/tfTransition.js` (módulo nuevo). Decisión basada en el tamaño real del refactor.
 
-### §9.3 Procedimiento sesión 18
+### Para sub-fase 5d (sesión 21)
 
-1. PASO 0: lectura al carácter de los puntos §9.1.
-2. Refinamiento del plan a v2 con bytes verificados.
-3. Decisiones §9.2 cuando sea posible.
-4. Si v2 está aprobado por Ramón: arrancar sesión 19 con sub-fase 5b.
+1. Inventario al carácter de los `useEffect` de los 4 overlays — qué dependencias tienen, qué subscriben, qué hacen al re-render.
+
+### Para sub-fase 5f (sesión 24)
+
+1. Localización al carácter del polling 300ms `getSelected` (mencionado en `core-analysis.md §7 punto 6`).
+2. Localización al carácter del bloque debug `__algSuiteExportTools`.
+3. Análisis de disparadores de `saveSessionDrawings` para race B5.
 
 ---
 
 ## §10 — Aprobación
 
-Este plan es **v1 — borrador.** No se ejecuta nada hasta que Ramón lo apruebe explícitamente o pida cambios. Si aprobado:
+Este plan es **v2 — propuesta consolidada con bytes verificados.** No se ejecuta nada hasta que Ramón lo apruebe explícitamente o pida cambios.
 
-1. Comitear este archivo a rama feature `refactor/fase-5-drawings-lifecycle` (no a main aún).
-2. Cerrar sesión 17 con HANDOFF.
-3. Sesión 18: redactar v2 con bytes pendientes en §9.
+Si aprobado:
 
-Si requiere cambios, iterar v1 → v1.1 → ... antes de comitear.
+1. v2 sustituye a v1 en `refactor/fase-5-plan.md` (mismo nombre de archivo, sobrescribe; v1 sigue vivo en commit `195d02b` para trazabilidad).
+2. Comitear v2 a la rama `refactor/fase-5-drawings-lifecycle`.
+3. Cerrar sesión 17 con HANDOFF.
+4. Sesión 18: Ramón decide si arranca 5b directamente o quiere validación pasiva.
+5. Sesión 19+: implementación de sub-fases.
+
+Si requiere cambios, iterar v2 → v2.1 → ... antes de comitear.
 
 ---
 
-*Fin del plan v1 fase 5. Redactado en sesión 17 por CTO/revisor. Pendiente revisión por Ramón.*
+*Fin del plan v2 fase 5. Redactado en sesión 17 por CTO/revisor. Pendiente revisión por Ramón.*
