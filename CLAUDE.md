@@ -33,7 +33,17 @@ Los 3 comparten **un único proyecto Supabase**.
 - `sim_drawing_templates` — plantillas de dibujos
 - `user_chart_config` — config global del chart por usuario
 - `user_tool_config` — config de herramientas de dibujo por usuario
-- `forex-data` — velas históricas
+
+**Storage del simulador (Supabase Storage, NO es una tabla Postgres):**
+- `forex-data` — bucket de Storage con velas históricas M1 por par y año.
+  Estructura: `{PAIR}/M1/{YEAR}.json` (ej: `EURUSD/M1/2026.json`, ~12 MB con
+  ~125k velas M1 por año). El endpoint `pages/api/candles.js` primero busca
+  en este bucket; si el archivo no existe, descarga automáticamente de
+  Dukascopy (vía paquete `dukascopy-node`), valida completitud (umbrales
+  por día de la semana), reintenta 3 veces si hay agujeros, y guarda al
+  bucket con protección anti-degradación (no sobreescribe si la nueva
+  versión tiene < 95% velas que la existente). Documentación del fix
+  pipeline robusto: deuda 5.2 cerrada en sesión 15 (commit `89e36ee`).
 
 **Tablas de OTROS productos (NO tocar):**
 - `profiles` — perfil del usuario, compartida con hub y journal. **Solo lectura.**
@@ -156,7 +166,7 @@ Si propones añadir tests automáticos para alguna pieza nueva, **avísame prime
 
 - **Next.js 14** (`pages/` router, no `app/`)
 - **React 18**
-- **Supabase** (auth + Postgres)
+- **Supabase** (auth + Postgres + Storage)
 - **lightweight-charts** + plugins de line-tools (`lightweight-charts-line-tools-core`, `-lines`, `-rectangle`, `-fib-retracement`, `-long-short-position`, `-path`)
 - **Vercel** para deploy automático (push a `main` → producción)
 - Sin TypeScript (`.js` plano)
@@ -216,4 +226,4 @@ Al inicio de cada sesión nueva conmigo:
 
 ---
 
-*Última actualización: redactado con asistencia de Claude.ai antes de la primera sesión de Claude Code.*
+*Última actualización: 4 mayo 2026 — sesión 15. Sub-Op E de deuda 5.2: corregir §2 (forex-data es bucket Storage, no tabla Postgres).*
