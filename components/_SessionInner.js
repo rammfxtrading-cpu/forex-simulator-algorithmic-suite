@@ -1153,40 +1153,85 @@ if(full||(curr!==prev&&curr!==prev+1)){
   // en el TF nuevo para que ese timestamp caiga dentro del array.
   const prevTfRef = useRef(null)
   useEffect(()=>{
-    if(!activePair) return
-    const ps=pairState.current[activePair], cr=chartMap.current[activePair]
-    if(!ps?.engine || !cr) return
+    // ─── sub-fase 5c — TF transition orchestrator ──────────────────────
+    // Las 6 responsabilidades del cambio de TF, extraídas a funciones
+    // nombradas locales con orden de ejecución explícito:
+    //
+    //   1. resolveCtx               → { ps, cr, newTf } | null
+    //   2. deselectActiveDrawings   → limpia selección pre-setData
+    //   3. computeTfPhantomsCount   → phantoms necesarias en TF nuevo
+    //   4. applyForcedSetData       → siembra phantoms + fuerza updateChart
+    //   5. bumpTfKey                → re-render hooks dependientes
+    //   6. scrollToTailAndNotify    → scroll a tail + chartTick a overlays
+    //
+    // Cero cambios de comportamiento respecto al handler pre-5c. Si se
+    // detecta regresión empírica (Killzones descolocadas, drawings
+    // desanclados, etc.), revertir 5c entera.
+    // ───────────────────────────────────────────────────────────────────
 
-    const newTf = pairTf[activePair] || 'H1'
-    const oldTf = prevTfRef.current
+    // R1: contexto de la transición. Devuelve null si no hay par activo
+    //     o si engine/cr aún no están listos.
+    const resolveCtx = () => {
+      if(!activePair) return null
+      const ps=pairState.current[activePair], cr=chartMap.current[activePair]
+      if(!ps?.engine || !cr) return null
+      const newTf = pairTf[activePair] || 'H1'
+      return { ps, cr, newTf }
+    }
 
-    // Deseleccionar drawings antes del re-render (mantiene UX limpia y
-    // previene el contraerse del LongShortPosition durante el setData).
-    try{ deselectAll() }catch{}
+    // R2: deselect drawings antes del re-render. Mantiene UX limpia y
+    //     previene el contraerse del LongShortPosition durante el setData.
+    const deselectActiveDrawings = () => {
+      try{ deselectAll() }catch{}
+    }
 
-    // Calcular cuántas phantoms necesitamos en el TF nuevo para que TODOS los
-    // drawings se rendericen correctamente (sus timestamps deben caer dentro
-    // del array de velas, sea sobre vela real o phantom).
-    let phantomsNeeded = 10  // mínimo por defecto
-    try {
-      const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
-      const newSecs = TF_SECS[newTf] || 3600
-      const newAgg = ps.engine.getAggregated(newTf)
-      const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
-      if (newLastReal) {
-        const tools = JSON.parse(exportTools() || '[]')
-        phantomsNeeded = computePhantomsNeeded(tools, newLastReal, newSecs)
-      }
-    } catch(e){ /* swallow — fallback al default 10 */ }
+    // R3: cuántas phantoms necesitamos en el TF nuevo para que TODOS los
+    //     drawings se rendericen correctamente (sus timestamps deben caer
+    //     dentro del array de velas, sea sobre vela real o phantom).
+    const computeTfPhantomsCount = (ps, newTf) => {
+      let phantomsNeeded = 10  // mínimo por defecto
+      try {
+        const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
+        const newSecs = TF_SECS[newTf] || 3600
+        const newAgg = ps.engine.getAggregated(newTf)
+        const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
+        if (newLastReal) {
+          const tools = JSON.parse(exportTools() || '[]')
+          phantomsNeeded = computePhantomsNeeded(tools, newLastReal, newSecs)
+        }
+      } catch(e){ /* swallow — fallback al default 10 */ }
+      return phantomsNeeded
+    }
 
-    // Pasamos phantomsNeeded a updateChart vía un ref que lee la función.
-    cr._phantomsNeeded = phantomsNeeded
-    cr.prevCount = 0
-    updateChart(activePair, ps.engine, true)
-    setTfKey(k => k+1)
+    // R4: forzar setData con las phantoms calculadas. Pasamos
+    //     phantomsNeeded a updateChart vía un ref (cr._phantomsNeeded).
+    //     prevCount=0 fuerza recreación completa del array de velas.
+    const applyForcedSetData = (cr, phantomsNeeded, ps) => {
+      cr._phantomsNeeded = phantomsNeeded
+      cr.prevCount = 0
+      updateChart(activePair, ps.engine, true)
+    }
 
-    // Scroll a la posición actual tras el cambio de TF.
-    scrollToTail(cr, 8, () => setChartTick(t => t+1))
+    // R5: bump tfKey para re-render de hooks dependientes (overlays, etc.).
+    const bumpTfKey = () => setTfKey(k => k+1)
+
+    // R6: scroll a la posición actual tras el cambio de TF y notifica
+    //     a los overlays vía chartTick (KillzonesOverlay, RulerOverlay, etc.)
+    const scrollToTailAndNotify = (cr) => {
+      scrollToTail(cr, 8, () => setChartTick(t => t+1))
+    }
+
+    // ─── orquestador ───────────────────────────────────────────────────
+    const ctx = resolveCtx()
+    if (!ctx) return
+    const { ps, cr, newTf } = ctx
+    const oldTf = prevTfRef.current  // preservado para trazabilidad — candidato limpieza sub-fase 5f
+
+    deselectActiveDrawings()
+    const phantomsNeeded = computeTfPhantomsCount(ps, newTf)
+    applyForcedSetData(cr, phantomsNeeded, ps)
+    bumpTfKey()
+    scrollToTailAndNotify(cr)
 
     prevTfRef.current = newTf
   },[pairTf,activePair,updateChart,deselectAll,exportTools])
