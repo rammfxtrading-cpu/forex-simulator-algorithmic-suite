@@ -13,7 +13,7 @@ function formatDuration(seconds) {
   return parts.join(' ')
 }
 
-export default function RulerOverlay({ active, onDeactivate, chartMap, activePair }) {
+export default function RulerOverlay({ active, onDeactivate, chartMap, activePair, chartTick }) {
   const canvasRef = useRef(null)
   const stateRef  = useRef({ phase: 'idle', start: null, end: null }) // phase: idle | measuring | fixed
   const [result, setResult] = useState(null)
@@ -186,6 +186,16 @@ export default function RulerOverlay({ active, onDeactivate, chartMap, activePai
       window.removeEventListener('mouseup',   onMouseUp)
     }
   }, [active, coordsToData, draw, calcResult, reset, onDeactivate])
+
+  // ── Reset on chartTick — comportamiento TradingView ──
+  // La regla es medición transitoria. Al cambiar TF (señal vía contrato
+  // chartTick), si la regla estaba fija, se resetea y la herramienta se
+  // desactiva. El usuario vuelve a cursor.
+  useEffect(() => {
+    if (stateRef.current.phase !== 'fixed') return
+    reset()
+    if (onDeactivate) onDeactivate()
+  }, [chartTick, reset, onDeactivate])
 
   useEffect(() => {
     const canvas = canvasRef.current
