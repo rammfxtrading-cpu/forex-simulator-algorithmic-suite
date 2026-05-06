@@ -234,6 +234,30 @@ export default function SessionPage(){
   const [chartConfigOpen, setChartConfigOpen] = useState(false)
   const [rulerActive, setRulerActive] = useState(false)
   const [tfKey, setTfKey] = useState(0)
+  /**
+   * chartTick — contrato formal de invalidación de cache derivado del dataset.
+   *
+   * Señal monotónica (entero que solo crece con setChartTick(t => t+1))
+   * que un overlay con cache derivado del dataset DEBE incluir como dep
+   * de su useEffect de cache.
+   *
+   * Productores en este archivo:
+   *   - L~891 (dentro de subscribeVisibleLogicalRangeChange): cambio
+   *     de visible logical range (zoom/pan/scroll del usuario).
+   *   - L~1221 (dentro de scrollToTailAndNotify, helper R6 post-5c):
+   *     cambio de TF que reemplaza el dataset vía applyForcedSetData.
+   *
+   * Consumidores objetivo:
+   *   - KillzonesOverlay (sub-fase 5d.2)
+   *   - RulerOverlay (sub-fase 5d.3)
+   *   - CustomDrawingsOverlay (sub-fase 5d.5, sesión 22)
+   *   - PositionOverlay (sub-fase 5d.5, sesión 22)
+   *
+   * Distinto de `tick` (L207), que es señal de propósito general bumpeada
+   * por trades, balance, order modal — NO refleja cambios de dataset.
+   *
+   * Contrato introducido en sub-fase 5d.1.
+   */
   const [chartTick, setChartTick] = useState(0)
   const [hoverCandle, setHoverCandle] = useState(null) // {o,h,l,c,t}
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
