@@ -251,7 +251,7 @@ export default function SessionPage(){
    *   - KillzonesOverlay (sub-fase 5d.2)
    *   - RulerOverlay (sub-fase 5d.3)
    *   - CustomDrawingsOverlay (sub-fase 5d.5, sesión 22)
-   *   - PositionOverlay (sub-fase 5d.5, sesión 22)
+   *   - PositionOverlay (sub-fase 5d.6, sesión 22)
    *
    * Distinto de `tick` (L207), que es señal de propósito general bumpeada
    * por trades, balance, order modal — NO refleja cambios de dataset.
@@ -1933,7 +1933,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         })}
         <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} chartTick={chartTick} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'} currentTime={currentTime}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} chartTick={chartTick} />
-        <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
+        <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} chartTick={chartTick} />
         {!dataReady&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
         )}

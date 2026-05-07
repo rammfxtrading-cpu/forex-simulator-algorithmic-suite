@@ -80,7 +80,7 @@ function drawRuler(ctx, drawing, coords) {
   ctx.fillText(label, lx, ly)
 }
 
-export default function CustomDrawingsOverlay({ drawings, chartMap, activePair, tfKey }) {
+export default function CustomDrawingsOverlay({ drawings, chartMap, activePair, tfKey, chartTick }) {
   const canvasRef = useRef(null)
   const crRef = useRef(null)
   const unsubRef = useRef(null)
@@ -118,8 +118,8 @@ export default function CustomDrawingsOverlay({ drawings, chartMap, activePair, 
     return () => { if (unsubRef.current) unsubRef.current() }
   }, [activePair, chartMap, render])
 
-  // Also render when drawings change
-  useEffect(() => { render() }, [drawings, render, tfKey])
+  // Also render when drawings change or dataset is invalidated (chartTick = contrato 5d.1)
+  useEffect(() => { render() }, [drawings, render, tfKey, chartTick])
 
   // Resize canvas with devicePixelRatio for sharp text
   useEffect(() => {
