@@ -1241,8 +1241,17 @@ if(full||(curr!==prev&&curr!==prev+1)){
 
     // R6: scroll a la posición actual tras el cambio de TF y notifica
     //     a los overlays vía chartTick (KillzonesOverlay, RulerOverlay, etc.)
-    const scrollToTailAndNotify = (cr) => {
-      scrollToTail(cr, 8, () => setChartTick(t => t+1))
+    //
+    //     Sub-fase 5d.7 (deuda 5.1): el offset incluye phantomsNeeded para
+    //     que el viewport se ancle al ÚLTIMO REAL + 8 barras, ignorando los
+    //     phantoms sembrados por drawings extendidos a la derecha. Sin esto,
+    //     scrollToPosition mide desde el final del array (que incluye phantoms)
+    //     y el viewport arrastra el endpoint del drawing — comportamiento
+    //     reportado por Ramón desde sesión 20 (espacio negro + pérdida de
+    //     posición visible al cambiar TF). Estilo TradingView.
+    const scrollToTailAndNotify = (cr, phantomsNeeded) => {
+      const offset = 8 - (phantomsNeeded || 0)
+      scrollToTail(cr, offset, () => setChartTick(t => t+1))
     }
 
     // ─── orquestador ───────────────────────────────────────────────────
@@ -1255,7 +1264,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
     const phantomsNeeded = computeTfPhantomsCount(ps, newTf)
     applyForcedSetData(cr, phantomsNeeded, ps)
     bumpTfKey()
-    scrollToTailAndNotify(cr)
+    scrollToTailAndNotify(cr, phantomsNeeded)
 
     prevTfRef.current = newTf
   },[pairTf,activePair,updateChart,deselectAll,exportTools])
