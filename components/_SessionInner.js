@@ -1943,6 +1943,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
           chartMap={chartMap}
           activePair={activePair}
           dataReady={dataReady}
+          chartTick={chartTick}
           onClosePos={(posId)=>{ const p=openPositions.find(x=>x.id===posId); if(p) setCloseModal({posId,pair:activePair,pos:p}) }}
           onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
           onDragEnd={handlePositionDragEnd}
@@ -2862,7 +2863,7 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
 
 
 // ─── Position Overlay — HTML lines with reliable drag ────────────────────────
-function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd}){
+function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd,chartTick}){
   const [lines,    setLines]    = useState([])
   const dragState = useRef(null) // {posId, type, active:bool}
   const chartElRef = useRef(null)
@@ -2875,42 +2876,51 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
     }
   },[activePair, dataReady])
 
-  // Update line Y positions every 100ms
+  // update — computa Y posiciones de cada línea visible (entry/SL/TP).
+  // Extraído como useCallback estable (sub-fase 5d.6) para dispararlo desde 2 sitios:
+  //  (a) polling 150ms — defensa contra zoom Y u otros eventos sin contrato formal.
+  //  (b) bump de chartTick — cambio TF / dataset (contrato 5d.1, ataja latencia ~150ms→~16ms).
+  const update=useCallback(()=>{
+    if(!dataReady) return
+    // Skip if nothing to show — saves CPU when no trades are open
+    if(!positions.length && !pendingOrders?.length){ setLines([]); return }
+    const cr=chartMap.current[activePair]; if(!cr?.series) return
+    const all=[]
+    positions.forEach(pos=>{
+      let eY=null,slY=null,tpY=null
+      try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
+      try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
+      try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
+      const slPnl=(-(pos.slPips*pos.lots*10)).toFixed(2)
+      const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
+      if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
+      if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
+      if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(30,144,255,0.65)', drag:true, close:false})
+    })
+    ;(pendingOrders||[]).forEach(ord=>{
+      const cr2=chartMap.current[activePair]
+      let eY=null,slY=null,tpY=null
+      try{eY =cr2?.series?.priceToCoordinate(ord.entry)}catch{}
+      try{slY=cr2?.series?.priceToCoordinate(ord.sl)}catch{}
+      try{tpY=cr2?.series?.priceToCoordinate(ord.tp)}catch{}
+      const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
+      if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.55)',drag:true, cancel:true})
+      if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL', color:'rgba(239,83,80,0.5)',  drag:true, cancel:true})
+      if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP', color:'rgba(30,144,255,0.5)', drag:true, cancel:true})
+    })
+    if(!dragState.current?.active) setLines(all)
+  },[positions,pendingOrders,chartMap,activePair,dataReady])
+
+  // Polling 150ms — defensa contra zoom Y u otros eventos sin contrato formal.
   useEffect(()=>{
     if(!dataReady) return
-    const update=()=>{
-      // Skip if nothing to show — saves CPU when no trades are open
-      if(!positions.length && !pendingOrders?.length){ setLines([]); return }
-      const cr=chartMap.current[activePair]; if(!cr?.series) return
-      const all=[]
-      positions.forEach(pos=>{
-        let eY=null,slY=null,tpY=null
-        try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
-        try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
-        try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
-        const slPnl=(-(pos.slPips*pos.lots*10)).toFixed(2)
-        const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
-        if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
-        if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
-        if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(30,144,255,0.65)', drag:true, close:false})
-      })
-      ;(pendingOrders||[]).forEach(ord=>{
-        const cr2=chartMap.current[activePair]
-        let eY=null,slY=null,tpY=null
-        try{eY =cr2?.series?.priceToCoordinate(ord.entry)}catch{}
-        try{slY=cr2?.series?.priceToCoordinate(ord.sl)}catch{}
-        try{tpY=cr2?.series?.priceToCoordinate(ord.tp)}catch{}
-        const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
-        if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.55)',drag:true, cancel:true})
-        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL', color:'rgba(239,83,80,0.5)',  drag:true, cancel:true})
-        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP', color:'rgba(30,144,255,0.5)', drag:true, cancel:true})
-      })
-      if(!dragState.current?.active) setLines(all)
-    }
     update()
     const iv=setInterval(update,150)
     return()=>clearInterval(iv)
-  },[positions,pendingOrders,activePair,dataReady])
+  },[update,dataReady])
+
+  // Recálculo inmediato cuando bumpea chartTick (cambio TF / dataset — sub-fase 5d.6).
+  useEffect(()=>{ update() },[chartTick,update])
 
   // Drag handlers
   const onLineMouseDown=(e,line)=>{
