@@ -28,7 +28,6 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "dukascopy-node": "^1.46.4",
-    "patch-package": "^8.0.1",
     "typescript": "^5"
   }
 }
