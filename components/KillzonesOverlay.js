@@ -189,7 +189,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
       counts[s.key] = (counts[s.key] || 0) + 1
       return counts[s.key] <= cfg.history
     }).reverse()
-  }, [cfg, tfAllowed, dataReady, activePair, tick, chartTick, ctBucket])
+  }, [cfg, tfAllowed, dataReady, activePair, tick, currentTf, ctBucket])
 
   // ── draw — solo lookup de coords y dibujo ─────────────────────────────
   const draw = useCallback(() => {
