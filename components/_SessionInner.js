@@ -234,6 +234,30 @@ export default function SessionPage(){
   const [chartConfigOpen, setChartConfigOpen] = useState(false)
   const [rulerActive, setRulerActive] = useState(false)
   const [tfKey, setTfKey] = useState(0)
+  /**
+   * chartTick — contrato formal de invalidación de cache derivado del dataset.
+   *
+   * Señal monotónica (entero que solo crece con setChartTick(t => t+1))
+   * que un overlay con cache derivado del dataset DEBE incluir como dep
+   * de su useEffect de cache.
+   *
+   * Productores en este archivo:
+   *   - L~891 (dentro de subscribeVisibleLogicalRangeChange): cambio
+   *     de visible logical range (zoom/pan/scroll del usuario).
+   *   - L~1221 (dentro de scrollToTailAndNotify, helper R6 post-5c):
+   *     cambio de TF que reemplaza el dataset vía applyForcedSetData.
+   *
+   * Consumidores objetivo:
+   *   - KillzonesOverlay (sub-fase 5d.2)
+   *   - RulerOverlay (sub-fase 5d.3)
+   *   - CustomDrawingsOverlay (sub-fase 5d.5, sesión 22)
+   *   - PositionOverlay (sub-fase 5d.6, sesión 22)
+   *
+   * Distinto de `tick` (L207), que es señal de propósito general bumpeada
+   * por trades, balance, order modal — NO refleja cambios de dataset.
+   *
+   * Contrato introducido en sub-fase 5d.1.
+   */
   const [chartTick, setChartTick] = useState(0)
   const [hoverCandle, setHoverCandle] = useState(null) // {o,h,l,c,t}
   const [textInput, setTextInput] = useState(null) // {x,y,onConfirm}
@@ -1153,40 +1177,94 @@ if(full||(curr!==prev&&curr!==prev+1)){
   // en el TF nuevo para que ese timestamp caiga dentro del array.
   const prevTfRef = useRef(null)
   useEffect(()=>{
-    if(!activePair) return
-    const ps=pairState.current[activePair], cr=chartMap.current[activePair]
-    if(!ps?.engine || !cr) return
+    // ─── sub-fase 5c — TF transition orchestrator ──────────────────────
+    // Las 6 responsabilidades del cambio de TF, extraídas a funciones
+    // nombradas locales con orden de ejecución explícito:
+    //
+    //   1. resolveCtx               → { ps, cr, newTf } | null
+    //   2. deselectActiveDrawings   → limpia selección pre-setData
+    //   3. computeTfPhantomsCount   → phantoms necesarias en TF nuevo
+    //   4. applyForcedSetData       → siembra phantoms + fuerza updateChart
+    //   5. bumpTfKey                → re-render hooks dependientes
+    //   6. scrollToTailAndNotify    → scroll a tail + chartTick a overlays
+    //
+    // Cero cambios de comportamiento respecto al handler pre-5c. Si se
+    // detecta regresión empírica (Killzones descolocadas, drawings
+    // desanclados, etc.), revertir 5c entera.
+    // ───────────────────────────────────────────────────────────────────
 
-    const newTf = pairTf[activePair] || 'H1'
-    const oldTf = prevTfRef.current
+    // R1: contexto de la transición. Devuelve null si no hay par activo
+    //     o si engine/cr aún no están listos.
+    const resolveCtx = () => {
+      if(!activePair) return null
+      const ps=pairState.current[activePair], cr=chartMap.current[activePair]
+      if(!ps?.engine || !cr) return null
+      const newTf = pairTf[activePair] || 'H1'
+      return { ps, cr, newTf }
+    }
 
-    // Deseleccionar drawings antes del re-render (mantiene UX limpia y
-    // previene el contraerse del LongShortPosition durante el setData).
-    try{ deselectAll() }catch{}
+    // R2: deselect drawings antes del re-render. Mantiene UX limpia y
+    //     previene el contraerse del LongShortPosition durante el setData.
+    const deselectActiveDrawings = () => {
+      try{ deselectAll() }catch{}
+    }
 
-    // Calcular cuántas phantoms necesitamos en el TF nuevo para que TODOS los
-    // drawings se rendericen correctamente (sus timestamps deben caer dentro
-    // del array de velas, sea sobre vela real o phantom).
-    let phantomsNeeded = 10  // mínimo por defecto
-    try {
-      const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
-      const newSecs = TF_SECS[newTf] || 3600
-      const newAgg = ps.engine.getAggregated(newTf)
-      const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
-      if (newLastReal) {
-        const tools = JSON.parse(exportTools() || '[]')
-        phantomsNeeded = computePhantomsNeeded(tools, newLastReal, newSecs)
-      }
-    } catch(e){ /* swallow — fallback al default 10 */ }
+    // R3: cuántas phantoms necesitamos en el TF nuevo para que TODOS los
+    //     drawings se rendericen correctamente (sus timestamps deben caer
+    //     dentro del array de velas, sea sobre vela real o phantom).
+    const computeTfPhantomsCount = (ps, newTf) => {
+      let phantomsNeeded = 10  // mínimo por defecto
+      try {
+        const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
+        const newSecs = TF_SECS[newTf] || 3600
+        const newAgg = ps.engine.getAggregated(newTf)
+        const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
+        if (newLastReal) {
+          const tools = JSON.parse(exportTools() || '[]')
+          phantomsNeeded = computePhantomsNeeded(tools, newLastReal, newSecs)
+        }
+      } catch(e){ /* swallow — fallback al default 10 */ }
+      return phantomsNeeded
+    }
 
-    // Pasamos phantomsNeeded a updateChart vía un ref que lee la función.
-    cr._phantomsNeeded = phantomsNeeded
-    cr.prevCount = 0
-    updateChart(activePair, ps.engine, true)
-    setTfKey(k => k+1)
+    // R4: forzar setData con las phantoms calculadas. Pasamos
+    //     phantomsNeeded a updateChart vía un ref (cr._phantomsNeeded).
+    //     prevCount=0 fuerza recreación completa del array de velas.
+    const applyForcedSetData = (cr, phantomsNeeded, ps) => {
+      cr._phantomsNeeded = phantomsNeeded
+      cr.prevCount = 0
+      updateChart(activePair, ps.engine, true)
+    }
 
-    // Scroll a la posición actual tras el cambio de TF.
-    scrollToTail(cr, 8, () => setChartTick(t => t+1))
+    // R5: bump tfKey para re-render de hooks dependientes (overlays, etc.).
+    const bumpTfKey = () => setTfKey(k => k+1)
+
+    // R6: scroll a la posición actual tras el cambio de TF y notifica
+    //     a los overlays vía chartTick (KillzonesOverlay, RulerOverlay, etc.)
+    //
+    //     Sub-fase 5d.7 (deuda 5.1): el offset incluye phantomsNeeded para
+    //     que el viewport se ancle al ÚLTIMO REAL + 8 barras, ignorando los
+    //     phantoms sembrados por drawings extendidos a la derecha. Sin esto,
+    //     scrollToPosition mide desde el final del array (que incluye phantoms)
+    //     y el viewport arrastra el endpoint del drawing — comportamiento
+    //     reportado por Ramón desde sesión 20 (espacio negro + pérdida de
+    //     posición visible al cambiar TF). Estilo TradingView.
+    const scrollToTailAndNotify = (cr, phantomsNeeded) => {
+      const offset = 8 - (phantomsNeeded || 0)
+      scrollToTail(cr, offset, () => setChartTick(t => t+1))
+    }
+
+    // ─── orquestador ───────────────────────────────────────────────────
+    const ctx = resolveCtx()
+    if (!ctx) return
+    const { ps, cr, newTf } = ctx
+    const oldTf = prevTfRef.current  // preservado para trazabilidad — candidato limpieza sub-fase 5f
+
+    deselectActiveDrawings()
+    const phantomsNeeded = computeTfPhantomsCount(ps, newTf)
+    applyForcedSetData(cr, phantomsNeeded, ps)
+    bumpTfKey()
+    scrollToTailAndNotify(cr, phantomsNeeded)
 
     prevTfRef.current = newTf
   },[pairTf,activePair,updateChart,deselectAll,exportTools])
@@ -1862,9 +1940,9 @@ if(full||(curr!==prev&&curr!==prev+1)){
             }}
           >{d.metadata?.text||''}</div>
         })}
-        <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} chartTick={chartTick} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'} currentTime={currentTime}/>
-        <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} />
-        <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} />
+        <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} tfKey={tfKey} chartTick={chartTick} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'} currentTime={currentTime}/>
+        <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} chartTick={chartTick} />
+        <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} chartTick={chartTick} />
         {!dataReady&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
         )}
@@ -1874,6 +1952,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
           chartMap={chartMap}
           activePair={activePair}
           dataReady={dataReady}
+          chartTick={chartTick}
           onClosePos={(posId)=>{ const p=openPositions.find(x=>x.id===posId); if(p) setCloseModal({posId,pair:activePair,pos:p}) }}
           onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
           onDragEnd={handlePositionDragEnd}
@@ -2793,7 +2872,7 @@ function CloseModal({modal,currentPrice,onClose,onConfirm}){
 
 
 // ─── Position Overlay — HTML lines with reliable drag ────────────────────────
-function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd}){
+function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd,chartTick}){
   const [lines,    setLines]    = useState([])
   const dragState = useRef(null) // {posId, type, active:bool}
   const chartElRef = useRef(null)
@@ -2806,42 +2885,51 @@ function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,
     }
   },[activePair, dataReady])
 
-  // Update line Y positions every 100ms
+  // update — computa Y posiciones de cada línea visible (entry/SL/TP).
+  // Extraído como useCallback estable (sub-fase 5d.6) para dispararlo desde 2 sitios:
+  //  (a) polling 150ms — defensa contra zoom Y u otros eventos sin contrato formal.
+  //  (b) bump de chartTick — cambio TF / dataset (contrato 5d.1, ataja latencia ~150ms→~16ms).
+  const update=useCallback(()=>{
+    if(!dataReady) return
+    // Skip if nothing to show — saves CPU when no trades are open
+    if(!positions.length && !pendingOrders?.length){ setLines([]); return }
+    const cr=chartMap.current[activePair]; if(!cr?.series) return
+    const all=[]
+    positions.forEach(pos=>{
+      let eY=null,slY=null,tpY=null
+      try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
+      try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
+      try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
+      const slPnl=(-(pos.slPips*pos.lots*10)).toFixed(2)
+      const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
+      if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
+      if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
+      if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(30,144,255,0.65)', drag:true, close:false})
+    })
+    ;(pendingOrders||[]).forEach(ord=>{
+      const cr2=chartMap.current[activePair]
+      let eY=null,slY=null,tpY=null
+      try{eY =cr2?.series?.priceToCoordinate(ord.entry)}catch{}
+      try{slY=cr2?.series?.priceToCoordinate(ord.sl)}catch{}
+      try{tpY=cr2?.series?.priceToCoordinate(ord.tp)}catch{}
+      const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
+      if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.55)',drag:true, cancel:true})
+      if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL', color:'rgba(239,83,80,0.5)',  drag:true, cancel:true})
+      if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP', color:'rgba(30,144,255,0.5)', drag:true, cancel:true})
+    })
+    if(!dragState.current?.active) setLines(all)
+  },[positions,pendingOrders,chartMap,activePair,dataReady])
+
+  // Polling 150ms — defensa contra zoom Y u otros eventos sin contrato formal.
   useEffect(()=>{
     if(!dataReady) return
-    const update=()=>{
-      // Skip if nothing to show — saves CPU when no trades are open
-      if(!positions.length && !pendingOrders?.length){ setLines([]); return }
-      const cr=chartMap.current[activePair]; if(!cr?.series) return
-      const all=[]
-      positions.forEach(pos=>{
-        let eY=null,slY=null,tpY=null
-        try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
-        try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
-        try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
-        const slPnl=(-(pos.slPips*pos.lots*10)).toFixed(2)
-        const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
-        if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
-        if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
-        if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(30,144,255,0.65)', drag:true, close:false})
-      })
-      ;(pendingOrders||[]).forEach(ord=>{
-        const cr2=chartMap.current[activePair]
-        let eY=null,slY=null,tpY=null
-        try{eY =cr2?.series?.priceToCoordinate(ord.entry)}catch{}
-        try{slY=cr2?.series?.priceToCoordinate(ord.sl)}catch{}
-        try{tpY=cr2?.series?.priceToCoordinate(ord.tp)}catch{}
-        const lbl=ord.side==='BUY_LIMIT'?'B.LIM':'S.LIM'
-        if(eY!=null)  all.push({id:ord.id+'_e', ordId:ord.id,type:'lim_e', y:Math.round(eY), label:`${lbl} ${ord.lots}L`,color:'rgba(180,180,180,0.55)',drag:true, cancel:true})
-        if(slY!=null) all.push({id:ord.id+'_sl',ordId:ord.id,type:'lim_sl',y:Math.round(slY),label:'SL', color:'rgba(239,83,80,0.5)',  drag:true, cancel:true})
-        if(tpY!=null) all.push({id:ord.id+'_tp',ordId:ord.id,type:'lim_tp',y:Math.round(tpY),label:'TP', color:'rgba(30,144,255,0.5)', drag:true, cancel:true})
-      })
-      if(!dragState.current?.active) setLines(all)
-    }
     update()
     const iv=setInterval(update,150)
     return()=>clearInterval(iv)
-  },[positions,pendingOrders,activePair,dataReady])
+  },[update,dataReady])
+
+  // Recálculo inmediato cuando bumpea chartTick (cambio TF / dataset — sub-fase 5d.6).
+  useEffect(()=>{ update() },[chartTick,update])
 
   // Drag handlers
   const onLineMouseDown=(e,line)=>{
