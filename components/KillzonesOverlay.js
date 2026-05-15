@@ -149,9 +149,11 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const parent = canvas.parentElement
+    if (!parent) return
     const dpr = window.devicePixelRatio || 1
-    const w = canvas.offsetWidth
-    const h = canvas.offsetHeight
+    const w = parent.clientWidth
+    const h = parent.clientHeight
     canvas.width  = w * dpr
     canvas.height = h * dpr
     canvas.style.width  = w + 'px'
@@ -255,7 +257,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     draw()
 
     const ro = new ResizeObserver(() => { resizeCanvas(); draw() })
-    if (canvasRef.current) ro.observe(canvasRef.current)
+    if (canvasRef.current?.parentElement) ro.observe(canvasRef.current.parentElement)
 
     // Handler síncrono — para cambios horizontales de range
     const handler = () => draw()
