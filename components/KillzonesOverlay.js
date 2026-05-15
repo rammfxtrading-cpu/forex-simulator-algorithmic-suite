@@ -127,6 +127,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
   const tfAllowedRef   = useRef(tfAllowed);   tfAllowedRef.current = tfAllowed
   const activePairRef  = useRef(activePair);  activePairRef.current = activePair
   const dataReadyRef   = useRef(dataReady);   dataReadyRef.current = dataReady
+  const drawRef        = useRef(null)
 
   // Cache de sesiones calculadas (logical coords: time/price). Se rellena
   // en un useEffect que depende de los datos, NO se recalcula en cada draw.
@@ -191,6 +192,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
       counts[s.key] = (counts[s.key] || 0) + 1
       return counts[s.key] <= cfg.history
     }).reverse()
+    drawRef.current?.()
   }, [cfg, tfAllowed, dataReady, activePair, tick, tfKey, ctBucket])
 
   // ── draw — solo lookup de coords y dibujo ─────────────────────────────
@@ -245,6 +247,10 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
       }
     }
   }, [chartMap])
+
+  // Sincronizar drawRef tras cada redefinición de draw (siempre estable
+  // post-mount, pero patrón uniforme con otros refs)
+  useEffect(() => { drawRef.current = draw }, [draw])
 
   // ── Subscripciones al chart + listeners de mouse para drag vertical ────
   useEffect(() => {
