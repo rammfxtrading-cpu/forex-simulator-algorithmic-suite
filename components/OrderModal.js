@@ -205,7 +205,7 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
 
 function Field({label,value,onChange,readOnly,step,accent}){
   return(
-    <div>
+    <div style={{minWidth:0}}>
       <div style={{fontSize:7,fontWeight:700,color:'rgba(255,255,255,0.8)',letterSpacing:1.5,marginBottom:5}}>{label}</div>
       <div style={{
         display:'flex',alignItems:'center',
@@ -215,7 +215,7 @@ function Field({label,value,onChange,readOnly,step,accent}){
       }}>
         <input type="number" step={step||'any'} value={value} readOnly={readOnly}
           onChange={e=>onChange&&onChange(e.target.value)}
-          style={{flex:1,background:'none',border:'none',color:'rgba(255,255,255,0.92)',fontSize:12,fontWeight:700,outline:'none',fontFamily:"'Montserrat',sans-serif",cursor:readOnly?'default':'text'}}
+          style={{flex:1,minWidth:0,width:0,background:'none',border:'none',color:'rgba(255,255,255,0.92)',fontSize:12,fontWeight:700,outline:'none',fontFamily:"'Montserrat',sans-serif",cursor:readOnly?'default':'text'}}
         />
       </div>
     </div>
