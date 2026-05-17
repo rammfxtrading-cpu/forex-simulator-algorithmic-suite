@@ -1593,7 +1593,7 @@ function interpolateLogicalIndexFromTime(chart, series, timestamp) {
         const interval = lastTime - prevTime;
         // Only extrapolate if timestamp is clearly beyond last candle
         if (givenTimeNum > lastTime) {
-            return (cachedData.length - 1) + (givenTimeNum - lastTime) / interval;
+            return Math.floor((cachedData.length - 1) + (givenTimeNum - lastTime) / interval);
         }
         let lo = 0, hi = cachedData.length - 1;
         while (lo < hi - 1) {
