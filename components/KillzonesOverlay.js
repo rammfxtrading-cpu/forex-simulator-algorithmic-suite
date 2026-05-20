@@ -114,7 +114,7 @@ function loadCfg() {
 // el path crítico) se mantienen.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf, tick, tfKey, chartTick, currentTime }) {
+export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf, tick, tfKey, currentTime }) {
   const canvasRef                 = useRef(null)
   const [cfg, setCfg]             = useState(loadCfg)
   const [hovered, setHovered]     = useState(false)
