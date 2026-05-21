@@ -127,6 +127,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
   const tfAllowedRef   = useRef(tfAllowed);   tfAllowedRef.current = tfAllowed
   const activePairRef  = useRef(activePair);  activePairRef.current = activePair
   const dataReadyRef   = useRef(dataReady);   dataReadyRef.current = dataReady
+  const currentTimeRef = useRef(currentTime); currentTimeRef.current = currentTime
   const drawRef        = useRef(null)
 
   // Cache de sesiones calculadas (logical coords: time/price). Se rellena
@@ -211,14 +212,55 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     const sessions = cachedSessionsRef.current
     if (!sessions.length) return
 
+    // S33.3 — endpoint vivo: KZ activa crece vela-a-vela del TF visible en
+    // todos los ejes (tiempo Y precio). Se identifica la KZ activa (si la
+    // hay) buscando la sesion SESSIONS que contiene la hora NY del
+    // currentTime actual, y matcheando por key con la box mas reciente de
+    // la cache. Su endTime se sustituye por el time de la ultima vela real
+    // del TF; su high/low se recalculan vivos sobre las velas del TF en
+    // [activeS.startTime, lastRealTs] (cache stale en eje Y mismo patron
+    // que cache stale en eje X — sub-bucket de 30 min de ctBucket L175).
+    const curTs = currentTimeRef.current
+    const _allData = getSeriesData(), _realLen = getRealLen()
+    const lastRealTs = (_allData && _realLen) ? _allData[_realLen - 1].time : null
+    let activeS = null
+    let liveHigh = null, liveLow = null
+    if (curTs && lastRealTs) {
+      const { h: nyH, m: nyM } = toNYHM(curTs)
+      let activeKey = null
+      for (const sess of SESSIONS) {
+        if (inSession(nyH, nyM, sess)) { activeKey = sess.key; break }
+      }
+      if (activeKey) {
+        for (const s of sessions) {
+          if (s.key === activeKey && (!activeS || s.endTime > activeS.endTime)) activeS = s
+        }
+        if (activeS) {
+          // Recalcular high/low vivos iterando desde el final hacia atras,
+          // rompiendo al salir del rango de la KZ activa.
+          for (let i = _realLen - 1; i >= 0; i--) {
+            const c = _allData[i]
+            if (c.time < activeS.startTime) break
+            if (c.time > lastRealTs) continue
+            if (liveHigh == null || c.high > liveHigh) liveHigh = c.high
+            if (liveLow == null || c.low < liveLow) liveLow = c.low
+          }
+        }
+      }
+    }
+
     const ts = cr.chart.timeScale()
     for (const s of sessions) {
       let x1, x2, y1, y2
       try {
+        const isActive = (s === activeS)
+        const endTs = (isActive && lastRealTs > s.endTime) ? lastRealTs : s.endTime
+        const sHigh = (isActive && liveHigh != null) ? liveHigh : s.high
+        const sLow  = (isActive && liveLow  != null) ? liveLow  : s.low
         x1 = ts.timeToCoordinate(s.startTime)
-        x2 = ts.timeToCoordinate(s.endTime)
-        y1 = cr.series.priceToCoordinate(s.high)
-        y2 = cr.series.priceToCoordinate(s.low)
+        x2 = ts.timeToCoordinate(endTs)
+        y1 = cr.series.priceToCoordinate(sHigh)
+        y2 = cr.series.priceToCoordinate(sLow)
       } catch { continue }
       if (x1 == null || x2 == null || y1 == null || y2 == null) continue
 
