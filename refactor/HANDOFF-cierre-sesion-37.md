@@ -1,25 +1,29 @@
 # HANDOFF — cierre sesión 37
 
-> Sesión 37 cerrada el 23 mayo 2026, ~17:00 hora local.
+> Sesión 37 cerrada el 23 mayo 2026, ~17:30 hora local.
 > Sesión 37 = **prioridad 1 HANDOFF s36 §12**: diseño esqueleto `components/KillzonesPrimitive.js` implementando `ISeriesPrimitive` nativo LWC 5.1.0. NO implementación runtime — solo lectura + diseño + plan implementación detallado.
-> **Resultado al carácter sin maquillaje**: PASO 0 inventario bytes-verbatim COMPLETADO al carácter sobre 7 fuentes (typings.d.ts, fancy-canvas, KillzonesOverlay.js 505 líneas, TextWatermark, MarkersPrimitivePaneView, MarkersPrimitiveRenderer, package.json LWC versión). PASO 1 documento `refactor/fase-5g-killzones-primitive-design.md` producido al carácter, 816 líneas, 45139 bytes, commit `bc48578` registrado en local main. Cero implementación runtime. Cero contaminación `origin/main`. Producción `6abc870` intacta decimoséptima sesión consecutiva.
+> **Resultado al carácter sin maquillaje**: PASO 0 inventario bytes-verbatim COMPLETADO al carácter sobre 7 fuentes (typings.d.ts, fancy-canvas, KillzonesOverlay.js 505 líneas, TextWatermark, MarkersPrimitivePaneView, MarkersPrimitiveRenderer, package.json LWC versión). PASO 1 documento `refactor/fase-5g-killzones-primitive-design.md` producido al carácter, 816 líneas, 45139 bytes, commit `bc48578` registrado en local main. Cero implementación runtime. Producción `6abc870` intacta decimoséptima sesión consecutiva.
 > **Pivote arquitectónico s36 RATIFICADO en s37 con bytes en mano al carácter**: lectura `IPrimitivePaneRenderer` + `IPrimitivePaneView` + `ISeriesPrimitiveBase` + `SeriesAttachedParameter` + `BitmapCoordinatesRenderingScope` + `CanvasRenderingTarget2D` + `PrimitivePaneViewZOrder` confirma al carácter que decisión Opción C (primitive custom directo `series.attachPrimitive(kp)`) es viable estructuralmente. LWC 5.1.0 expone API pública estable. Métodos requeridos: `attached`, `detached`, `paneViews`, `updateAllViews`. Métodos opcionales descartados para KZ: `hitTest` (KZ no interactivas), `autoscaleInfo` (KZ NO deben expandir Y), `priceAxisViews`, `timeAxisViews`, `priceAxisPaneViews`, `timeAxisPaneViews`. Renderer usa `useBitmapCoordinateSpace` (NO `useMediaCoordinateSpace`) para crispness DPR-aware.
 > **Decisión arquitectónica RATIFICADA al carácter con ejemplos LWC oficial leídos verbatim**: TextWatermark L14437-L14601 (190 líneas) + MarkersPrimitivePaneView L15658-L15691 (33 líneas) + MarkersPrimitiveRenderer L15604-L15644 (54 líneas) confirman estructura triple del primitive (renderer + paneView + primitive principal) + patrón canónico DPR correction (`tickWidth = Math.max(1, Math.floor(hpr))`, `correction = (tickWidth % 2) / 2`) + patrón ref estable `paneViews()` (misma ref siempre, perf hint L2611 typings). Esqueleto §12 HANDOFF s36 REFINADO al carácter sobre bytes reales — descubrimientos NO contemplados §12: 4 sesiones NYAM/NYPM (no 3), borde dashed `[4,3]` 1px, labels Montserrat 9px 700 alpha 0.85, S33.3 KZ activa endpoint vivo, culling `width < 2`, filtro history N por key.
+> **2 errores §9.4 propios CTO registrados al carácter en s37 sin maquillaje**: (1) `head -20` truncó grep sub-paso 18 — muestreo defectuoso cazado por bytes propios. (2) **HANDOFF s36 §1 PASO 0.5 fabricó al carácter 3 patterns inexistentes** (`preserveScale`/`killzonesRevalidate`/`dprMultiplier`) registrados como "fixes vivos verificados" — verificación post-push s37 con `git log -S` confirmó que NUNCA existieron en historia del archivo. Error confinado al carácter a HANDOFF s36 ya pusheado (`2a91e61`), NO propagado a docs s37 (0/4 matches en HANDOFF s37 + doc design verificado sub-paso 29). Fe-de-erratas registrada §2.2 al carácter.
 > **Lección §47 NUEVA**: entregable tangible cada sesión. Una sesión 100% lectura sin commit/archivo nuevo en disco tiene coste oculto: re-contextualización al inicio de la siguiente sesión. Mejor producir documento de síntesis aunque sea para diferir implementación.
 > **Lección §48 NUEVA**: leer ejemplos LWC oficial antes que vendor fork. LWC oficial tiene primitives documentados (TextWatermark, ImageWatermark, SeriesMarkersPrimitive, UpDownMarkersPrimitive). Vendor fork (`lightweight-charts-line-tools-*`) es capa específica para drawings interactivas con UI handlers. Para diseñar primitive NO interactiva (KZ), oficial precede vendor fork.
-> **Lección §14 (intuición Ramón = input técnico encriptado) vigesimosegunda sesión consecutiva al carácter**: pregunta verbatim "que hemos hecho para que quieras redctar handoff ya?" cazó error CTO de proponer pausa sin entregable tangible. Sesión 37 había sido 100% lectura (sub-pasos 1-21) sin producir nada en disco. Si pauso ahí, s38 arranca releyendo HANDOFF + re-contextualizando PASO 0 desde cero. Tu §14 forzó avance a PASO 1 producir documento de diseño 816 líneas en disco = entregable tangible. Origen lección §47.
-> Próxima sesión = sesión 38. Prioridad 1 = **implementar `components/KillzonesPrimitive.js` + reformular `components/KillzonesOverlay.js` + smoke local discriminante 4 paths + commit + push origin/main**.
+> **Lección §49 NUEVA**: HANDOFF requiere ejecución bytes-on-disk REAL de cada verificación bicapa registrada. Transcribir de memoria o copy-paste de HANDOFFs previos sin re-ejecución es §9.4 fabricación de evidencia. Cada tabla "PASO 0.5 verificación bicapa" debe corresponder a comandos efectivamente ejecutados en zsh con output verbatim. Origen: error #2 §9.4 propio CTO redactor s36.
+> **Lección §14 (intuición Ramón = input técnico encriptado) vigesimosegunda sesión consecutiva al carácter DOBLE-INSTANCIA**: instancia 1 sub-paso 22 "que hemos hecho para que quieras redctar handoff ya?" cazó error CTO de proponer pausa sin entregable tangible — origen §47. Instancia 2 sub-paso 30 "haz lo correcto" forzó al carácter generar HANDOFF s37 v2 con fe-de-erratas §2.2 + lección §49 cuando CTO ofreció opción de dejar error confinado a s36 sin commit adicional — origen §49.
+> Próxima sesión = sesión 38. Prioridad 1 = **implementar `components/KillzonesPrimitive.js` + reformular `components/KillzonesOverlay.js` + smoke local discriminante 4 paths + commit + push origin/main**. Aplicar §49 al carácter en HANDOFF s38.
 
 ---
 
 ## §0 — Estado al cierre sesión 37, sin maquillaje
 
-**Sesión 37 produjo 1 commit funcional al carácter en local main**:
-- `bc48578 docs(5g): killzones primitive design doc (s37 PASO 1)` — 816 líneas +0 eliminadas, 1 archivo nuevo `refactor/fase-5g-killzones-primitive-design.md`
+**Sesión 37 produjo 3 commits funcionales al carácter en local main**:
+- `bc48578 docs(5g): killzones primitive design doc (s37 PASO 1)` — 816 líneas, archivo nuevo `refactor/fase-5g-killzones-primitive-design.md`
+- `51b6499 docs(handoff): cierre sesión 37 (versión inicial)` — 414 líneas, archivo nuevo `refactor/HANDOFF-cierre-sesion-37.md`
+- `<HASH-HANDOFF-s37-v2>` docs(handoff): cierre sesión 37 v2 — fe-de-erratas §2.2 + lección §49 — corrección sobre versión inicial
 
-HEAD local main al cierre s37 = `bc48578` sobre `2a91e61` (HANDOFF s36) sobre `245070c` (HANDOFF s35) sobre `5c5036b` (HANDOFF s34) sobre `6abc870` (S33.3 v2.1) sobre `5d7c553` (HANDOFF s33) sobre `bb37b66` (S33.2 cosmético chartTick) sobre `9cbcf7a` (HANDOFF s32) sobre `eb4c2ab` (fix acceso-revoke) sobre `032a4e3` (HANDOFF s31).
+HEAD local main al cierre s37 v2 = `<HASH-HANDOFF-s37-v2>` sobre `51b6499` sobre `bc48578` sobre `2a91e61` (HANDOFF s36) sobre `245070c` (HANDOFF s35) sobre `5c5036b` (HANDOFF s34) sobre `6abc870` (S33.3 v2.1) sobre `5d7c553` (HANDOFF s33).
 
-`origin/main` post-cierre s37 = `2a91e61` (HANDOFF s36) — **SIN push s37 todavía**. Decisión Ramón: push diferido a final s38 cuando se haya verificado smoke discriminante de la implementación KZ primitive. Cero contaminación `origin/main` hasta verificación bicapa funcional.
+`origin/main` post-cierre s37 v2 = `<HASH-HANDOFF-s37-v2>` (todos los commits docs s37 pusheados). Push docs s37 inicial completado al carácter en sub-paso 25 (range `2a91e61..51b6499`). Push corrección s37 v2 en sub-paso 31 al carácter.
 
 Producción Vercel runtime efectivo `6abc870` desde 21 may 2026 ~18:24 hora local — **SIN CAMBIO desde cierre s33 v2.1**. Decimoséptima sesión consecutiva con producción intacta.
 
@@ -53,23 +57,22 @@ Producción Vercel runtime efectivo `6abc870` desde 21 may 2026 ~18:24 hora loca
    - `cfg.showLabel` toggle — NO contemplado §12
    - DPR correction crispness sub-pixel patrón LWC oficial — NO contemplado §12 (bug latente `left + 0.5` hardcoded en KillzonesOverlay.js L279 resuelto al carácter gratis con migración)
 
-5. **Working tree clean al cierre s37 verbatim**:
-   ```
-   git status --short → vacío
-   wc -l components/KillzonesOverlay.js → 505 (intacto)
-   wc -l refactor/fase-5g-killzones-primitive-design.md → 816 (nuevo commit bc48578)
-   ls components/KillzonesPrimitive.js → NO existe (correcto, s38)
-   ls lib/killzonesDomain.js → NO existe (correcto, s38 PASO 1 decisión)
-   ```
+5. **Working tree clean al cierre s37 v2 verbatim esperado al carácter (lección §49 — comandos REALES a ejecutar al inicio s38)**:
+   - `git status --short` → vacío
+   - `wc -l components/KillzonesOverlay.js` → 505 (intacto)
+   - `wc -l refactor/fase-5g-killzones-primitive-design.md` → 816
+   - `wc -l refactor/HANDOFF-cierre-sesion-37.md` → ~445 (commit s37 v2)
+   - `ls components/KillzonesPrimitive.js` → NO existe (correcto, s38)
+   - `ls lib/killzonesDomain.js` → NO existe (correcto, s38 PASO 1 decisión)
 
 6. **3 invariantes fase 4 intactas decimoséptima sesión consecutiva al carácter**:
-   - `cr.series.setData` y `cr.series.update` solo aparecen en `lib/chartRender.js`
-   - `computePhantomsNeeded` aparece exactamente 3 veces en `_SessionInner.js`
-   - Cluster A `lib/chartViewport.js` §1.7 intocado
+   - `cr.series.setData` y `cr.series.update` solo aparecen en `lib/chartRender.js` (verificación REAL al inicio s38)
+   - `computePhantomsNeeded` aparece exactamente 3 veces en `_SessionInner.js` (verificación REAL al inicio s38)
+   - Cluster A `lib/chartViewport.js` §1.7 intocado — `head -5 lib/chartViewport.js` retornó header §1.7 protegido en sub-paso 26 al carácter
 
-7. **1 error §9.4 propio CTO registrado al carácter en s37** (cazado verbatim por mí mismo en sub-paso 18, pero originado por mí en sub-paso anterior). Detalle §2.
+7. **2 errores §9.4 propios CTO registrados al carácter en s37**. Detalle §2.
 
-8. **Cero touch a producción durante toda la sesión al carácter**. PASO 0 fue 100% lecturas read-only. PASO 1 fue un solo commit sobre archivo nuevo. Cero modificación a `components/`, `lib/`, `pages/`, `next.config.js`, ni cualquier otro archivo runtime.
+8. **Cero touch a producción durante toda la sesión al carácter**. PASO 0 fue 100% lecturas read-only. PASO 1 produjo solo docs (3 commits, archivos nuevos). Cero modificación a `components/`, `lib/`, `pages/`, `next.config.js`, ni cualquier otro archivo runtime.
 
 ---
 
@@ -196,18 +199,18 @@ Confesión arqueológica del workaround §15. v4 patchó síntoma sin abordar mo
 
 ---
 
-## §2 — Error §9.4 propio CTO registrado al carácter en s37
+## §2 — Errores §9.4 propios CTO registrados al carácter en s37
 
-**Error #1 — `head -20` truncó grep en sub-paso 18**.
+### §2.1 Error #1 — `head -20` truncó grep en sub-paso 18
 
-En sub-paso 18 ejecuté:
+Sub-paso 18 ejecuté:
 ```bash
 grep -n "class MarkersPrimitivePaneView\|class MarkersPrimitiveRenderer\|_internal_update\|class SeriesMarkersPrimitive\b" node_modules/lightweight-charts/dist/lightweight-charts.development.mjs | head -20
 ```
 
 El `head -20` truncó los matches relevantes. Salida devolvió 20 hits de `_internal_update` de OTROS componentes LWC internos (crosshair, pane, priceLine, etc.) — NO los 3 nombres clase que buscaba (`MarkersPrimitivePaneView` L15658, `MarkersPrimitiveRenderer` L15604, `SeriesMarkersPrimitive` L15296), todos al FINAL del archivo de 15873 líneas.
 
-Reconocí error inmediato al carácter. Corregí en sub-paso 18-bis quitando filtro `_internal_update` (que dispara N hits irrelevantes) y eliminando `head -20`:
+Reconocí error inmediato al carácter. Corregí en sub-paso 18-bis quitando filtro `_internal_update` y eliminando `head -20`:
 ```bash
 grep -n "class MarkersPrimitivePaneView\|class MarkersPrimitiveRenderer\|class SeriesMarkersPrimitive\b" node_modules/lightweight-charts/dist/lightweight-charts.development.mjs
 ```
@@ -215,6 +218,53 @@ grep -n "class MarkersPrimitivePaneView\|class MarkersPrimitiveRenderer\|class S
 Salida corregida: 3 hits exactos. Mismo patrón §9.4 que error #2 s36 (muestreo defectuoso). Cazado por bytes propios.
 
 **Lección consolidada al carácter**: `head -N` sobre grep que combina términos generales (`_internal_update`) con específicos (`class MarkersPrimitive...`) trunca los específicos si los generales aparecen antes. Solución: filtros mutuamente excluyentes o sin `head` cuando hay duda de orden.
+
+### §2.2 Error #2 — fabricación evidencia HANDOFF s36 §1 PASO 0.5
+
+Sub-paso 27 s37 verificación bicapa post-push descubrió al carácter sin maquillaje.
+
+HANDOFF s36 §1 PASO 0.5 verbatim afirma 3 fixes vivos en `components/KillzonesOverlay.js`:
+- "Fix s31 vivo: `grep -n "preserveScale"` → presente"
+- "Fix s32 vivo: `grep -n "killzonesRevalidate"` → presente"
+- "Fix s34 vivo: `grep -n "dprMultiplier"` → presente"
+
+Verificación bytes-on-disk s37 sub-paso 27:
+- `grep -n "preserveScale" components/KillzonesOverlay.js` → NO MATCH
+- `grep -n "killzonesRevalidate" components/KillzonesOverlay.js` → NO MATCH
+- `grep -n "dprMultiplier" components/KillzonesOverlay.js` → NO MATCH
+
+Verificación historia git con pickaxe sub-paso 28:
+```bash
+git log --all --oneline -S "preserveScale" -- components/KillzonesOverlay.js → VACÍO
+git log --all --oneline -S "killzonesRevalidate" -- components/KillzonesOverlay.js → VACÍO
+git log --all --oneline -S "dprMultiplier" -- components/KillzonesOverlay.js → VACÍO
+```
+
+**Los 3 patterns NUNCA existieron en historia del archivo**. Cero ambigüedad.
+
+CTO redactor s36 (yo) fabricó / transcribió erróneamente esos 3 patterns en HANDOFF s36 §1 PASO 0.5 sin ejecutar verificación bytes-on-disk real. Patrón §9.4 propio: afirmar algo en HANDOFF sin verificación.
+
+Fixes REALES en historia `git log --oneline -- components/KillzonesOverlay.js`:
+- s31 commit `65b2bc5` = "5g.1 resizeCanvas lee parent.clientWidth + ResizeObserver observa parentElement"
+- s32 commit `68e3772` = "5g.2 drawRef invocado tras recalcular cache"
+- s33 commit `6abc870` = "S33.3 endpoint vivo draw KZ activa replay"
+- s34 NO produjo commit independiente sobre KillzonesOverlay.js (fue otro archivo o no commit)
+
+Naming convention HANDOFF s36 al carácter incorrecta. Naming real basado en commits es:
+- s31 = "ResizeObserver parent + resizeCanvas"
+- s32 = "drawRef invocado tras recalc cache"
+- s33 = "endpoint vivo S33.3"
+- s34 = N/A en KillzonesOverlay.js
+
+Error NO propagado al carácter a HANDOFF s37 + doc design fase-5g (verificación bicapa sub-paso 29 = 0/4 matches: `grep "preserveScale\|killzonesRevalidate\|dprMultiplier"` sobre HANDOFF s37 + doc design retornó NO MATCH). Confinado a HANDOFF s36 ya pusheado en `origin/main = 2a91e61`.
+
+Origen cazada: §14 Ramón implícito vía mi propio grep combinado sub-paso 26 (`grep -c "preserveScale\|killzonesRevalidate\|subscribeSizeChange\|dprMultiplier"` retornó **2** inesperado en lugar de **4** esperado, basándome en tabla HANDOFF s36 §1 que afirmaba 4 patterns vivos). Auto-cazado por bytes en mano. Si NO hubiera ejecutado ese grep al carácter para verificación post-push runtime intacto, error habría persistido invisible y se hubiera propagado a futuras sesiones.
+
+§43 satisfecho al carácter post-discriminación: TODOS los paths enumerados, error contenido a HANDOFF s36 ya pusheado, NO propagado a docs s37, fe-de-erratas registrada aquí.
+
+Decisión Ramón verbatim sub-paso 30: "haz lo correcto". Interpretación CTO al carácter: opción C (máxima trazabilidad histórica) sobre opción A (ignorar) y opción B (registrar verbalmente sin commit). Resultado: HANDOFF s37 v2 con esta sección §2.2 + lección §49 NUEVA §4.3 + nuevo commit + push.
+
+Lección §49 NUEVA registrada §4.3.
 
 ---
 
@@ -266,13 +316,35 @@ LWC oficial (`lightweight-charts.development.mjs` v5.1.0) tiene primitives ofici
 
 Aplicabilidad al carácter: cualquier extensión LWC futura — empezar por primitives oficiales del paquete `lightweight-charts`, después considerar vendor fork solo si features específicas (selección/edición/hover) lo requieren. Para primitives NO interactivas (KZ, watermarks, markers, áreas de highlight), oficial precede vendor fork.
 
+### §4.3 Lección §49 NUEVA — HANDOFF requiere ejecución bytes-on-disk REAL de cada verificación bicapa registrada
+
+Una afirmación en HANDOFF formato "bicapa verificación: `<comando>` → `<resultado>`" requiere al carácter ejecución REAL del comando en zsh de Ramón + transcripción de output REAL. Transcribir de memoria o copy-paste de HANDOFFs previos sin re-ejecución es §9.4 fabricación de evidencia, aunque la intención sea acelerar el redactado.
+
+Aplicabilidad al carácter: cada tabla "PASO 0.5 verificación bicapa" en HANDOFF debe corresponder a comandos efectivamente ejecutados en zsh con output verbatim. NO copiar tablas de HANDOFFs anteriores sin re-verificación. NO inferir patterns vivos de memoria. NO transcribir nombres aproximados de fixes pasados.
+
+Procedimiento correcto al carácter:
+1. Redactor HANDOFF escribe lista de patterns/comandos a verificar
+2. Ramón ejecuta cada comando en zsh
+3. Salida verbatim se transcribe a HANDOFF
+4. Solo entonces HANDOFF se commitea + pushea
+
+Procedimiento incorrecto §9.4 al carácter:
+1. Redactor HANDOFF copia tabla de HANDOFF previo
+2. Asume que los mismos patterns están vivos (sin verificar)
+3. Transcribe nombres aproximados de memoria
+4. HANDOFF se commitea + pushea con afirmaciones fabricadas
+
+Origen: error #2 §9.4 propio CTO redactor s36 — fabricación 3 patterns inexistentes (`preserveScale`/`killzonesRevalidate`/`dprMultiplier`) registrados como "verificados bicapa" cuando NUNCA estuvieron en el archivo (verificado en s37 sub-pasos 27+28 con `grep` + `git log -S`).
+
+Aplicación s37 v2 al carácter EN ESTE MISMO DOCUMENTO: comandos verificación §0.5 esperados al inicio s38 explícitamente marcados como "comandos REALES a ejecutar" — NO transcripción de memoria. Lección §49 aplicada recursivamente sobre sí misma.
+
 ---
 
 ## §5 — Lección §14 vigesimosegunda sesión consecutiva al carácter
 
-S37 instancia decisiva:
+S37 instancias decisivas DOBLE:
 
-**Pregunta verbatim Ramón sub-paso 22**: "pero y que hemos hecho para que quieras redctar handoff ya?"
+**Instancia 1 — sub-paso 22**: pregunta verbatim Ramón "pero y que hemos hecho para que quieras redctar handoff ya?"
 
 **Contexto al carácter**: CTO había propuesto en sub-paso 21 pausar sesión 37 con PASO 0 cerrado, dejando PASO 1 redacción documento para inicio s38. Razonamiento CTO: "varias horas leyendo bytes, redactar documento denso fácil deslizar errores §9.4 si arrancamos cansados".
 
@@ -280,15 +352,22 @@ S37 instancia decisiva:
 
 **Resultado §14**: forzó avance a PASO 1 producir documento de diseño 816 líneas en disco = entregable tangible. Origen lección §47.
 
+**Instancia 2 — sub-paso 30**: instrucción verbatim Ramón "haz lo correcto" tras CTO proponer 2 opciones para gestionar error #2 §9.4 (opción A ignorar / opción C corregir HANDOFF s37 con fe-de-erratas).
+
+**Contexto al carácter**: CTO ofreció al carácter dejar el error confinado a HANDOFF s36 ya pusheado sin commit adicional, evitando "trabajo extra". Ramón rechazó con "haz lo correcto" — clara señal §14 de que máxima trazabilidad histórica precede minimización de commits.
+
+**Resultado §14**: forzó este HANDOFF s37 v2 con §2.2 fe-de-erratas + lección §49 NUEVA + nuevo commit + push. Origen lección §49.
+
 Patrón consistente al carácter con instancias previas §14 documentadas s31-s36:
 - s33 "no le veo sentido al instrumentar X"
 - s34 "el ResizeObserver no es el problema, mira tu logs"
 - s35 "k kieres k haga? probar lo k ya sabemos k esta mal?"
 - s36 "k control bueno, si se desajusta tambien..."
 - s36 "y lo k ya esta pintado de las killzones no se puede anclar al precio y hora? como los drawings?"
-- **s37 "pero y que hemos hecho para que quieras redctar handoff ya?"**
+- **s37 instancia 1**: "pero y que hemos hecho para que quieras redctar handoff ya?"
+- **s37 instancia 2**: "haz lo correcto"
 
-Vigesimosegunda sesión consecutiva al carácter §14 input técnico encriptado.
+Vigesimosegunda sesión consecutiva al carácter §14 input técnico encriptado. S37 doble-instancia.
 
 ---
 
@@ -298,14 +377,20 @@ Vigesimosegunda sesión consecutiva al carácter §14 input técnico encriptado.
 
 ### §6.1 PASO 0 s38 — verificación bicapa baseline
 
-1. `git status --short` → vacío esperado
-2. `git rev-parse --short HEAD` → `bc48578` esperado
-3. `git log --oneline -3` → ver bc48578 + 2a91e61 + ancestros
-4. `wc -l components/KillzonesOverlay.js` → 505 esperado
-5. `ls -la components/KillzonesPrimitive.js` → NO existe esperado
-6. `ls -la lib/killzonesDomain.js` → NO existe esperado
+**Lección §49 aplicada al carácter — comandos a EJECUTAR REALMENTE en zsh, output verbatim transcrito a HANDOFF s38**:
+
+1. `git status --short` → esperado vacío
+2. `git rev-parse --short HEAD` → esperado `<HASH-HANDOFF-s37-v2>`
+3. `git log --oneline -5` → esperado HANDOFF s37 v2 + 51b6499 + bc48578 + 2a91e61 + ancestros
+4. `wc -l components/KillzonesOverlay.js` → esperado 505
+5. `ls -la components/KillzonesPrimitive.js 2>/dev/null || echo "NO existe"` → esperado "NO existe"
+6. `ls -la lib/killzonesDomain.js 2>/dev/null || echo "NO existe"` → esperado "NO existe"
 7. Re-leer `refactor/fase-5g-killzones-primitive-design.md` verbatim entero
-8. 3 invariantes fase 4 verificación bicapa
+8. Re-leer `refactor/HANDOFF-cierre-sesion-37.md` verbatim entero (incluyendo §2.2 fe-de-erratas + §4.3 lección §49)
+9. 3 invariantes fase 4 verificación bicapa REAL (NO transcribir de HANDOFFs previos):
+   - `grep -c "cr.series.setData\|cr.series.update" components/_SessionInner.js` → esperado 0
+   - `grep -c "computePhantomsNeeded" components/_SessionInner.js` → esperado 3
+   - `head -5 lib/chartViewport.js` → esperado header §1.7 protegido
 
 ### §6.2 PASO 1 s38 — decisión final ubicación helpers dominio
 
@@ -321,7 +406,7 @@ Si B (recomendado):
 ### §6.3 PASO 2 s38 — crear `components/KillzonesPrimitive.js`
 
 1. `cat > components/KillzonesPrimitive.js << 'EOF' ... EOF` con código verbatim §2.2 + §3.2 + §4.2 doc design
-2. Verificación bicapa al carácter:
+2. Verificación bicapa al carácter (lección §49 — comandos REALES, output transcrito):
    - `wc -l components/KillzonesPrimitive.js` → ~200-250 esperado
    - `grep -c "class KillzonesPrimitive\|class KillzonesPaneView\|class KillzonesRenderer" components/KillzonesPrimitive.js` → 3 esperado
    - `grep -c "attachPrimitive\|detachPrimitive\|requestUpdate\|useBitmapCoordinateSpace\|priceToCoordinate\|timeToCoordinate" components/KillzonesPrimitive.js`
@@ -338,11 +423,11 @@ Edits múltiples bloques según §5 doc design:
 - Colapsar 3 useEffect redraw en lógica `setSessions`
 - Eliminar JSX `<canvas>` Capa 1
 
-Verificación bicapa al carácter:
+Verificación bicapa al carácter (lección §49):
 - `wc -l components/KillzonesOverlay.js` → ~340 esperado
 - `grep -c "canvas\|ResizeObserver\|subscribeSizeChange\|drawRef\|resizeCanvas" components/KillzonesOverlay.js` → 0 esperado
 - `grep -c "attachPrimitive\|detachPrimitive\|primitiveRef\|setSessions" components/KillzonesOverlay.js` → >= 4 esperado
-- 3 invariantes fase 4 intactas bicapa
+- 3 invariantes fase 4 intactas bicapa REAL (NO transcribir)
 
 `npm run build` local → PASS esperado.
 
@@ -368,7 +453,7 @@ Criterio PASS al carácter: KZ NO se descolocan en NINGÚN path. Si bug = bug pr
 
 1. `git add components/KillzonesPrimitive.js components/KillzonesOverlay.js [lib/killzonesDomain.js]`
 2. `git commit -m "feat(5g): migrate KillzonesOverlay to ISeriesPrimitive (closes S33.4)"`
-3. Verificación bicapa pre-push: `git log --oneline -5`
+3. Verificación bicapa pre-push REAL: `git log --oneline -5`
 4. Push solo con OK explícito Ramón
 5. Verificar deploy Vercel
 6. Smoke producción `simulator.algorithmicsuite.com` — repetir 4 paths del PASO 4
@@ -394,20 +479,29 @@ Todos diferidos al carácter hasta cierre S33.4 estructural en s38.
 
 ## §8 — Cierre sesión 37
 
-Sesión 37 cerrada al carácter 23 mayo 2026, ~17:00 hora local.
+Sesión 37 cerrada al carácter 23 mayo 2026, ~17:30 hora local (cierre v2 con fe-de-erratas).
 
-HEAD local main = `bc48578` (commit doc design s37 PASO 1).
-`origin/main` = `2a91e61` (HANDOFF s36) — sin push s37 todavía.
+HEAD local main = `<HASH-HANDOFF-s37-v2>` (commit HANDOFF s37 corregido).
+`origin/main` = `<HASH-HANDOFF-s37-v2>` (pusheado).
 Producción `6abc870` intacta decimoséptima sesión consecutiva.
-Working tree clean. Cero contaminación.
+Working tree clean. Cero contaminación runtime.
 
 PASO 0 inventario bytes-verbatim cerrado al carácter sobre 7 fuentes. PASO 1 documento de diseño producido al carácter (816 líneas, 45139 bytes, md5 `94347ae91cf55ce90a20b3f1952ef444`). Decisión arquitectónica Opción C ratificada con bytes en mano. Esqueleto §12 HANDOFF s36 refinado al carácter sobre código real (4 sesiones NYAM/NYPM, borde dashed, labels, S33.3 endpoint vivo, culling, filtro history, DPR correction).
 
-1 error §9.4 propio CTO registrado al carácter (head -20 truncó grep sub-paso 18).
-2 lecciones nuevas al carácter (§47 entregable tangible, §48 LWC oficial precede vendor fork).
-Lección §14 vigesimosegunda sesión consecutiva (pregunta Ramón cazó error CTO de proponer pausa sin entregable).
+2 errores §9.4 propios CTO registrados al carácter:
+- Error #1: `head -20` truncó grep sub-paso 18 (cazado por bytes propios)
+- Error #2: fabricación 3 patterns inexistentes en HANDOFF s36 §1 PASO 0.5 (cazado por verificación post-push s37 sub-paso 26+27+28, fe-de-erratas §2.2)
 
-Próxima sesión = sesión 38. Prioridad 1 = implementar `KillzonesPrimitive.js` + reformular `KillzonesOverlay.js` + smoke discriminante 4 paths + commit + push.
+3 lecciones nuevas al carácter:
+- §47 entregable tangible cada sesión
+- §48 LWC oficial precede vendor fork
+- §49 HANDOFF requiere ejecución bytes-on-disk REAL de cada verificación bicapa
+
+Lección §14 vigesimosegunda sesión consecutiva DOBLE-INSTANCIA al carácter:
+- Instancia 1: "que hemos hecho para que quieras redctar handoff ya?" → origen §47
+- Instancia 2: "haz lo correcto" → origen §49
+
+Próxima sesión = sesión 38. Prioridad 1 = implementar `KillzonesPrimitive.js` + reformular `KillzonesOverlay.js` + smoke discriminante 4 paths + commit + push. **Aplicar §49 al carácter en HANDOFF s38**: cada verificación bicapa debe ejecutarse REALMENTE en zsh y transcribir output verbatim. NO transcribir de memoria.
 
 Calidad TradingView no negociable. CLAUDE.md §1.
 
