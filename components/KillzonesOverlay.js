@@ -1,71 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getSeriesData, getRealLen } from '../lib/sessionData'
-
-// NY offset: EDT = UTC-4 (Mar-Nov), EST = UTC-5 (Nov-Mar)
-function getNYOffset(utcTs) {
-  const d = new Date(utcTs * 1000)
-  const yr = d.getUTCFullYear()
-  const dstStart = new Date(Date.UTC(yr, 2, 8 - new Date(Date.UTC(yr,2,1)).getUTCDay(), 7))
-  const dstEnd   = new Date(Date.UTC(yr, 10, 1 - new Date(Date.UTC(yr,10,1)).getUTCDay(), 6))
-  return d >= dstStart && d < dstEnd ? -4 : -5
-}
-
-function toNYHM(utcTs) {
-  const off = getNYOffset(utcTs)
-  const d = new Date((utcTs + off * 3600) * 1000)
-  return { h: d.getUTCHours(), m: d.getUTCMinutes() }
-}
-
-function toMinutes(h, m) { return h * 60 + m }
-
-const SESSIONS = [
-  { key: 'asia',   label: 'Asia KZ',    hStart: 20, mStart: 0, hEnd: 0,  mEnd: 0,  bg: 'rgba(30,144,255,0.10)', border: 'rgba(30,144,255,0.55)', text: '#1E90FF', crossesMidnight: true },
-  { key: 'london', label: 'Londres KZ', hStart: 2,  mStart: 0, hEnd: 5,  mEnd: 0,  bg: 'rgba(255,255,255,0.06)', border: 'rgba(220,220,220,0.4)', text: '#ffffff', crossesMidnight: false },
-  { key: 'nyam',   label: 'NY AM KZ',   hStart: 7,  mStart: 0, hEnd: 10, mEnd: 0,  bg: 'rgba(255,255,255,0.06)', border: 'rgba(220,220,220,0.4)', text: '#ffffff', crossesMidnight: false },
-  { key: 'nypm',   label: 'NY PM KZ',   hStart: 13, mStart: 30,hEnd: 16, mEnd: 0,  bg: 'rgba(255,255,255,0.06)', border: 'rgba(220,220,220,0.4)', text: '#ffffff', crossesMidnight: false },
-]
-
-const TF_LIST = ['M1','M3','M5','M15','M30','H1','H4','D1']
-
-function inSession(nyH, nyM, sess) {
-  const cur = toMinutes(nyH, nyM)
-  if (sess.crossesMidnight) return cur >= toMinutes(sess.hStart, sess.mStart)
-  return cur >= toMinutes(sess.hStart, sess.mStart) && cur < toMinutes(sess.hEnd, sess.mEnd)
-}
-
-function calcSessions(candles, cfg) {
-  const boxes = []
-  const active = {}
-
-  for (let i = 0; i < candles.length; i++) {
-    const c = candles[i]
-    const { h, m } = toNYHM(c.time)
-
-    for (const sess of SESSIONS) {
-      if (!cfg[sess.key]) continue
-      const inside = inSession(h, m, sess)
-      if (inside) {
-        if (!active[sess.key]) {
-          active[sess.key] = { startTime: c.time, endTime: c.time, high: c.high, low: c.low }
-        } else {
-          active[sess.key].endTime = c.time
-          active[sess.key].high = Math.max(active[sess.key].high, c.high)
-          active[sess.key].low  = Math.min(active[sess.key].low,  c.low)
-        }
-      } else {
-        if (active[sess.key]) {
-          boxes.push({ ...sess, ...active[sess.key] })
-          delete active[sess.key]
-        }
-      }
-    }
-  }
-  for (const sess of SESSIONS) {
-    if (active[sess.key]) boxes.push({ ...sess, ...active[sess.key] })
-  }
-
-  return boxes
-}
+import { SESSIONS, TF_LIST, calcSessions } from '../lib/killzonesDomain'
+import { KillzonesPrimitive } from './KillzonesPrimitive'
 
 const DEF = {
   visible: true,
@@ -90,49 +26,37 @@ function loadCfg() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// KillzonesOverlay v4 — cached sessions + drag-aware redraw
+// KillzonesOverlay v5 — migración Opción C (Fase 5g sesión 38)
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// MEJORAS RESPECTO A v3:
+// Migración Opción C: render delegado a KillzonesPrimitive (ISeriesPrimitive
+// nativo LWC 5.1.0). Este wrapper React queda como capa de UI + cache de
+// sesiones dominio puro + dispatch a primitive vía setSessions().
 //
-// 1. CACHE DE SESIONES (filtered): calcSessions() recorre TODAS las velas,
-//    O(n × 4 sesiones). En M5/M1 con datasets largos, ejecutar eso en cada
-//    frame de pan bloquea el hilo y se siente "no fluido". Ahora calcSessions
-//    sólo se ejecuta cuando cambia realLen, dataReady o cfg. El draw() se
-//    queda con un trabajo trivial: 4 conversiones por sesión visible.
-//
-// 2. DRAG VERTICAL DE LA ESCALA DE PRECIOS: lightweight-charts NO dispara
-//    subscribeVisibleLogicalRangeChange cuando el usuario arrastra la escala
-//    de precios (cambio vertical). Sólo lo dispara para horizontal.
-//    Solución: mientras el botón del ratón está pulsado sobre el chart,
-//    arrancar un loop de rAF que redibuja en cada frame. Al soltar, parar.
-//    Esto cubre: drag horizontal, drag vertical, drag de escala de precios,
-//    drag de escala de tiempo. Coste: ~16 lookups por frame durante drag,
-//    insignificante.
-//
-// El resto de mejoras de v3 (canvas en lugar de divs, sin setState en
-// el path crítico) se mantienen.
+// CAMBIOS RESPECTO A v4:
+// - Eliminado canvas externo propio (KillzonesPrimitive vive dentro del
+//   canvas LWC interno).
+// - Eliminado resizeCanvas + ResizeObserver + subscribeVisibleLogicalRangeChange
+//   + subscribeSizeChange + dragLoop rAF + wheel handler. El pipeline LWC
+//   invoca updateAllViews del primitive automáticamente en cualquier cambio
+//   (resize/pan/zoom/drag horizontal/drag vertical). Estructuralmente
+//   imposible que S33.4 reaparezca (race scale X barSpacing stale).
+// - Eliminado draw callback (95 líneas) — migrado a KillzonesRenderer.
+// - Eliminados 5 refs frescos + drawRef (sin subscribers asíncronos no
+//   hacen falta).
+// - Helpers dominio (SESSIONS/calcSessions/...) extraídos a
+//   lib/killzonesDomain.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function KillzonesOverlay({ chartMap, activePair, dataReady, currentTf, tick, tfKey, currentTime }) {
-  const canvasRef                 = useRef(null)
   const [cfg, setCfg]             = useState(loadCfg)
   const [hovered, setHovered]     = useState(false)
   const [showPanel, setShowPanel] = useState(false)
   const panelRef                  = useRef(null)
+  const primitiveRef              = useRef(null)
+  const cachedSessionsRef         = useRef([])
 
-  // Refs frescos
-  const cfgRef         = useRef(cfg);         cfgRef.current = cfg
   const tfAllowed = !currentTf || cfg.tfs[currentTf] !== false
-  const tfAllowedRef   = useRef(tfAllowed);   tfAllowedRef.current = tfAllowed
-  const activePairRef  = useRef(activePair);  activePairRef.current = activePair
-  const dataReadyRef   = useRef(dataReady);   dataReadyRef.current = dataReady
-  const currentTimeRef = useRef(currentTime); currentTimeRef.current = currentTime
-  const drawRef        = useRef(null)
-
-  // Cache de sesiones calculadas (logical coords: time/price). Se rellena
-  // en un useEffect que depende de los datos, NO se recalcula en cada draw.
-  const cachedSessionsRef = useRef([])
 
   // Persistir cfg
   useEffect(() => {
@@ -147,42 +71,38 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     return () => document.removeEventListener('mousedown', fn)
   }, [showPanel])
 
-  // Resize del canvas con devicePixelRatio
-  const resizeCanvas = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const parent = canvas.parentElement
-    if (!parent) return
-    const dpr = window.devicePixelRatio || 1
-    const w = parent.clientWidth
-    const h = parent.clientHeight
-    canvas.width  = w * dpr
-    canvas.height = h * dpr
-    canvas.style.width  = w + 'px'
-    canvas.style.height = h + 'px'
-    const ctx = canvas.getContext('2d')
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  }, [])
+  // ── Mount/unmount primitive sobre cr.series ─────────────────────────────
+  useEffect(() => {
+    if (!activePair) return
+    const cr = chartMap.current[activePair]
+    if (!cr?.chart || !cr?.series) return
+
+    const kp = new KillzonesPrimitive()
+    try { cr.series.attachPrimitive(kp) } catch {}
+    primitiveRef.current = kp
+
+    return () => {
+      try { cr.series.detachPrimitive(kp) } catch {}
+      primitiveRef.current = null
+    }
+  }, [activePair, chartMap, dataReady])
 
   // ── Recalcular sesiones cuando cambien datos/cfg/tick/currentTime ──────
-  // Esta es la operación pesada: recorre todas las velas. Se hace 1 vez
-  // por cambio de dataset/tick/cfg, NO en cada frame de pan.
-  //
-  // currentTime: bucketed a 30 min para que el replay (que avanza segundo
-  // a segundo) no dispare un recálculo en cada vela M1, pero sí cuando
-  // entre/salga de un horario de killzone (todas las KZ están alineadas a
-  // intervalos de 30 min en hora NY). Esto cubre el caso de "estoy haciendo
-  // replay y la sesión actual no aparece hasta que cambio de TF".
+  // currentTime: bucketed a 30 min para no disparar recálculo en cada vela
+  // M1 del replay, pero sí cuando entre/salga de un horario de killzone
+  // (todas las KZ alineadas a intervalos de 30 min en hora NY).
   const ctBucket = currentTime ? Math.floor(currentTime / 1800) : 0
   useEffect(() => {
     if (!cfg.visible || !tfAllowed || !dataReady || !activePair) {
       cachedSessionsRef.current = []
+      primitiveRef.current?.setSessions([], currentTime, cfg.showLabel)
       return
     }
     const allData = getSeriesData()
     const realLen = getRealLen()
     if (!allData || !realLen) {
       cachedSessionsRef.current = []
+      primitiveRef.current?.setSessions([], currentTime, cfg.showLabel)
       return
     }
     const candles = allData.slice(0, realLen)
@@ -193,201 +113,17 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
       counts[s.key] = (counts[s.key] || 0) + 1
       return counts[s.key] <= cfg.history
     }).reverse()
-    drawRef.current?.()
-  }, [cfg, tfAllowed, dataReady, activePair, tick, tfKey, ctBucket])
+    primitiveRef.current?.setSessions(cachedSessionsRef.current, currentTime, cfg.showLabel)
+  }, [cfg, tfAllowed, dataReady, activePair, tick, tfKey, ctBucket, currentTime])
 
-  // ── draw — solo lookup de coords y dibujo ─────────────────────────────
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight)
-
-    const c  = cfgRef.current
-    const ap = activePairRef.current
-    if (!c.visible || !tfAllowedRef.current || !dataReadyRef.current || !ap) return
-    const cr = chartMap.current[ap]
-    if (!cr?.chart || !cr?.series) return
-
-    const sessions = cachedSessionsRef.current
-    if (!sessions.length) return
-
-    // S33.3 — endpoint vivo: KZ activa crece vela-a-vela del TF visible en
-    // todos los ejes (tiempo Y precio). Se identifica la KZ activa (si la
-    // hay) buscando la sesion SESSIONS que contiene la hora NY del
-    // currentTime actual, y matcheando por key con la box mas reciente de
-    // la cache. Su endTime se sustituye por el time de la ultima vela real
-    // del TF; su high/low se recalculan vivos sobre las velas del TF en
-    // [activeS.startTime, lastRealTs] (cache stale en eje Y mismo patron
-    // que cache stale en eje X — sub-bucket de 30 min de ctBucket L175).
-    const curTs = currentTimeRef.current
-    const _allData = getSeriesData(), _realLen = getRealLen()
-    const lastRealTs = (_allData && _realLen) ? _allData[_realLen - 1].time : null
-    let activeS = null
-    let liveHigh = null, liveLow = null
-    if (curTs && lastRealTs) {
-      const { h: nyH, m: nyM } = toNYHM(curTs)
-      let activeKey = null
-      for (const sess of SESSIONS) {
-        if (inSession(nyH, nyM, sess)) { activeKey = sess.key; break }
-      }
-      if (activeKey) {
-        for (const s of sessions) {
-          if (s.key === activeKey && (!activeS || s.endTime > activeS.endTime)) activeS = s
-        }
-        if (activeS) {
-          // Recalcular high/low vivos iterando desde el final hacia atras,
-          // rompiendo al salir del rango de la KZ activa.
-          for (let i = _realLen - 1; i >= 0; i--) {
-            const c = _allData[i]
-            if (c.time < activeS.startTime) break
-            if (c.time > lastRealTs) continue
-            if (liveHigh == null || c.high > liveHigh) liveHigh = c.high
-            if (liveLow == null || c.low < liveLow) liveLow = c.low
-          }
-        }
-      }
-    }
-
-    const ts = cr.chart.timeScale()
-    for (const s of sessions) {
-      let x1, x2, y1, y2
-      try {
-        const isActive = (s === activeS)
-        const endTs = (isActive && lastRealTs > s.endTime) ? lastRealTs : s.endTime
-        const sHigh = (isActive && liveHigh != null) ? liveHigh : s.high
-        const sLow  = (isActive && liveLow  != null) ? liveLow  : s.low
-        x1 = ts.timeToCoordinate(s.startTime)
-        x2 = ts.timeToCoordinate(endTs)
-        y1 = cr.series.priceToCoordinate(sHigh)
-        y2 = cr.series.priceToCoordinate(sLow)
-      } catch { continue }
-      if (x1 == null || x2 == null || y1 == null || y2 == null) continue
-
-      const left   = Math.min(x1, x2)
-      const top    = Math.min(y1, y2)
-      const width  = Math.abs(x2 - x1)
-      const height = Math.max(Math.abs(y2 - y1), 1)
-      if (width < 2) continue
-
-      ctx.fillStyle = s.bg
-      ctx.fillRect(left, top, width, height)
-
-      ctx.strokeStyle = s.border
-      ctx.lineWidth = 1
-      ctx.setLineDash([4, 3])
-      ctx.strokeRect(left + 0.5, top + 0.5, Math.max(width - 1, 0), Math.max(height - 1, 0))
-      ctx.setLineDash([])
-
-      if (c.showLabel && height > 14) {
-        ctx.font = "700 9px 'Montserrat', sans-serif"
-        ctx.fillStyle = s.text
-        ctx.globalAlpha = 0.85
-        ctx.textBaseline = 'bottom'
-        ctx.fillText(s.label, left + 4, top + height - 2)
-        ctx.globalAlpha = 1
-      }
-    }
-  }, [chartMap])
-
-  // Sincronizar drawRef tras cada redefinición de draw (siempre estable
-  // post-mount, pero patrón uniforme con otros refs)
-  useEffect(() => { drawRef.current = draw }, [draw])
-
-  // ── Subscripciones al chart + listeners de mouse para drag vertical ────
-  useEffect(() => {
-    if (!activePair) return
-    const cr = chartMap.current[activePair]
-    if (!cr?.chart) return
-    const tsApi = cr.chart.timeScale()
-
-    resizeCanvas()
-    draw()
-
-    const ro = new ResizeObserver(() => { resizeCanvas(); draw() })
-    if (canvasRef.current?.parentElement) ro.observe(canvasRef.current.parentElement)
-
-    // Handler síncrono — para cambios horizontales de range
-    const handler = () => draw()
-    let unsubA = null, unsubB = null
-    try {
-      tsApi.subscribeVisibleLogicalRangeChange(handler)
-      unsubA = () => { try { tsApi.unsubscribeVisibleLogicalRangeChange(handler) } catch {} }
-    } catch {}
-    try {
-      tsApi.subscribeSizeChange(handler)
-      unsubB = () => { try { tsApi.unsubscribeSizeChange(handler) } catch {} }
-    } catch {}
-
-    // ── Drag-aware redraw ───────────────────────────────────────────────
-    // Mientras el ratón esté pulsado sobre el chart, redibujamos en cada
-    // frame. Esto captura cambios verticales (drag de escala de precios,
-    // drag general del chart con cambio de price scale) que NO disparan
-    // subscribeVisibleLogicalRangeChange.
-    let dragRafId = null
-    let dragging = false
-
-    const dragLoop = () => {
-      if (!dragging) { dragRafId = null; return }
-      draw()
-      dragRafId = requestAnimationFrame(dragLoop)
-    }
-
-    const chartEl = (() => {
-      try { return cr.chart.chartElement() } catch { return null }
-    })()
-
-    const onMouseDown = (e) => {
-      // Solo nos interesa drag con botón izquierdo y dentro del chart
-      if (e.button !== 0) return
-      if (!chartEl || !chartEl.contains(e.target)) return
-      dragging = true
-      if (dragRafId == null) dragRafId = requestAnimationFrame(dragLoop)
-    }
-    const onMouseUp = () => {
-      dragging = false
-      // Un draw final por si quedó algún frame por capturar
-      draw()
-    }
-
-    // También wheel (zoom con rueda dispara el horizontal handler, pero
-    // por si acaso forzamos un draw extra)
-    const onWheel = () => { draw() }
-
-    if (chartEl) {
-      chartEl.addEventListener('mousedown', onMouseDown)
-      chartEl.addEventListener('wheel', onWheel, { passive: true })
-    }
-    window.addEventListener('mouseup', onMouseUp)
-
-    return () => {
-      ro.disconnect()
-      if (unsubA) unsubA()
-      if (unsubB) unsubB()
-      if (dragRafId != null) cancelAnimationFrame(dragRafId)
-      if (chartEl) {
-        chartEl.removeEventListener('mousedown', onMouseDown)
-        chartEl.removeEventListener('wheel', onWheel)
-      }
-      window.removeEventListener('mouseup', onMouseUp)
-    }
-  }, [activePair, chartMap, dataReady, draw, resizeCanvas])
-
-  // Redibujar cuando cambia config (no afecta posicionamiento, solo qué
-  // se muestra y cómo se pinta)
-  useEffect(() => { draw() }, [cfg, tfAllowed, draw])
-
-  // Redibujar cuando cambia el tick (avance del replay → nuevas sesiones
-  // ya están en el cache via el otro effect, aquí solo redibujamos)
-  useEffect(() => { draw() }, [tick, draw])
-
-  // Redibujar también conforme avanza el replay — esto hace que la sesión
-  // activa "crezca" visualmente durante el replay. Bucket de 60s para no
-  // saturar React a velocidades altas (∞ = 500 vel M1/seg). Visualmente,
-  // un step de 1 minuto en una caja de killzone de varias horas es
-  // imperceptible.
+  // ── Dispatch a primitive cuando avanza replay (bucket 60s endpoint vivo) ─
+  // La cache de sesiones NO cambia, pero la KZ activa crece vela-a-vela en
+  // el primitive (lógica computeActiveSession). Bucket de 60s para no
+  // saturar React a velocidades altas de replay.
   const ctRedrawBucket = currentTime ? Math.floor(currentTime / 60) : 0
-  useEffect(() => { draw() }, [ctRedrawBucket, draw])
+  useEffect(() => {
+    primitiveRef.current?.setSessions(cachedSessionsRef.current, currentTime, cfg.showLabel)
+  }, [ctRedrawBucket, cfg.showLabel])
 
   // ── UI ──────────────────────────────────────────────────────────────────
   const Toggle = ({ label, k }) => (
@@ -419,15 +155,7 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5, overflow: 'hidden' }}>
 
-      {/* Capa 1: Canvas de cajas */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: 'absolute', inset: 0,
-          width: '100%', height: '100%',
-          pointerEvents: 'none',
-        }}
-      />
+      {/* Sin canvas Capa 1 — el primitive vive dentro del canvas LWC */}
 
       {/* Capa 2: Indicator label */}
       <div
