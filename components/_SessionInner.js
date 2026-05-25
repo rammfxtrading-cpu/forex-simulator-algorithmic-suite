@@ -1149,7 +1149,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       setSeriesData([...agg, ...cr.phantom], agg.length)
       restoreOnNewBar(cr, () => {
-        applyNewBarUpdate(cr, agg, cr.phantom, { tf, lastT: _lastT })
+        applyNewBarUpdate(cr, agg, cr.phantom)
       }, {
         agg,
         mkPhantom: _mkPhantom,
