@@ -419,20 +419,7 @@ export default function SessionPage(){
     }
     onAfterEdit(afterEditHandler)
     onDoubleClick(dblClickHandler)
-    const iv=setInterval(()=>{
-      try{
-        const sel=getSelected()
-        if(sel&&sel.length>0){
-          const t=sel[0]
-          if(t?.id){
-            setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType})
-            if(t.toolType) setActiveToolKey(t.toolType)
-          }
-        }
-      }catch{}
-    },300)
     return()=>{
-      clearInterval(iv)
       offAfterEdit(afterEditHandler)
       offDoubleClick(dblClickHandler)
     }
@@ -440,7 +427,7 @@ export default function SessionPage(){
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{selectedToolRef.current=selectedTool},[selectedTool])
 
-  // Clear selectedTool when user clicks empty chart area
+  // Sync selectedTool on click — reactivo vía subscribeClick LWC oficial (reemplaza polling 300ms s40 5f.2)
   useEffect(()=>{
     if(!dataReady) return
     const cr=chartMap.current[activePair]
@@ -450,7 +437,15 @@ export default function SessionPage(){
       setTimeout(()=>{
         try{
           const sel=getSelected()
-          if(!sel||sel.length===0) setSelectedTool(null)
+          if(!sel||sel.length===0){
+            setSelectedTool(null)
+          }else{
+            const t=sel[0]
+            if(t?.id){
+              setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType})
+              if(t.toolType) setActiveToolKey(t.toolType)
+            }
+          }
         }catch{}
       },50)
     }
