@@ -44,7 +44,7 @@ FASE 5 cluster B drawings lifecycle           ✅ ESTRUCTURAL CERRADA s38 (fase 
 | 6 | Datos crudos Giancarlo/Luis drawings | ⏳ ABIERTO bloqueado terceros | — |
 | 7 | 5f LS-DEBUG cleanup | ✅ CERRADO FANTASMA | s39 (resuelto colateral s23) |
 | 8 | CustomDrawingsOverlay.js S33.4 | ✅ CERRADO "no aplica empíricamente" | s39 |
-| 9 NUEVO | Polling 150ms zoom Y L2914 _SessionInner.js | ⏳ ABIERTO prioridad 1 s41 | — |
+| 9 NUEVO | Polling 150ms zoom Y L2922 _SessionInner.js | ✅ CERRADO "no aplica empíricamente" | s41 |
 
 ### §1.3 Fases abiertas/no empezadas
 
@@ -84,7 +84,7 @@ GAP funcional al carácter: añadir contenido card existente — miniaturas + en
 
 | Sesión | Item | Notas |
 |---|---|---|
-| s41 | Item 9 NUEVO polling 150ms zoom Y L2914 | Análogo arquitectónico a 5f.2 — caracterización + Edit + smoke producción 3 paths |
+| s41 | Item 9 NUEVO polling 150ms zoom Y L2922 | ✅ CERRADO "no aplica empíricamente" — caracterización empírica: LWC oficial 5.x NO expone canal pub/sub price scale change (typings IPriceScaleApi L2160-L2188 solo mutación/query) → polling 150ms justificado bytes-on-disk. Migración ISeriesPrimitive reclasificada deuda Bloque 4 Fase 6 trading domain |
 | s42-s43 | Items 3 + 5 viewport preservation TradingView-style | Sesión arquitectónica dedicada — caracterización vs FX Replay/TradingView empírica + atajo Opt+R/Alt+R |
 | s44 | Smoke producción multi-path post-cleanup + HANDOFF cleanup §10.1 completo | Cierre bloque 1 |
 
@@ -119,6 +119,7 @@ GAP funcional al carácter: añadir contenido card existente — miniaturas + en
 - `checkSLTP` lógica actual
 - Challenge phases doctrina pedagógica (avance fase "virgen" capital nominal, 0 floating P&L, solo cursor + drawings persisten)
 - Extracción `lib/trading/` modular: positions.js + orders.js + balance.js + sltp.js + challenge.js
+- Migración `PositionsOverlay`/`OrdersOverlay` líneas precio → `ISeriesPrimitive` (deuda heredada item 9 §10.1 cerrado s41 "no aplica empíricamente"): polling 150ms zoom Y L2922 `_SessionInner.js` justificado bytes-on-disk por LWC oficial sin canal pub/sub price scale change. Patrón análogo cierre fase 5g (KillzonesOverlay → KillzonesPrimitive) — pipeline interno LWC invoca `updateAllViews` automático en TODOS los paths (resize/pan/zoom/drag horizontal/drag vertical), eliminando polling consumer-side
 
 Estimación amplia ~8-15 sesiones por scope incierto pre-PASO-0. Refinamiento s59.
 
@@ -210,7 +211,7 @@ Apertura ratificada al carácter cuando se cumplan TODOS estos criterios:
 
 - ✅ Fases 1-4 cerradas estructuralmente (CUMPLIDO post-s40)
 - ✅ Fase 5 cluster B estructural cerrada (CUMPLIDO post-s38)
-- ⏳ Cleanup §10.1 completo (3 items abiertos: 3, 5, 9 NUEVO + 1 bloqueado terceros 6)
+- ⏳ Cleanup §10.1 completo (2 items abiertos: 3, 5 + 1 bloqueado terceros 6 + item 9 NUEVO cerrado s41 "no aplica empíricamente")
 - ⏳ Fase 5.A cluster A Opción A migración Supabase cerrada
 - ⏳ 4 features bloqueantes cerradas: killzones tagging trades + Montecarlo + go-to next + card dashboard PDFs/videos
 - ⏳ Fase 6 trading domain extraída a `lib/trading/`
@@ -221,14 +222,16 @@ Cuando los 8 criterios sean ✅, abrimos.
 
 ---
 
-## §6 — Próxima sesión = sesión 41
+## §6 — Próxima sesión = sesión 42
 
-**PASO 0 s41**: baseline verificación bicapa REAL (§49) + §51 NUEVA aplicada al item 9 §10.1 polling 150ms zoom Y L2914 (re-verificar empírica bytes-on-disk ANTES de asumir vivo, patrón s40 aplicado al item 1).
+**Sesión 41 ejecutada al carácter**: PASO 0 baseline bicapa REAL (10 checks PASS) + §51 NUEVA aplicada al item 9 §10.1 polling 150ms zoom Y L2922 (re-verificación empírica bytes-on-disk confirma VIVO no fantasma) + caracterización empírica LWC oficial 5.x typings IPriceScaleApi L2160-L2188 (CERO canal pub/sub price scale change) + veredicto cierre "no aplica empíricamente" patrón item 8 s39 + reclasificación deuda Bloque 4 Fase 6 trading domain. 5 Edits docs-only sobre PLAN MAESTRO. Cero código tocado. `_SessionInner.js` baseline post-s40 intacto al cierre s41. Runtime Vercel `ae29f16` intacto.
 
-**PASO 1 s41**: caracterización empírica item 9 + decisión estrategia Edit (análogo a 5f.2 si patrón arquitectónico permite).
+**PASO 0 s42**: baseline verificación bicapa REAL (§49) + §51 NUEVA aplicada al item 3 §10.1 5d.7-5d.8 viewport preservation (re-verificar empírica bytes-on-disk ANTES de asumir vivo, patrón s40+s41 aplicado).
 
-**PASO 2-N s41**: dependiente decisión PASO 1.
+**PASO 1 s42**: caracterización empírica items 3+5 viewport preservation TradingView-style + decisión arquitectónica (sesión dedicada §2.1 fila s42-s43 — caracterización vs FX Replay/TradingView empírica + atajo Opt+R/Alt+R).
 
-§14 input encriptado escuchado al carácter desde s31 (~10 sesiones consecutivas). Plan maestro post-s40 ratificado bicapa al carácter.
+**PASO 2-N s42**: dependiente decisión PASO 1.
+
+§14 input encriptado escuchado al carácter desde s31 (~11 sesiones consecutivas). Plan maestro post-s40 ratificado bicapa al carácter.
 
 — CTO. Plan maestro post-s40 al carácter. Calidad TradingView no negociable. CLAUDE.md §1.
