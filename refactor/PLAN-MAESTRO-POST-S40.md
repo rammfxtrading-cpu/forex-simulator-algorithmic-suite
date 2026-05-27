@@ -39,8 +39,8 @@ FASE 5 cluster B drawings lifecycle           ✅ ESTRUCTURAL CERRADA s38 (fase 
 |---|---|---|---|
 | 1 | 5f.2 polling 300ms getSelected | ✅ CERRADO | s40 ae29f16 |
 | 2 | 5e.4 debugCtx parámetro muerto | ✅ CERRADO | s39 e44bb9b |
-| 3 | 5d.7-5d.8 viewport preservation | ⏳ ABIERTO arquitectónico | — |
-| 5 | Debt 5.1 viewport timeframe change | ⏳ ABIERTO arquitectónico | — |
+| 3 | 5d.7-5d.8 viewport preservation | ✅ CERRADO FANTASMA | s43 (5d.7 cerrada s22 5b233b4 + 5d.8 cerrada s42 e6c1430) |
+| 5 | Debt 5.1 viewport timeframe change TradingView-style | ✅ CERRADO | s42 e6c1430 |
 | 6 | Datos crudos Giancarlo/Luis drawings | ⏳ ABIERTO bloqueado terceros | — |
 | 7 | 5f LS-DEBUG cleanup | ✅ CERRADO FANTASMA | s39 (resuelto colateral s23) |
 | 8 | CustomDrawingsOverlay.js S33.4 | ✅ CERRADO "no aplica empíricamente" | s39 |
@@ -85,7 +85,8 @@ GAP funcional al carácter: añadir contenido card existente — miniaturas + en
 | Sesión | Item | Notas |
 |---|---|---|
 | s41 | Item 9 NUEVO polling 150ms zoom Y L2922 | ✅ CERRADO "no aplica empíricamente" — caracterización empírica: LWC oficial 5.x NO expone canal pub/sub price scale change (typings IPriceScaleApi L2160-L2188 solo mutación/query) → polling 150ms justificado bytes-on-disk. Migración ISeriesPrimitive reclasificada deuda Bloque 4 Fase 6 trading domain |
-| s42-s43 | Items 3 + 5 viewport preservation TradingView-style | Sesión arquitectónica dedicada — caracterización vs FX Replay/TradingView empírica + atajo Opt+R/Alt+R |
+| s42 | Item 5 Debt 5.1 viewport timeframe change TradingView-style | ✅ CERRADO s42 e6c1430 — feat atajo reset viewport Alt+R / Option+R + reuso initVisibleRange + getRealLen() API canónica preexistente + Edit B único minimal +14 líneas _SessionInner.js + smoke localhost 6/6 PASS + smoke producción simulator.algorithmicsuite.com PASS |
+| s43 | Item 3 5d.7-5d.8 viewport preservation | ✅ CERRADO FANTASMA s43 — caracterización empírica bytes-on-disk al carácter ratificó: sub-fase 5d.7 (Debt 5.1 viewport TF change estilo TradingView) cerrada s22 commit 5b233b4 "anclar scroll al último real compensando phantoms para drawings extendidos" + sub-fase 5d.8 (atajo Opt+R/Alt+R reset viewport) cerrada s42 e6c1430. _SessionInner.js:1240 comentario in-code "Sub-fase 5d.7 (deuda 5.1)" descriptivo implementación ya aplicada. Adjetivo "deeper" en HANDOFFs sucesivos s30→s42 = invención retórica sin sustento bytes-on-disk. Ramón ratificó empíricamente "yo lo veo muy bien" navegador real PASS. Quinto FANTASMA §10.1 patrón items 7+8+9 |
 | s44 | Smoke producción multi-path post-cleanup + HANDOFF cleanup §10.1 completo | Cierre bloque 1 |
 
 ### §2.2 Bloque 2: Fase 5.A cluster A Opción A migración Supabase (~3-5 sesiones, s45-s49)
@@ -184,6 +185,29 @@ Killzones tagging trades + Montecarlo tocan métricas/trades — pueden colision
 - **Orden alternativo**: cleanup §10.1 → Fase 5.A → Fase 6 → features (sobre arquitectura limpia) → Fase 7. Más coherente arquitectónicamente, pero retrasa apertura beta visible.
 - Decisión Ramón al carácter en s45 cuando llegue momento.
 
+### §3.5 Riesgo Supabase RLS 30 oct 2026
+
+Email Supabase 27 may 2026 18:00 hora local notifica cambio política seguridad por defecto: a partir 30 oct 2026 tablas NUEVAS creadas en proyectos existentes requerirán GRANT explícito PostgREST/GraphQL/supabase-js para exposición API datos.
+
+**Impacto al carácter sobre forex-simulator-algorithmic-suite**:
+
+| Aspecto | Estado al carácter |
+|---|---|
+| Categoría proyecto | "proyecto existente" (creado pre-30 oct 2026) |
+| Tablas ya creadas (sim_sessions, sim_trades, sim_orders, sim_drawings, sim_progress) | SIN impacto retroactivo — GRANT implícito heredado vigente |
+| Runtime Vercel efectivo s42 `e6c1430` | CERO impacto runtime |
+| Riesgo bloqueante apertura alumnos | NO bloqueante |
+
+**Acción única al carácter ANTES del 30 oct 2026** (5 meses de gracia al carácter — NO urgencia):
+
+- Revisar panel Supabase → Asesor de seguridad → inventario tablas expuestas API datos
+- Confirmar GRANT explícito heredado sobre las 5 tablas existentes
+- Si se crean tablas NUEVAS post-30 oct 2026 (ej. Fase 5.A migración Supabase añade columna `pair` a `sim_drawings` o crea tabla auxiliar `sim_drawings_v2`), aplicar GRANT explícito en script de migración
+
+**Bloque cronológico al carácter**: documentar en `refactor/fase-5A-plan.md` PASO 0 s45 + en `refactor/fase-6-plan.md` PASO 0 s59 que toda migración Supabase post-30 oct 2026 incluye GRANT explícito como paso obligatorio.
+
+§38 + §48 + §51 NUEVA s39 aplicadas al carácter — caracterización empírica deuda operativa antes asumir impacto runtime + verificar bytes-on-disk impacto Vercel runtime efectivo s42 `e6c1430` = CERO impacto runtime ratificado.
+
 ---
 
 ## §4 — Disciplina mantenida al carácter en TODO el refactor
@@ -211,7 +235,7 @@ Apertura ratificada al carácter cuando se cumplan TODOS estos criterios:
 
 - ✅ Fases 1-4 cerradas estructuralmente (CUMPLIDO post-s40)
 - ✅ Fase 5 cluster B estructural cerrada (CUMPLIDO post-s38)
-- ⏳ Cleanup §10.1 completo (2 items abiertos: 3, 5 + 1 bloqueado terceros 6 + item 9 NUEVO cerrado s41 "no aplica empíricamente")
+- ✅ Cleanup §10.1 zona CTO 100% completado (0 items abiertos zona CTO + 1 bloqueado terceros 6 datos crudos Giancarlo/Luis + items 1+2+3+5+7+8+9 cerrados consecutivos s39→s43 — item 1 s40 ae29f16 + item 2 s39 e44bb9b + item 3 FANTASMA s43 5d.7 cerrada s22 5b233b4 + 5d.8 cerrada s42 e6c1430 + item 5 s42 e6c1430 + item 7 FANTASMA s39 + item 8 "no aplica empíricamente" s39 + item 9 NUEVO "no aplica empíricamente" s41)
 - ⏳ Fase 5.A cluster A Opción A migración Supabase cerrada
 - ⏳ 4 features bloqueantes cerradas: killzones tagging trades + Montecarlo + go-to next + card dashboard PDFs/videos
 - ⏳ Fase 6 trading domain extraída a `lib/trading/`
@@ -222,16 +246,22 @@ Cuando los 8 criterios sean ✅, abrimos.
 
 ---
 
-## §6 — Próxima sesión = sesión 42
+## §6 — Próxima sesión = sesión 43
 
-**Sesión 41 ejecutada al carácter**: PASO 0 baseline bicapa REAL (10 checks PASS) + §51 NUEVA aplicada al item 9 §10.1 polling 150ms zoom Y L2922 (re-verificación empírica bytes-on-disk confirma VIVO no fantasma) + caracterización empírica LWC oficial 5.x typings IPriceScaleApi L2160-L2188 (CERO canal pub/sub price scale change) + veredicto cierre "no aplica empíricamente" patrón item 8 s39 + reclasificación deuda Bloque 4 Fase 6 trading domain. 5 Edits docs-only sobre PLAN MAESTRO. Cero código tocado. `_SessionInner.js` baseline post-s40 intacto al cierre s41. Runtime Vercel `ae29f16` intacto.
+**Sesión 42 ejecutada al carácter**: PASO 0 baseline bicapa REAL (10 checks PASS) + §51 NUEVA aplicada items 3+5 §10.1 (grep 11 patrones `chartViewport.js` retornó 0 matches — items 3+5 declarativas HANDOFFs sin materializar in-code, pipeline viewport básico YA implementado bytes-on-disk vía `userScrolled` flag + doble rAF + `opts.full restoreSavedRange`) + caracterización convención teclado TradingView ratificada 5 fuentes web independientes coincidentes (`Alt+R` Win/Linux / `Option+R` Mac, `e.altKey && e.code === 'KeyR'`) + caracterización API LWC oficial 5.x typings.d.ts (`resetTimeScale()` L2821 + `fitContent()` L2825 nativos pero NO replican `_tbars[tf]` custom simulador → reuso `initVisibleRange` + `getRealLen()` API canónica preexistente L13+L881) + Edit B único minimal +14 líneas `_SessionInner.js` (3045→3059 líneas, md5 `6eaa3b56...` → `2651d34d...`) + smoke localhost 6/6 PASS + commit `e6c1430` + push origin/main fast-forward `ef7face..e6c1430` + smoke producción `simulator.algorithmicsuite.com` PASS. Item 5 §10.1 Debt 5.1 CERRADO ESTRUCTURALMENTE EN PRODUCCIÓN POST SMOKE. Runtime Vercel CAMBIÓ `ae29f16` → `e6c1430` (primer cambio runtime efectivo desde s40). CERO errores §9.4 propios CTO. 4 instancias §14 catalogadas vigesimoquinta sesión consecutiva multi-instancia. CERO lecciones nuevas, lecciones previas reforzadas (§38 + §48 + §49 + §51 + §52 + §53 + §54 NUEVA). HANDOFF s42 entregado vía §54 NUEVA archivo descargable sandbox CTO web (`refactor/HANDOFF-cierre-sesion-42.md` 730 líneas md5 `e6869dee...`). Cuarto cleanup post-fase-5g cerrado estructural (s39 debugCtx + s40 polling 300ms + s41 polling 150ms "no aplica" + s42 reset viewport feature).
 
-**PASO 0 s42**: baseline verificación bicapa REAL (§49) + §51 NUEVA aplicada al item 3 §10.1 5d.7-5d.8 viewport preservation (re-verificar empírica bytes-on-disk ANTES de asumir vivo, patrón s40+s41 aplicado).
+**PASO 0 s43**: baseline verificación bicapa REAL (§49) ✅ EJECUTADO 27 may 2026 ~22:50 hora local (10 checks PASS: HEAD = origin/main = `a846c3f` + `_SessionInner.js` 3059 líneas md5 `2651d34d...` + `chartViewport.js` 201 líneas md5 `06f531ca...` intacto vigesimocuarta sesión consecutiva + `chartRender.js` 141 líneas md5 `5af39d60...` + 3 invariantes fase 4 intactas + header §1.7 protegido verbatim) + §51 NUEVA s39 aplicada al carácter sobre PLAN MAESTRO POST-S40 baseline pre-Edits (md5 `197c0f13...` + 237 líneas).
 
-**PASO 1 s42**: caracterización empírica items 3+5 viewport preservation TradingView-style + decisión arquitectónica (sesión dedicada §2.1 fila s42-s43 — caracterización vs FX Replay/TradingView empírica + atajo Opt+R/Alt+R).
+**PASO 1 s43**: actualización PLAN MAESTRO POST-S40 vía 5 Edits docs-only diferidos s42 (§1.2 fila item 5 cerrado ✅ + §2.1 desdoblar fila s42-s43 en filas s42 ejecutada + s43 dedicada + §5 criterio salida 2→1 items abiertos + §6 íntegro reemplazo histórico s42 + PASO 0/1/2-N s43 + §3.5 NUEVA deuda operativa Supabase RLS 30 oct 2026).
 
-**PASO 2-N s42**: dependiente decisión PASO 1.
+**PASO 2 s43**: caracterización empírica item 3 §10.1 sub-fase 5d.7-5d.8 viewport preservation deeper ✅ EJECUTADA — §38 + §43 + §46 + §51 NUEVA s39 aplicadas al carácter ratificaron bicapa REAL: 5d.7 (Debt 5.1 viewport TF change estilo TradingView) cerrada s22 commit `5b233b4` "anclar scroll al último real compensando phantoms para drawings extendidos" + 5d.8 (atajo Opt+R/Alt+R reset viewport) cerrada s42 `e6c1430`. `_SessionInner.js:1240` comentario in-code descriptivo implementación ya aplicada. Adjetivo "deeper" HANDOFFs sucesivos s30→s42 = invención retórica sin sustento bytes-on-disk. Ramón ratificó empíricamente "yo lo veo muy bien" navegador real PASS. Verificación commit `5b233b4` bicapa REAL: existe + branch main lo contiene + 48 commits sobre `5b233b4` hasta HEAD s43. **Item 3 §10.1 CERRADO FANTASMA s43** — quinto FANTASMA §10.1 patrón items 7+8+9.
 
-§14 input encriptado escuchado al carácter desde s31 (~11 sesiones consecutivas). Plan maestro post-s40 ratificado bicapa al carácter.
+**PASO 3 s43**: cleanup §10.1 zona CTO 100% completado al carácter — 0 items abiertos zona CTO + 1 bloqueado terceros 6 (datos crudos Giancarlo/Luis drawings). Bloque 1 cleanup §10.1 según §2.1 CERRADO ESTRUCTURALMENTE.
+
+**PASO 4 s43**: 3 Edits docs-only adicionales sobre PLAN MAESTRO POST-S40 (§1.2 fila item 3 ✅ CERRADO FANTASMA + §2.1 fila s43 reclasificada FANTASMA + §5 criterio salida 0 items abiertos zona CTO + §6 este bloque reformulado) + amend commit `ab79573` para coherencia narrativa atómica.
+
+**PASO 5 s43**: redactar HANDOFF s43 vía §54 NUEVA s41 archivo descargable sandbox CTO web + commit + push atómico final 2 commits (`ab79573` amend plan maestro + HANDOFF s43).
+
+§14 input encriptado escuchado al carácter desde s31 (~12 sesiones consecutivas). Plan maestro post-s40 ratificado bicapa al carácter.
 
 — CTO. Plan maestro post-s40 al carácter. Calidad TradingView no negociable. CLAUDE.md §1.
