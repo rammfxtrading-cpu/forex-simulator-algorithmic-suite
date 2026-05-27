@@ -1844,6 +1844,20 @@ if(full||(curr!==prev&&curr!==prev+1)){
         // Persist immediately so deletion survives reload
         if(deleted) setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
       }
+      // Alt+R (Win/Linux) / Option+R (Mac) → reset viewport TradingView-style.
+      // Restaura ventana TF-default custom del simulador (initVisibleRange) +
+      // autoScale eje Y. Convención TradingView ratificada empíricamente.
+      if(e.altKey && e.code === 'KeyR'){
+        e.preventDefault()
+        const pair = activePairRef.current
+        const cr = chartMap.current[pair]
+        if(!cr?.chart) return
+        const tf = pairTfRef.current[pair] || 'H1'
+        const aggLength = getRealLen()
+        if(!aggLength) return
+        initVisibleRange(cr, tf, aggLength)
+        try { cr.chart.priceScale('right').applyOptions({ autoScale: true }) } catch {}
+      }
     }
     window.addEventListener('keydown',onKey)
     return()=>window.removeEventListener('keydown',onKey)
