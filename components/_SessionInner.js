@@ -321,6 +321,7 @@ export default function SessionPage(){
   const saveSessionDrawings = useCallback(async () => {
     const uid = userIdRef.current
     const sid = router.query?.id
+    const pair = sessionRef.current?.pair || null
     if(!uid || !sid) return
     try {
       const vendorJson = exportTools()
@@ -339,7 +340,7 @@ export default function SessionPage(){
       // queremos asumir que esté creado).
       const { data: updated, error: upErr } = await supabase
         .from('session_drawings')
-        .update({ user_id: uid, data: combined, updated_at: new Date().toISOString() })
+        .update({ user_id: uid, pair, data: combined, updated_at: new Date().toISOString() })
         .eq('session_id', sid)
         .select('session_id')
       if (!upErr && (!updated || updated.length === 0)) {
@@ -347,7 +348,7 @@ export default function SessionPage(){
         // fila entre el UPDATE y el INSERT (carrera muy rara), el catch lo
         // absorbe — el dato más reciente ya está en BD igualmente.
         await supabase.from('session_drawings').insert(
-          { session_id: sid, user_id: uid, data: combined, updated_at: new Date().toISOString() }
+          { session_id: sid, user_id: uid, pair, data: combined, updated_at: new Date().toISOString() }
         ).then(()=>{}).catch(()=>{})
       }
     } catch(e) {}
