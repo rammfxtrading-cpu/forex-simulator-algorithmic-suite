@@ -35,6 +35,11 @@ const LOT_PRESETS = [0.01,0.05,0.1,0.25,0.5,1.0]
 const RR_PRESETS  = [1,1.5,2,3]
 const ALL_PAIRS   = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','AUD/CAD','EUR/GBP','EUR/JPY','GBP/JPY']
 
+// Normaliza el simbolo de par a forma sin barra ('EUR/USD' -> 'EURUSD').
+// Unifica capa challenge (ya sin barra) y capa dashboard/sim (con barra)
+// en una sola convencion de clave para session_drawings.pair. Helper puro.
+const normPair = (p) => (p || '').replace(/\//g, '')
+
 function chartOpts(w,h){return{
   width:w,height:h,
   layout:{
@@ -321,7 +326,10 @@ export default function SessionPage(){
   const saveSessionDrawings = useCallback(async () => {
     const uid = userIdRef.current
     const sid = router.query?.id
-    const pair = sessionRef.current?.pair || null
+    // Fuente per-par: par ACTIVO (no el principal de sesion), normalizado sin barra.
+    // Fallback al par principal si activePairRef aun no se sincronizo (arranca null)
+    // -> garantiza no-null para la columna NOT NULL.
+    const pair = normPair(activePairRef.current || sessionRef.current?.pair)
     if(!uid || !sid) return
     try {
       const vendorJson = exportTools()
@@ -342,6 +350,7 @@ export default function SessionPage(){
         .from('session_drawings')
         .update({ user_id: uid, pair, data: combined, updated_at: new Date().toISOString() })
         .eq('session_id', sid)
+        .eq('pair', pair)
         .select('session_id')
       if (!upErr && (!updated || updated.length === 0)) {
         // No existía: insert. Si ahora otro tab se nos adelantó y ya creó la
@@ -359,8 +368,16 @@ export default function SessionPage(){
   useEffect(() => {
     if(!pluginReady || !id || !userIdRef.current) return
     const load = async () => {
+      // Par activo normalizado (closure, valor fresco del re-run del effect).
+      // NO activePairRef aqui: este effect corre ANTES del sync del ref (L428)
+      // en el mismo flush -> el ref aun apuntaria al par viejo.
+      const loadPairKey = normPair(activePair)
       try {
-        const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).order('updated_at', { ascending: false }).limit(1).maybeSingle()
+        const { data } = await supabase.from('session_drawings').select('data').eq('session_id', id).eq('pair', loadPairKey).order('updated_at', { ascending: false }).limit(1).maybeSingle()
+        // Stale-guard: si el usuario cambio de par durante el await, abortar
+        // para no inyectar drawings del par viejo en el plugin del nuevo.
+        // Aqui si el ref: tras el await ya esta sincronizado.
+        if (normPair(activePairRef.current) !== loadPairKey) return
         if(!data?.data || data.data === '[]') return
         try {
           const parsed = JSON.parse(data.data)
@@ -387,7 +404,7 @@ export default function SessionPage(){
       } catch(e) {}
     }
     load()
-  }, [pluginReady, id])
+  }, [pluginReady, id, activePair])
 
   // Drawing tools events — subscribe only when plugin is confirmed ready
   useEffect(()=>{
