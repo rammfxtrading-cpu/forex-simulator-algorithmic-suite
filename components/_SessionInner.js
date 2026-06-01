@@ -13,6 +13,7 @@ import ReplayEngine from '../lib/replayEngine'
 import { fetchSessionCandles, setSeriesData, setMasterTime, clearCurrentTime, getMasterTime, getSeriesData, getRealLen } from '../lib/sessionData'
 import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar, scrollToTail, markUserScrollIfReal } from '../lib/chartViewport'
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
+import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -104,8 +105,6 @@ function chartOpts(w,h){return{
   handleScale:{axisPressedMouseMove:{time:true,price:true},mouseWheel:true,pinch:true},
 }}
 
-const isJpy    = p=>p?.includes('JPY')
-const pipMult  = p=>isJpy(p)?100:10000
 const fmtPx    = (px,p)=>px?.toFixed(isJpy(p)?3:5)??'—'
 const fmtPnl   = v=>(!v&&v!==0)||isNaN(v)?'+$0.00':(v>=0?'+':'')+v.toFixed(2)
 const pnlColor = v=>v>0?'#1E90FF':v<0?'#ef5350':'#a0b8d0'
@@ -113,7 +112,6 @@ const fmtTs = (ts) => {
   if(!ts || ts < 1000000000) return '—'
   return new Date(ts*1000).toLocaleString('es-ES',{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'})
 }
-function calcPnl(side,entry,exit,lots,pair){const pips=side==='BUY'?(exit-entry)*pipMult(pair):(entry-exit)*pipMult(pair);return pips*lots*10}
 
 // Default 10 phantoms (mínimo visual). Si algún drawing tiene un point.timestamp
 // más allá de lastT, añade ceil((maxTs - lastT) / tfSecs) + 10 de colchón

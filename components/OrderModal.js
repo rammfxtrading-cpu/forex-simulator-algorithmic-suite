@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { pipMult } from '../lib/trading/pricing'
 
 // ─── Order Modal — Fintech / Algorithmic Suite ────────────────────────────────
 // Risk base: en sesiones de challenge (isChallenge=true) usamos `initialBalance`
@@ -14,7 +15,7 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
   const {side,entry,pair,isLimit,sl:initSl,tp:initTp,lots:initLots,slPips:initSlPips,tpPips:initTpPips,rr:initRr}=modal
   const isBuy=side==='BUY'
   const isJpy=pair?.includes('JPY')
-  const mult=isJpy?100:10000
+  const mult=pipMult(pair)
   const RISK_PRESETS=[0.3,0.5,0.7,1,2,3]
   const [riskPct,setRiskPct]=useState(1)
   const [slPips,setSlPips]=useState(initSlPips||10)

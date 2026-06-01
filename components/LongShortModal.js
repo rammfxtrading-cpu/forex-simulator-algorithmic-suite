@@ -4,6 +4,7 @@
  * Estilo TradingView — liquid glass — Algorithmic Suite
  */
 import { useState, useEffect } from 'react'
+import { isJpy, pipMult, pipSize } from '../lib/trading/pricing'
 
 const PILL = {
   fontFamily: "'Montserrat',sans-serif",
@@ -47,9 +48,6 @@ const section = {
   margin: '16px 0 8px',
 }
 
-const isJpy = (pair) => pair?.includes('JPY')
-const pipMult = (pair) => isJpy(pair) ? 100 : 10000
-const pipSize = (pair) => isJpy(pair) ? 0.01 : 0.0001
 
 export default function LongShortModal({ tool, toolId, activePair, balance, initialBalance, isChallenge, onConfirm, onClose, onStyleUpdate }) {
   const [tab, setTab] = useState('data')
