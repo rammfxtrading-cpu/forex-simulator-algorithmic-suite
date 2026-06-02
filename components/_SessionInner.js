@@ -15,6 +15,7 @@ import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
 import { resolveBreach } from '../lib/trading/breach'
+import { realizePnl } from '../lib/trading/orders'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1349,13 +1350,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
     const usePrice=exitPriceOverride||currentPrice
     const ps=pairState.current[usePair];if(!ps||!usePrice) return
     const pos=ps.positions.find(p=>p.id===posId);if(!pos) return
-    const pnl=calcPnl(pos.side,pos.entry,usePrice,pos.lots,usePair)
-    const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
-    // FIX BUG C: RR real se calcula contra el SL INICIAL, no contra el SL actual.
-    // Si alumno movió SL a BE o trailing, slPips actual puede ser ~0 y haría explotar el RR.
-    // initialSlPips se guarda en la apertura y nunca cambia. Fallback a slPips para trades antiguos.
-    const slPipsForRr = pos.initialSlPips ?? pos.slPips
-    const rrReal=slPipsForRr>0?pnl/(slPipsForRr*pos.lots*10):0
+    const { pnl, rrReal, result } = realizePnl({ side: pos.side, entry: pos.entry, exit: usePrice, lots: pos.lots, pair: usePair, initialSlPips: pos.initialSlPips, slPips: pos.slPips })
     ps.positions=ps.positions.filter(p=>p.id!==posId)
     ps.trades=[...ps.trades,{...pos,exit:usePrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}]
     removePositionLines(posId,usePair)
@@ -2518,11 +2513,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
             const ps=pairState.current[closeModal.pair]
             const pos=ps?.positions?.find(p=>p.id===closeModal.posId)
             if(!pos||!currentPrice) return
-            const pnl=calcPnl(pos.side,pos.entry,currentPrice,lotsToClose,closeModal.pair)
-            const result=pnl>0?'WIN':pnl<0?'LOSS':'BREAKEVEN'
-            // FIX BUG C: RR real contra SL inicial, no actual
-            const slPipsForRr = pos.initialSlPips ?? pos.slPips
-            const rrReal=slPipsForRr>0?pnl/(slPipsForRr*lotsToClose*10):0
+            const { pnl, rrReal, result } = realizePnl({ side: pos.side, entry: pos.entry, exit: currentPrice, lots: lotsToClose, pair: closeModal.pair, initialSlPips: pos.initialSlPips, slPips: pos.slPips })
             // Convert ordinal→real for DB timestamps
             // toReal2 removed — using real timestamps directly
             if(lotsToClose>=pos.lots){
