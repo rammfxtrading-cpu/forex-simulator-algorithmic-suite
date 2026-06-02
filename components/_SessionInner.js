@@ -14,6 +14,7 @@ import { fetchSessionCandles, setSeriesData, setMasterTime, clearCurrentTime, ge
 import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar, scrollToTail, markUserScrollIfReal } from '../lib/chartViewport'
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
+import { resolveBreach } from '../lib/trading/breach'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1679,67 +1680,22 @@ if(full||(curr!==prev&&curr!==prev+1)){
       const livePositions = ps.positions.filter(p => p.openTime == null || candle.time >= p.openTime)
       if (!livePositions.length) continue
 
-      // PnL combinado al low y al high.
-      const pnlAtLow  = livePositions.reduce((s, p) => s + calcPnl(p.side, p.entry, low,  p.lots, pair), 0)
-      const pnlAtHigh = livePositions.reduce((s, p) => s + calcPnl(p.side, p.entry, high, p.lots, pair), 0)
-      // Peor escenario floating de este pair en esta vela.
-      const worstFloating = Math.min(pnlAtLow, pnlAtHigh)
-
-      // Equity worst-case en esta vela = capital + realized + floatingOther + worstFloating
-      const equityWorst = capital + realizedDelta + floatingOtherPairs + worstFloating
-      // Caída total desde capital inicial.
-      const ddTotalAtWorst = Math.max(0, capital - equityWorst)
-      // Caída del DÍA: realized del día (ya producida) + (worst-case que esta
-      // vela podría empeorarlo). Solo cuenta lo NEGATIVO de la combinación.
-      // Aproximación: si la caída total agregada empeora respecto al inicio del
-      // día, ese delta cuenta como ddDaily adicional.
-      // Para simplicidad usamos la métrica de capital base — el motor backend
-      // recalculará exacto al cerrar.
-      const ddDailyAtWorst = ddDailyAlreadyUSD + Math.max(0, -worstFloating - floatingOtherPairs)
-
-      const totalBreach = ddTotalAtWorst >= ddTotalCapUSD - 0.01
-      const dailyBreach = ddDailyAtWorst >= ddDailyCapUSD - 0.01
-
-      if (!totalBreach && !dailyBreach) continue
-
-      // ─── Hay breach. Calcular el precio EXACTO donde el equity tocó el cap ───
-      // Modelamos el PnL combinado de las posiciones del pair como función
-      // lineal del precio: pnl(price) = sum( ±(price - entry_i) × pipMult × lots_i × 10 )
-      // Donde el signo es + si BUY y - si SELL.
-      //   = price × A - B   con A = sum(±pipMult × lots × 10), B = sum(±entry × pipMult × lots × 10)
-      // Resolvemos: pnl(price) = pnlObjetivo  ⇒  price = (pnlObjetivo + B) / A
-      const mult = pipMult(pair)
-      let A = 0, B = 0
-      livePositions.forEach(p => {
-        const sign = p.side === 'BUY' ? 1 : -1
-        const coef = sign * mult * Number(p.lots) * 10
-        A += coef
-        B += coef * Number(p.entry)
+      // Nucleo de breach extraido a lib/trading/breach.js (Corte 2, vela-a-vela).
+      const r = resolveBreach({
+        livePositions,
+        high,
+        low,
+        pair,
+        capital,
+        realizedDelta,
+        floatingOtherPairs,
+        ddTotalCapUSD,
+        ddDailyCapUSD,
+        ddDailyAlreadyUSD,
       })
-      // Determinar el pnlObjetivo: el peor de los dos caps (el que se cruce primero).
-      // - Para total breach: pnlObjetivo de pair = -(ddTotalCapUSD - realizedDelta - floatingOtherPairs)
-      // - Para daily breach: pnlObjetivo de pair = -(ddDailyCapUSD - ddDailyAlreadyUSD) - floatingOtherPairs
-      // Tomamos el menos negativo (= se cruza antes).
-      const targetForTotal = -(ddTotalCapUSD) - realizedDelta - floatingOtherPairs
-      const targetForDaily = -(ddDailyCapUSD - ddDailyAlreadyUSD) - floatingOtherPairs
-      // Queremos el target con mayor valor (menos pérdida) — se cruza primero.
-      const pnlObjetivo = Math.max(targetForTotal, targetForDaily)
-      const reasonStr = (targetForDaily > targetForTotal) ? 'DD_DAILY_BREACH' : 'DD_TOTAL_BREACH'
-
-      // Si A es cero (no debería), salimos.
-      if (Math.abs(A) < 1e-9) continue
-      let breachPrice = (pnlObjetivo + B) / A
-      // Empujamos 0.5 pips MÁS ALLÁ del precio de breach exacto para asegurar
-      // que el motor backend detecte el fail (evita falsos negativos por
-      // redondeo IEEE-754 al guardar/leer pnl en BD).
-      const halfPip = 0.5 / mult
-      // Dirección: si el equity worst se da al low (BUY agregado), empujamos
-      // ABAJO. Si se da al high (SELL agregado), empujamos ARRIBA.
-      const pushDown = (pnlAtLow < pnlAtHigh)
-      breachPrice += pushDown ? -halfPip : halfPip
-      // Clampar al rango de la vela [low, high]. Si por error matemático
-      // sale fuera, usamos el extremo más cercano.
-      breachPrice = Math.max(low, Math.min(high, breachPrice))
+      if (!r.breach) continue
+      const breachPrice = r.breachPrice
+      const reasonStr = r.reason
 
       // Disparar cierre forzado de TODAS las posiciones de TODOS los pares al
       // mejor precio disponible (en pair actual = breachPrice; en otros pares
