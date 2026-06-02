@@ -15,7 +15,7 @@ import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
 import { resolveBreach } from '../lib/trading/breach'
-import { realizePnl, priceFromPips, isLongSide } from '../lib/trading/orders'
+import { realizePnl, priceFromPips, isFilled, isLongSide } from '../lib/trading/orders'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1568,7 +1568,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
         // FIX BUG A: Skip candles before this LIMIT was placed.
         // Without this guard, a past candle that already crossed the entry would activate the LIMIT retroactively.
         if(order.createdTime != null && candle.time < order.createdTime) return
-        const hit=(order.side==='BUY_LIMIT'&&candle.low<=order.entry)||(order.side==='SELL_LIMIT'&&candle.high>=order.entry)
+        const hit=isFilled({isLong:isLongSide(order.side),entry:order.entry,high:candle.high,low:candle.low})
         if(!hit) return
         executed.push(order.id)
         const cr=chartMap.current[pair]
