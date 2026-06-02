@@ -15,7 +15,7 @@ import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
 import { resolveBreach } from '../lib/trading/breach'
-import { realizePnl } from '../lib/trading/orders'
+import { realizePnl, priceFromPips, isLongSide } from '../lib/trading/orders'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1334,9 +1334,8 @@ if(full||(curr!==prev&&curr!==prev+1)){
   const openPosition=useCallback((side)=>{
     if(!currentPrice||!activePair) return
     const ps=pairState.current[activePair];if(!ps) return
-    const pipSz=1/pipMult(activePair)
-    const sl=side==='BUY'?currentPrice-slPips*pipSz:currentPrice+slPips*pipSz
-    const tp=side==='BUY'?currentPrice+tpPips*pipSz:currentPrice-tpPips*pipSz
+    const sl=priceFromPips({isLong:isLongSide(side),entry:currentPrice,pips:slPips,pair:activePair,leg:'SL'})
+    const tp=priceFromPips({isLong:isLongSide(side),entry:currentPrice,pips:tpPips,pair:activePair,leg:'TP'})
     const posId=`${Date.now()}`
     const newPos={id:posId,pair:activePair,side,entry:currentPrice,sl,tp,lots,slPips,tpPips,rr,openTime:currentTime,initialSlPips:slPips}
     ps.positions=[...ps.positions,newPos]
@@ -1430,10 +1429,9 @@ if(full||(curr!==prev&&curr!==prev+1)){
 
   const previewOrder=useCallback((side, price, pair)=>{
     setCtxMenu(null)
-    const mult=pipMult(pair), pipSz=1/mult
     const defaultSl=10, defaultTp=30
-    const sl=side==='BUY_LIMIT' ? price-defaultSl*pipSz : price+defaultSl*pipSz
-    const tp=side==='BUY_LIMIT' ? price+defaultTp*pipSz : price-defaultTp*pipSz
+    const sl=priceFromPips({isLong:isLongSide(side),entry:price,pips:defaultSl,pair,leg:'SL'})
+    const tp=priceFromPips({isLong:isLongSide(side),entry:price,pips:defaultTp,pair,leg:'TP'})
     setPreview({pair,side,entry:price,sl,tp,lots,slPips:defaultSl,tpPips:defaultTp,rr:3})
   },[lots])
 
@@ -1516,8 +1514,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
   const updatePreviewSl=useCallback((pips)=>{
     setPreview(prev=>{
       if(!prev) return prev
-      const mult=pipMult(prev.pair), pipSz=1/mult
-      const sl=prev.side==='BUY_LIMIT' ? prev.entry-pips*pipSz : prev.entry+pips*pipSz
+      const sl=priceFromPips({isLong:isLongSide(prev.side),entry:prev.entry,pips,pair:prev.pair,leg:'SL'})
       return{...prev,sl,slPips:pips}
     })
   },[])
@@ -1525,8 +1522,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
   const updatePreviewTp=useCallback((pips)=>{
     setPreview(prev=>{
       if(!prev) return prev
-      const mult=pipMult(prev.pair), pipSz=1/mult
-      const tp=prev.side==='BUY_LIMIT' ? prev.entry+pips*pipSz : prev.entry-pips*pipSz
+      const tp=priceFromPips({isLong:isLongSide(prev.side),entry:prev.entry,pips,pair:prev.pair,leg:'TP'})
       return{...prev,tp,tpPips:pips,rr:parseFloat((pips/prev.slPips).toFixed(1))}
     })
   },[])
