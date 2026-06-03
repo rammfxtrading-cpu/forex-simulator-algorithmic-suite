@@ -80,6 +80,8 @@ GAP funcional al carácter: añadir contenido card existente — miniaturas + en
 
 ## §2 — Plan completo al carácter — calendario propuesto
 
+> ⚠️ NOTA DE VIGENCIA (s56, 4 jun 2026): el calendario s41-s85 de abajo es la estimación original post-s40 y NO refleja el reorden de bloques decidido s45 ni el orden interno de features s56. Secuencia EFECTIVA: Bloque 1 ✅ s44 → Bloque 2 ✅ s49 → Fase 6 ✅ s55 → features (go-to → tagging → Montecarlo) → Fase 7 → validación Luis+Giancarlo → card → apertura. §2.3/§2.4 conservan valor como caracterización de alcance, NO como orden ni numeración de sesiones.
+
 ### §2.1 Bloque 1: cleanup §10.1 restante (~3-4 sesiones, s41-s44)
 
 | Sesión | Item | Notas |
@@ -162,7 +164,7 @@ A ritmo histórico ~1 sesión efectiva cada 1-3 días: **~2-4 meses calendario e
 
 Refactor completo antes apertura = riesgo "sesión 41 → 100 sin abrir". Mitigación al carácter:
 - **Plazo duro autodefinido Ramón**: si en sesión ~75 no se ha cerrado Fase 7, evaluar apertura con Fase 7 parcial.
-- **Hito intermedio apertura beta**: post-bloque 3 (s58) considerar apertura beta con alumnos test (Luis ya confirmado) para feedback real ANTES Fase 6/7 completas.
+- **Hito intermedio apertura beta**: RESUELTO s56 — Luis + Giancarlo ya testean en producción de forma continua durante features y Fase 7; tras su "todo bien" post-Fase-7 salen, se monta la card PDFs/videos y se abre oficialmente.
 
 ### §3.2 Riesgo Fase 5.A migración Supabase
 
@@ -183,7 +185,8 @@ Estimación ~8-15 sesiones es amplia porque scope real solo se conocerá tras PA
 Killzones tagging trades + Montecarlo tocan métricas/trades — pueden colisionar con Fase 6 trading domain. Mitigación al carácter:
 - **Orden propuesto**: cleanup §10.1 → Fase 5.A → features → Fase 6 → Fase 7. Features ANTES Fase 6 evita rework — pero introduce código en `_SessionInner.js` que Fase 7 luego extraerá.
 - **Orden alternativo**: cleanup §10.1 → Fase 5.A → Fase 6 → features (sobre arquitectura limpia) → Fase 7. Más coherente arquitectónicamente, pero retrasa apertura beta visible.
-- Decisión Ramón al carácter en s45 cuando llegue momento.
+- ✅ DECIDIDO s45 (fijado en bytes s56): **orden alternativo** — cleanup §10.1 → Fase 5.A → Fase 6 → features (sobre arquitectura limpia) → Fase 7 → apertura. Fase 6 cerrada s55 (lib/trading/: pricing.js + breach.js + orders.js, runtime 6e14c9c).
+- ✅ ORDEN INTERNO features DECIDIDO s56 (input Ramón): go-to session (next/NY/LND...) → session tagging → Montecarlo. La card dashboard PDFs/videos se reposiciona POST-Fase-7: validación Luis+Giancarlo "todo bien" → salida de testers → card → apertura oficial. La card SIGUE siendo bloqueante de apertura; solo cambia el orden.
 
 ### §3.5 Riesgo Supabase RLS 30 oct 2026
 
@@ -236,9 +239,9 @@ Apertura ratificada al carácter cuando se cumplan TODOS estos criterios:
 - ✅ Fases 1-4 cerradas estructuralmente (CUMPLIDO post-s40)
 - ✅ Fase 5 cluster B estructural cerrada (CUMPLIDO post-s38)
 - ✅ Cleanup §10.1 zona CTO 100% completado (0 items abiertos zona CTO + 1 bloqueado terceros 6 datos crudos Giancarlo/Luis + items 1+2+3+5+7+8+9 cerrados consecutivos s39→s43 — item 1 s40 ae29f16 + item 2 s39 e44bb9b + item 3 FANTASMA s43 5d.7 cerrada s22 5b233b4 + 5d.8 cerrada s42 e6c1430 + item 5 s42 e6c1430 + item 7 FANTASMA s39 + item 8 "no aplica empíricamente" s39 + item 9 NUEVO "no aplica empíricamente" s41)
-- ⏳ Fase 5.A cluster A Opción A migración Supabase cerrada
-- ⏳ 4 features bloqueantes cerradas: killzones tagging trades + Montecarlo + go-to next + card dashboard PDFs/videos
-- ⏳ Fase 6 trading domain extraída a `lib/trading/`
+- ✅ Fase 5.A cluster A Opción A migración Supabase cerrada (CUMPLIDO s49, smoke producción multi-par PASS)
+- ⏳ 4 features bloqueantes cerradas — orden s56: go-to session → session tagging → Montecarlo (pre-Fase-7) + card dashboard PDFs/videos (POST-Fase-7, último paso antes de apertura)
+- ✅ Fase 6 trading domain extraída a `lib/trading/` (CUMPLIDO s55 — pricing.js + breach.js + orders.js, smoke producción PASS)
 - ⏳ Fase 7 reducción `_SessionInner.js` ≤ ~1000 líneas
 - ⏳ Smoke producción exhaustivo multi-par + multi-TF + multi-killzone + Montecarlo + go-to + dashboard + challenge phases
 
