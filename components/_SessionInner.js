@@ -16,7 +16,7 @@ import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/char
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
 import { resolveBreach } from '../lib/trading/breach'
 import { realizePnl, priceFromPips, isFilled, isLongSide } from '../lib/trading/orders'
-import { nextSessionOpen } from '../lib/killzonesDomain'
+import { nextSessionOpen, sessionKeyAt } from '../lib/killzonesDomain'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -1393,6 +1393,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
           pnl:parseFloat(pnl.toFixed(2)),
           result,
           notes: note||null,
+          session_type:(realOpenTime&&realOpenTime>1000000000)?sessionKeyAt(realOpenTime):null,
           opened_at:realOpenTime?new Date(realOpenTime*1000).toISOString():new Date().toISOString(),
           closed_at:realCloseTime?new Date(realCloseTime*1000).toISOString():new Date().toISOString(),
         })
@@ -2576,6 +2577,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
                   pnl:parseFloat(pnl.toFixed(2)),
                   result,
                   notes: note||null,
+                  session_type:(realOpen&&realOpen>1000000000)?sessionKeyAt(realOpen):null,
                   opened_at:realOpen?new Date(realOpen*1000).toISOString():new Date().toISOString(),
                   closed_at:realClose?new Date(realClose*1000).toISOString():new Date().toISOString(),
                 }).then(()=>{}).catch(()=>{})
