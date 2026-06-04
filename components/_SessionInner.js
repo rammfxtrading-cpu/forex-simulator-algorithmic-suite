@@ -16,6 +16,7 @@ import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/char
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
 import { resolveBreach } from '../lib/trading/breach'
 import { realizePnl, priceFromPips, isFilled, isLongSide } from '../lib/trading/orders'
+import { nextSessionOpen } from '../lib/killzonesDomain'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -194,6 +195,8 @@ export default function SessionPage(){
   const [activePairs, setActivePairs] = useState([])
   const [activePair,  setActivePair]  = useState(null)
   const [addingPair,  setAddingPair]  = useState(false)
+  const [gotoOpen,    setGotoOpen]    = useState(false)
+  const [gotoMiss,    setGotoMiss]    = useState(false)
   const [pairTf,      setPairTf]      = useState({})
   const [isPlaying,   setIsPlaying]   = useState(false)
   const [speed,       setSpeed]       = useState(1)
@@ -1328,6 +1331,20 @@ if(full||(curr!==prev&&curr!==prev+1)){
   },[activePair,saveProgress,deselectAll])
   const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))},[activePair,updateChart])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
+  const handleGoTo=useCallback((sessKey)=>{
+    setGotoOpen(false)
+    const e=eng();if(!e)return
+    if(e.isPlaying){e.pause();setIsPlaying(false)}
+    const target=nextSessionOpen(e.candles,e.currentIndex,sessKey)
+    if(!target){setGotoMiss(true);setTimeout(()=>setGotoMiss(false),1500);return}
+    e.seekToTime(target.time)
+    // Belt-reset de cursores como el scrubber (cinturon para el caso sin posiciones)
+    const ps=pairState.current[activePair]
+    if(ps){ps.lastSLTPIdx=e.currentIndex;ps.lastLimitIdx=e.currentIndex}
+    setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
+    const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
+    updateChart(activePair,e,true)
+  },[activePair,updateChart])
 
   // ── Trading ───────────────────────────────────────────────────────────────────
   const tpPips=slPips*rr
@@ -2210,6 +2227,27 @@ if(full||(curr!==prev&&curr!==prev+1)){
             <button key={o.v} style={{...s.speedBtn,...(speed===o.v?s.speedActive:{})}} onClick={()=>handleSpeed(o.v)}>{o.l}</button>
           ))}
         </div>
+        <div style={s.pillDivider}/>
+        <div style={{position:'relative',flexShrink:0}}>
+          <button
+            style={{
+              ...s.gotoBtn,
+              ...(gotoMiss?s.gotoMiss:{}),
+              ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
+            }}
+            disabled={!dataReady||challengeLocked}
+            title={challengeLocked ? 'Sesión terminada — replay congelado' : (gotoMiss ? 'Sin próxima apertura en el dataset' : 'Saltar a la próxima apertura de sesión')}
+            onClick={()=>setGotoOpen(v=>!v)}>
+            Go to
+          </button>
+          {gotoOpen&&(
+            <div style={s.gotoDd}>
+              <button style={s.ddItem} onClick={()=>handleGoTo('asia')}>Asia</button>
+              <button style={s.ddItem} onClick={()=>handleGoTo('london')}>Londres</button>
+              <button style={s.ddItem} onClick={()=>handleGoTo('nyam')}>NY</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* BOTTOM BAR — BUY/SELL + balance */}
@@ -2649,6 +2687,9 @@ const s={
   pillPlay:{background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.25)',color:'#fff',width:32,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0},
   pillPause:{background:'rgba(255,255,255,0.1)',borderColor:'rgba(255,255,255,0.2)'},
   pillDivider:{width:1,height:16,background:'rgba(255,255,255,0.1)',margin:'0 4px'},
+  gotoBtn:{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.12)',color:'#ffffff',cursor:'pointer',height:22,padding:'0 8px',display:'flex',alignItems:'center',justifyContent:'center',borderRadius:6,fontSize:9,fontWeight:700,fontFamily:"'Montserrat',sans-serif",flexShrink:0},
+  gotoDd:{position:'absolute',bottom:'calc(100% + 8px)',left:'50%',transform:'translateX(-50%)',background:'rgba(4,10,24,0.97)',border:'1px solid rgba(30,144,255,0.3)',borderRadius:10,zIndex:9999,minWidth:110,padding:'4px 0',boxShadow:'0 8px 32px rgba(0,0,0,0.8)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)'},
+  gotoMiss:{border:'1px solid rgba(255,80,80,0.85)',color:'#ff6060'},
   pillProgress:{width:100,height:3,background:'rgba(255,255,255,0.1)',borderRadius:2,overflow:'hidden',cursor:'pointer'},
   pillProgressFill:{height:'100%',background:'#2962FF',borderRadius:2,transition:'width .3s linear'},
   // Balance row
