@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
 import EquityCurve from '../components/EquityCurve'
+import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 
 export default function Admin() {
   const router = useRouter()
@@ -21,6 +22,11 @@ export default function Admin() {
   const [detail, setDetail] = useState(null)      // { profile, sessions, trades }
   const [detailLoading, setDetailLoading] = useState(false)
   const [selectedSession, setSelectedSession] = useState('all')
+  const [mcFields, setMcFields] = useState(null)
+  const [mcResult, setMcResult] = useState(null)
+
+  // Monte Carlo admin — reset al cambiar de alumno o de sesión (montecarlo-plan.md §2.4)
+  useEffect(() => { setMcFields(null); setMcResult(null) }, [detailId, selectedSession])
 
   // Modales
   const [modal, setModal] = useState(null)  // 'activate' | 'disable' | 'message' | null
@@ -248,6 +254,30 @@ export default function Admin() {
       }
     }
   }, [detail, selectedSession])
+
+  // Monte Carlo — precargas desde los trades del alumno mostrado (montecarlo-plan.md §2.4)
+  const mcDerived = deriveParams(metrics ? metrics.closedTrades : [])
+  const mcFmt = v => String(Math.round(v * 100) / 100)
+  const mcDefaults = {
+    nSims: String(MC_MAX_SIMS),
+    nTrades: String(MC_MAX_TRADES),
+    startBalance: mcFmt(metrics ? metrics.initialBalance : 0),
+    winRate: mcFmt(mcDerived.winRate),
+    avgGain: mcFmt(mcDerived.avgGain),
+    avgLoss: mcFmt(mcDerived.avgLoss),
+  }
+  const mcVals = mcFields || mcDefaults
+  const runMc = () => {
+    setMcResult(runMontecarlo({
+      nSims: Number(mcVals.nSims),
+      nTrades: Number(mcVals.nTrades),
+      startBalance: Number(mcVals.startBalance),
+      winRate: Number(mcVals.winRate),
+      avgGain: Number(mcVals.avgGain),
+      avgLoss: Number(mcVals.avgLoss),
+      seed: Date.now() % 2147483647,
+    }))
+  }
 
   // Guards
   if (authLoading) {
@@ -631,6 +661,68 @@ export default function Admin() {
                 </div>
               </div>
 
+              {/* MONTE CARLO SIMULATION — misma card que /analytics, datos del alumno mostrado */}
+              <div style={s.mcCard}>
+                <div style={s.chartTitle}>MONTE CARLO SIMULATION</div>
+                <div style={s.mcControls}>
+                  {[
+                    ['nSims', 'N° Simulations (max 100)'],
+                    ['nTrades', 'Trades per sim. (max 100)'],
+                    ['startBalance', 'Start balance ($)'],
+                    ['winRate', 'Win rate (%)'],
+                    ['avgGain', 'Avg. Gain ($)'],
+                    ['avgLoss', 'Avg. Loss ($)'],
+                  ].map(([key, label]) => (
+                    <div key={key} style={s.mcField}>
+                      <div style={s.mcFieldLabel}>{label}</div>
+                      <input style={s.mcInput} type="number" value={mcVals[key]}
+                        onChange={e => setMcFields({ ...mcVals, [key]: e.target.value })} />
+                    </div>
+                  ))}
+                </div>
+                <div style={s.mcBtnRow}>
+                  <button style={s.mcResetBtn} onClick={() => setMcFields(null)}>Reset values</button>
+                  <button style={s.mcStartBtn} onClick={runMc}>Start simulation</button>
+                </div>
+                {mcResult && (() => {
+                  const curves = mcResult.curves
+                  const n = curves[0].length - 1
+                  let lo = Infinity, hi = -Infinity
+                  for (const c of curves) for (const v of c) { if (v < lo) lo = v; if (v > hi) hi = v }
+                  const range = hi - lo || 1
+                  const W = 800, H = 220
+                  const colors = ['#1E90FF', '#22c55e', '#ef4444', '#f59e0b', '#a855f7', '#2dd4bf', '#e879f9', '#facc15']
+                  return (
+                    <>
+                      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 220, marginTop: 8 }} preserveAspectRatio="none">
+                        {curves.map((c, i) => (
+                          <path key={i}
+                            d={c.map((v, j) => `${j === 0 ? 'M' : 'L'}${(j / n) * W},${H - ((v - lo) / range) * (H - 20) - 10}`).join(' ')}
+                            fill="none" stroke={colors[i % colors.length]} strokeWidth="1" opacity="0.7" />
+                        ))}
+                      </svg>
+                      <div style={s.mcStatsGrid}>
+                        {[
+                          ['Average balance', `$${mcResult.stats.avgBalance.toFixed(2)}`],
+                          ['Max balance', `$${mcResult.stats.maxBalance.toFixed(2)}`],
+                          ['Min balance', `$${mcResult.stats.minBalance.toFixed(2)}`],
+                          ['Average profit factor', mcResult.stats.avgProfitFactor === null ? '—' : mcResult.stats.avgProfitFactor.toFixed(2)],
+                          ['Max consecutive wins', mcResult.stats.maxConsecWins],
+                          ['Max consecutive losses', mcResult.stats.maxConsecLosses],
+                          ['Total wins', mcResult.stats.totalWins],
+                          ['Total losses', mcResult.stats.totalLosses],
+                        ].map(([label, value]) => (
+                          <div key={label} style={s.mcStat}>
+                            <div style={s.mcStatLabel}>{label}</div>
+                            <div style={s.mcStatValue}>{value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+
               {/* JOURNAL DE OPERACIONES — replica del dashboard, datos del alumno mostrado */}
               {metrics.closedTrades.length > 0 && (
                 <div style={{borderRadius:12,padding:'20px 24px',marginTop:16,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)'}}>
@@ -980,4 +1072,17 @@ const s = {
   modalActions:{display:'flex',gap:10,justifyContent:'flex-end',marginTop:8},
 
   code:{color:'#1E90FF',background:'#0d2040',padding:'1px 6px',borderRadius:4,fontSize:12,fontFamily:'monospace'},
+
+  mcCard:{borderRadius:12,padding:'20px 24px',marginTop:16,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)'},
+  mcControls:{display:'flex',gap:12,flexWrap:'wrap',marginTop:4},
+  mcField:{flex:1,minWidth:130},
+  mcFieldLabel:{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:6},
+  mcInput:{width:'100%',background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'9px 12px',fontSize:12,color:'#fff',outline:'none',fontFamily:'inherit',boxSizing:'border-box'},
+  mcBtnRow:{display:'flex',justifyContent:'center',gap:12,margin:'16px 0 4px'},
+  mcResetBtn:{background:'transparent',border:'1px solid #0d1f3c',color:'#8faacb',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'},
+  mcStartBtn:{background:'linear-gradient(135deg,#1E90FF,#0060cc)',border:'none',color:'#fff',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'},
+  mcStatsGrid:{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:16,marginTop:20},
+  mcStat:{textAlign:'center'},
+  mcStatLabel:{fontSize:10,color:'#4a6080',fontWeight:600,marginBottom:4},
+  mcStatValue:{fontSize:16,fontWeight:800,color:'#fff'},
 }
