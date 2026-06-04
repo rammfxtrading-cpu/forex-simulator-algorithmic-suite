@@ -61,7 +61,7 @@ FASE 7   reducción _SessionInner.js      ⏳ NO EMPEZADA (3045 líneas actuales
 lib/killzonesDomain.js:1                      ← dominio VIVO
 components/KillzonesPrimitive.js:14           ← inSession() importado
 components/KillzonesOverlay.js:14             ← STORAGE_KEY 'killzones_cfg_v2'
-GAP funcional al carácter: falta tag-at-trade-close en pages/api + agregación métricas
+✅ CERRADO s57 (commits 723aea0/c8af5cc/f851304, en producción): sessionKeyAt en dominio + tag en los 2 inserts del CLIENTE (el productor no era pages/api) + 3 lectores reconciliados (analytics/admin/dashboard, NY AM/NY PM separados) + hotfix BD: CHECK de session_type migrado al vocabulario del dominio (backup sim_trades_backup_s57, 154 filas)
 
 === Test Montecarlo ===
 grep retornó VACÍO al carácter — NO existe en repo
@@ -240,7 +240,7 @@ Apertura ratificada al carácter cuando se cumplan TODOS estos criterios:
 - ✅ Fase 5 cluster B estructural cerrada (CUMPLIDO post-s38)
 - ✅ Cleanup §10.1 zona CTO 100% completado (0 items abiertos zona CTO + 1 bloqueado terceros 6 datos crudos Giancarlo/Luis + items 1+2+3+5+7+8+9 cerrados consecutivos s39→s43 — item 1 s40 ae29f16 + item 2 s39 e44bb9b + item 3 FANTASMA s43 5d.7 cerrada s22 5b233b4 + 5d.8 cerrada s42 e6c1430 + item 5 s42 e6c1430 + item 7 FANTASMA s39 + item 8 "no aplica empíricamente" s39 + item 9 NUEVO "no aplica empíricamente" s41)
 - ✅ Fase 5.A cluster A Opción A migración Supabase cerrada (CUMPLIDO s49, smoke producción multi-par PASS)
-- ⏳ 4 features bloqueantes cerradas — orden s56: go-to session → session tagging → Montecarlo (pre-Fase-7) + card dashboard PDFs/videos (POST-Fase-7, último paso antes de apertura)
+- ⏳ 4 features bloqueantes cerradas — orden s56: go-to session ✅ s56 (prod s57) → session tagging ✅ s57 (prod f851304) → Montecarlo (pre-Fase-7) + card dashboard PDFs/videos (POST-Fase-7, último paso antes de apertura)
 - ✅ Fase 6 trading domain extraída a `lib/trading/` (CUMPLIDO s55 — pricing.js + breach.js + orders.js, smoke producción PASS)
 - ⏳ Fase 7 reducción `_SessionInner.js` ≤ ~1000 líneas
 - ⏳ Smoke producción exhaustivo multi-par + multi-TF + multi-killzone + Montecarlo + go-to + dashboard + challenge phases
