@@ -241,9 +241,10 @@ export default function Admin() {
       initialBalance, closedTrades: closed, sessionsList: sessions,
       sessionStats: {
         london: filtered.filter(t => t.session_type === 'london').length,
-        new_york: filtered.filter(t => t.session_type === 'new_york').length,
+        nyam: filtered.filter(t => t.session_type === 'nyam').length,
+        nypm: filtered.filter(t => t.session_type === 'nypm').length,
         asia: filtered.filter(t => t.session_type === 'asia').length,
-        out: filtered.filter(t => t.session_type === 'out_of_session').length,
+        out: filtered.filter(t => !t.session_type).length,
       }
     }
   }, [detail, selectedSession])
@@ -623,7 +624,8 @@ export default function Admin() {
                 <div style={s.chartBox}>
                   <div style={s.chartTitle}>TRADES BY SESSION</div>
                   <StatRow label={<><span style={{ ...s.dotInline, background:'#1E90FF' }}/>London</>} value={metrics.sessionStats.london}/>
-                  <StatRow label={<><span style={{ ...s.dotInline, background:'#f59e0b' }}/>New York</>} value={metrics.sessionStats.new_york}/>
+                  <StatRow label={<><span style={{ ...s.dotInline, background:'#f59e0b' }}/>NY AM</>} value={metrics.sessionStats.nyam}/>
+                  <StatRow label={<><span style={{ ...s.dotInline, background:'#2dd4bf' }}/>NY PM</>} value={metrics.sessionStats.nypm}/>
                   <StatRow label={<><span style={{ ...s.dotInline, background:'#a78bfa' }}/>Asia</>} value={metrics.sessionStats.asia}/>
                   <StatRow label={<><span style={{ ...s.dotInline, background:'#8faacb' }}/>Out of Session</>} value={metrics.sessionStats.out} last/>
                 </div>

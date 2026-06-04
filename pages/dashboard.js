@@ -239,9 +239,10 @@ export default function Dashboard() {
       initialBalance,
       sessionStats:{
         london:filtered.filter(t=>t.session_type==='london'),
-        new_york:filtered.filter(t=>t.session_type==='new_york'),
+        nyam:filtered.filter(t=>t.session_type==='nyam'),
+        nypm:filtered.filter(t=>t.session_type==='nypm'),
         asia:filtered.filter(t=>t.session_type==='asia'),
-        out:filtered.filter(t=>t.session_type==='out_of_session'),
+        out:filtered.filter(t=>!t.session_type),
       }
     }
   }, [trades, sessions, selectedSession])
@@ -620,7 +621,7 @@ export default function Dashboard() {
               </div>
               <div style={{borderRadius:12,padding:'20px 24px',background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12}}>
                 <div style={{fontSize:11,fontWeight:700,color:'rgba(30,144,255,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Trades by Session</div>
-                {[['London',sessionStats.london.length,'#1E90FF'],['New York',sessionStats.new_york.length,'#f59e0b'],['Asia',sessionStats.asia.length,'#a855f7'],['Out of Session',sessionStats.out.length,'#6b7280']].map(([label,count,color])=>(
+                {[['London',sessionStats.london.length,'#1E90FF'],['NY AM',sessionStats.nyam.length,'#f59e0b'],['NY PM',sessionStats.nypm.length,'#2dd4bf'],['Asia',sessionStats.asia.length,'#a855f7'],['Out of Session',sessionStats.out.length,'#6b7280']].map(([label,count,color])=>(
                   <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(30,144,255,0.2)',paddingBottom:10,marginBottom:10}}>
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
                       <div style={{width:8,height:8,borderRadius:'50%',background:color}}/>

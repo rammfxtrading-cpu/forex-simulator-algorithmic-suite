@@ -127,9 +127,10 @@ export default function Analytics() {
   // Sessions by type
   const sessionStats = {
     london: filteredTrades.filter(t => t.session_type === 'london'),
-    new_york: filteredTrades.filter(t => t.session_type === 'new_york'),
+    nyam: filteredTrades.filter(t => t.session_type === 'nyam'),
+    nypm: filteredTrades.filter(t => t.session_type === 'nypm'),
     asia: filteredTrades.filter(t => t.session_type === 'asia'),
-    out: filteredTrades.filter(t => t.session_type === 'out_of_session'),
+    out: filteredTrades.filter(t => !t.session_type),
   }
 
   // Equity curve SVG path
@@ -346,7 +347,8 @@ export default function Analytics() {
                 <div style={s.summaryGrid}>
                   {[
                     ['London', sessionStats.london.length, '#1E90FF'],
-                    ['New York', sessionStats.new_york.length, '#f59e0b'],
+                    ['NY AM', sessionStats.nyam.length, '#f59e0b'],
+                    ['NY PM', sessionStats.nypm.length, '#2dd4bf'],
                     ['Asia', sessionStats.asia.length, '#a855f7'],
                     ['Out of Session', sessionStats.out.length, '#6b7280'],
                   ].map(([label, count, color]) => (
