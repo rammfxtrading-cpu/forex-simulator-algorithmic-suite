@@ -154,3 +154,28 @@ La derivación vive en UN sitio (`killzonesDomain`), el dato viaja con el trade.
 - PLAN MAESTRO actualizado (feature 2/4 cerrada) en el handoff de cierre.
 
 — CTO, s57
+
+---
+
+## §7 — CONTRATO CERRADO (s57, input Ramón)
+
+- **D1 = APERTURA.** El trade cuenta en la sesión en que se ABRE (`opened_at`).
+- **D2 = (b) vocabulario del dominio.** `session_type` toma `asia|london|nyam|nypm`,
+  `null` = fuera de sesión. Analytics se adapta (Corte C).
+- **D3 = NY AM y NY PM como buckets SEPARADOS** en las métricas.
+- **D4 = NO backfill. Corte D CANCELADO.** Los 155 históricos se BORRARÁN antes de la
+  apertura a alumnos (decisión Ramón: todo a 0 en el arranque) — etiquetarlos no
+  aporta. Quedan sin tag hasta ese borrado (operación futura, gate propio).
+
+**Ampliación de alcance (Ramón):** las métricas por sesión deben ser visibles también
+desde el panel de ADMIN (vista por alumno). `admin/alumno-sim/[id].js` ya devuelve los
+trades del alumno ("todos los campos que usa /analytics") — verificar en bytes en el
+Corte C si la vista admin reutiliza la agregación o necesita edit propio.
+
+**Pendiente NUEVO fuera de esta feature (al handoff):** acción admin "Eliminar perfil"
+— borrar acceso + datos del simulador del alumno (sesiones, trades, drawings) SIN
+tocar su cuenta del ecosistema (hub/journal). Complementa "Desactivar" (existente).
+Mini-fase propia: borrado de datos exige backup + doble confirmación + gate.
+
+Cortes vigentes tras el contrato: **A (dominio) → B (productor) → C (consumidor
+analytics + admin) → E (push gate §3.1 + smoke producción)**.
