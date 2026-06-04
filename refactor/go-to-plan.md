@@ -38,11 +38,10 @@
 ## §2 — Alcance (3 cortes)
 
 ### Corte A — productor puro + harness (capa-1)
-- `lib/killzonesDomain.js`: AÑADIR función pura `nextSessionOpen(candles, fromIdx, sessKey = null)`
-  → `{ idx, time, key } | null`.
+- `lib/killzonesDomain.js`: AÑADIR función pura `nextSessionOpen(candles, fromIdx, sessKey)`
+  → `{ idx, time } | null`. `sessKey` = cualquier key de `SESSIONS`; la UI expone asia/london/nyam (D1).
   - Definición de "apertura": primera vela `i > fromIdx` con `inSession(NY(i), sess) === true` y
-    `inSession(NY(i-1), sess) === false` (flanco de subida). `sessKey = null` → el primer flanco de
-    cualquiera de las sesiones consideradas (P4).
+    `inSession(NY(i-1), sess) === false` (flanco de subida). Siempre estrictamente futuro (D2).
   - Escanear VELAS del dataset (no reloj de pared): los findes/festivos/huecos se esquivan solos;
     el destino es siempre el `time` de una vela real → seek exacto.
   - SOLO añadir: funciones y constantes existentes del módulo quedan VERBATIM (consumidores:
@@ -54,12 +53,15 @@
   el módulo los contiene y que lo preexistente está intacto.
 
 ### Corte B — cableado UI (`_SessionInner.js`)
-- `handleGoTo(sessKey | null)`, calcado al patrón scrubber:
-  `const e = eng()` → `const target = nextSessionOpen(e.candles, e.currentIndex, sessKey)` →
-  si `null`, no-op según P3 → `e.seekToTime(target.time)` (su onTick procesa el rango: SL/TP, límites,
-  breach, masterTime) → belt-reset de cursores como el scrubber → `setCurrentTime`/`setProgress` →
+- `handleGoTo(sessKey)`, calcado al patrón scrubber + pausa (D5):
+  `const e = eng()` → si `e.isPlaying`: `e.pause()` + `setIsPlaying(false)` →
+  `const target = nextSessionOpen(e.candles, e.currentIndex, sessKey)` →
+  si `null`: no-op + aviso visual (D3) → `e.seekToTime(target.time)` (su onTick procesa el rango: SL/TP,
+  límites, breach, masterTime) → belt-reset de cursores como el scrubber → `setCurrentTime`/`setProgress` →
   `cr.prevCount = 0` → `updateChart(activePair, e, true)`.
-- Botón/selector junto a la speedRow, gated `challengeLocked` (forma exacta según P1).
+- UI (D1): botón "Go to" con el MISMO patrón del selector "+" de par; desplegable con 3 opciones
+  Asia / Londres / NY (NY → key 'nyam'). Gated `challengeLocked`. Localizar el selector "+" en bytes
+  en el Corte B y clonar su estilo.
 - Otros pares: NO se tocan — sincronía lazy vigente al cambiar de par (L1292). Requisito multi-par
   cubierto por la arquitectura existente.
 
@@ -68,23 +70,21 @@
 - Salto con orden LIMIT pendiente que se llena en el rango.
 - Salto en challenge cerca del cap (breach intra-rango).
 - Multi-par: saltar en un par, cambiar a otro → mismo reloj (lazy sync), sin par rezagado.
-- Destinos: next + cada sesión concreta; caso DST; TF altos (H1/H4); fin de dataset.
+- Destinos: las 3 opciones (Asia/Londres/NY) + pausa post-salto (D5); caso DST; TF altos (H1/H4); fin de dataset.
 
-## §3 — Preguntas de diseño (decisión Ramón, cierran el contrato)
+## §3 — Decisiones de diseño (CERRADAS s56, input Ramón)
 
-- **P1 — Destinos y UI:** ¿botón único "⏭ próxima killzone" o selector con Next + Asia/Londres/NY AM/NY PM?
-  (Tu mensaje apunta a ambos: "go to next… o go to NY o LND".)
-- **P2 — Sesión objetivo YA activa ahora:** propuesta = saltar siempre a la PRÓXIMA apertura estrictamente
-  futura (si estás dentro de Londres y pides Londres → la de mañana). ¿OK?
-- **P3 — Sin ocurrencia antes del fin del dataset:** propuesta = no saltar y avisar visualmente
-  (vs. saltar al final). ¿OK?
-- **P4 — "Next" considera:** ¿las 4 sesiones SIEMPRE, o solo las habilitadas en tu config de killzones?
-- **P5 — Estado de reproducción tras el salto:** el scrubber mantiene lo que hubiera (si estaba en play,
-  sigue). Propuesta = mismo comportamiento. ¿O pausar tras saltar?
+- **D1 — Destinos y UI:** botón "Go to" con el patrón del selector "+" de par; desplegable con 3 opciones:
+  Asia / Londres / NY. "NY" = apertura de NY AM (key 'nyam'). Sin opción "Next" genérica (P4 decae);
+  NY PM fuera del desplegable (añadible trivial a futuro).
+- **D2 — Sesión ya activa:** NUNCA hacia atrás — siempre la SIGUIENTE apertura estrictamente futura.
+- **D3 — Sin ocurrencia antes del fin del dataset:** no saltar + aviso visual.
+- **D5 — Reproducción:** PAUSAR tras el salto. Uso normal: se clica en pausa; si estaba corriendo,
+  el salto pausa.
 
 ## §4 — Orden de ejecución (un paso por mensaje, bicapa en cada commit)
 
-1. Respuestas P1-P5 → contrato cerrado (Edit a este doc si cambia algo).
+1. ✅ Respuestas P1-P5 → contrato CERRADO s56 (D1-D5 en §3).
 2. Corte A: Edit `killzonesDomain.js` (función nueva) → harness sandbox → verificación bicapa
    (md5 nuevo del módulo + grep de intactos) → commit local.
 3. Corte B: Edits `_SessionInner.js` (handler + UI) → `next build --no-lint` PASS → invariantes →
@@ -100,4 +100,4 @@
 - Asimetría `lastBreachIdx` del scrubber: anotada, NO se corrige en esta feature (disciplina de fase).
 - Estimación: ~2-3 sesiones (A / B / C).
 
-— CTO, s56. Contrato pendiente de P1-P5.
+— CTO, s56. Contrato CERRADO (D1-D5).
