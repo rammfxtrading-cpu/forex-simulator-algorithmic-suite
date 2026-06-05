@@ -38,6 +38,10 @@ import { s, css } from './sessionStyles'
 import Spin from './Spin'
 import CloseModal from './CloseModal'
 import PositionOverlay from './PositionOverlay'
+import SessionTopBar from './SessionTopBar'
+import ReplayPill from './ReplayPill'
+import SessionBottomBar from './SessionBottomBar'
+import SessionPanels from './SessionPanels'
 
 export default function SessionPage(){
   const router=useRouter()
@@ -1215,6 +1219,18 @@ if(full||(curr!==prev&&curr!==prev+1)){
   },[activePair,saveProgress,deselectAll])
   const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))},[activePair,updateChart])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
+  const handleSeek=useCallback((e)=>{
+    const rect=e.currentTarget.getBoundingClientRect()
+    const fraction=(e.clientX-rect.left)/rect.width
+    const e2=eng();if(!e2)return
+    e2.seekToProgress(Math.max(0,Math.min(1,fraction)))
+    // Reset check indices so we don't re-fire SL/TP on already-passed candles
+    const ps=pairState.current[activePair]
+    if(ps){ ps.lastSLTPIdx=e2.currentIndex; ps.lastLimitIdx=e2.currentIndex }
+    setCurrentTime(e2.currentTime);setProgress(Math.round(e2.progress*100))
+    const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
+    updateChart(activePair,e2,true)
+  },[activePair,updateChart])
   const handleGoTo=useCallback((sessKey)=>{
     setGotoOpen(false)
     const e=eng();if(!e)return
@@ -1971,47 +1987,12 @@ if(full||(curr!==prev&&curr!==prev+1)){
         onClose={()=>setDrawingCtxMenu(null)}
       />
 
-      {/* TOP BAR — FX Replay style: session name left, pair tabs center, stats right */}
-      <div style={s.topBar}>
-        {/* Left: back + session name */}
-        <div style={s.topLeft}>
-          <button style={s.iconBtn} onClick={()=>router.push('/dashboard')}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15,18 9,12 15,6"/></svg>
-          </button>
-          <div style={s.vDiv}/>
-          <span style={s.sessName}>{session?.name||'Sesión'}</span>
-        </div>
-
-        {/* Center: pair tabs + add */}
-        <div style={s.tabRow}>
-          {activePairs.map(pair=>(
-            <div key={pair} style={{...s.tab,...(pair===activePair?s.tabActive:{})}}>
-              <span style={s.tabLabel} onClick={()=>setActivePair(pair)}>
-                {pair}
-                {(pairState.current[pair]?.positions?.length>0)&&<span style={s.tabDot}/>}
-              </span>
-              {activePairs.length>1&&<button style={s.tabClose} onClick={()=>removePair(pair)}>✕</button>}
-            </div>
-          ))}
-          <div style={{position:'relative',flexShrink:0}}>
-            <button style={s.addBtn} onClick={()=>setAddingPair(v=>!v)}>＋</button>
-            {addingPair&&(
-              <div style={s.dropdown}>
-                {ALL_PAIRS.filter(p=>!activePairs.includes(p)).map(p=>(
-                  <button key={p} style={s.ddItem} onClick={()=>addPair(p)}>{p}</button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: fullscreen */}
-        <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
-          <button style={s.fullBtn} onClick={()=>{if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen()}} title="Pantalla completa">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-          </button>
-        </div>
-      </div>
+      {/* TOP BAR — extraído a SessionTopBar (Fase 7, Corte C) */}
+      <SessionTopBar
+        session={session} activePairs={activePairs} activePair={activePair} setActivePair={setActivePair}
+        pairState={pairState} removePair={removePair} addPair={addPair}
+        addingPair={addingPair} setAddingPair={setAddingPair}
+      />
 
       {/* TF BAR */}
       <div style={s.tfBar}>
@@ -2039,269 +2020,32 @@ if(full||(curr!==prev&&curr!==prev+1)){
         {currentPrice&&<span style={s.pxBadge}>{fmtPx(currentPrice,activePair)}</span>}
       </div>
 
-      {/* REPLAY PILL — draggable, liquid glass */}
-      <div
-        style={{...s.replayPill,
-          ...(pillPos.x!=null?{left:pillPos.x,top:pillPos.y,transform:'none'}:{})
-        }}
-        onMouseDown={e=>{
-          if(e.target.tagName==='BUTTON'||e.target.closest('button')) return
-          const rect=e.currentTarget.getBoundingClientRect()
-          pillDragRef.current={offX:e.clientX-rect.left,offY:e.clientY-rect.top}
-          const onMove=ev=>{
-            setPillPos({x:ev.clientX-pillDragRef.current.offX,y:ev.clientY-pillDragRef.current.offY})
-          }
-          const onUp=()=>{
-            pillDragRef.current=null
-            window.removeEventListener('mousemove',onMove)
-            window.removeEventListener('mouseup',onUp)
-          }
-          window.addEventListener('mousemove',onMove)
-          window.addEventListener('mouseup',onUp)
-          e.preventDefault()
-        }}
-      >
-        <button
-          style={{
-            ...s.pillPlay,
-            ...(isPlaying?s.pillPause:{}),
-            ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
-          }}
-          title={challengeLocked ? 'Sesión terminada — replay congelado' : undefined}
-          onClick={handlePlayPause}
-          disabled={!dataReady||challengeLocked}>
-          {isPlaying
-            ?<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="4" width="4" height="16"/><rect x="15" y="4" width="4" height="16"/></svg>
-            :<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
-          }
-        </button>
-        <button
-          style={{
-            ...s.pillBtn,
-            ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
-          }}
-          onClick={handleStep}
-          disabled={!dataReady||challengeLocked}
-          title={challengeLocked ? 'Sesión terminada — replay congelado' : 'Avanzar vela'}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><rect x="17" y="4" width="3" height="16"/></svg>
-        </button>
-        <div style={s.pillDivider}/>
-        <div
-          style={{
-            ...s.pillProgress,
-            ...(challengeLocked ? {opacity:0.4, cursor:'not-allowed', pointerEvents:'none'} : {}),
-          }}
-          title={challengeLocked ? 'Sesión terminada' : `${progress}% — clic para saltar`}
-          onClick={challengeLocked ? undefined : e=>{
-            const rect=e.currentTarget.getBoundingClientRect()
-            const fraction=(e.clientX-rect.left)/rect.width
-            const e2=eng();if(!e2)return
-            e2.seekToProgress(Math.max(0,Math.min(1,fraction)))
-            // Reset check indices so we don't re-fire SL/TP on already-passed candles
-            const ps=pairState.current[activePair]
-            if(ps){ ps.lastSLTPIdx=e2.currentIndex; ps.lastLimitIdx=e2.currentIndex }
-            setCurrentTime(e2.currentTime);setProgress(Math.round(e2.progress*100))
-            const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
-            updateChart(activePair,e2,true)
-          }}>
-          <div style={{...s.pillProgressFill,width:`${progress}%`}}/>
-        </div>
-        <div style={s.pillDivider}/>
-        <div style={{...s.speedRow, ...(challengeLocked ? {opacity:0.35, pointerEvents:'none'} : {})}}>
-          {SPEED_OPTS.map(o=>(
-            <button key={o.v} style={{...s.speedBtn,...(speed===o.v?s.speedActive:{})}} onClick={()=>handleSpeed(o.v)}>{o.l}</button>
-          ))}
-        </div>
-        <div style={s.pillDivider}/>
-        <div style={{position:'relative',flexShrink:0}}>
-          <button
-            style={{
-              ...s.gotoBtn,
-              ...(gotoMiss?s.gotoMiss:{}),
-              ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
-            }}
-            disabled={!dataReady||challengeLocked}
-            title={challengeLocked ? 'Sesión terminada — replay congelado' : (gotoMiss ? 'Sin próxima apertura en el dataset' : 'Saltar a la próxima apertura de sesión')}
-            onClick={(ev)=>{const r=ev.currentTarget.getBoundingClientRect();setGotoDir(r.top<140?'down':'up');setGotoOpen(v=>!v)}}>
-            Go to
-          </button>
-          {gotoOpen&&(
-            <div style={{...s.gotoDd,...(gotoDir==='down'?s.gotoDdDown:{})}}>
-              <button style={s.ddItem} onClick={()=>handleGoTo('asia')}>Asia</button>
-              <button style={s.ddItem} onClick={()=>handleGoTo('london')}>Londres</button>
-              <button style={s.ddItem} onClick={()=>handleGoTo('nyam')}>NY</button>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* REPLAY PILL — extraído a ReplayPill (Fase 7, Corte C) */}
+      <ReplayPill
+        pillPos={pillPos} setPillPos={setPillPos} pillDragRef={pillDragRef}
+        isPlaying={isPlaying} challengeLocked={challengeLocked} dataReady={dataReady}
+        handlePlayPause={handlePlayPause} handleStep={handleStep} progress={progress} onSeek={handleSeek}
+        speed={speed} handleSpeed={handleSpeed}
+        gotoMiss={gotoMiss} gotoOpen={gotoOpen} setGotoOpen={setGotoOpen} gotoDir={gotoDir} setGotoDir={setGotoDir} handleGoTo={handleGoTo}
+      />
 
-      {/* BOTTOM BAR — BUY/SELL + balance */}
-      <div style={s.btmBar}>
-        {/* BUY / SELL */}
-        <div style={s.tradeActions}>
-          <button
-            style={{
-              ...s.buyBtn,
-              ...(lastTrade==='BUY'?s.flash:{}),
-              ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
-            }}
-            title={challengeLocked ? 'Challenge terminado — no se pueden abrir nuevas operaciones' : undefined}
-            onClick={()=>setOrderModal({side:'BUY',entry:currentPrice,pair:activePair,isLimit:false})}
-            disabled={!dataReady||!currentPrice||challengeLocked}>
-            ▲ Buy
-          </button>
-          <button
-            style={{
-              ...s.sellBtn,
-              ...(lastTrade==='SELL'?s.flash:{}),
-              ...(challengeLocked ? {opacity:0.35, cursor:'not-allowed'} : {}),
-            }}
-            title={challengeLocked ? 'Challenge terminado — no se pueden abrir nuevas operaciones' : undefined}
-            onClick={()=>setOrderModal({side:'SELL',entry:currentPrice,pair:activePair,isLimit:false})}
-            disabled={!dataReady||!currentPrice||challengeLocked}>
-            ▼ Sell
-          </button>
-        </div>
+      {/* BOTTOM BAR — extraído a SessionBottomBar (Fase 7, Corte C) */}
+      <SessionBottomBar
+        lastTrade={lastTrade} challengeLocked={challengeLocked} setOrderModal={setOrderModal}
+        currentPrice={currentPrice} activePair={activePair} dataReady={dataReady}
+        balance={balance} realized={realized} unrealized={unrealized}
+        allTrades={allTrades} challengeStatus={challengeStatus}
+        openPositions={openPositions} pendingOrders={pendingOrders}
+        showPos={showPos} setShowPos={setShowPos} showOrders={showOrders} setShowOrders={setShowOrders} showTrades={showTrades} setShowTrades={setShowTrades}
+      />
 
-        <div style={{flex:1}}/>
-
-        {/* Balance info — right side like FX Replay */}
-        <div style={s.balanceRow}>
-          <span style={s.balLbl}>Balance: <span style={s.balVal}>${balance.toFixed(2)}</span></span>
-          <span style={s.balLbl}>PnL: <span style={{...s.balVal,color:pnlColor(realized)}}>{fmtPnl(realized)}</span></span>
-          <span style={s.balLbl}>Float: <span style={{...s.balVal,color:pnlColor(unrealized)}}>{fmtPnl(unrealized)}</span></span>
-          {allTrades.length>0&&(()=>{
-            const wins=allTrades.filter(t=>t.result==='WIN').length
-            const losses=allTrades.filter(t=>t.result==='LOSS').length
-            const wr=allTrades.length>0?Math.round(wins/allTrades.length*100):0
-            return(
-              <>
-                <div style={{width:1,height:16,background:'rgba(255,255,255,0.1)'}}/>
-                <span style={s.balLbl}><span style={{color:wins>0?'#1E90FF':'rgba(255,255,255,0.4)',fontWeight:700}}>{wins}W</span> <span style={{color:'rgba(255,255,255,0.3)'}}>·</span> <span style={{color:losses>0?'#ef5350':'rgba(255,255,255,0.4)',fontWeight:700}}>{losses}L</span></span>
-                <span style={{...s.balLbl,color:wr>=50?'#1E90FF':'#ef5350',fontWeight:700}}>{wr}%</span>
-              </>
-            )
-          })()}
-          <ChallengeHUD status={challengeStatus} />
-        </div>
-
-        <div style={s.pillDivider}/>
-
-        {/* Panels toggle */}
-        <div style={s.toggleRow}>
-          {openPositions.length>0&&(
-            <button style={{...s.togBtn,...(showPos?s.togOn:{})}} onClick={()=>{setShowPos(v=>!v);setShowTrades(false);setShowOrders(false)}}>
-              {openPositions.length} POS
-            </button>
-          )}
-          {pendingOrders.length>0&&(
-            <button style={{...s.togBtn,...(showOrders?s.togOn:{})}} onClick={()=>{setShowOrders(v=>!v);setShowPos(false);setShowTrades(false)}}>
-              {pendingOrders.length} LIMIT
-            </button>
-          )}
-          {allTrades.length>0&&(
-            <button style={{...s.togBtn,...(showTrades?s.togOn:{})}} onClick={()=>{setShowTrades(v=>!v);setShowPos(false);setShowOrders(false)}}>
-              {allTrades.length} TRADES
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* POSITIONS PANEL */}
-      {showPos&&openPositions.length>0&&(
-        <div style={s.panel}>
-          <div style={s.panelHdr}>
-            <span style={s.panelTitle}>POSICIONES ABIERTAS</span>
-            <div style={{display:'flex',gap:8}}>
-              <button style={s.dangerBtn} onClick={()=>{openPositions.forEach(p=>closePosition(p.id));setShowPos(false)}}>Cerrar todas</button>
-              <button style={s.iconBtn} onClick={()=>setShowPos(false)}>✕</button>
-            </div>
-          </div>
-          <div style={{overflowX:'auto'}}>
-            <table style={s.tbl}>
-              <thead><tr>{['PAR','DIR','ENTRADA','ACTUAL','SL','TP','LOTS','P&L',''].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
-              <tbody>
-                {openPositions.map(pos=>{
-                  const pnl=calcPnl(pos.side,pos.entry,currentPrice??pos.entry,pos.lots,activePair)
-                  return(
-                    <tr key={pos.id} style={s.tblRow}>
-                      <td style={s.td}>{pos.pair}</td>
-                      <td style={{...s.td,color:pos.side==='BUY'?'#1E90FF':'#ef5350',fontWeight:800}}>{pos.side}</td>
-                      <td style={s.td}>{fmtPx(pos.entry,pos.pair)}</td>
-                      <td style={s.td}>{fmtPx(currentPrice,pos.pair)}</td>
-                      <td style={{...s.td,color:'rgba(239,83,80,0.7)'}}>{fmtPx(pos.sl,pos.pair)}</td>
-                      <td style={{...s.td,color:'rgba(30,144,255,0.7)'}}>{fmtPx(pos.tp,pos.pair)}</td>
-                      <td style={s.td}>{pos.lots}</td>
-                      <td style={{...s.td,color:pnlColor(pnl),fontWeight:700}}>{fmtPnl(pnl)}</td>
-                      <td style={s.td}><button style={s.closeBtn} onClick={()=>setCloseModal({posId:pos.id,pair:activePair,pos})}>✕</button></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* PENDING ORDERS */}
-      {showOrders&&pendingOrders.length>0&&(
-        <div style={s.panel}>
-          <div style={s.panelHdr}>
-            <span style={s.panelTitle}>ÓRDENES LÍMITE</span>
-            <button style={s.iconBtn} onClick={()=>setShowOrders(false)}>✕</button>
-          </div>
-          <div style={{overflowX:'auto'}}>
-            <table style={s.tbl}>
-              <thead><tr>{['PAR','TIPO','ENTRADA','SL','TP','LOTS',''].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
-              <tbody>
-                {pendingOrders.map(o=>(
-                  <tr key={o.id} style={s.tblRow}>
-                    <td style={s.td}>{o.pair}</td>
-                    <td style={{...s.td,color:o.side==='BUY_LIMIT'?'#1E90FF':'#ef5350',fontWeight:700}}>{o.side==='BUY_LIMIT'?'Buy Limit':'Sell Limit'}</td>
-                    <td style={s.td}>{fmtPx(o.entry,o.pair)}</td>
-                    <td style={{...s.td,color:'rgba(239,83,80,0.6)'}}>{fmtPx(o.sl,o.pair)}</td>
-                    <td style={{...s.td,color:'rgba(30,144,255,0.6)'}}>{fmtPx(o.tp,o.pair)}</td>
-                    <td style={s.td}>{o.lots}</td>
-                    <td style={s.td}><button style={s.closeBtn} onClick={()=>cancelLimitOrder(o.id,o.pair)}>✕</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TRADES JOURNAL */}
-      {showTrades&&allTrades.length>0&&(
-        <div style={s.panel}>
-          <div style={s.panelHdr}>
-            <span style={s.panelTitle}>JOURNAL</span>
-            <button style={s.iconBtn} onClick={()=>setShowTrades(false)}>✕</button>
-          </div>
-          <div style={{overflowX:'auto'}}>
-            <table style={s.tbl}>
-              <thead><tr>{['PAR','DIR','ENTRY','EXIT','LOTS','R:R','P&L','RESULT','ABIERTO','CERRADO','NOTA'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
-              <tbody>
-                {allTrades.map((t,i)=>(
-                  <tr key={i} style={s.tblRow}>
-                    <td style={s.td}>{t.pair}</td>
-                    <td style={{...s.td,color:t.side==='BUY'?'#1E90FF':'#ef5350',fontWeight:800}}>{t.side}</td>
-                    <td style={s.td}>{fmtPx(t.entry,t.pair)}</td>
-                    <td style={s.td}>{fmtPx(t.exit,t.pair)}</td>
-                    <td style={s.td}>{t.lots}</td>
-                    <td style={s.td}>{t.rrReal}R</td>
-                    <td style={{...s.td,color:pnlColor(t.pnl),fontWeight:700}}>{fmtPnl(t.pnl)}</td>
-                    <td style={{...s.td,color:t.result==='WIN'?'#1E90FF':t.result==='LOSS'?'#ef5350':'#a0b8d0',fontWeight:700}}>{t.result}</td>
-                    <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.openTime)}</td>
-                    <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.closeTime)}</td>
-                    <td style={{...s.td,color:'rgba(255,255,255,0.6)',fontSize:9,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis'}}>{t.note||'—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* PANELES POS/LIMIT/JOURNAL — extraídos a SessionPanels (Fase 7, Corte C) */}
+      <SessionPanels
+        showPos={showPos} setShowPos={setShowPos} openPositions={openPositions} closePosition={closePosition}
+        currentPrice={currentPrice} activePair={activePair} setCloseModal={setCloseModal}
+        showOrders={showOrders} setShowOrders={setShowOrders} pendingOrders={pendingOrders} cancelLimitOrder={cancelLimitOrder}
+        showTrades={showTrades} setShowTrades={setShowTrades} allTrades={allTrades}
+      />
 
       {/* CONTEXT MENU */}
       {ctxMenu&&(
