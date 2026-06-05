@@ -64,8 +64,8 @@ components/KillzonesOverlay.js:14             ← STORAGE_KEY 'killzones_cfg_v2'
 ✅ CERRADO s57 (commits 723aea0/c8af5cc/f851304, en producción): sessionKeyAt en dominio + tag en los 2 inserts del CLIENTE (el productor no era pages/api) + 3 lectores reconciliados (analytics/admin/dashboard, NY AM/NY PM separados) + hotfix BD: CHECK de session_type migrado al vocabulario del dominio (backup sim_trades_backup_s57, 154 filas)
 
 === Test Montecarlo ===
-grep retornó VACÍO al carácter — NO existe en repo
-GAP funcional al carácter: módulo nuevo lib/metrics/montecarlo.js + UI métricas
+✅ CERRADO s58 (commits 41e5c35/7b48b3b/f3de05f/c128238/0aa8ad3, en producción 0aa8ad3): módulo puro lib/metrics/montecarlo.js (paramétrico FX Replay, RNG propio sin npm, harness 55.046 checks 0 fails) + card en analytics y en admin por alumno (contrato §2.4)
+GAP extra cazado y CERRADO (Corte D): el item Analytics del alumno no navegaba (pestaña gemela sin Montecarlo) → router.push real + Journal de Operaciones portado a /analytics
 
 === Go-to next session opening ===
 grep retornó solo matches challenge/advance.js (no relacionado feature UI)
@@ -240,7 +240,7 @@ Apertura ratificada al carácter cuando se cumplan TODOS estos criterios:
 - ✅ Fase 5 cluster B estructural cerrada (CUMPLIDO post-s38)
 - ✅ Cleanup §10.1 zona CTO 100% completado (0 items abiertos zona CTO + 1 bloqueado terceros 6 datos crudos Giancarlo/Luis + items 1+2+3+5+7+8+9 cerrados consecutivos s39→s43 — item 1 s40 ae29f16 + item 2 s39 e44bb9b + item 3 FANTASMA s43 5d.7 cerrada s22 5b233b4 + 5d.8 cerrada s42 e6c1430 + item 5 s42 e6c1430 + item 7 FANTASMA s39 + item 8 "no aplica empíricamente" s39 + item 9 NUEVO "no aplica empíricamente" s41)
 - ✅ Fase 5.A cluster A Opción A migración Supabase cerrada (CUMPLIDO s49, smoke producción multi-par PASS)
-- ⏳ 4 features bloqueantes cerradas — orden s56: go-to session ✅ s56 (prod s57) → session tagging ✅ s57 (prod f851304) → Montecarlo (pre-Fase-7) + card dashboard PDFs/videos (POST-Fase-7, último paso antes de apertura)
+- ⏳ 4 features bloqueantes cerradas — orden s56: go-to session ✅ s56 (prod s57) → session tagging ✅ s57 (prod f851304) → Montecarlo ✅ s58 (prod 0aa8ad3) → card dashboard PDFs/videos (POST-Fase-7, último paso antes de apertura)
 - ✅ Fase 6 trading domain extraída a `lib/trading/` (CUMPLIDO s55 — pricing.js + breach.js + orders.js, smoke producción PASS)
 - ⏳ Fase 7 reducción `_SessionInner.js` ≤ ~1000 líneas
 - ⏳ Smoke producción exhaustivo multi-par + multi-TF + multi-killzone + Montecarlo + go-to + dashboard + challenge phases
