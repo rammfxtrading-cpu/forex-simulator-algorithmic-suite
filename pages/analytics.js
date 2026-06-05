@@ -452,6 +452,48 @@ export default function Analytics() {
                 )
               })()}
             </div>
+
+            {/* JOURNAL DE OPERACIONES — réplica del dashboard, mismos datos del filtro vigente */}
+            {closedTrades.length > 0 && (
+              <div style={{borderRadius:12,padding:'20px 24px',marginBottom:20,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(30,144,255,0.9)',letterSpacing:1,marginBottom:16,textTransform:'uppercase'}}>Journal de Operaciones</div>
+                <div style={{overflowX:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                    <thead>
+                      <tr>
+                        {['SESIÓN','PAR','DIR','ENTRADA','SALIDA','LOTS','SL','TP','R:R','P&L','RESULTADO'].map(h=>(
+                          <th key={h} style={{padding:'6px 12px',textAlign:'left',color:'rgba(30,144,255,0.9)',fontWeight:700,fontSize:8,letterSpacing:1,borderBottom:'1px solid rgba(30,144,255,0.2)',whiteSpace:'nowrap'}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {closedTrades.slice().reverse().map((t,i)=>{
+                        const sess=sessions.find(s=>s.id===t.session_id)
+                        const pnlColor=t.pnl>0?'#22c55e':t.pnl<0?'#ef4444':'#a0b8d0'
+                        const resColor=t.result==='WIN'?'#22c55e':t.result==='LOSS'?'#ef4444':'#a0b8d0'
+                        return(
+                          <tr key={i} style={{borderBottom:'1px solid rgba(30,144,255,0.15)'}}>
+                            <td style={{padding:'7px 12px',color:'rgba(255,255,255,0.85)',whiteSpace:'nowrap',fontSize:10}}>{sess?.name||'—'}</td>
+                            <td style={{padding:'7px 12px',color:'#ffffff',fontWeight:700}}>{t.pair}</td>
+                            <td style={{padding:'7px 12px',color:t.side==='BUY'?'#1E90FF':'#ef4444',fontWeight:800}}>{t.side}</td>
+                            <td style={{padding:'7px 12px',color:'#ffffff',fontFamily:'monospace'}}>{parseFloat(t.entry_price||0).toFixed(5)}</td>
+                            <td style={{padding:'7px 12px',color:'#ffffff',fontFamily:'monospace'}}>{parseFloat(t.exit_price||0).toFixed(5)}</td>
+                            <td style={{padding:'7px 12px',color:'#ffffff'}}>{t.lots}</td>
+                            <td style={{padding:'7px 12px',color:'rgba(239,83,80,0.7)'}}>{t.sl_price?.toFixed(5)||'—'}</td>
+                            <td style={{padding:'7px 12px',color:'rgba(30,144,255,0.7)'}}>{t.tp_price?.toFixed(5)||'—'}</td>
+                            <td style={{padding:'7px 12px',color:'#f59e0b',fontWeight:700}}>{parseFloat(t.rr||0).toFixed(1)}R</td>
+                            <td style={{padding:'7px 12px',color:pnlColor,fontWeight:700}}>{t.pnl>=0?'+':''}{parseFloat(t.pnl||0).toFixed(2)}</td>
+                            <td style={{padding:'7px 12px',fontWeight:700}}>
+                              <span style={{color:resColor,background:t.result==='WIN'?'rgba(34,197,94,0.1)':t.result==='LOSS'?'rgba(239,68,68,0.1)':'rgba(160,184,208,0.1)',padding:'2px 8px',borderRadius:4,fontSize:9,letterSpacing:0.5}}>{t.result}</span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
