@@ -125,7 +125,7 @@ Tocados en s58: `lib/metrics/montecarlo.js` (NUEVO, 131), `analytics.js` (420→
 
 **Después:** validación Luis+Giancarlo → card PDFs/videos → apertura.
 
-**Deuda diferida (no abrir salvo hueco, cada una con su fase):** pestaña gemela dashboard (VA en Fase 7), admin "Eliminar perfil" (backup + doble confirmación + gate), wipe históricos pre-apertura (gate), `.catch` silencioso de inserts → valorar aviso UI (¿Fase 7?), FK duplicada `session_id`, DROP backups s45/s48/s57 (gate), handoffs s54-s56 ausentes del repo, Corte 1c RulerOverlay, cosmético LongShortModal, `*10` yenes (ojo de trader, mini-fase), asimetría `lastBreachIdx`, `XAU/USD` dashboard vs `ALL_PAIRS`, item 6 terceros, "Object is disposed" dev (observación), Reset values no borra espagueti (decisión vigente, 1 línea si Ramón cambia de idea).
+**Deuda diferida (no abrir salvo hueco, cada una con su fase):** pestaña gemela dashboard (VA en Fase 7), admin "Eliminar perfil" + wipe históricos — DECISIÓN s58 (delegada por Ramón al CTO): mini-fase CONJUNTA de operaciones destructivas POST-Fase-7 y BLOQUEANTE de apertura (backup por tabla + doble confirmación + gates), `.catch` silencioso de inserts → valorar aviso UI (¿Fase 7?), FK duplicada `session_id`, DROP backups s45/s48/s57 (gate), handoffs s54-s56 ausentes del repo, Corte 1c RulerOverlay, cosmético LongShortModal, `*10` yenes (ojo de trader, mini-fase), asimetría `lastBreachIdx`, `XAU/USD` dashboard vs `ALL_PAIRS`, item 6 terceros, "Object is disposed" dev (observación), Reset values no borra espagueti (decisión vigente, 1 línea si Ramón cambia de idea).
 
 ---
 
