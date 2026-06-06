@@ -1,14 +1,14 @@
 /**
  * components/ReplayPill.js — píldora flotante de replay (Fase 7, Corte C, s59).
  * Extraída 1:1 de components/_SessionInner.js (baseline 2511, md5 b3433273): drag de la píldora,
- * play/pausa, paso, barra de progreso con seek (onSeek viene del padre: handleSeek), velocidades
- * y Go to. Única transformación: el onClick inline del seek pasa a la prop onSeek, línea a línea.
+ * play/pausa, paso, barra de progreso SOLO LECTURA (decisión de producto s59: el seek por clic
+ * permitía ver el futuro, trampa en backtesting), velocidades y Go to.
  */
 
 import { s } from './sessionStyles'
 import { SPEED_OPTS } from '../lib/sessionUi'
 
-export default function ReplayPill({pillPos,setPillPos,pillDragRef,isPlaying,challengeLocked,dataReady,handlePlayPause,handleStep,progress,onSeek,speed,handleSpeed,gotoMiss,gotoOpen,setGotoOpen,gotoDir,setGotoDir,handleGoTo}){
+export default function ReplayPill({pillPos,setPillPos,pillDragRef,isPlaying,challengeLocked,dataReady,handlePlayPause,handleStep,progress,speed,handleSpeed,gotoMiss,gotoOpen,setGotoOpen,gotoDir,setGotoDir,handleGoTo}){
   return(
       <div
         style={{...s.replayPill,
@@ -59,10 +59,9 @@ export default function ReplayPill({pillPos,setPillPos,pillDragRef,isPlaying,cha
         <div
           style={{
             ...s.pillProgress,
-            ...(challengeLocked ? {opacity:0.4, cursor:'not-allowed', pointerEvents:'none'} : {}),
+            ...(challengeLocked ? {opacity:0.4} : {}),
           }}
-          title={challengeLocked ? 'Sesión terminada' : `${progress}% — clic para saltar`}
-          onClick={challengeLocked ? undefined : onSeek}>
+          title={challengeLocked ? 'Sesión terminada' : `${progress}%`}>
           <div style={{...s.pillProgressFill,width:`${progress}%`}}/>
         </div>
         <div style={s.pillDivider}/>

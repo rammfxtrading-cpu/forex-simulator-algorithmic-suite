@@ -1219,18 +1219,6 @@ if(full||(curr!==prev&&curr!==prev+1)){
   },[activePair,saveProgress,deselectAll])
   const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))},[activePair,updateChart])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
-  const handleSeek=useCallback((e)=>{
-    const rect=e.currentTarget.getBoundingClientRect()
-    const fraction=(e.clientX-rect.left)/rect.width
-    const e2=eng();if(!e2)return
-    e2.seekToProgress(Math.max(0,Math.min(1,fraction)))
-    // Reset check indices so we don't re-fire SL/TP on already-passed candles
-    const ps=pairState.current[activePair]
-    if(ps){ ps.lastSLTPIdx=e2.currentIndex; ps.lastLimitIdx=e2.currentIndex }
-    setCurrentTime(e2.currentTime);setProgress(Math.round(e2.progress*100))
-    const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
-    updateChart(activePair,e2,true)
-  },[activePair,updateChart])
   const handleGoTo=useCallback((sessKey)=>{
     setGotoOpen(false)
     const e=eng();if(!e)return
@@ -2024,7 +2012,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       <ReplayPill
         pillPos={pillPos} setPillPos={setPillPos} pillDragRef={pillDragRef}
         isPlaying={isPlaying} challengeLocked={challengeLocked} dataReady={dataReady}
-        handlePlayPause={handlePlayPause} handleStep={handleStep} progress={progress} onSeek={handleSeek}
+        handlePlayPause={handlePlayPause} handleStep={handleStep} progress={progress}
         speed={speed} handleSpeed={handleSpeed}
         gotoMiss={gotoMiss} gotoOpen={gotoOpen} setGotoOpen={setGotoOpen} gotoDir={gotoDir} setGotoDir={setGotoDir} handleGoTo={handleGoTo}
       />
