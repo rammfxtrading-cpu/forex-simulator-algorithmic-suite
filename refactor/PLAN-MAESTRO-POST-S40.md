@@ -51,7 +51,7 @@ FASE 5 cluster B drawings lifecycle           ✅ ESTRUCTURAL CERRADA s38 (fase 
 ```
 FASE 5.A cluster A drawings lifecycle    ⏳ APLAZADA — Opción A ratificada s40
 FASE 6   trading domain                  ⏳ NO EMPEZADA
-FASE 7   reducción _SessionInner.js      ⏳ NO EMPEZADA (3045 líneas actuales)
+FASE 7   reducción _SessionInner.js      ✅ CERRADA s59 (3063→1496 −51%, contrato A-G completo)
 ```
 
 ### §1.4 Features bloqueantes apertura — caracterización empírica bytes-on-disk s40
@@ -242,7 +242,7 @@ Apertura ratificada al carácter cuando se cumplan TODOS estos criterios:
 - ✅ Fase 5.A cluster A Opción A migración Supabase cerrada (CUMPLIDO s49, smoke producción multi-par PASS)
 - ⏳ 4 features bloqueantes cerradas — orden s56: go-to session ✅ s56 (prod s57) → session tagging ✅ s57 (prod f851304) → Montecarlo ✅ s58 (prod 0aa8ad3) → card dashboard PDFs/videos (POST-Fase-7, último paso antes de apertura)
 - ✅ Fase 6 trading domain extraída a `lib/trading/` (CUMPLIDO s55 — pricing.js + breach.js + orders.js, smoke producción PASS)
-- ⏳ Fase 7 reducción `_SessionInner.js` ≤ ~1000 líneas
+- ✅ Fase 7 reducción `_SessionInner.js` — CERRADA s59 en 1496 líneas: contrato A-G completo, 3 hooks de dominio (useChallengeFlow 429 / usePairData 170 / useTradingActions 245) + 9 componentes/lib extraídos, dashboard 777→620 (bloque Analytics inalcanzable enterrado), openPosition+tpPips muertos eliminados. La diana ≤~1000 presuponía extraer también mountPairRef y el efecto TF: se difirieron por entrelazamiento (DECISIÓN s59) como cortes futuros E2 chart-mount + drag SL/TP. Producción 62c0d9a, 3 checkpoints con smoke, 0 regresiones.
 - ⏳ Smoke producción exhaustivo multi-par + multi-TF + multi-killzone + Montecarlo + go-to + dashboard + challenge phases
 
 Cuando los 8 criterios sean ✅, abrimos.
