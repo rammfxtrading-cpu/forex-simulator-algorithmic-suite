@@ -572,7 +572,7 @@ const s = {
   statIcon:{width:36,height:36,borderRadius:8,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4},
   statValue:{fontSize:24,fontWeight:800},
   statLabel:{fontSize:9,fontWeight:700,color:'#ffffff',letterSpacing:1.5},
-  emptyCard:{borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12},
+  emptyCard:{borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)'},
   emptyTitle:{fontSize:16,fontWeight:700,color:'#ffffff',marginBottom:8},
   emptySub:{fontSize:12,color:'#ffffff',lineHeight:1.6,maxWidth:380},
 }
