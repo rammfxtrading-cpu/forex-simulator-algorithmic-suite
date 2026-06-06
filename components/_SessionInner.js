@@ -34,6 +34,7 @@ import { TF_LIST, SPEED_OPTS, ALL_PAIRS, normPair, chartOpts, fmtPx, fmtPnl, pnl
 import TfInputModal from './TfInputModal'
 import { s, css } from './sessionStyles'
 import Spin from './Spin'
+import AntimatterLoader from './AntimatterLoader'
 import CloseModal from './CloseModal'
 import PositionOverlay from './PositionOverlay'
 import SessionTopBar from './SessionTopBar'
@@ -77,6 +78,7 @@ export default function SessionPage(){
   const [currentTime, setCurrentTime] = useState(null)
   const [currentPrice,setCurrentPrice]= useState(null)
   const [dataReady,   setDataReady]   = useState(false)
+  const everReadyRef = useRef(false) // mini-corte H: true tras el primer dataReady; decide orbe vs mini-overlay
   const [balance,     setBalance]     = useState(10000)
   const [lots,        setLots]        = useState(0.01)
   const [slPips,      setSlPips]      = useState(20)
@@ -315,6 +317,7 @@ export default function SessionPage(){
   // Sync selectedTool on click — reactivo vía subscribeClick LWC oficial (reemplaza polling 300ms s40 5f.2)
   useEffect(()=>{
     if(!dataReady) return
+    everReadyRef.current = true // mini-corte H
     const cr=chartMap.current[activePair]
     if(!cr?.chart) return
     const handler=()=>{
@@ -1011,7 +1014,7 @@ export default function SessionPage(){
   // Si el usuario está autenticado pero no tiene acceso al Simulador, bloqueamos.
   if(!authLoading && !hasAccess) return <NoAccess profile={profile} producto="Simulador" />
 
-  if(loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}><Spin/></div>
+  if(loading) return <AntimatterLoader/>
 
   return (
     <div style={s.root}>
@@ -1074,7 +1077,7 @@ export default function SessionPage(){
         <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} tfKey={tfKey} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'} currentTime={currentTime}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} chartTick={chartTick} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} chartTick={chartTick} />
-        {!dataReady&&(
+        {!dataReady&&everReadyRef.current&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
         )}
         <PositionOverlay
@@ -1489,6 +1492,8 @@ export default function SessionPage(){
           onClose={() => { setChallengeModal(null) }}
         />
       )}
+
+      {!dataReady&&!everReadyRef.current&&<AntimatterLoader/>}
 
       <style>{css}</style>
     </div>
