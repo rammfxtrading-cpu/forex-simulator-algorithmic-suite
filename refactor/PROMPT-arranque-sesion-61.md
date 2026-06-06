@@ -22,7 +22,7 @@
 1. **PASO 0** bicapa: repo (wc/md5 de la tabla de §1; HEAD = docs encima de `25678d9`, delta solo refactor/) + BD vs baseline (incluir chart_config y plantillas).
 2. **Pasada de muertos** (heredada, con derivación de call-sites en bytes, NUNCA asumir): imports de _SessionInner posiblemente muertos tras E/F (fetchSessionCandles, setSeriesData, ReplayEngine, chartViewport parcial, chartRender, realizePnl…), EquityCurve + selectedSession + vars del memo en dashboard tras G, warning dev borderColor/border en botones del pill, duplicate key borderRadius del objeto s del dashboard.
 3. **Deudas si hay hueco:** DROP backup_s57 (gate, ya cumplió su sesión de gracia), *10 yenes (ojo de trader), asimetría lastBreachIdx, investigar ECONNRESET/401 de /api/candles.
-4. Tras "todo bien" de Luis + Giancarlo post-F7 → card PDFs/videos → **apertura**.
+4. Tras "todo bien" de Luis + Giancarlo post-F7 → card PDFs/videos → **fase planes/límites** (DECIDIDO s60: Básico 21 €/6 huecos · Extra 36 €/12 huecos · cada fase de challenge ocupa un hueco · liberar = solo borrar · gate server-side de creación de sesiones + landing de pago en subdominio) → **apertura** ("cuando esté todo listo abro", Ramón s60).
 
 ## 3. Cortes futuros anotados (no urgentes)
 - E2 chart-mount: extraer mountPairRef (233 líneas, entrelazado con dibujos/SL-TP/text tool/drag) + efecto TF.

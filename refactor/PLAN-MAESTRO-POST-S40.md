@@ -243,9 +243,10 @@ Apertura ratificada al carácter cuando se cumplan TODOS estos criterios:
 - ⏳ 4 features bloqueantes cerradas — orden s56: go-to session ✅ s56 (prod s57) → session tagging ✅ s57 (prod f851304) → Montecarlo ✅ s58 (prod 0aa8ad3) → card dashboard PDFs/videos (POST-Fase-7, último paso antes de apertura)
 - ✅ Fase 6 trading domain extraída a `lib/trading/` (CUMPLIDO s55 — pricing.js + breach.js + orders.js, smoke producción PASS)
 - ✅ Fase 7 reducción `_SessionInner.js` — CERRADA s59 en 1496 líneas: contrato A-G completo, 3 hooks de dominio (useChallengeFlow 429 / usePairData 170 / useTradingActions 245) + 9 componentes/lib extraídos, dashboard 777→620 (bloque Analytics inalcanzable enterrado), openPosition+tpPips muertos eliminados. La diana ≤~1000 presuponía extraer también mountPairRef y el efecto TF: se difirieron por entrelazamiento (DECISIÓN s59) como cortes futuros E2 chart-mount + drag SL/TP. Producción 62c0d9a, 3 checkpoints con smoke, 0 regresiones. Post-F7 (s60): mini-fase admin-wipe en producción 7f80353 (endpoint 5 tablas + simulador_activo=false, confirmación dura por email) + mini-corte H AntimatterLoader en producción 25678d9 (pantalla de carga antimateria + 22 consejos R.A.M.M.FX, corte fino everReadyRef) + saneo BD (FK duplicada fk_session eliminada, DROP backups s45/s48, backup_s57 conservado una sesión más).
+- ⏳ Sistema de planes y límites de sesiones — DECIDIDO s60 (Ramón): Básico 21 €/mes = 6 huecos simultáneos, Extra 36 €/mes = 12 huecos (3,00 €/sesión); hueco = sesión viva, cada fase de challenge ocupa un hueco, liberar = solo borrar (sin archivo); enforcement server-side OBLIGATORIO (la creación de sesión hoy es insert directo del cliente en dashboard.js: un límite solo-UI no vale) + landing de pago en subdominio estilo journal. BLOQUEANTE de apertura por decisión de Ramón s60: se abre cuando esté todo listo.
 - ⏳ Smoke producción exhaustivo multi-par + multi-TF + multi-killzone + Montecarlo + go-to + dashboard + challenge phases
 
-Cuando los 8 criterios sean ✅, abrimos.
+Cuando los 9 criterios sean ✅, abrimos.
 
 ---
 
