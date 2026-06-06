@@ -2,7 +2,6 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ChallengeSetupModal from '../components/ChallengeSetupModal'
-import EquityCurve from '../components/EquityCurve'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -64,7 +63,6 @@ export default function Dashboard() {
   const [showNew, setShowNew] = useState(false)
   const [creating, setCreating] = useState(false)
   const [activeView, setActiveView] = useState('dashboard')
-  const [selectedSession, setSelectedSession] = useState('all')
   const [hoveredNav, setHoveredNav] = useState(null)
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
   const [profile, setProfile] = useState(null)
@@ -203,53 +201,13 @@ export default function Dashboard() {
 
   // ── ANALYTICS CALCULATIONS ──
   const metrics = useMemo(() => {
-    const filtered = selectedSession === 'all' ? trades : trades.filter(t => t.session_id === selectedSession)
-    const closed = filtered.filter(t => t.result && t.result !== 'OPEN')
+    const closed = trades.filter(t => t.result && t.result !== 'OPEN')
     const w = closed.filter(t => t.result === 'WIN')
-    const l = closed.filter(t => t.result === 'LOSS')
-    const be = closed.filter(t => t.result === 'BREAKEVEN')
     const totalPnl = closed.reduce((s, t) => s + (t.pnl || 0), 0)
-    const winRate = closed.length > 0 ? (w.length / closed.length * 100) : 0
-    const avgRR = closed.length > 0 ? closed.reduce((s, t) => s + (t.rr || 0), 0) / closed.length : 0
-    const bestWin = w.length > 0 ? Math.max(...w.map(t => t.pnl || 0)) : 0
-    const worstLoss = l.length > 0 ? Math.min(...l.map(t => t.pnl || 0)) : 0
-    const avgWin = w.length > 0 ? w.reduce((s, t) => s + (t.pnl || 0), 0) / w.length : 0
-    const avgLoss = l.length > 0 ? l.reduce((s, t) => s + (t.pnl || 0), 0) / l.length : 0
-    const grossProfit = w.reduce((s, t) => s + (t.pnl || 0), 0)
-    const grossLoss = Math.abs(l.reduce((s, t) => s + (t.pnl || 0), 0))
-    // Profit factor: ratio gross profit / gross loss. Sin losses no es
-    // calculable (división por 0); marcamos null para mostrar '—'.
-    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : null
-    const expectancy = closed.length > 0 ? (winRate/100 * avgWin) + ((1 - winRate/100) * avgLoss) : 0
-    const selSess = sessions.find(s => s.id === selectedSession)
-    const initialBalance = selectedSession === 'all'
-      ? (sessions.length > 0 ? parseFloat(sessions[0]?.capital || 0) : 0)
-      : parseFloat(selSess?.capital || 0)
-    // Drawdown
-    let ddPeak = initialBalance, maxDD = 0, ddRun = initialBalance
-    closed.forEach(t => { ddRun += (t.pnl||0); if(ddRun>ddPeak)ddPeak=ddRun; const dd=ddPeak-ddRun; if(dd>maxDD)maxDD=dd })
-    // Streaks
-    let maxW=0,maxL=0,curW=0,curL=0
-    closed.forEach(t => { if(t.result==='WIN'){curW++;curL=0;if(curW>maxW)maxW=curW}else if(t.result==='LOSS'){curL++;curW=0;if(curL>maxL)maxL=curL} })
-    // Nota: la curva de capital se calcula dentro del componente <EquityCurve>.
-    return {
-      filteredTrades:filtered, closedTrades:closed, wins:w, losses:l, breakevens:be,
-      totalPnl, winRate, avgRR, bestWin, worstLoss, avgWin, avgLoss,
-      profitFactor, expectancy, maxDrawdown:maxDD, maxWinStreak:maxW, maxLossStreak:maxL,
-      initialBalance,
-      sessionStats:{
-        london:filtered.filter(t=>t.session_type==='london'),
-        nyam:filtered.filter(t=>t.session_type==='nyam'),
-        nypm:filtered.filter(t=>t.session_type==='nypm'),
-        asia:filtered.filter(t=>t.session_type==='asia'),
-        out:filtered.filter(t=>!t.session_type),
-      }
-    }
-  }, [trades, sessions, selectedSession])
+    return { closedTrades:closed, wins:w, totalPnl }
+  }, [trades])
 
-  const { filteredTrades, closedTrades, wins, losses, breakevens, totalPnl, winRate, avgRR,
-    bestWin, worstLoss, avgWin, avgLoss, profitFactor, expectancy, maxDrawdown,
-    maxWinStreak, maxLossStreak, initialBalance, sessionStats } = metrics
+  const { closedTrades, wins, totalPnl } = metrics
 
   if (loading) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}>
