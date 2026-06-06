@@ -29,10 +29,11 @@ export default function Admin() {
   useEffect(() => { setMcFields(null); setMcResult(null) }, [detailId, selectedSession])
 
   // Modales
-  const [modal, setModal] = useState(null)  // 'activate' | 'disable' | 'message' | null
+  const [modal, setModal] = useState(null)  // 'activate' | 'disable' | 'message' | 'wipe' | null
   const [modalTarget, setModalTarget] = useState(null)  // user obj
   const [msgSubject, setMsgSubject] = useState('')
   const [msgBody, setMsgBody] = useState('')
+  const [wipeEmail, setWipeEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
@@ -116,6 +117,30 @@ export default function Admin() {
     }
   }
 
+  async function wipeSimulador() {
+    if (!modalTarget) return
+    setBusy(true)
+    setErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch('/api/admin/wipe-simulador', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ user_id: modalTarget.id, confirm_email: wipeEmail })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Error')
+      closeModal()
+      closeDetail()
+      await refresh()
+    } catch (e) {
+      setErr(e.message || 'Error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function enviarMensaje() {
     if (!msgSubject.trim() || !msgBody.trim() || !modalTarget) return
     setBusy(true)
@@ -143,6 +168,7 @@ export default function Admin() {
     setModalTarget(target)
     setErr('')
     if (kind === 'message') { setMsgSubject(''); setMsgBody('') }
+    if (kind === 'wipe') { setWipeEmail('') }
   }
   function closeModal() {
     setModal(null)
@@ -777,6 +803,7 @@ export default function Admin() {
                 ) : (
                   <button onClick={() => openModal('activate', detail.profile)} style={s.btnPrimary}>Activar acceso</button>
                 )}
+                <button onClick={() => openModal('wipe', detail.profile)} style={s.btnDanger}>Eliminar datos del simulador</button>
               </div>
             )}
           </>}
@@ -818,6 +845,25 @@ export default function Admin() {
               <div style={s.modalActions}>
                 <button onClick={closeModal} style={s.btnGhost} disabled={busy}>Cancelar</button>
                 <button onClick={() => toggleAcceso(modalTarget.id, false)} style={s.btnDanger} disabled={busy}>{busy ? 'Desactivando...' : 'Desactivar'}</button>
+              </div>
+            </>}
+
+            {modal === 'wipe' && <>
+              <div style={{ ...s.modalTitle, color:'#f03e3e' }}>ELIMINAR DATOS DEL SIMULADOR</div>
+              <div style={s.modalSub}>Cancelación definitiva para {modalTarget?.nombre || modalTarget?.email?.split('@')[0]}</div>
+              <div style={s.modalDivider}/>
+              <div style={s.modalText}>
+                Vas a borrar <strong style={{color:'#fff'}}>TODOS</strong> los datos del simulador de este alumno: sesiones, trades, dibujos, configuración de charts y plantillas. También se pone <code style={{color:'#f03e3e'}}>simulador_activo = false</code>.
+              </div>
+              <div style={{ ...s.modalNote, background:'rgba(240,62,62,0.06)', borderColor:'rgba(240,62,62,0.15)' }}>
+                Acción <strong style={{color:'#f03e3e'}}>IRREVERSIBLE</strong>. Su cuenta del hub y su journal no se tocan. Si vuelve a suscribirse, empieza de 0.
+              </div>
+              <label style={s.modalLabel}>ESCRIBE SU EMAIL PARA CONFIRMAR</label>
+              <input type="text" value={wipeEmail} onChange={e => setWipeEmail(e.target.value)} placeholder={modalTarget?.email || ''} style={s.modalInput}/>
+              {err && <div style={s.errorBox}>{err}</div>}
+              <div style={s.modalActions}>
+                <button onClick={closeModal} style={s.btnGhost} disabled={busy}>Cancelar</button>
+                <button onClick={wipeSimulador} style={s.btnDanger} disabled={busy || !wipeEmail.trim()}>{busy ? 'Eliminando...' : 'Eliminar definitivamente'}</button>
               </div>
             </>}
 
