@@ -41,6 +41,7 @@ import ReplayPill from './ReplayPill'
 import SessionBottomBar from './SessionBottomBar'
 import SessionPanels from './SessionPanels'
 import useChallengeFlow from './useChallengeFlow'
+import usePairData from './usePairData'
 
 export default function SessionPage(){
   const router=useRouter()
@@ -474,59 +475,15 @@ export default function SessionPage(){
     })
   },[id])
 
-  // ── Load pair data ────────────────────────────────────────────────────────────
-  const loadPair=useCallback(async(pair)=>{
-    const sess=sessionRef.current
-    if(!sess||pairState.current[pair]?.ready) return
-    try{
-      const result = await fetchSessionCandles({
-        pair, dateFrom: sess.date_from, dateTo: sess.date_to
-      })
-      if (!result) return
-      const { candles: ordinalCandles, replayTs, toTs } = result
-
-      const engine=new ReplayEngine()
-      // If there's a master time (another pair already advanced), use that. Otherwise resume saved position.
-      // Doble protección: además de limpiarla al cambiar id, validamos que
-      // masterTime caiga dentro del rango temporal de ESTA sesión. Si está fuera
-      // (por race condition entre montajes), la ignoramos y caemos al fallback.
-      const rawMaster = getMasterTime()
-      const masterTime = (rawMaster && rawMaster >= replayTs && rawMaster <= toTs) ? rawMaster : null
-      // Convert real masterTime/resumeTs to ordinal if needed
-      const toOrdinal = (t) => t ?? null  // real timestamps — no conversion needed
-      const isOrdinal = (t) => t && t < 1000000000
-      const resumeReal = masterTime || (isOrdinal(sess.last_timestamp)?null:sess.last_timestamp) || replayTs
-      const resumeTs = toOrdinal(resumeReal) ?? 0
-      engine.load(ordinalCandles); engine.seekToTime(resumeTs); engine.speed=speedRef.current
-      engine.onTick=()=>{
-        updateChart(pair,engine,false)
-        checkSLTPRef.current?.(pair,engine)
-        checkLimitOrdersRef.current?.(pair,engine)
-        // Challenge breach intra-vela: si el floating PnL + cerrado supera
-        // el cap diario o total, fuerza cierre de TODAS las posiciones al
-        // precio exacto donde se cruzó el cap. Estilo FTMO real.
-        checkChallengeBreachRef.current?.(pair,engine)
-        if(pair===activePairRef.current){
-          setCurrentTime(engine.currentTime)
-          setProgress(Math.round(engine.progress*100))
-          setMasterTime(engine.currentTime)
-        }
-      }
-      engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(engine.currentTime)}}
-      const ps={engine,ready:true,positions:[],trades:[],
-        lastSLTPIdx: engine.currentIndex,   // start from current — don't re-check history
-        lastLimitIdx: engine.currentIndex,
-      }
-      pairState.current[pair]=ps
-      updateChart(pair,engine,true)
-      if(pair===activePairRef.current){
-        setDataReady(true);setCurrentTime(engine.currentTime);setProgress(Math.round(engine.progress*100))
-        const agg=engine.getAggregated(pairTfRef.current[pair]||'H1')
-        setCurrentPrice(agg.slice(-1)[0]?.close??null)
-      }
-      setTick(t=>t+1)
-    }catch(e){console.error('loadPair',pair,e)}
-  },[])
+  // Datos y chart del par: saveProgress, loadPair y updateChart viven en usePairData
+  // (Fase 7, Corte E). API devuelta con los mismos nombres: ningún call-site cambia.
+  const { saveProgress, loadPair, updateChart } = usePairData({
+    id, session, activePair,
+    pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef,
+    checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef,
+    setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick,
+    exportTools,
+  })
 
   // ── Mount chart ───────────────────────────────────────────────────────────────
   mountPairRef.current=async(pair,el)=>{
@@ -765,75 +722,6 @@ export default function SessionPage(){
   }
   const mountPair=useCallback((pair,el)=>{mountPairRef.current(pair,el)},[])
 
-  // ── Update chart ──────────────────────────────────────────────────────────────
-  const updateChart=useCallback((pair,engine,full)=>{
-    const cr=chartMap.current[pair]; if(!cr||!engine) return
-    const tf=pairTfRef.current[pair]||'H1'
-    const agg=engine.getAggregated(tf); if(!agg.length) return
-    const prev=cr.prevCount,curr=agg.length
-    const _tfMap2={'M1':60,'M3':180,'M5':300,'M15':900,'M30':1800,'H1':3600,'H4':14400,'D1':86400}
-    const _tfS2 = _tfMap2[tf]||3600
-    const _lastT = agg[agg.length-1].time
-    const _lastC = agg[agg.length-1].close
-    // Phantoms = velas "futuras" sin movimiento que reservan espacio a la
-    // derecha del último precio. CRÍTICO: deben tener OHLC definidos, no
-    // sólo `time`. Si sólo tienen time, lightweight-charts intenta hacer
-    // autoscale del eje Y leyendo minValue/maxValue de cada bucket y
-    // crashea con `Cannot read properties of undefined (reading 'minValue')`.
-    // Con OHLC = lastClose se ven como velas plana (línea horizontal) y el
-    // autoscale las ignora correctamente.
-    const _mkPhantom = (t) => ({ time: t, open: _lastC, high: _lastC, low: _lastC, close: _lastC })
-
-if(full||(curr!==prev&&curr!==prev+1)){
-      // Cantidad de phantoms: por defecto 10. Si hay drawings cuyos puntos
-      // caen más allá, el effect de cambio de TF setea cr._phantomsNeeded para
-      // que el array sea suficientemente largo para renderizarlos correctamente.
-      const _phN = cr._phantomsNeeded || 10
-      cr._phantomsNeeded = null  // consumir, vuelve a default en próxima llamada
-      cr.phantom=Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
-      const _savedRange = captureSavedRange(cr)
-      applyFullRender(cr, agg, cr.phantom)
-      if(!cr.hasLoaded){
-        initVisibleRange(cr, tf, agg.length)
-      } else {
-        restoreSavedRange(cr, _savedRange, {full})
-      }
-    } else if(curr===prev+1){
-      // Una vela TF nueva se ha cerrado. Regeneramos las phantoms ANTES de
-      // escribir __algSuiteSeriesData para evitar dos cosas críticas:
-      //   1. Timestamps DUPLICADOS: si no se regenera, phantom[0].time
-      //      coincide con agg[last].time (ambos = _oldLastT + _tfS2). Eso
-      //      rompe la búsqueda binaria de interpolateLogicalIndexFromTime
-      //      en el plugin de drawings → al arrastrar un rectángulo cerca
-      //      de la vela actual, se "estira" hacia el infinito porque el
-      //      logical index resuelve a posiciones ambiguas.
-      //   2. OHLC desfasado: las phantoms quedarían ancladas al close de
-      //      la vela TF anterior → cola plana visible a la derecha.
-      let _phN
-      try {
-        const tools = JSON.parse(exportTools() || '[]')
-        _phN = computePhantomsNeeded(tools, _lastT, _tfS2)
-      } catch {
-        _phN = cr.phantom?.length || 10
-      }
-      cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
-      setSeriesData([...agg, ...cr.phantom], agg.length)
-      restoreOnNewBar(cr, () => {
-        applyNewBarUpdate(cr, agg, cr.phantom)
-      }, {
-        agg,
-        mkPhantom: _mkPhantom,
-        lastT: _lastT,
-        tfS2: _tfS2,
-      })
-    } else {
-      // Within-bucket: actualiza última vela + phantoms in-place (ver applyTickUpdate JSDoc).
-      applyTickUpdate(cr, agg, cr.phantom, _lastC)
-    }
-    cr.prevCount=curr
-    if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
-  },[])
-
   // ── TF change: re-render chart sin tocar timestamps de drawings ─────────────
   // Cuando el alumno cambia de TF, los drawings cuyo punto cae a la DERECHA del
   // último precio real (sobre las "phantom candles") se desanclan si en el
@@ -939,32 +827,8 @@ if(full||(curr!==prev&&curr!==prev+1)){
     prevTfRef.current = newTf
   },[pairTf,activePair,updateChart,deselectAll,exportTools])
 
-  useEffect(()=>{
-    if(!activePair) return
-    const ps=pairState.current[activePair]
-    if(ps?.engine){
-      // Sync this pair's engine to the current master time (from whichever pair was active before)
-      const masterTime = getMasterTime()
-      if(masterTime && Math.abs(ps.engine.currentTime - masterTime) > 60) {
-        ps.engine.seekToTime(masterTime)
-      }
-      setIsPlaying(ps.engine.isPlaying);setCurrentTime(ps.engine.currentTime)
-      setProgress(Math.round(ps.engine.progress*100))
-      const agg=ps.engine.getAggregated(pairTfRef.current[activePair]||'H1')
-      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);setMasterTime(ps.engine.currentTime)
-    }else{setDataReady(false);if(sessionRef.current)loadPair(activePair)}
-    setTick(t=>t+1)
-  },[activePair,loadPair])
-
-  useEffect(()=>{if(session&&activePair)loadPair(activePair)},[session,activePair,loadPair])
-
   // ── Replay ────────────────────────────────────────────────────────────────────
   const eng=()=>pairState.current[activePair]?.engine
-  const saveProgress=useCallback(async(ts)=>{
-    if(!id||!ts) return
-    try{ await supabase.from('sim_sessions').update({last_timestamp:ts}).eq('id',id) }catch(e){}
-  },[id])
-
   const handlePlayPause=useCallback(()=>{
     const e=eng();if(!e)return
     if(e.isPlaying){
