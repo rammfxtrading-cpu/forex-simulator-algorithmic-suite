@@ -4,7 +4,7 @@
  * Estilo TradingView — liquid glass — Algorithmic Suite
  */
 import { useState, useEffect } from 'react'
-import { isJpy, pipMult, pipSize } from '../lib/trading/pricing'
+import { isJpy, pipMult, pipSize, pipValue } from '../lib/trading/pricing'
 
 const PILL = {
   fontFamily: "'Montserrat',sans-serif",
@@ -112,13 +112,14 @@ export default function LongShortModal({ tool, toolId, activePair, balance, init
   const target = parseFloat(targetPrice) || 0
   const pm     = pipMult(activePair)
   const ps     = pipSize(activePair)
+  const pv     = pipValue(activePair)
 
   const stopTicks    = Math.abs((entry - stop)   / ps).toFixed(0)
   const targetTicks  = Math.abs((target - entry) / ps).toFixed(0)
   const rr           = stopTicks > 0 ? (targetTicks / stopTicks).toFixed(2) : '—'
   const riskAmount   = (accountSize * riskPct / 100).toFixed(2)
-  const lotSize      = stopTicks > 0 ? (parseFloat(riskAmount) / (parseFloat(stopTicks) * 10)).toFixed(2) : '—'
-  const profitAmount = lotSize !== '—' ? (parseFloat(lotSize) * parseFloat(targetTicks) * 10).toFixed(2) : '—'
+  const lotSize      = stopTicks > 0 ? (parseFloat(riskAmount) / (parseFloat(stopTicks) * pv)).toFixed(2) : '—'
+  const profitAmount = lotSize !== '—' ? (parseFloat(lotSize) * parseFloat(targetTicks) * pv).toFixed(2) : '—'
 
   const isLong = entry < target
 

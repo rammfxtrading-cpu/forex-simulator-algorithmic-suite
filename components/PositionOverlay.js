@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { pipValue } from '../lib/trading/pricing'
 
 // ─── Position Overlay — HTML lines with reliable drag ────────────────────────
 export default function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd,chartTick}){
@@ -35,8 +36,8 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
       try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
       try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
       try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
-      const slPnl=(-(pos.slPips*pos.lots*10)).toFixed(2)
-      const tpPnl='+'+(pos.tpPips*pos.lots*10).toFixed(2)
+      const slPnl=(-(pos.slPips*pos.lots*pipValue(activePair))).toFixed(2)
+      const tpPnl='+'+(pos.tpPips*pos.lots*pipValue(activePair)).toFixed(2)
       if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
       if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
       if(tpY!=null) all.push({id:pos.id+'_tp',posId:pos.id,type:'tp',   y:Math.round(tpY),label:`TP  ${tpPnl}`,              color:'rgba(30,144,255,0.65)', drag:true, close:false})

@@ -194,9 +194,10 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             (P_Entry_Screen.x !== P_Stop_Screen.x || P_Entry_Screen.y !== P_Stop_Screen.y)) {
             const pipMult2 = (options.pair || '').includes('JPY') ? 100 : 10000;
             const lots2 = options.lots || 0;
+            const pv2 = ({USD:10,JPY:6.25,CHF:12.65,CAD:7.20,GBP:13.35})[(options.pair || '').replace(/\//g,'').slice(-3)] || 10;
             const riskD = Math.abs(P0_logical.price - P1_logical.price);
             const riskPips2 = (riskD * pipMult2).toFixed(1);
-            const riskAmt2 = (riskD * pipMult2 * lots2 * 10).toFixed(2);
+            const riskAmt2 = (riskD * pipMult2 * lots2 * pv2).toFixed(2);
             if (!this._slCanvas) this._slCanvas = new SimpleCanvasTextRenderer();
             let slTxt = riskPips2 + ' pips' + (lots2 > 0 ? '\n$' + riskAmt2 : '');
             this._slCanvas.setData({
@@ -208,7 +209,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             if (P_PT_Screen && P2_logical) {
                 const tpD = Math.abs(P0_logical.price - P2_logical.price);
                 const tpPips2 = (tpD * pipMult2).toFixed(1);
-                const tpAmt2 = (tpD * pipMult2 * lots2 * 10).toFixed(2);
+                const tpAmt2 = (tpD * pipMult2 * lots2 * pv2).toFixed(2);
                 const rr2 = riskD > 0 ? (tpD / riskD).toFixed(2) : '—';
                 if (!this._tpCanvas) this._tpCanvas = new SimpleCanvasTextRenderer();
                 // pips centered in TP box, RR near entry line
@@ -288,9 +289,10 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
             // TV-style text with pips and amount
             const pipMult = (options.pair||'').includes('JPY') ? 100 : 10000
             const lots = options.lots || 0
+            const pv = ({USD:10,JPY:6.25,CHF:12.65,CAD:7.20,GBP:13.35})[(options.pair||'').replace(/\//g,'').slice(-3)] || 10
             const riskPips = (riskDistance * pipMult).toFixed(1)
             const riskPct = P0_logical.price > 0 ? ((riskDistance / P0_logical.price) * 100).toFixed(3) : '0'
-            const riskAmt = (riskDistance * pipMult * lots * 10).toFixed(2)
+            const riskAmt = (riskDistance * pipMult * lots * pv).toFixed(2)
             const rrCalc = P2_logical ? (Math.abs(P0_logical.price - P2_logical.price) / riskDistance).toFixed(2) : '—'
             const entryStats = `PyG Apertura: ${priceFormatter.format(riskDistance)}, Cantidad: ${Math.round(lots * 10000)}\nratio riesgo/beneficio: ${rrCalc}`
             const riskStats = `Stop: ${priceFormatter.format(riskDistance)} (${riskPct}%) ${riskPips}, Importe: ${riskAmt}`;
@@ -345,7 +347,7 @@ class LineToolLongShortPositionPaneView extends LineToolPaneView {
                 // TV-style reward text
                 const rewardPips = (rewardDistance * pipMult).toFixed(1)
                 const rewardPct = P0_logical.price > 0 ? ((rewardDistance / P0_logical.price) * 100).toFixed(3) : '0'
-                const rewardAmt = (rewardDistance * pipMult * lots * 10).toFixed(2)
+                const rewardAmt = (rewardDistance * pipMult * lots * pv).toFixed(2)
                 const rewardStats = `Objetivo: ${priceFormatter.format(rewardDistance)} (${rewardPct}%) ${rewardPips}, Importe: ${rewardAmt}`;
                 // Capture user text (if any) from the merged options
                 const rewardUserNote = finalRewardTextOptions.value;
