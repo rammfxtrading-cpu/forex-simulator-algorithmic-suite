@@ -57,7 +57,7 @@ function buildText(cfg) {
   }
 }
 
-function buildOptions(toolKey, cfg) {
+function buildOptions(toolKey, cfg, pair) {
   const base = { visible: true, editable: true }
 
   if (toolKey === 'Path') {
@@ -110,6 +110,7 @@ function buildOptions(toolKey, cfg) {
       entryStopLossRectangle: { background: { color: cfg.stopColor || 'rgba(239,83,80,0.2)' }, border: { width: cfg.borderWidth||1, style: 0, color: cfg.stopColor||'#ef5350', radius:0 } },
       entryPtRectangle: { background: { color: cfg.profitColor || 'rgba(38,166,154,0.2)' }, border: { width: cfg.borderWidth||1, style: 0, color: cfg.profitColor||'#26a69a', radius:0 } },
       showAutoText: false,
+      pair: pair || '',
       textColor: cfg.textColor || '#ffffff',
     }
   }
@@ -134,6 +135,8 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   const cfgRef         = useRef({ ...DEFAULT_CFG })
 
   useEffect(() => { cfgRef.current = toolConfigs }, [toolConfigs])
+  const pairRef        = useRef(activePair)
+  useEffect(() => { pairRef.current = activePair }, [activePair])
 
   // Load tool config from Supabase on mount
   useEffect(() => {
@@ -187,7 +190,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
     const p = pluginRef.current; if (!p) return
     const cfg = cfgRef.current[toolKey] || DEFAULT_CFG[toolKey] || {}
     const newCfg = { ...cfg, label: '' }
-    try { p.addLineTool(toolKey, [], buildOptions(toolKey, newCfg)) } catch (e) { console.error('addTool:', e) }
+    try { p.addLineTool(toolKey, [], buildOptions(toolKey, newCfg, pairRef.current)) } catch (e) { console.error('addTool:', e) }
   }, [])
 
   const updateToolConfig = useCallback((toolKey, patch) => {
@@ -224,7 +227,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
       const arr = JSON.parse(json)
       const points = arr?.[0]?.points || []
       if (!points.length) { console.warn('applyToTool: no points found for', toolId); return }
-      p.createOrUpdateLineTool(toolKey, points, buildOptions(toolKey, cfg), toolId)
+      p.createOrUpdateLineTool(toolKey, points, buildOptions(toolKey, cfg, pairRef.current), toolId)
     } catch (e) { console.error('applyToTool:', e) }
   }, [])
 
