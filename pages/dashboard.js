@@ -332,7 +332,7 @@ export default function Dashboard() {
               <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
               </div>
-              <div style={{...s.ctaTitle,color:'#1E90FF'}}>Operativa R.A.M.M.FX TRADING™</div>
+              <div style={s.ctaTitle}><span style={{color:'rgba(255,255,255,.65)'}}>Operativa </span><span style={{color:'#1E90FF'}}>R.A.M.M.FX TRADING™</span></div>
               <div style={s.ctaSub}>Vídeos y flujos de trabajo para el recap diario</div>
               <div style={s.ctaLink}>Start now →</div>
             </div>
