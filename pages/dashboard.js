@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ChallengeSetupModal from '../components/ChallengeSetupModal'
+import NetworkBg from '../components/NetworkBg'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -53,7 +54,6 @@ function getSessionVisualState(session) {
 
 export default function Dashboard() {
   const router = useRouter()
-  const bgCanvasRef = useRef(null)
   const logoCanvasRef = useRef(null)
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -85,43 +85,6 @@ export default function Dashboard() {
     })
   }, [])
 
-  useEffect(() => {
-    const canvas = bgCanvasRef.current
-    if (!canvas || loading) return
-    const ctx = canvas.getContext('2d')
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
-    const nodes = []
-    for (let i = 0; i < 60; i++) {
-      nodes.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, vx:(Math.random()-.5)*.3, vy:(Math.random()-.5)*.3, r:Math.random()*1.8+0.5, pulse:Math.random()*Math.PI*2 })
-    }
-    let id
-    let lastT = 0
-    function draw(ts) {
-      id = requestAnimationFrame(draw)
-      if (document.hidden) return
-      if (ts - lastT < 33) return  // cap at 30fps
-      lastT = ts
-      ctx.clearRect(0,0,canvas.width,canvas.height)
-      for (let i=0;i<nodes.length;i++) for (let j=i+1;j<nodes.length;j++) {
-        const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy)
-        if(d<180){ctx.strokeStyle=`rgba(0,100,255,${(1-d/180)*.4})`;ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.stroke()}
-      }
-      nodes.forEach(n=>{
-        // Simple dot — no radial gradient per node (expensive)
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r*(1.2),0,Math.PI*2)
-        ctx.fillStyle=n.pulse>Math.PI?'rgba(150,210,255,0.85)':'rgba(255,255,255,0.85)'
-        ctx.fill()
-        n.x+=n.vx;n.y+=n.vy
-        if(n.x<0||n.x>canvas.width)n.vx*=-1
-        if(n.y<0||n.y>canvas.height)n.vy*=-1
-      })
-    }
-    draw(0)
-    const onResize=()=>{canvas.width=window.innerWidth;canvas.height=window.innerHeight}
-    window.addEventListener('resize',onResize)
-    return ()=>{cancelAnimationFrame(id);window.removeEventListener('resize',onResize)}
-  }, [loading])
 
   useEffect(() => {
     const canvas = logoCanvasRef.current
@@ -237,7 +200,7 @@ export default function Dashboard() {
 
   return (
     <div style={s.root}>
-      <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
+      <NetworkBg />
 
       <div style={s.sidebar}>
         <div style={s.logoWrap}>
@@ -561,7 +524,7 @@ const s = {
   iconBtn:{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:8,padding:'8px',cursor:'pointer',color:'#a0b0c8',display:'flex',alignItems:'center',justifyContent:'center'},
   startBtn:{display:'flex',alignItems:'center',gap:8,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF30',fontFamily:'Montserrat,sans-serif'},
   ctaRow:{display:'flex',gap:16,marginBottom:28},
-  ctaCard:{flex:1,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12,padding:'24px 20px',cursor:'pointer',transition:'all .2s'},
+  ctaCard:{flex:1,background:'rgba(4,10,24,0.7)',WebkitBackdropFilter:'blur(18px) saturate(160%)',backdropFilter:'blur(18px) saturate(160%)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12,padding:'24px 20px',cursor:'pointer',transition:'all .2s'},
   ctaOff:{opacity:.7,cursor:'default'},
   ctaIcon:{width:44,height:44,borderRadius:10,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14},
   ctaTitle:{fontSize:14,fontWeight:700,color:'#ffffff',marginBottom:6},
