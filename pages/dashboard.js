@@ -275,7 +275,7 @@ export default function Dashboard() {
           </div>
 
           <div style={s.ctaRow}>
-            <div style={{...s.ctaCard,borderColor:'#1E90FF60',background:'rgba(0,20,60,0.35)'}} onClick={()=>setShowNew(true)}>
+            <div className="ctaCardHover" style={s.ctaCard} onClick={()=>setShowNew(true)}>
               <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="5,3 19,12 5,21"/></svg>
               </div>
@@ -283,7 +283,7 @@ export default function Dashboard() {
               <div style={s.ctaSub}>Replay historical candles and train your entries candle by candle</div>
               <div style={s.ctaLink}>Start now →</div>
             </div>
-            <div style={{...s.ctaCard,borderColor:'#1E90FF60',background:'rgba(0,20,60,0.35)'}} onClick={()=>setShowChallenge(true)}>
+            <div className="ctaCardHover" style={s.ctaCard} onClick={()=>setShowChallenge(true)}>
               <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><path d="M12 2L4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4z"/></svg>
               </div>
@@ -291,7 +291,7 @@ export default function Dashboard() {
               <div style={s.ctaSub}>Challenge tipo FTMO: supera las fases respetando las reglas de drawdown</div>
               <div style={s.ctaLink}>Start now →</div>
             </div>
-            <div style={{...s.ctaCard,borderColor:'#1E90FF60',background:'rgba(0,20,60,0.35)'}} onClick={()=>router.push('/operativas')}>
+            <div className="ctaCardHover" style={s.ctaCard} onClick={()=>router.push('/operativas')}>
               <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
               </div>
@@ -486,6 +486,8 @@ export default function Dashboard() {
         .spinner{width:32px;height:32px;border:2px solid #0a1628;border-top-color:#1E90FF;border-radius:50%;animation:spin .7s linear infinite}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes ctaRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+        .ctaCardHover{transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+        .ctaCardHover:hover{transform:translateY(-4px);border-color:rgba(30,144,255,.75);box-shadow:0 12px 38px rgba(30,144,255,.22)}
         input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:0.5}
         select option{background:#030f20;color:#fff}
       `}</style>
