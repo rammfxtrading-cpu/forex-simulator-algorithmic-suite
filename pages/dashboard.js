@@ -328,13 +328,13 @@ export default function Dashboard() {
               <div style={s.ctaSub}>Challenge tipo FTMO: supera las fases respetando las reglas de drawdown</div>
               <div style={s.ctaLink}>Start now →</div>
             </div>
-            <div style={{...s.ctaCard,...s.ctaOff}}>
-              <div style={{...s.ctaIcon,background:'#ffffff05',borderColor:'#1a3050'}}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a7aaa" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            <div style={{...s.ctaCard,borderColor:'#1E90FF60',background:'rgba(0,20,60,0.35)'}} onClick={()=>router.push('/operativas')}>
+              <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
               </div>
-              <div style={{...s.ctaTitle,color:'#4a6a8a'}}>Operativa R.A.M.M.FX</div>
-              <div style={{...s.ctaSub,color:'#3a5570'}}>Vídeos y flujos de trabajo para el recap diario</div>
-              <div style={{fontSize:11,fontWeight:700,color:'#4a6a8a'}}>Coming soon</div>
+              <div style={s.ctaTitle}>Operativa R.A.M.M.FX</div>
+              <div style={s.ctaSub}>Vídeos y flujos de trabajo para el recap diario</div>
+              <div style={s.ctaLink}>Start now →</div>
             </div>
           </div>
 
