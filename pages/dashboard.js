@@ -62,6 +62,7 @@ export default function Dashboard() {
   const [trades, setTrades] = useState([])
   const [showNew, setShowNew] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [newErr, setNewErr] = useState('')
   const [activeView, setActiveView] = useState('dashboard')
   const [hoveredNav, setHoveredNav] = useState(null)
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
@@ -131,12 +132,22 @@ export default function Dashboard() {
   async function createSession() {
     if (!form.name || !form.dateFrom || !form.dateTo) return
     setCreating(true)
+    setNewErr('')
     const { data, error } = await supabase.from('sim_sessions').insert({
       user_id: user.id, name: form.name, pair: form.pair,
       timeframe: 'H1', date_from: form.dateFrom, date_to: form.dateTo,
       capital: parseFloat(form.capital), balance: parseFloat(form.capital), status: 'active'
     }).select().maybeSingle()
     setCreating(false)
+    if (error) {
+      const m = (error.message || '').toLowerCase()
+      if (m.includes('limite de sesiones') || m.includes('max ')) {
+        setNewErr('Tu plan Basic permite 6 sesiones (Extra: 12). Has alcanzado el limite. Borra una sesion o pasa a Extra para crear mas.')
+      } else {
+        setNewErr('No se pudo crear la sesion. Intentalo de nuevo.')
+      }
+      return
+    }
     if (!error && data) {
       setShowNew(false)
       setForm({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
@@ -473,6 +484,9 @@ export default function Dashboard() {
                 <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min="2024-07-01" value={form.dateTo} onChange={e=>setForm({...form,dateTo:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
               </div>
             </div>
+            {newErr && (
+              <div style={{background:'rgba(240,62,62,0.12)',border:'1px solid rgba(240,62,62,0.4)',borderRadius:8,padding:'10px 14px',marginBottom:12,fontSize:12,color:'#ff8585',fontFamily:'Montserrat,sans-serif',lineHeight:1.4}}>{newErr}</div>
+            )}
             <button onClick={createSession} disabled={creating} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'13px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF30',fontFamily:'Montserrat,sans-serif',opacity:creating?0.7:1}}>
               {creating ? 'Creating...' : 'Create Session →'}
             </button>

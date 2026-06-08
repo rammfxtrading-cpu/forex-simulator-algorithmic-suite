@@ -95,6 +95,27 @@ export default function Admin() {
     setDetail(null)
   }
 
+  async function setPlanAlumno(userId, plan) {
+    setBusy(true)
+    setErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch('/api/admin/set-plan-sim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ user_id: userId, plan })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Error')
+      await refresh()
+    } catch (e) {
+      setErr(e.message || 'Error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function toggleAcceso(userId, activar) {
     setBusy(true)
     setErr('')
@@ -516,6 +537,11 @@ export default function Admin() {
                         <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:2 }}>
                           <div style={s.cellName}>{u.nombre || u.email?.split('@')[0]}</div>
                           {userBadges(u)}
+                          <span
+                            title={isSelf ? 'Tu plan' : (u.plan === 'extra' ? 'Plan Extra (12 sesiones) - click para Basic' : 'Plan Basic (6 sesiones) - click para Extra')}
+                            style={isSelf ? (u.plan === 'extra' ? s.badgePlanExtra : s.badgePlanBasic) : { ...(u.plan === 'extra' ? s.badgePlanExtra : s.badgePlanBasic), cursor: busy ? 'wait' : 'pointer' }}
+                            onClick={() => { if (!busy && !isSelf) setPlanAlumno(u.id, u.plan === 'extra' ? 'basic' : 'extra') }}
+                          >{u.plan === 'extra' ? 'EXTRA' : 'BASIC'}</span>
                         </div>
                         <div style={s.cellEmail}>{u.email}</div>
                       </div>
@@ -1071,6 +1097,8 @@ const s = {
   cellActions:{textAlign:'right',display:'flex',gap:4,justifyContent:'flex-end'},
 
   badgeAdmin:{fontSize:9,fontWeight:800,letterSpacing:1,padding:'3px 8px',borderRadius:4,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',boxShadow:'0 0 10px rgba(30,144,255,0.4)',textTransform:'uppercase'},
+  badgePlanExtra:{fontSize:9,fontWeight:800,letterSpacing:1,padding:'3px 8px',borderRadius:4,background:'linear-gradient(135deg,#16c95d,#0a8a3c)',color:'#fff',boxShadow:'0 0 10px rgba(22,201,93,0.4)',textTransform:'uppercase'},
+  badgePlanBasic:{fontSize:9,fontWeight:800,letterSpacing:1,padding:'3px 8px',borderRadius:4,background:'rgba(200,208,224,0.12)',color:'#c8d0e0',border:'1px solid rgba(200,208,224,0.25)',textTransform:'uppercase'},
   badgeYou:{fontSize:9,fontWeight:800,letterSpacing:1,padding:'3px 8px',borderRadius:4,background:'rgba(30,144,255,0.15)',color:'#1E90FF',border:'1px solid rgba(30,144,255,0.3)',textTransform:'uppercase'},
 
   btnSuccess:{background:'linear-gradient(135deg,#16c95d,#0fa048)',color:'#fff',border:'none',borderRadius:8,padding:'8px 14px',fontSize:11,fontWeight:700,letterSpacing:0.3,display:'inline-flex',alignItems:'center',gap:6,transition:'opacity .15s'},

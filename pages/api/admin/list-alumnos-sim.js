@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   // 1) Traer todos los perfiles
   const { data: profiles, error: profErr } = await supabaseAdmin
     .from('profiles')
-    .select('id, email, nombre, rol_global, journal_activo, simulador_activo, created_at')
+    .select('id, email, nombre, rol_global, journal_activo, simulador_activo, plan, created_at')
     .order('created_at', { ascending: false })
 
   if (profErr) {
@@ -74,6 +74,7 @@ export default async function handler(req, res) {
       rol_global: p.rol_global,
       journal_activo: !!p.journal_activo,
       simulador_activo: !!p.simulador_activo,
+      plan: p.plan,
       created_at: p.created_at,
       metrics: {
         sessions: userSessions.length,

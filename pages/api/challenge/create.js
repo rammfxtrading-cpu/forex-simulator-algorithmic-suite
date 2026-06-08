@@ -105,6 +105,10 @@ export default async function handler(req, res) {
     .single()
 
   if (error) {
+    const m = (error.message || '').toLowerCase()
+    if (m.includes('limite de sesiones') || m.includes('max ')) {
+      return res.status(403).json({ error: 'Tu plan Basic permite 6 sesiones (Extra: 12). Has alcanzado el limite. Borra una sesion o pasa a Extra para crear mas.' })
+    }
     return res.status(500).json({ error: 'Error creando challenge', detail: error.message })
   }
 
