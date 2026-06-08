@@ -3,6 +3,7 @@ import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
+import NetworkBg from '../components/NetworkBg'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // /operativas — Operativas R.A.M.M.FX TRADING (página huérfana hasta el switch
@@ -47,7 +48,7 @@ const CSS = `
   .opv-sub{color:rgba(255,255,255,.55);font-size:13.5px;line-height:1.7;margin:12px 0 6px;max-width:640px}
   .opv-lock{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.4);font-size:11.5px;margin:6px 0 34px}
   .opv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
-  .opv-card{background:linear-gradient(165deg,rgba(30,144,255,.10),rgba(255,255,255,.03) 55%);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:22px 20px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;animation:opvRise .5s ease both;box-shadow:0 4px 22px rgba(0,0,0,.35)}
+  .opv-card{background:linear-gradient(165deg,rgba(30,144,255,.10),rgba(255,255,255,.03) 55%),rgba(13,18,28,.55);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:22px 20px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;animation:opvRise .5s ease both;box-shadow:0 4px 22px rgba(0,0,0,.35)}
   .opv-card:nth-child(2){animation-delay:.08s}.opv-card:nth-child(3){animation-delay:.16s}
   @keyframes opvRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
   .opv-card:hover{transform:translateY(-4px);border-color:rgba(30,144,255,.75);box-shadow:0 12px 38px rgba(30,144,255,.22)}
@@ -115,7 +116,7 @@ const CSS = `
   .opv-rmark{display:flex;flex-direction:column;align-items:center}
   .opv-rdot{width:32px;height:32px;min-height:32px;flex:none;border-radius:50%;border:2px solid rgba(30,144,255,.85);display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;line-height:1;text-align:center;color:#A7CDF5;background:#0B0F18;transition:.2s;box-shadow:0 0 14px rgba(30,144,255,.35)}
   .opv-rseg{width:2px;flex:1;min-height:16px;background:linear-gradient(180deg,rgba(30,144,255,.6),rgba(30,144,255,.15));margin:6px 0}
-  .opv-rcard{flex:1;background:linear-gradient(165deg,rgba(30,144,255,.06),rgba(255,255,255,.03) 55%);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px 16px;margin-bottom:14px;transition:border-color .2s,box-shadow .2s}
+  .opv-rcard{flex:1;background:linear-gradient(165deg,rgba(30,144,255,.06),rgba(255,255,255,.03) 55%),rgba(13,18,28,.55);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px 16px;margin-bottom:14px;transition:border-color .2s,box-shadow .2s}
   .opv-rcard h3{font-size:13.5px;font-weight:700;margin:0}
   .opv-rdesc{color:rgba(255,255,255,.55);font-size:11.5px;line-height:1.6;margin:4px 0 0}
   .opv-chklist{margin-top:11px;border-top:1px solid rgba(255,255,255,.1)}
@@ -206,7 +207,6 @@ const FINE_COMUN = 'Este modelo es un marco de referencia operativo. Cada trader
 export default function Operativas() {
   const router = useRouter()
   const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
-  const bgCanvasRef = useRef(null)
   const rutaRef = useRef(null)
   const [open, setOpen] = useState(null) // 'ldn' | 'ny' | 'sw' | null
   const [checks, setChecks] = useState({})
@@ -240,35 +240,6 @@ export default function Operativas() {
     return () => document.removeEventListener('keydown', onKey)
   }, [])
 
-  // Red cósmica de fondo — mismo patrón que dashboard, analytics y admin
-  useEffect(() => {
-    const canvas = bgCanvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
-    const nodes = []
-    for (let i = 0; i < 60; i++) {
-      nodes.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, vx:(Math.random()-.5)*.3, vy:(Math.random()-.5)*.3, r:Math.random()*1.8+0.5 })
-    }
-    let id, lastT = 0
-    function draw(ts) {
-      id = requestAnimationFrame(draw)
-      if (document.hidden) return
-      if (ts - lastT < 33) return
-      lastT = ts
-      ctx.clearRect(0,0,canvas.width,canvas.height)
-      for (let i=0;i<nodes.length;i++) for (let j=i+1;j<nodes.length;j++) {
-        const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy)
-        if (d<180) { ctx.strokeStyle=`rgba(0,100,255,${(1-d/180)*.4})`; ctx.lineWidth=.6; ctx.beginPath(); ctx.moveTo(nodes[i].x,nodes[i].y); ctx.lineTo(nodes[j].x,nodes[j].y); ctx.stroke() }
-      }
-      nodes.forEach(n => { ctx.beginPath(); ctx.arc(n.x, n.y, n.r*1.2, 0, Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fill(); n.x+=n.vx; n.y+=n.vy; if(n.x<0||n.x>canvas.width)n.vx*=-1; if(n.y<0||n.y>canvas.height)n.vy*=-1 })
-    }
-    draw(0)
-    const onResize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight }
-    window.addEventListener('resize', onResize)
-    return () => { cancelAnimationFrame(id); window.removeEventListener('resize', onResize) }
-  }, [authLoading, hasAccess])
 
   if (!authLoading && !hasAccess) {
     return <NoAccess profile={profile} producto="Simulador" />
@@ -285,7 +256,7 @@ export default function Operativas() {
         <div className="opv-loading">CARGANDO…</div>
       ) : (
         <>
-          <canvas ref={bgCanvasRef} className="opv-stars" />
+          <NetworkBg />
           <div className="opv-scroll" style={open ? { overflow: 'hidden' } : undefined}>
             <div className="opv-wrap">
               <div className="opv-top">
