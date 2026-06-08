@@ -76,7 +76,7 @@ export default function Dashboard() {
       // Cargar perfil para saber si es admin
       const { data: prof } = await supabase
         .from('profiles')
-        .select('id, email, nombre, rol_global, journal_activo, simulador_activo')
+        .select('id, email, nombre, rol_global, journal_activo, simulador_activo, plan')
         .eq('id', session.user.id)
         .single()
       if (prof) setProfile(prof)
@@ -142,7 +142,11 @@ export default function Dashboard() {
     if (error) {
       const m = (error.message || '').toLowerCase()
       if (m.includes('limite de sesiones') || m.includes('max ')) {
-        setNewErr('Tu plan Basic permite 6 sesiones (Extra: 12). Has alcanzado el limite. Borra una sesion o pasa a Extra para crear mas.')
+        const isExtra = profile && profile.plan === 'extra'
+        const planLabel = isExtra ? 'Extra' : 'Basic'
+        const planMax = isExtra ? 12 : 6
+        const extraHint = isExtra ? '' : ' o pasa a Extra'
+        setNewErr(`Tu plan ${planLabel} permite ${planMax} sesiones. Has alcanzado el limite. Borra una sesion${extraHint} para crear mas.`)
       } else {
         setNewErr('No se pudo crear la sesion. Intentalo de nuevo.')
       }

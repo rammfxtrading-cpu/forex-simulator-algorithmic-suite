@@ -107,7 +107,12 @@ export default async function handler(req, res) {
   if (error) {
     const m = (error.message || '').toLowerCase()
     if (m.includes('limite de sesiones') || m.includes('max ')) {
-      return res.status(403).json({ error: 'Tu plan Basic permite 6 sesiones (Extra: 12). Has alcanzado el limite. Borra una sesion o pasa a Extra para crear mas.' })
+      const { data: prof } = await supabaseAdmin.from('profiles').select('plan').eq('id', user.id).single()
+      const isExtra = prof && prof.plan === 'extra'
+      const planLabel = isExtra ? 'Extra' : 'Basic'
+      const planMax = isExtra ? 12 : 6
+      const extraHint = isExtra ? '' : ' o pasa a Extra'
+      return res.status(403).json({ error: `Tu plan ${planLabel} permite ${planMax} sesiones. Has alcanzado el limite. Borra una sesion${extraHint} para crear mas.` })
     }
     return res.status(500).json({ error: 'Error creando challenge', detail: error.message })
   }
