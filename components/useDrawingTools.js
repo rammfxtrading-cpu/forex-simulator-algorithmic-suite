@@ -133,6 +133,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   const [toolConfigs,  setToolConfigs]  = useState({ ...DEFAULT_CFG })
   const [pluginReady,  setPluginReady]  = useState(false)
   const cfgRef         = useRef({ ...DEFAULT_CFG })
+  const cfgSaveTimer   = useRef(null)
 
   useEffect(() => { cfgRef.current = toolConfigs }, [toolConfigs])
   const pairRef        = useRef(activePair)
@@ -196,12 +197,17 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   const updateToolConfig = useCallback((toolKey, patch) => {
     setToolConfigs(prev => {
       const next = { ...prev, [toolKey]: { ...prev[toolKey], ...patch } }
-      // Save to Supabase
+      // Save to Supabase — debounced 600ms: un drag del color picker dispara
+      // decenas de change-events; persistimos solo el estado final (cfgRef ya
+      // sincronizado por el effect). El color se aplica en pantalla al instante.
       if (userId) {
-        supabase.from('user_tool_config').upsert(
-          { user_id: userId, config: next, updated_at: new Date().toISOString() },
-          { onConflict: 'user_id' }
-        ).then(() => {}).catch(() => {})
+        if (cfgSaveTimer.current) clearTimeout(cfgSaveTimer.current)
+        cfgSaveTimer.current = setTimeout(() => {
+          supabase.from('user_tool_config').upsert(
+            { user_id: userId, config: cfgRef.current, updated_at: new Date().toISOString() },
+            { onConflict: 'user_id' }
+          ).then(() => {}).catch(() => {})
+        }, 600)
       }
       return next
     })
