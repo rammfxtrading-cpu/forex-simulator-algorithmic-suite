@@ -428,6 +428,7 @@ export default function SessionPage(){
           if(tf&&activePairRef.current){
             const n={...pairTfRef.current,[activePairRef.current]:tf}
             pairTfRef.current=n;setPairTf(n)
+            if(id) supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(()=>{}).catch(()=>{})
           }
           return ''
         })
@@ -849,7 +850,7 @@ export default function SessionPage(){
       e.play();setIsPlaying(true)
     }
   },[activePair,saveProgress,deselectAll])
-  const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))},[activePair,updateChart])
+  const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
   const handleGoTo=useCallback((sessKey)=>{
     setGotoOpen(false)
@@ -864,7 +865,8 @@ export default function SessionPage(){
     setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
     const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
     updateChart(activePair,e,true)
-  },[activePair,updateChart])
+    saveProgress(e.currentTime)
+  },[activePair,updateChart,saveProgress])
 
   // ── Trading ───────────────────────────────────────────────────────────────────────────────
   // Acciones de trading (closePosition, preview y órdenes límite, drag SL/TP,
@@ -986,13 +988,19 @@ export default function SessionPage(){
     return()=>window.removeEventListener('keydown',onKey)
   },[handlePlayPause,handleStep,challengeLocked])
 
+  // Autosave: persistir avance cada 5s si ha cambiado (play, scrubber, etc)
+  useEffect(()=>{
+    let last=0
+    const iv=setInterval(()=>{const e=pairState.current[activePairRef.current]?.engine;if(e?.currentTime&&e.currentTime!==last){last=e.currentTime;saveProgress(e.currentTime)}},5000)
+    return()=>clearInterval(iv)
+  },[saveProgress])
   useEffect(()=>()=>{
     // Save drawings before unmount
     if(saveDrawingsRef.current) saveDrawingsRef.current()
     // Save progress before unmount
     const e = pairState.current[activePairRef.current]?.engine
     if(e?.currentTime && id){
-      try{supabase.from('sim_sessions').update({last_timestamp:e.currentTime,balance:balanceRef.current}).eq('id',id)}catch(err){}
+      try{supabase.from('sim_sessions').update({last_timestamp:e.currentTime,balance:balanceRef.current,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)}catch(err){}
     }
     Object.values(pairState.current).forEach(ps=>ps?.engine?.pause())
     Object.values(chartMap.current).forEach(cr=>{try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{}})
@@ -1240,7 +1248,7 @@ export default function SessionPage(){
       <div style={s.tfBar}>
         {TF_LIST.map(tf=>(
           <button key={tf} style={{...s.tfBtn,...(activeTf===tf?s.tfActive:{})}}
-            onClick={()=>{const n={...pairTfRef.current,[activePair]:tf};pairTfRef.current=n;setPairTf(n)}}
+            onClick={()=>{const n={...pairTfRef.current,[activePair]:tf};pairTfRef.current=n;setPairTf(n);if(id)supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(()=>{}).catch(()=>{})}}
           >{tf}</button>
         ))}
         <div style={{flex:1}}/>

@@ -21,7 +21,7 @@ import { computePhantomsNeeded } from '../lib/sessionUi'
 export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools }){
   const saveProgress=useCallback(async(ts)=>{
     if(!id||!ts) return
-    try{ await supabase.from('sim_sessions').update({last_timestamp:ts}).eq('id',id) }catch(e){}
+    try{ await supabase.from('sim_sessions').update({last_timestamp:ts,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id) }catch(e){}
   },[id])
 
   // ── Load pair data ────────────────────────────────────────────────────────────
