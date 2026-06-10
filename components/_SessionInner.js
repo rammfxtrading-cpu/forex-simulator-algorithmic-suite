@@ -1070,6 +1070,7 @@ export default function SessionPage(){
               const up=(ev)=>{
                 window.removeEventListener('mousemove',mv)
                 window.removeEventListener('mouseup',up)
+                if(moved){setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}
                 if(!moved){
                   setSelectedDrawing(prev=>prev?.id===d.id?null:{id:d.id,x:ev.clientX,y:ev.clientY-80})
                 }
