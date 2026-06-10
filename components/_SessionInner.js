@@ -1180,9 +1180,13 @@ export default function SessionPage(){
         templates={templates}
         onSaveTemplate={async(name)=>{
           const cfg=activeToolKey?toolConfigs[activeToolKey]:{}
+          // La plantilla es una FOTO COMPLETA: captura tambien el texto actual
+          // del dibujo seleccionado (el tipo ya no persiste label).
+          let ownLabel=''
+          try{const a=JSON.parse(pluginRef.current?.getLineToolByID(selectedTool?.id)||'[]');ownLabel=a?.[0]?.options?.text?.value??''}catch{}
           const entry=selectedTool?.id?drawingTfMap[selectedTool.id]:null
           const tfsToSave=entry?(Array.isArray(entry)?entry:entry.tfs||null):null
-          const cfgWithTf={...cfg,...(tfsToSave?{visibleTf:tfsToSave}:{})}
+          const cfgWithTf={...cfg,label:ownLabel,...(tfsToSave?{visibleTf:tfsToSave}:{})}
           if(!userIdRef.current) return
           const insRes=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfgWithTf),data:'{}'}).select().single()
           if(insRes.data)setTemplates(prev=>[...prev,insRes.data])
@@ -1196,11 +1200,11 @@ export default function SessionPage(){
           try{
             const cfg=JSON.parse(t.config)
             const {visibleTf:tfs,...cfgWithoutTf}=cfg
+            // La plantilla replica TODO lo guardado (texto incluido). El tipo
+            // sigue sin persistir label: los dibujos nuevos nacen limpios.
             updateToolConfig(activeToolKey,{...cfgWithoutTf,label:''})
             if(selectedTool?.id){
-              let ownLabel=''
-              try{const arr=JSON.parse(pluginRef.current?.getLineToolByID(selectedTool.id)||'[]');ownLabel=arr?.[0]?.options?.text?.value??''}catch{}
-              applyToTool(selectedTool.id,activeToolKey,{...cfgWithoutTf,label:ownLabel})
+              applyToTool(selectedTool.id,activeToolKey,{...cfgWithoutTf,label:cfgWithoutTf.label??''})
               if(tfs&&Array.isArray(tfs)){
                 const json=pluginRef.current?.getLineToolByID(selectedTool.id)
                 const arr=json?JSON.parse(json):null
