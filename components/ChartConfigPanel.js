@@ -95,6 +95,100 @@ export function applyChartConfig(chartMap, pair, config) {
   } catch (e) {}
 }
 
+// Hoisted to module scope: defining these inside the component gave them a new
+// identity on every render, so React remounted the <input type="color"> on each
+// change event and Chrome closed the native picker instantly (no drag possible).
+
+const s = {
+  overlay: {
+    position: 'fixed', inset: 0, zIndex: 2000,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  backdrop: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+    backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+  },
+  panel: {
+    position: 'relative', zIndex: 1,
+    background: 'rgba(8,16,36,0.82)',
+    border: '1px solid rgba(30,144,255,0.25)',
+    borderRadius: 20,
+    boxShadow: '0 20px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)',
+    backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+    width: 380, maxHeight: '85vh', overflowY: 'auto',
+    fontFamily: "'Montserrat',sans-serif",
+    padding: '0 0 20px',
+  },
+  header: {
+    padding: '18px 20px 14px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  },
+  title: { fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: 1 },
+  closeBtn: {
+    background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
+    cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0,
+  },
+  section: { padding: '14px 20px 0' },
+  sectionTitle: {
+    fontSize: 9, fontWeight: 700, letterSpacing: 2,
+    color: 'rgba(30,144,255,0.7)', textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  row: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  label: { fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 500 },
+  colorWrap: {
+    display: 'flex', alignItems: 'center', gap: 6,
+  },
+  colorInput: {
+    width: 32, height: 24, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)',
+    cursor: 'pointer', padding: 2, background: 'none',
+  },
+  toggle: (active) => ({
+    width: 36, height: 20, borderRadius: 10, cursor: 'pointer', border: 'none',
+    background: active ? '#1E90FF' : 'rgba(255,255,255,0.1)',
+    position: 'relative', transition: 'background 0.2s',
+    flexShrink: 0,
+  }),
+  toggleKnob: (active) => ({
+    position: 'absolute', top: 2, left: active ? 18 : 2,
+    width: 16, height: 16, borderRadius: 8,
+    background: '#fff', transition: 'left 0.2s',
+  }),
+  divider: {
+    height: 1, background: 'rgba(255,255,255,0.05)',
+    margin: '14px 20px 0',
+  },
+  saveBtn: {
+    margin: '18px 20px 0',
+    width: 'calc(100% - 40px)',
+    padding: '10px 0',
+    background: 'linear-gradient(135deg,#1E90FF,#0a5cbf)',
+    border: 'none', borderRadius: 10,
+    color: '#fff', fontSize: 12, fontWeight: 700,
+    cursor: 'pointer', letterSpacing: 1,
+  },
+}
+
+const Toggle = ({ active, onChange }) => (
+  <button style={s.toggle(active)} onClick={() => onChange(!active)}>
+    <div style={s.toggleKnob(active)} />
+  </button>
+)
+
+const ColorRow = ({ label, value, onChange }) => (
+  <div style={s.row}>
+    <span style={s.label}>{label}</span>
+    <div style={s.colorWrap}>
+      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>{value}</span>
+      <input type="color" value={value} onChange={e => onChange(e.target.value)} style={s.colorInput} />
+    </div>
+  </div>
+)
+
 export default function ChartConfigPanel({ open, onClose, config, onSave }) {
   const [local, setLocal] = useState(config)
   const panelRef = useRef(null)
@@ -112,95 +206,8 @@ export default function ChartConfigPanel({ open, onClose, config, onSave }) {
 
   const set = (key, val) => setLocal(p => ({ ...p, [key]: val }))
 
-  const s = {
-    overlay: {
-      position: 'fixed', inset: 0, zIndex: 2000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    },
-    backdrop: {
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-      backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-    },
-    panel: {
-      position: 'relative', zIndex: 1,
-      background: 'rgba(8,16,36,0.82)',
-      border: '1px solid rgba(30,144,255,0.25)',
-      borderRadius: 20,
-      boxShadow: '0 20px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)',
-      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
-      width: 380, maxHeight: '85vh', overflowY: 'auto',
-      fontFamily: "'Montserrat',sans-serif",
-      padding: '0 0 20px',
-    },
-    header: {
-      padding: '18px 20px 14px',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    },
-    title: { fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: 1 },
-    closeBtn: {
-      background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
-      cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0,
-    },
-    section: { padding: '14px 20px 0' },
-    sectionTitle: {
-      fontSize: 9, fontWeight: 700, letterSpacing: 2,
-      color: 'rgba(30,144,255,0.7)', textTransform: 'uppercase',
-      marginBottom: 10,
-    },
-    row: {
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      marginBottom: 8,
-    },
-    label: { fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 500 },
-    colorWrap: {
-      display: 'flex', alignItems: 'center', gap: 6,
-    },
-    colorInput: {
-      width: 32, height: 24, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)',
-      cursor: 'pointer', padding: 2, background: 'none',
-    },
-    toggle: (active) => ({
-      width: 36, height: 20, borderRadius: 10, cursor: 'pointer', border: 'none',
-      background: active ? '#1E90FF' : 'rgba(255,255,255,0.1)',
-      position: 'relative', transition: 'background 0.2s',
-      flexShrink: 0,
-    }),
-    toggleKnob: (active) => ({
-      position: 'absolute', top: 2, left: active ? 18 : 2,
-      width: 16, height: 16, borderRadius: 8,
-      background: '#fff', transition: 'left 0.2s',
-    }),
-    divider: {
-      height: 1, background: 'rgba(255,255,255,0.05)',
-      margin: '14px 20px 0',
-    },
-    saveBtn: {
-      margin: '18px 20px 0',
-      width: 'calc(100% - 40px)',
-      padding: '10px 0',
-      background: 'linear-gradient(135deg,#1E90FF,#0a5cbf)',
-      border: 'none', borderRadius: 10,
-      color: '#fff', fontSize: 12, fontWeight: 700,
-      cursor: 'pointer', letterSpacing: 1,
-    },
-  }
 
-  const Toggle = ({ active, onChange }) => (
-    <button style={s.toggle(active)} onClick={() => onChange(!active)}>
-      <div style={s.toggleKnob(active)} />
-    </button>
-  )
 
-  const ColorRow = ({ label, value, onChange }) => (
-    <div style={s.row}>
-      <span style={s.label}>{label}</span>
-      <div style={s.colorWrap}>
-        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>{value}</span>
-        <input type="color" value={value} onChange={e => onChange(e.target.value)} style={s.colorInput} />
-      </div>
-    </div>
-  )
 
   return (
     <div style={s.overlay}>
