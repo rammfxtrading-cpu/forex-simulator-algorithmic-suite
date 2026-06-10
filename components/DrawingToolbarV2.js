@@ -74,7 +74,7 @@ export default function DrawingToolbarV2({ activeTool,onToolChange,onAddTool,onR
 }
 
 // ── Config pill ───────────────────────────────────────────────────────────────
-export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate,onDeleteTemplate,onOpenConfig,visibleTf,onVisibilityChange }) {
+export function DrawingConfigPill({ selectedTool,selectedLabel,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate,onDeleteTemplate,onOpenConfig,visibleTf,onVisibilityChange }) {
   const [pos,onMD]=useDrag({x:null,y:null})
   const [showText,setShowText]=useState(false)
   const [showTpl,setShowTpl]=useState(false)
@@ -84,7 +84,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
 
   const [showFib, setShowFib] = useState(false)
 
-  useEffect(()=>{ setLabel(toolConfig?.label||''); setShowText(false); setShowTpl(false); setShowFib(false) },[selectedTool?.id])
+  useEffect(()=>{ setLabel(selectedLabel||''); setShowText(false); setShowTpl(false); setShowFib(false) },[selectedTool?.id,selectedLabel])
 
   if(!selectedTool) return null
   const cfg=toolConfig||{}
@@ -161,7 +161,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
                 </label>
               </div>
               <input value={label} onChange={e=>setLabel(e.target.value)}
-                onKeyDown={e=>{if(e.key==='Enter'){apply({label});setShowText(false)}if(e.key==='Escape')setShowText(false)}}
+                onKeyDown={e=>{if(e.key==='Enter'){apply({label,__labelEdit:true});setShowText(false)}if(e.key==='Escape')setShowText(false)}}
                 placeholder="Escribe aquí..." autoFocus
                 style={{width:'100%',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:6,padding:'5px 8px',color:'#fff',fontSize:11,fontFamily:"'Montserrat',sans-serif",outline:'none',marginBottom:8,boxSizing:'border-box'}}
               />
@@ -180,7 +180,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
               <div style={{display:'flex',gap:3,marginBottom:8}}>
                 {H_ALIGN.map(a=><button key={a.k} title={a.k} onClick={()=>apply({textH:a.k})} style={{...btn(cfg.textH===a.k),flex:1,height:22,fontSize:12}}>{a.l}</button>)}
               </div>
-              <button onClick={()=>{apply({label});setShowText(false)}} style={{width:'100%',background:'rgba(41,98,255,0.4)',border:'1px solid rgba(41,98,255,0.6)',borderRadius:6,color:'#fff',fontSize:10,fontWeight:700,padding:'5px',cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>Aplicar</button>
+              <button onClick={()=>{apply({label,__labelEdit:true});setShowText(false)}} style={{width:'100%',background:'rgba(41,98,255,0.4)',border:'1px solid rgba(41,98,255,0.6)',borderRadius:6,color:'#fff',fontSize:10,fontWeight:700,padding:'5px',cursor:'pointer',fontFamily:"'Montserrat',sans-serif"}}>Aplicar</button>
             </div>
           </>
         )}

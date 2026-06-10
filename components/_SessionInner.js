@@ -1133,14 +1133,27 @@ export default function SessionPage(){
       />
       <DrawingConfigPill
         selectedTool={selectedTool}
+        selectedLabel={selectedTool?.id?(()=>{try{const a=JSON.parse(pluginRef.current?.getLineToolByID(selectedTool.id)||'[]');return a?.[0]?.options?.text?.value??''}catch{return ''}})():''}
         toolKey={activeToolKey}
         toolConfig={activeToolKey?toolConfigs[activeToolKey]:null}
         onUpdate={(newCfg)=>{
           const tk=activeToolKeyRef.current
           const st=selectedToolRef.current
           if(tk){
-            updateToolConfig(tk,newCfg)
-            if(st?.id) applyToTool(st.id,tk,newCfg)
+            // Etiqueta estilo TradingView: el texto pertenece al DIBUJO, no al tipo.
+            // Retocar estilo conserva el texto propio del dibujo seleccionado y no
+            // estampa etiquetas viejas del tipo. Solo la edicion explicita de texto
+            // (__labelEdit) cambia la etiqueta. El tipo nunca persiste label.
+            const {__labelEdit,...rest}=newCfg
+            let cfgForTool=rest
+            if(st?.id && !__labelEdit){
+              try{
+                const arr=JSON.parse(pluginRef.current?.getLineToolByID(st.id)||'[]')
+                cfgForTool={...rest,label:arr?.[0]?.options?.text?.value??''}
+              }catch{}
+            }
+            updateToolConfig(tk,{...rest,label:''})
+            if(st?.id) applyToTool(st.id,tk,cfgForTool)
             // Persist so changes survive reload
             setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },150)
           }
@@ -1183,9 +1196,11 @@ export default function SessionPage(){
           try{
             const cfg=JSON.parse(t.config)
             const {visibleTf:tfs,...cfgWithoutTf}=cfg
-            updateToolConfig(activeToolKey,cfgWithoutTf)
+            updateToolConfig(activeToolKey,{...cfgWithoutTf,label:''})
             if(selectedTool?.id){
-              applyToTool(selectedTool.id,activeToolKey,cfgWithoutTf)
+              let ownLabel=''
+              try{const arr=JSON.parse(pluginRef.current?.getLineToolByID(selectedTool.id)||'[]');ownLabel=arr?.[0]?.options?.text?.value??''}catch{}
+              applyToTool(selectedTool.id,activeToolKey,{...cfgWithoutTf,label:ownLabel})
               if(tfs&&Array.isArray(tfs)){
                 const json=pluginRef.current?.getLineToolByID(selectedTool.id)
                 const arr=json?JSON.parse(json):null
