@@ -38,6 +38,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     ps.trades=[...ps.trades,{...pos,exit:usePrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}]
     removePositionLines(posId,usePair)
     const newBalance = parseFloat((balanceRef.current+pnl).toFixed(2))
+    balanceRef.current=newBalance // sync inmediato: si 2 posiciones cierran en la misma vela, la 2a debe leer el balance ya actualizado
     setBalance(newBalance);setTick(t=>t+1)
     if(userIdRef.current){
       try{
