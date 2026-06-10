@@ -119,7 +119,7 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
         <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
           <span style={{fontSize:7,color:'rgba(255,255,255,0.45)',letterSpacing:0.5}}>FONDO</span>
           <label style={{width:22,height:22,borderRadius:4,cursor:'pointer',border:'1px solid rgba(255,255,255,0.2)',display:'block',overflow:'hidden',background:cfg.fillColor||'rgba(41,98,255,0.15)'}}>
-            <input type="color" value='#2962FF' onChange={e=>apply({fillColor:e.target.value+'28'})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+            <input type="color" value={((cfg.fillColor||'').startsWith('#')?cfg.fillColor:'#2962FF').slice(0,7)} onChange={e=>apply({fillColor:e.target.value+'28'})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
           </label>
         </div>
       </>}
@@ -303,19 +303,19 @@ export function DrawingConfigPill({ selectedTool,toolKey,toolConfig,onUpdate,onD
         {/* Color TP */}
         <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',title:'Color beneficio'}}>
           <span style={{width:16,height:16,borderRadius:3,background:cfg.profitColor||'rgba(38,166,154,0.4)',border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',overflow:'hidden'}}>
-            <input type="color" defaultValue="#26a69a" onChange={e=>apply({profitColor:e.target.value+'66'})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+            <input type="color" value={((cfg.profitColor||'').startsWith('#')?cfg.profitColor:'#26a69a').slice(0,7)} onChange={e=>apply({profitColor:e.target.value+'66'})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
           </span>
         </label>
         {/* Color SL */}
         <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',title:'Color stop'}}>
           <span style={{width:16,height:16,borderRadius:3,background:cfg.stopColor||'rgba(239,83,80,0.4)',border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',overflow:'hidden'}}>
-            <input type="color" defaultValue="#ef5350" onChange={e=>apply({stopColor:e.target.value+'66'})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+            <input type="color" value={((cfg.stopColor||'').startsWith('#')?cfg.stopColor:'#ef5350').slice(0,7)} onChange={e=>apply({stopColor:e.target.value+'66'})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
           </span>
         </label>
         {/* Color texto */}
         <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',title:'Color texto'}}>
           <span style={{width:16,height:16,borderRadius:3,background:cfg.textColor||'#ffffff',border:'1px solid rgba(255,255,255,0.2)',display:'inline-block',overflow:'hidden'}}>
-            <input type="color" defaultValue="#ffffff" onChange={e=>apply({textColor:e.target.value})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
+            <input type="color" value={((cfg.textColor||'').startsWith('#')?cfg.textColor:'#ffffff').slice(0,7)} onChange={e=>apply({textColor:e.target.value})} style={{opacity:0,width:'100%',height:'100%',cursor:'pointer'}}/>
           </span>
         </label>
         <div style={DIV}/>
