@@ -128,7 +128,7 @@ function buildOptions(toolKey, cfg, pair) {
   }
 }
 
-export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
+export function useDrawingTools({ chartMap, activePair, dataReady, userId, handlersRef }) {
   const pluginRef      = useRef(null)
   const [toolConfigs,  setToolConfigs]  = useState({ ...DEFAULT_CFG })
   const [pluginReady,  setPluginReady]  = useState(false)
@@ -157,7 +157,10 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
   const initPlugin = useCallback(async () => {
     if (!dataReady) return
     const cr = chartMap.current[activePair]
-    if (!cr?.chart || !cr?.series || pluginRef.current) return
+    if (!cr?.chart || !cr?.series) return
+    // Cache por par (fix fantasma s68): si el par ya tiene plugin, lo reusamos.
+    // NUNCA creamos uno encima ni dejamos huerfanos.
+    if (cr.plugin) { pluginRef.current = cr.plugin; setPluginReady(true); return }
     try {
       const { createLineToolsPlugin }                                            = await import('lightweight-charts-line-tools-core')
       const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
@@ -166,6 +169,8 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
       const { LineToolFibRetracement } = await import('../lightweight-charts-line-tools-fib-retracement')
       const { LineToolLongShortPosition } = await import('lightweight-charts-line-tools-long-short-position')
 
+      // Re-check tras el await: otra invocacion pudo construirlo mientras importabamos.
+      if (cr.plugin) { pluginRef.current = cr.plugin; setPluginReady(true); return }
       const plugin = createLineToolsPlugin(cr.chart, cr.series)
       plugin.registerLineTool('TrendLine',          LineToolTrendLine)
       plugin.registerLineTool('Path',               LineToolPath)
@@ -173,16 +178,31 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId }) {
       plugin.registerLineTool('Rectangle',          LineToolRectangle)
       plugin.registerLineTool('FibRetracement',     LineToolFibRetracement)
       plugin.registerLineTool('LongShortPosition',  LineToolLongShortPosition)
+      // Suscripcion 1x/plugin (fix s68): handlers enganchados UNA vez al crear el
+      // plugin; los wrappers delegan en handlersRef.current (closure mas reciente).
+      try {
+        plugin.subscribeLineToolsAfterEdit((e) => { try { handlersRef?.current?.afterEdit?.(e) } catch {} })
+        plugin.subscribeLineToolsDoubleClick((e) => { try { handlersRef?.current?.dblClick?.(e) } catch {} })
+      } catch (e) { console.error('subscribe drawing handlers:', e) }
+      cr.plugin = plugin
       pluginRef.current = plugin
-      // Signal that the plugin is ready — triggers onAfterEdit subscription in _SessionInner
       setPluginReady(true)
     } catch (e) { console.error('Drawing tools init error:', e) }
   }, [activePair, dataReady])
 
-  // Reset plugin and ready flag on pair change
+  // Cambio de par (fix fantasma s68): sin teardown destructivo. Si el destino ya
+  // tiene plugin cacheado, re-apuntamos SINCRONO (sin hueco async con el ref viejo).
+  // Si es nuevo, limpiamos el ref e initPlugin lo crea. Al SALIR, deseleccionamos
+  // el plugin del par que dejamos (sus listeners de window quedan inertes: sin
+  // seleccion, mouseup/teclas = no-op).
   useEffect(() => {
-    pluginRef.current = null
-    setPluginReady(false)
+    const cr = chartMap.current[activePair]
+    if (cr?.plugin) { pluginRef.current = cr.plugin; setPluginReady(true) }
+    else { pluginRef.current = null; setPluginReady(false) }
+    const leavingPair = activePair
+    return () => {
+      try { chartMap.current[leavingPair]?.plugin?.deselectAllTools?.() } catch {}
+    }
   }, [activePair])
 
   useEffect(() => { if (dataReady) initPlugin() }, [dataReady, initPlugin])

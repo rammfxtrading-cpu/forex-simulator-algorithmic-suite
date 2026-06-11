@@ -167,11 +167,15 @@ export default function SessionPage(){
   }
   const { drawings, drawingsRef, addDrawing, updateDrawing, removeDrawing, removeAll: removeAllCustom, toJSON: customDrawingsToJSON, fromJSON: customDrawingsFromJSON } = useCustomDrawings()
 
+  // Ref de handlers de dibujo (fix s68): el plugin se suscribe UNA vez (initPlugin) y
+  // los wrappers leen este ref para invocar siempre el closure mas reciente.
+  const drawingHandlersRef = useRef({})
   const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
     userId: userIdRef.current,
+    handlersRef: drawingHandlersRef,
   })
   
 
@@ -232,8 +236,11 @@ export default function SessionPage(){
   useEffect(() => { saveDrawingsRef.current = saveSessionDrawings }, [saveSessionDrawings])
 
   // Load session drawings — wait for plugin to be fully ready (async init)
+  // Dedup por par (fix s68): no re-importar al volver (no pisar ediciones recientes).
+  const drawingsLoadedRef = useRef({})
   useEffect(() => {
     if(!pluginReady || !id || !userIdRef.current) return
+    if(drawingsLoadedRef.current[`${id}:${normPair(activePair)}`]) return
     const load = async () => {
       // Par activo normalizado (closure, valor fresco del re-run del effect).
       // NO activePairRef aqui: este effect corre ANTES del sync del ref (L428)
@@ -245,6 +252,8 @@ export default function SessionPage(){
         // para no inyectar drawings del par viejo en el plugin del nuevo.
         // Aqui si el ref: tras el await ya esta sincronizado.
         if (normPair(activePairRef.current) !== loadPairKey) return
+        // Pasado el stale-guard: marcamos cargado (solo ahora, no antes del await).
+        drawingsLoadedRef.current[`${id}:${loadPairKey}`] = true
         if(!data?.data || data.data === '[]') return
         try {
           const parsed = JSON.parse(data.data)
@@ -273,10 +282,12 @@ export default function SessionPage(){
     load()
   }, [pluginReady, id, activePair])
 
-  // Drawing tools events — subscribe only when plugin is confirmed ready
+  // Drawing tools events (fix s68): el plugin se suscribe UNA vez al crearse
+  // (useDrawingTools.initPlugin). Aqui solo refrescamos los handlers en el ref en
+  // cada render para que los wrappers del plugin invoquen el closure mas reciente.
+  // (Reemplaza el antiguo effect que (de)suscribia por [pluginReady].)
   useEffect(()=>{
-    if(!pluginReady) return
-    const afterEditHandler=(event)=>{
+    drawingHandlersRef.current.afterEdit=(event)=>{
       setDrawingCount(c=>c+1)
       try{
         const sel=getSelected()
@@ -299,16 +310,10 @@ export default function SessionPage(){
       }catch{}
       if(saveDrawingsRef.current) saveDrawingsRef.current()
     }
-    const dblClickHandler=(event)=>{
+    drawingHandlersRef.current.dblClick=(event)=>{
       try{setSelectedTool({id:event?.toolId,toolType:event?.toolType});if(event?.toolType)setActiveToolKey(event.toolType)}catch{}
     }
-    onAfterEdit(afterEditHandler)
-    onDoubleClick(dblClickHandler)
-    return()=>{
-      offAfterEdit(afterEditHandler)
-      offDoubleClick(dblClickHandler)
-    }
-  },[pluginReady,activePair])
+  })
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{selectedToolRef.current=selectedTool},[selectedTool])
 
