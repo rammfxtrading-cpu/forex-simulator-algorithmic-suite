@@ -169,7 +169,20 @@ function MHead({ title, time, onClose }) {
   )
 }
 
-function VideoPh({ tag }) {
+function VideoPh({ tag, videoId }) {
+  if (videoId) {
+    return (
+      <div className="opv-video">
+        <iframe
+          src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0`}
+          title={`Vídeo · ${tag}`}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, borderRadius: 'inherit' }}
+          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+    )
+  }
   return (
     <div className="opv-video">
       <div className="opv-play">▶</div>
@@ -327,7 +340,7 @@ export default function Operativas() {
           {open === 'ldn' && (
             <Overlay onClose={() => setOpen(null)}>
               <MHead title="Sesión Londres" time="08:30 – 11:30 · hora de Londres" onClose={() => setOpen(null)} />
-              <VideoPh tag="Modelo Londres" />
+              <VideoPh tag="Modelo Londres" videoId="TdOKEcqvsuc" />
               <div className="opv-label">ORDEN DE EJECUCIÓN</div>
               <div className="opv-step"><span className="opv-n">1</span><div><b>Determinar dirección</b><span>Sesgo alcista o bajista · timeframe 1H – 4H (HTF). Único sentido válido de entrada en toda la sesión.</span></div></div>
               <div className="opv-step"><span className="opv-n">2</span><div><b>Zonas objetivo</b><span>Liquidez · vacíos / FVG · setup favorito. Solo zonas alineadas con el sesgo HTF.</span></div></div>
@@ -357,8 +370,6 @@ export default function Operativas() {
                   <li>Si el setup favorito está disponible → prioridad absoluta sobre las opciones 2A y 2B.</li>
                 </ul>
               </div>
-              <div className="opv-ex">⬚ Ejemplo 1 · captura anotada (pendiente)</div>
-              <div className="opv-ex">⬚ Ejemplo 2 · captura anotada (pendiente)</div>
               <Mentalidad quote="«Londres manipula. Tu trabajo es leer la trampa, no caer en ella.»" fine={FINE_COMUN} />
               <Footer />
             </Overlay>
@@ -398,8 +409,6 @@ export default function Operativas() {
                   <li>En el reversal, si el lado contrario de Asia ya fue manipulado, el setup queda invalidado.</li>
                 </ul>
               </div>
-              <div className="opv-ex">⬚ Ejemplo 1 · captura anotada (pendiente)</div>
-              <div className="opv-ex">⬚ Ejemplo 2 · captura anotada (pendiente)</div>
               <Mentalidad quote="«El fundamental decide el rumbo. El técnico decide la entrada. La disciplina decide si llegas al destino.»" fine={FINE_COMUN} />
               <Footer />
             </Overlay>
@@ -441,8 +450,6 @@ export default function Operativas() {
                   <li>Nunca operar contra el sesgo macro. Sin excepción.</li>
                 </ul>
               </div>
-              <div className="opv-ex">⬚ Ejemplo 1 · captura anotada (pendiente)</div>
-              <div className="opv-ex">⬚ Ejemplo 2 · captura anotada (pendiente)</div>
               <Mentalidad quote="«En swing la paciencia paga más que la rapidez. Esperar el setup correcto vale más que cien entradas mediocres.»" fine="Este modelo es un marco de referencia operativo. Cada trader ajusta dentro de su contexto de cuenta, gestión de riesgo y tolerancia personal." />
               <Footer />
             </Overlay>
