@@ -378,7 +378,7 @@ export default function Operativas() {
           {open === 'ny' && (
             <Overlay onClose={() => setOpen(null)}>
               <MHead title="Sesión Nueva York" time="14:30 – 17:30 · hora de Londres" onClose={() => setOpen(null)} />
-              <VideoPh tag="Modelo Nueva York" />
+              <VideoPh tag="Modelo Nueva York" videoId="KP8ctANHHC8" />
               <div className="opv-label">ORDEN DE EJECUCIÓN</div>
               <div className="opv-step"><span className="opv-n">1</span><div><b>Determinar dirección</b><span>Sesgo alcista o bajista · timeframe 1H – 4H. Define el único sentido válido de entrada durante toda la sesión.</span></div></div>
               <div className="opv-step"><span className="opv-n">2</span><div><b>Zonas de reacción</b><span>Liquidez · vacíos / FVG · setup favorito. Solo se opera en zonas alineadas con el sesgo.</span></div></div>
