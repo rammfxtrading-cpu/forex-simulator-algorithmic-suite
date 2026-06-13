@@ -44,14 +44,16 @@ const CSS = `
   .opv-back{color:rgba(255,255,255,.55);font-size:12px;text-decoration:none;border:1px solid rgba(255,255,255,.1);padding:8px 14px;border-radius:8px;transition:.15s;cursor:pointer;background:none;font-family:inherit}
   .opv-back:hover{color:#fff;border-color:rgba(255,255,255,.16)}
   .opv-pillhead{border:1px solid rgba(30,144,255,.7);color:#A7CDF5;font-size:11px;font-weight:700;letter-spacing:2.5px;padding:6px 16px;border-radius:999px;box-shadow:0 0 16px rgba(30,144,255,.15)}
-  .opv-h1{font-size:clamp(34px,4.6vw,46px);font-weight:800;letter-spacing:-.5px;line-height:1.05;margin:0;max-width:15ch}
+  .opv-h1{font-size:clamp(34px,5.8vw,58px);font-weight:900;letter-spacing:-1px;line-height:1.0;margin:0;max-width:15ch;color:#eef3fb}
   .opv-h1 em{font-style:normal;color:#4a8ae0}
   .opv-eyebrow{font-size:11px;font-weight:700;letter-spacing:3.5px;color:#A7CDF5;display:inline-flex;align-items:center;gap:11px;margin:0 0 16px}
   .opv-eyebrow::before{content:"";width:30px;height:1px;background:linear-gradient(90deg,rgba(30,144,255,.9),transparent)}
   .opv-sub{color:rgba(255,255,255,.55);font-size:13.5px;line-height:1.7;margin:12px 0 6px;max-width:640px}
   .opv-lock{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.4);font-size:11.5px;margin:6px 0 34px}
+  .opv-seclabel{font-size:11px;font-weight:700;letter-spacing:3.5px;color:rgba(255,255,255,.38);margin:60px 0 20px;display:flex;align-items:center;gap:13px}
+  .opv-seclabel::after{content:"";flex:1;height:1px;background:rgba(255,255,255,.09)}
   .opv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
-  .opv-card{background:linear-gradient(165deg,rgba(30,144,255,.10),rgba(255,255,255,.03) 55%),rgba(13,18,28,.55);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:22px 22px 20px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;animation:opvRise .5s ease backwards;box-shadow:0 4px 22px rgba(0,0,0,.35);position:relative;overflow:hidden}
+  .opv-card{background:linear-gradient(168deg,rgba(46,139,255,.13),rgba(255,255,255,.02) 52%),rgba(16,23,38,.55);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:22px 22px 20px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;animation:opvRise .5s ease backwards;box-shadow:0 4px 22px rgba(0,0,0,.35);position:relative;overflow:hidden}
   .opv-card:nth-child(2){animation-delay:.08s}.opv-card:nth-child(3){animation-delay:.16s}
   @keyframes opvRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
   .opv-card:hover{transform:translateY(-6px);border-color:rgba(30,144,255,.8);box-shadow:0 18px 48px rgba(30,144,255,.26)}
@@ -139,6 +141,7 @@ const CSS = `
   .opv-rbtn:hover{background:rgba(30,144,255,.2);border-color:rgba(30,144,255,.85);color:#fff;box-shadow:0 0 26px rgba(30,144,255,.3)}
   .opv-rbtn.opv-ready{background:linear-gradient(135deg,#26a69a,#1a7a72);border-color:transparent;color:#fff;box-shadow:0 4px 22px rgba(38,166,154,.45)}
   .opv-rmap{margin-top:56px;background:rgba(16,23,38,.55);border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:26px 26px 28px;-webkit-backdrop-filter:blur(22px) saturate(160%);backdrop-filter:blur(22px) saturate(160%);box-shadow:0 18px 48px rgba(0,0,0,.36)}
+  .opv-foot{margin-top:50px;border-top:1px solid rgba(255,255,255,.09);padding-top:22px;text-align:center;font-size:10px;letter-spacing:2.2px;color:rgba(255,255,255,.38);line-height:2.1}
   .opv-loading{height:100vh;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);font-size:13px;letter-spacing:2px}
 `
 
@@ -297,6 +300,8 @@ export default function Operativas() {
               <p className="opv-sub">Cada modelo se domina por separado: estudia el vídeo y el plan completo, valida más de 300 trades en el simulador y deja tu punto fuerte y tu punto débil al descubierto — antes de arriesgar un euro en real.</p>
               <p className="opv-lock">🔒 Contenido protegido · solo visible para alumnos con acceso</p>
 
+              <div className="opv-seclabel">ELIGE TU MODELO</div>
+
               <div className="opv-grid">
                 <div className="opv-card" onClick={() => setOpen('ldn')}>
                   <span className="opv-sess">LONDON KILLZONE</span>
@@ -346,6 +351,8 @@ export default function Operativas() {
                 {pct === 100 ? '✓ Ruta completada — empezar con el siguiente modelo' : 'Empezar de nuevo · reinicia los checks'}
               </button>
               </div>
+
+              <div className="opv-foot">R.A.M.M.FX TRADING™ · ALGORITHMIC SUITE<br />MARCO OPERATIVO EDUCATIVO · NO ES ASESORAMIENTO FINANCIERO</div>
             </div>
           </div>
 
