@@ -39,8 +39,8 @@ const CSS = `
   .opv-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:42px}
   .opv-brand{display:flex;align-items:center;gap:12px}
   .opv-mark{width:34px;height:34px;border-radius:8px;object-fit:contain;display:block}
-  .opv-brand b{display:block;font-size:12px;letter-spacing:2.5px}
-  .opv-brand span{display:block;font-size:10px;letter-spacing:1.5px;color:rgba(255,255,255,.4);margin-top:2px}
+  .opv-brand b{display:block;font-size:12px;letter-spacing:2.5px;color:#fff}
+  .opv-brand span{display:block;font-size:10px;letter-spacing:1.5px;color:rgba(255,255,255,.82);margin-top:2px}
   .opv-back{color:rgba(255,255,255,.55);font-size:12px;text-decoration:none;border:1px solid rgba(255,255,255,.1);padding:8px 14px;border-radius:8px;transition:.15s;cursor:pointer;background:none;font-family:inherit}
   .opv-back:hover{color:#fff;border-color:rgba(255,255,255,.16)}
   .opv-pillhead{border:1px solid rgba(30,144,255,.7);color:#A7CDF5;font-size:11px;font-weight:700;letter-spacing:2.5px;padding:6px 16px;border-radius:999px;box-shadow:0 0 16px rgba(30,144,255,.15)}
@@ -51,7 +51,7 @@ const CSS = `
   .opv-sub{color:rgba(255,255,255,.55);font-size:13.5px;line-height:1.7;margin:12px 0 6px;max-width:640px}
   .opv-lock{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.4);font-size:11.5px;margin:6px 0 34px}
   .opv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
-  .opv-card{background:linear-gradient(165deg,rgba(30,144,255,.10),rgba(255,255,255,.03) 55%),rgba(13,18,28,.55);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:22px 20px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;animation:opvRise .5s ease both;box-shadow:0 4px 22px rgba(0,0,0,.35);position:relative;overflow:hidden}
+  .opv-card{background:linear-gradient(165deg,rgba(30,144,255,.10),rgba(255,255,255,.03) 55%),rgba(13,18,28,.55);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:22px 20px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;animation:opvRise .5s ease backwards;box-shadow:0 4px 22px rgba(0,0,0,.35);position:relative;overflow:hidden}
   .opv-card:nth-child(2){animation-delay:.08s}.opv-card:nth-child(3){animation-delay:.16s}
   @keyframes opvRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
   .opv-card:hover{transform:translateY(-6px);border-color:rgba(30,144,255,.8);box-shadow:0 18px 48px rgba(30,144,255,.26)}
@@ -137,6 +137,7 @@ const CSS = `
   .opv-rbtn{display:block;width:100%;margin-top:4px;background:rgba(30,144,255,.1);border:1px solid rgba(30,144,255,.55);color:#A7CDF5;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:1.5px;padding:14px;border-radius:11px;cursor:pointer;transition:.2s}
   .opv-rbtn:hover{background:rgba(30,144,255,.2);border-color:rgba(30,144,255,.85);color:#fff;box-shadow:0 0 26px rgba(30,144,255,.3)}
   .opv-rbtn.opv-ready{background:linear-gradient(135deg,#26a69a,#1a7a72);border-color:transparent;color:#fff;box-shadow:0 4px 22px rgba(38,166,154,.45)}
+  .opv-rmap{margin-top:56px;background:rgba(16,23,38,.55);border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:26px 26px 28px;-webkit-backdrop-filter:blur(22px) saturate(160%);backdrop-filter:blur(22px) saturate(160%);box-shadow:0 18px 48px rgba(0,0,0,.36)}
   .opv-loading{height:100vh;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);font-size:13px;letter-spacing:2px}
 `
 
@@ -316,7 +317,8 @@ export default function Operativas() {
                 </div>
               </div>
 
-              <div className="opv-label" ref={rutaRef} style={{ marginTop: 48 }}>HOJA DE RUTA · USO ÓPTIMO DEL SIMULADOR</div>
+              <div className="opv-rmap">
+              <div className="opv-label" ref={rutaRef} style={{ marginTop: 0 }}>HOJA DE RUTA · USO ÓPTIMO DEL SIMULADOR</div>
               <p className="opv-sub" style={{ margin: '0 0 14px' }}>Una ruta = un modelo a fondo: una sesión del simulador por cada opción, +100 trades por sesión. Al terminar, reinicia la ruta y repítela con el siguiente modelo.</p>
               <div className="opv-rhead"><b>TU RUTA · {pct}%</b><span className="opv-rbar"><i className="opv-rfill" style={{ width: pct + '%' }} /></span></div>
 
@@ -342,6 +344,7 @@ export default function Operativas() {
               <button className={'opv-rbtn' + (pct === 100 ? ' opv-ready' : '')} onClick={resetRuta}>
                 {pct === 100 ? '✓ Ruta completada — empezar con el siguiente modelo' : 'Empezar de nuevo · reinicia los checks'}
               </button>
+              </div>
             </div>
           </div>
 
