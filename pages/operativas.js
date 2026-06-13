@@ -33,6 +33,7 @@ const RUTA = [
 
 const CSS = `
   .opv-stars{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .opv-glow{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(1000px 640px at 80% -10%,rgba(30,144,255,.15),transparent 60%),radial-gradient(820px 720px at 6% 112%,rgba(38,166,154,.07),transparent 55%)}
   .opv-scroll{position:relative;z-index:1;height:100vh;overflow-y:auto}
   .opv-wrap{max-width:1080px;margin:0 auto;padding:28px 24px 60px}
   .opv-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:42px}
@@ -43,15 +44,20 @@ const CSS = `
   .opv-back{color:rgba(255,255,255,.55);font-size:12px;text-decoration:none;border:1px solid rgba(255,255,255,.1);padding:8px 14px;border-radius:8px;transition:.15s;cursor:pointer;background:none;font-family:inherit}
   .opv-back:hover{color:#fff;border-color:rgba(255,255,255,.16)}
   .opv-pillhead{border:1px solid rgba(30,144,255,.7);color:#A7CDF5;font-size:11px;font-weight:700;letter-spacing:2.5px;padding:6px 16px;border-radius:999px;box-shadow:0 0 16px rgba(30,144,255,.15)}
-  .opv-h1{font-size:34px;font-weight:800;letter-spacing:.5px;margin:0}
+  .opv-h1{font-size:clamp(34px,4.6vw,46px);font-weight:800;letter-spacing:-.5px;line-height:1.05;margin:0}
   .opv-h1 em{font-style:normal;color:#4a8ae0}
+  .opv-eyebrow{font-size:11px;font-weight:700;letter-spacing:3.5px;color:#A7CDF5;display:inline-flex;align-items:center;gap:11px;margin:0 0 16px}
+  .opv-eyebrow::before{content:"";width:30px;height:1px;background:linear-gradient(90deg,rgba(30,144,255,.9),transparent)}
   .opv-sub{color:rgba(255,255,255,.55);font-size:13.5px;line-height:1.7;margin:12px 0 6px;max-width:640px}
   .opv-lock{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.4);font-size:11.5px;margin:6px 0 34px}
-  .opv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
-  .opv-card{background:linear-gradient(165deg,rgba(30,144,255,.10),rgba(255,255,255,.03) 55%),rgba(13,18,28,.55);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:22px 20px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;animation:opvRise .5s ease both;box-shadow:0 4px 22px rgba(0,0,0,.35)}
+  .opv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+  .opv-card{background:linear-gradient(165deg,rgba(30,144,255,.10),rgba(255,255,255,.03) 55%),rgba(13,18,28,.55);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:22px 20px;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;animation:opvRise .5s ease both;box-shadow:0 4px 22px rgba(0,0,0,.35);position:relative;overflow:hidden}
   .opv-card:nth-child(2){animation-delay:.08s}.opv-card:nth-child(3){animation-delay:.16s}
   @keyframes opvRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-  .opv-card:hover{transform:translateY(-4px);border-color:rgba(30,144,255,.75);box-shadow:0 12px 38px rgba(30,144,255,.22)}
+  .opv-card:hover{transform:translateY(-6px);border-color:rgba(30,144,255,.8);box-shadow:0 18px 48px rgba(30,144,255,.26)}
+  .opv-card::before{content:"";position:absolute;inset:0;z-index:0;opacity:0;transition:opacity .25s;background:radial-gradient(420px 220px at 50% -10%,rgba(30,144,255,.20),transparent 70%);pointer-events:none}
+  .opv-card:hover::before{opacity:1}
+  .opv-card>*{position:relative;z-index:1}
   .opv-sess{display:inline-block;background:rgba(30,144,255,.2);border:1px solid rgba(30,144,255,.65);color:#A7CDF5;font-size:10.5px;font-weight:700;letter-spacing:1.5px;padding:5px 12px;border-radius:999px}
   .opv-card h2{font-size:18px;font-weight:700;margin:16px 0 0}
   .opv-card p{color:rgba(255,255,255,.55);font-size:12.5px;line-height:1.65;margin:9px 0 0}
@@ -270,6 +276,7 @@ export default function Operativas() {
       ) : (
         <>
           <NetworkBg />
+          <div className="opv-glow" />
           <div className="opv-scroll" style={open ? { overflow: 'hidden' } : undefined}>
             <div className="opv-wrap">
               <div className="opv-top">
@@ -283,6 +290,7 @@ export default function Operativas() {
                 </div>
               </div>
 
+              <div className="opv-eyebrow">OPERATIVAS · MÉTODO R.A.M.M.FX TRADING</div>
               <h1 className="opv-h1">Operativas <em>R.A.M.M.FX TRADING</em></h1>
               <p className="opv-sub">Tres modelos operativos. Cada uno con su vídeo explicativo y su plan de ejecución completo. Lectura, zonas y entrada con confluencia.</p>
               <p className="opv-lock">🔒 Contenido protegido · solo visible para alumnos con acceso</p>
