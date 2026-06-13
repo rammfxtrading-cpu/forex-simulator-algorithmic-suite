@@ -436,7 +436,7 @@ export default function Operativas() {
           {open === 'sw' && (
             <Overlay onClose={() => setOpen(null)}>
               <MHead title="Swing" time="Análisis 4H y 30min · confirmación 15min o 30min" onClose={() => setOpen(null)} />
-              <VideoPh tag="Modelo Swing" />
+              <VideoPh tag="Modelo Swing" videoId="KxZaNDhPiZo" />
               <div className="opv-banner"><b>⚡ PRINCIPIO FUNDAMENTAL</b>Operar SIEMPRE a favor del order flow macro. Ninguna entrada es válida contra el sesgo. Sin excepción.</div>
               <div className="opv-label">ORDEN DE EJECUCIÓN</div>
               <div className="opv-step"><span className="opv-n">1</span><div><b>Dirección macro · TF 4H y 30min</b><span>Sesgo del par + diferencial de datos como confluencia.</span></div></div>
