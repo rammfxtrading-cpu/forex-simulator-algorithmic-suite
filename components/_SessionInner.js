@@ -175,7 +175,7 @@ export default function SessionPage(){
   // Ref de handlers de dibujo (fix s68): el plugin se suscribe UNA vez (initPlugin) y
   // los wrappers leen este ref para invocar siempre el closure mas reciente.
   const drawingHandlersRef = useRef({})
-  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
+  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, selectTool, removeSelected, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
@@ -993,7 +993,12 @@ export default function SessionPage(){
             if(orig && orig.points?.length){
               const dPrice = orig.points[0].price * -0.002  // -0.2% del ancla
               const offsetPoints = orig.points.map(p=>({ time: p.time + dt, price: p.price + dPrice }))
-              addDrawing(orig.type, offsetPoints, { ...orig.metadata })
+              const newD = addDrawing(orig.type, offsetPoints, { ...orig.metadata })
+              // v2: la copia nace seleccionada. Estado React puro (sin internos).
+              // Coords de pantalla para el pill desde el ancla offseteada de la copia.
+              const cr = chartMap.current[activePairRef.current]
+              const sc = (cr && newD?.points?.[0]) ? toScreenCoords(cr, newD.points[0].time, newD.points[0].price) : null
+              if(newD?.id && sc) setSelectedDrawing({ id:newD.id, x:sc.x, y:sc.y })
               setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
             }
           }catch{}
@@ -1019,6 +1024,13 @@ export default function SessionPage(){
                     : { ...origEntry, tfs: Array.isArray(origEntry.tfs) ? [...origEntry.tfs] : origEntry.tfs }
                   setDrawingTfMap(prev=>({ ...prev, [newId]: clone }))
                 }
+              }
+              // v2: la copia nace seleccionada (replica la secuencia interna del plugin).
+              // Sincroniza el estado React SOLO si selectTool tuvo éxito; si los internos
+              // del fork faltaran (false) la copia queda no-seleccionada sin pill mintiendo.
+              if(newId){
+                const ok = selectTool(newId)
+                if(ok){ setSelectedTool({ id:newId, toolType:t.toolType }); setActiveToolKey(t.toolType) }
               }
               setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
             }

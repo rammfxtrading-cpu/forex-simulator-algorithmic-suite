@@ -257,6 +257,27 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
     } catch (e) { console.error('applyToTool:', e) }
   }, [])
 
+  // Selecciona un tool por id replicando la secuencia que el propio plugin usa al
+  // finalizar una creación (InteractionManager._finalizeToolCreation, dist 1835-1837):
+  // deselectAllTools → _selectedTool = tool → tool.setSelected(true). El plugin no
+  // expone selección por id, así que tocamos 3 internos del fork (_interactionManager,
+  // _tools, tool.setSelected). Autocontenido: setSelected hace updateAllViews +
+  // requestUpdate (repinta los handles) y NO añade listeners ni toca el ciclo de vida
+  // (sin relación con el bug fantasma). Todo en try/catch: si un interno faltara (fork
+  // actualizado), devuelve false y la copia queda creada pero no seleccionada (= v1).
+  const selectTool = useCallback((id) => {
+    const p = pluginRef.current; if (!p || !id) return false
+    try {
+      const im = p._interactionManager
+      const tool = p._tools?.get(id)
+      if (!tool) return false
+      im?.deselectAllTools?.()         // deselecciona el original
+      if (im) im._selectedTool = tool  // puntero del IM → copia
+      tool.setSelected(true)           // flag _selected + updateAllViews + requestUpdate
+      return true
+    } catch { return false }
+  }, [])
+
   const removeSelected = useCallback(() => { try { pluginRef.current?.removeSelectedLineTools() } catch {} }, [])
   const removeAll      = useCallback(() => { try { pluginRef.current?.removeAllLineTools() } catch {} }, [])
   const deselectAll    = useCallback(() => { try { pluginRef.current?.deselectAllTools() } catch {} }, [])
@@ -268,5 +289,5 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
   const offDoubleClick = useCallback((h) => { try { pluginRef.current?.unsubscribeLineToolsDoubleClick(h) } catch {} }, [])
   const getSelected    = useCallback(() => { try { return JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') } catch { return [] } }, [])
 
-  return { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, removeSelected, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected }
+  return { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, selectTool, removeSelected, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected }
 }
