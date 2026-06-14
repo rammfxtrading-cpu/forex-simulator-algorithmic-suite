@@ -175,14 +175,60 @@ export default function SessionPage(){
   // Ref de handlers de dibujo (fix s68): el plugin se suscribe UNA vez (initPlugin) y
   // los wrappers leen este ref para invocar siempre el closure mas reciente.
   const drawingHandlersRef = useRef({})
-  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, selectTool, removeSelected, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
+  const { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, selectTool, removeSelected, removeToolById, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected } = useDrawingTools({
     chartMap,
     activePair,
     dataReady,
     userId: userIdRef.current,
     handlersRef: drawingHandlersRef,
   })
-  
+
+  // ── Undo/redo (paso 2): historial por par, en memoria ──────────────────────
+  // { [pairKey]: { undo: [], redo: [] } }. Entradas vendor:
+  //   { sys:'vendor', op:'create', id, snapshot:null }  (snapshot se rellena al deshacer)
+  //   { sys:'vendor', op:'delete', id, snapshot:{toolType,points,options} }
+  const historyRef = useRef({})
+  const histFor = (pair) => { if(!historyRef.current[pair]) historyRef.current[pair] = { undo: [], redo: [] }; return historyRef.current[pair] }
+  // Nueva acción invalida el rehacer del par.
+  const pushHistory = (entry) => { const h = histFor(activePairRef.current); h.undo.push(entry); h.redo = [] }
+  // Aplica la INVERSA de la última acción del par activo. try/catch defensivo:
+  // un throw no puede romper el teclado global.
+  const doUndo = () => {
+    try{
+      const h = histFor(activePairRef.current); const e = h.undo.pop(); if(!e) return
+      if(e.sys==='vendor'){
+        if(e.op==='create'){
+          // Inversa de crear = borrar. Captura el snapshot AHORA para poder rehacer.
+          try{ const t = JSON.parse(pluginRef.current?.getLineToolByID(e.id))?.[0]; if(t) e.snapshot = { toolType:t.toolType, points:t.points, options:t.options } }catch{}
+          removeToolById(e.id)
+          if(selectedToolRef.current?.id===e.id) setSelectedTool(null)
+        } else if(e.op==='delete'){
+          // Inversa de borrar = recrear con su id original.
+          if(e.snapshot) pluginRef.current?.createOrUpdateLineTool(e.snapshot.toolType, e.snapshot.points, e.snapshot.options, e.id)
+        }
+      }
+      h.redo.push(e)
+      setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
+    }catch{}
+  }
+  // Re-aplica la acción ORIGINAL deshecha del par activo.
+  const doRedo = () => {
+    try{
+      const h = histFor(activePairRef.current); const e = h.redo.pop(); if(!e) return
+      if(e.sys==='vendor'){
+        if(e.op==='create'){
+          // Re-crear desde el snapshot que doUndo dejó relleno.
+          if(e.snapshot) pluginRef.current?.createOrUpdateLineTool(e.snapshot.toolType, e.snapshot.points, e.snapshot.options, e.id)
+        } else if(e.op==='delete'){
+          removeToolById(e.id)
+          if(selectedToolRef.current?.id===e.id) setSelectedTool(null)
+        }
+      }
+      h.undo.push(e)
+      setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
+    }catch{}
+  }
+
 
   const sessionId = typeof window !== 'undefined' ? window.location.pathname.split('/').pop() : null
   const { config: chartConfig, saveConfig: saveChartConfig, loaded: chartConfigLoaded } = useChartConfig({
@@ -310,6 +356,11 @@ export default function SessionPage(){
                 if(saveDrawingsRef.current) saveDrawingsRef.current()
               }
             })
+          }
+          // Undo: capturar creación de un dibujo nuevo terminado (vendor).
+          // Una copia (Cmd+D) NO pasa por aquí (no dispara afterEdit) — se captura aparte.
+          if(event?.stage==='lineToolFinished' || event?.stage==='pathFinished'){
+            if(t?.id) pushHistory({ sys:'vendor', op:'create', id:t.id, snapshot:null })
           }
         }
       }catch{}
@@ -971,6 +1022,11 @@ export default function SessionPage(){
         }
         // Delete vendor drawing (TrendLine, Rectangle, etc.)
         if(selectedToolRef.current){
+          // Undo: capturar snapshot del tool ANTES de borrarlo.
+          const _id = selectedToolRef.current.id
+          try{ const t = JSON.parse(pluginRef.current?.getLineToolByID(_id))?.[0]
+            if(t) pushHistory({ sys:'vendor', op:'delete', id:_id, snapshot:{ toolType:t.toolType, points:t.points, options:t.options } })
+          }catch{}
           removeSelected()
           setSelectedTool(null)
           deleted = true
@@ -1032,10 +1088,20 @@ export default function SessionPage(){
                 const ok = selectTool(newId)
                 if(ok){ setSelectedTool({ id:newId, toolType:t.toolType }); setActiveToolKey(t.toolType) }
               }
+              // Undo: una copia es un "create"; deshacerla = borrarla.
+              if(newId) pushHistory({ sys:'vendor', op:'create', id:newId, snapshot:null })
               setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
             }
           }catch{}
         }
+      }
+      // Cmd/Ctrl+Z → deshacer; Cmd+Shift+Z (Mac) / Ctrl+Y (Win) → rehacer.
+      // preventDefault siempre. Sin guard de challengeLocked (no es avanzar replay).
+      if((e.metaKey||e.ctrlKey) && e.code==='KeyZ' && !e.shiftKey){
+        e.preventDefault(); doUndo()
+      }
+      if( ((e.metaKey||e.ctrlKey) && e.code==='KeyY') || ((e.metaKey||e.ctrlKey) && e.shiftKey && e.code==='KeyZ') ){
+        e.preventDefault(); doRedo()
       }
       // Alt+R (Win/Linux) / Option+R (Mac) → reset viewport TradingView-style.
       // Restaura ventana TF-default custom del simulador (initVisibleRange) +
