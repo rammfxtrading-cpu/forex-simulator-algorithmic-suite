@@ -43,6 +43,11 @@ import useChallengeFlow from './useChallengeFlow'
 import usePairData from './usePairData'
 import useTradingActions from './useTradingActions'
 
+// Segundos por barra de cada timeframe. Usado por el cálculo de phantoms y por
+// el offset temporal de Cmd+D (duplicar dibujo). Const única de módulo: no
+// duplicar este mapa en otros sitios.
+const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
+
 export default function SessionPage(){
   const router=useRouter()
   const {id}=router.query
@@ -781,7 +786,6 @@ export default function SessionPage(){
     const computeTfPhantomsCount = (ps, newTf) => {
       let phantomsNeeded = 10  // mínimo por defecto
       try {
-        const TF_SECS = {M1:60, M3:180, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400}
         const newSecs = TF_SECS[newTf] || 3600
         const newAgg = ps.engine.getAggregated(newTf)
         const newLastReal = newAgg.length ? newAgg[newAgg.length-1].time : null
@@ -973,6 +977,53 @@ export default function SessionPage(){
         }
         // Persist immediately so deletion survives reload
         if(deleted) setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
+      }
+      // Cmd/Ctrl+D → duplicar el dibujo seleccionado con offset (estilo TradingView).
+      // SIEMPRE preventDefault: bloquea el bookmark del navegador en Mac y Windows.
+      // Sin guard de challengeLocked (duplicar no es avanzar replay). Cada rama va
+      // en su try/catch: un throw aquí no puede romper el teclado global.
+      if((e.metaKey||e.ctrlKey) && e.code==='KeyD'){
+        e.preventDefault()
+        const tf = pairTfRef.current[activePairRef.current] || 'H1'
+        const dt = 3 * (TF_SECS[tf] || 3600)  // +3 barras (afinable en smoke)
+        // Rama custom (texto/ruler): selectedDrawingRef.
+        if(selectedDrawingRef.current?.id){
+          try{
+            const orig = drawingsRef.current.find(d=>d.id===selectedDrawingRef.current.id)
+            if(orig && orig.points?.length){
+              const dPrice = orig.points[0].price * -0.002  // -0.2% del ancla
+              const offsetPoints = orig.points.map(p=>({ time: p.time + dt, price: p.price + dPrice }))
+              addDrawing(orig.type, offsetPoints, { ...orig.metadata })
+              setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
+            }
+          }catch{}
+        }
+        // Rama vendor (TrendLine, Rectangle, Fib, Path, HorizontalRay): selectedToolRef.
+        if(selectedToolRef.current?.id){
+          try{
+            const t = JSON.parse(pluginRef.current?.getLineToolByID(selectedToolRef.current.id))?.[0]
+            // undefined / sin puntos / LongShortPosition (posición de trade) → no-op silencioso.
+            if(t && t.points?.length && t.toolType!=='LongShortPosition'){
+              const dPrice = t.points[0].price * -0.002  // -0.2% del ancla
+              const offsetPoints = t.points.map(p=>({ timestamp: p.timestamp + dt, price: p.price + dPrice }))
+              const newId = pluginRef.current.addLineTool(t.toolType, offsetPoints, t.options)
+              // Clonar la entrada de drawingTfMap del original para que la copia
+              // aparezca en los mismos TFs. Dos formas posibles: array de tfs, u
+              // objeto {tfs,cfg,toolKey}. Copia profunda del array de tfs (no
+              // compartir referencia con el original).
+              if(newId){
+                const origEntry = drawingTfMapRef.current[selectedToolRef.current.id]
+                if(origEntry){
+                  const clone = Array.isArray(origEntry)
+                    ? [...origEntry]
+                    : { ...origEntry, tfs: Array.isArray(origEntry.tfs) ? [...origEntry.tfs] : origEntry.tfs }
+                  setDrawingTfMap(prev=>({ ...prev, [newId]: clone }))
+                }
+              }
+              setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
+            }
+          }catch{}
+        }
       }
       // Alt+R (Win/Linux) / Option+R (Mac) → reset viewport TradingView-style.
       // Restaura ventana TF-default custom del simulador (initVisibleRange) +
