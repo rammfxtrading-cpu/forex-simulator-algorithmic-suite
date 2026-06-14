@@ -21,8 +21,8 @@ export default function useCustomDrawings() {
     setDrawings(next)
   }, [])
 
-  const addDrawing = useCallback((type, points, metadata = {}) => {
-    const drawing = { id: genId(), type, points, metadata }
+  const addDrawing = useCallback((type, points, metadata = {}, id) => {
+    const drawing = { id: id || genId(), type, points, metadata }
     const next = [...drawingsRef.current, drawing]
     drawingsRef.current = next
     setDrawings(next)

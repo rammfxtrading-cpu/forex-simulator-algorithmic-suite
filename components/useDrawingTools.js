@@ -279,6 +279,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
   }, [])
 
   const removeSelected = useCallback(() => { try { pluginRef.current?.removeSelectedLineTools() } catch {} }, [])
+  const removeToolById = useCallback((id) => { try { if(id) pluginRef.current?.removeLineToolsById([id]) } catch {} }, [])
   const removeAll      = useCallback(() => { try { pluginRef.current?.removeAllLineTools() } catch {} }, [])
   const deselectAll    = useCallback(() => { try { pluginRef.current?.deselectAllTools() } catch {} }, [])
   const exportTools    = useCallback(() => { try { return pluginRef.current?.exportLineTools() ?? null } catch { return null } }, [])
@@ -289,5 +290,5 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
   const offDoubleClick = useCallback((h) => { try { pluginRef.current?.unsubscribeLineToolsDoubleClick(h) } catch {} }, [])
   const getSelected    = useCallback(() => { try { return JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') } catch { return [] } }, [])
 
-  return { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, selectTool, removeSelected, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected }
+  return { pluginRef, pluginReady, toolConfigs, updateToolConfig, applyToTool, setToolVisible, addTool, selectTool, removeSelected, removeToolById, removeAll, deselectAll, exportTools, importTools, onAfterEdit, offAfterEdit, onDoubleClick, offDoubleClick, getSelected }
 }
