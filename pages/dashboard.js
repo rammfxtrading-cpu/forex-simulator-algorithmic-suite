@@ -131,8 +131,13 @@ export default function Dashboard() {
 
   async function createSession() {
     if (!form.name || !form.dateFrom || !form.dateTo) return
-    setCreating(true)
     setNewErr('')
+    const rangeDays = (new Date(form.dateTo) - new Date(form.dateFrom)) / (1000 * 60 * 60 * 24)
+    if (rangeDays < 180) {
+      setNewErr('Rango demasiado corto para un backtest fiable. Amplialo a un minimo de 6 meses para tener muestra suficiente.')
+      return
+    }
+    setCreating(true)
     const { data, error } = await supabase.from('sim_sessions').insert({
       user_id: user.id, name: form.name, pair: form.pair,
       timeframe: 'H1', date_from: form.dateFrom, date_to: form.dateTo,
