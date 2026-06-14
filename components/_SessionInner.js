@@ -206,6 +206,16 @@ export default function SessionPage(){
           // Inversa de borrar = recrear con su id original.
           if(e.snapshot) pluginRef.current?.createOrUpdateLineTool(e.snapshot.toolType, e.snapshot.points, e.snapshot.options, e.id)
         }
+      } else if(e.sys==='custom'){
+        if(e.op==='create'){
+          // Inversa de crear = borrar. Captura snapshot AHORA para poder rehacer.
+          const d = drawingsRef.current.find(d=>d.id===e.id); if(d) e.snapshot = { type:d.type, points:d.points, metadata:d.metadata }
+          removeDrawing(e.id)
+          if(selectedDrawingRef.current?.id===e.id) setSelectedDrawing(null)
+        } else if(e.op==='delete'){
+          // Inversa de borrar = recrear con su id original.
+          if(e.snapshot) addDrawing(e.snapshot.type, e.snapshot.points, e.snapshot.metadata, e.id)
+        }
       }
       h.redo.push(e)
       setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
@@ -222,6 +232,14 @@ export default function SessionPage(){
         } else if(e.op==='delete'){
           removeToolById(e.id)
           if(selectedToolRef.current?.id===e.id) setSelectedTool(null)
+        }
+      } else if(e.sys==='custom'){
+        if(e.op==='create'){
+          // Re-crear desde el snapshot que doUndo dejó relleno.
+          if(e.snapshot) addDrawing(e.snapshot.type, e.snapshot.points, e.snapshot.metadata, e.id)
+        } else if(e.op==='delete'){
+          removeDrawing(e.id)
+          if(selectedDrawingRef.current?.id===e.id) setSelectedDrawing(null)
         }
       }
       h.undo.push(e)
@@ -649,7 +667,9 @@ export default function SessionPage(){
         y: (param.sourceEvent?.clientY || window.innerHeight/2) - 60,
         onConfirm: (text) => {
           if(!text.trim()) return
-          addDrawing(DRAWING_TYPES.TEXT, [{ time: coords.time, price: coords.price }], { text, fontSize: 12, color: '#ffffff' })
+          const _newD = addDrawing(DRAWING_TYPES.TEXT, [{ time: coords.time, price: coords.price }], { text, fontSize: 12, color: '#ffffff' })
+          // Undo: alta de texto interactivo = create custom.
+          if(_newD?.id) pushHistory({ sys:'custom', op:'create', id:_newD.id, snapshot:null })
           setActiveTool('cursor')
           activeToolRef.current = 'cursor'
           // Save immediately — text drawings are not vendor tools so onAfterEdit never fires
@@ -1016,7 +1036,11 @@ export default function SessionPage(){
         let deleted = false
         // Delete custom drawing (text)
         if(selectedDrawingRef.current){
-          removeDrawing(selectedDrawingRef.current.id)
+          // Undo: capturar snapshot del drawing custom ANTES de borrarlo.
+          const _cid = selectedDrawingRef.current.id
+          const _d = drawingsRef.current.find(d=>d.id===_cid)
+          if(_d) pushHistory({ sys:'custom', op:'delete', id:_cid, snapshot:{ type:_d.type, points:_d.points, metadata:_d.metadata } })
+          removeDrawing(_cid)
           setSelectedDrawing(null)
           deleted = true
         }
@@ -1055,6 +1079,8 @@ export default function SessionPage(){
               const cr = chartMap.current[activePairRef.current]
               const sc = (cr && newD?.points?.[0]) ? toScreenCoords(cr, newD.points[0].time, newD.points[0].price) : null
               if(newD?.id && sc) setSelectedDrawing({ id:newD.id, x:sc.x, y:sc.y })
+              // Undo: una copia es un "create"; deshacerla = borrarla.
+              if(newD?.id) pushHistory({ sys:'custom', op:'create', id:newD.id, snapshot:null })
               setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
             }
           }catch{}
