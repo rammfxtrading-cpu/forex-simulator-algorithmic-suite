@@ -109,6 +109,22 @@ export default function SessionPage(){
   const activeToolRef = useRef('cursor')
   const [drawingCount,  setDrawingCount]  = useState(0)
   const [selectedTool,  setSelectedTool]  = useState(null)
+  const [selectedToolCfg, setSelectedToolCfg] = useState(null)
+  // Deriva el cfg de la pill desde las options REALES de un dibujo de LÍNEA.
+  // Solo líneas (line.*); otros tipos devuelven null y la pill cae a toolConfigs.
+  const LINE_TYPES = ['TrendLine','HorizontalRay','Path']
+  const deriveLineCfg = (toolType, options) => {
+    try{
+      if(!LINE_TYPES.includes(toolType)) return null
+      const ln = options?.line || {}
+      return {
+        color: ln.color ?? '#ffffff',
+        width: ln.width ?? 1,
+        style: ln.style ?? 0,
+        label: options?.text?.value ?? '',
+      }
+    }catch{ return null }
+  }
   const [templates,     setTemplates]     = useState([])
   const [drawingTfMap,  setDrawingTfMap]  = useState({}) // {toolId: string[]}
   const drawingTfMapRef = useRef({})
@@ -205,6 +221,9 @@ export default function SessionPage(){
         } else if(e.op==='delete'){
           // Inversa de borrar = recrear con su id original.
           if(e.snapshot) pluginRef.current?.createOrUpdateLineTool(e.snapshot.toolType, e.snapshot.points, e.snapshot.options, e.id)
+        } else if(e.op==='update'){
+          // Inversa de editar estilo = reaplicar el estado anterior.
+          try{ if(e.before) pluginRef.current?.createOrUpdateLineTool(e.before.toolType, e.before.points, e.before.options, e.id) }catch{}
         }
       } else if(e.sys==='custom'){
         if(e.op==='create'){
@@ -232,6 +251,9 @@ export default function SessionPage(){
         } else if(e.op==='delete'){
           removeToolById(e.id)
           if(selectedToolRef.current?.id===e.id) setSelectedTool(null)
+        } else if(e.op==='update'){
+          // Re-aplica el estilo nuevo.
+          try{ if(e.after) pluginRef.current?.createOrUpdateLineTool(e.after.toolType, e.after.points, e.after.options, e.id) }catch{}
         }
       } else if(e.sys==='custom'){
         if(e.op==='create'){
@@ -364,6 +386,7 @@ export default function SessionPage(){
           const t=sel[0]
           setSelectedTool({id:t.id,toolType:t.toolType})
           if(t.toolType) setActiveToolKey(t.toolType)
+          try{ setSelectedToolCfg(deriveLineCfg(t.toolType, t.options)) }catch{}
           if(t.toolType==='Callout' && event?.stage==='lineToolFinished'){
             setTextInput({
               x: window.innerWidth/2 - 120,
@@ -386,6 +409,7 @@ export default function SessionPage(){
     }
     drawingHandlersRef.current.dblClick=(event)=>{
       try{setSelectedTool({id:event?.toolId,toolType:event?.toolType});if(event?.toolType)setActiveToolKey(event.toolType)}catch{}
+      try{ const _a = JSON.parse(pluginRef.current?.getLineToolByID(event?.toolId)||'[]'); setSelectedToolCfg(deriveLineCfg(event?.toolType, _a?.[0]?.options)) }catch{}
     }
   })
   useEffect(()=>{activePairRef.current=activePair},[activePair])
@@ -404,11 +428,13 @@ export default function SessionPage(){
           const sel=getSelected()
           if(!sel||sel.length===0){
             setSelectedTool(null)
+            setSelectedToolCfg(null)
           }else{
             const t=sel[0]
             if(t?.id){
               setSelectedTool(prev=>prev?.id===t.id?prev:{id:t.id,toolType:t.toolType})
               if(t.toolType) setActiveToolKey(t.toolType)
+              try{ setSelectedToolCfg(deriveLineCfg(t.toolType, t.options)) }catch{}
             }
           }
         }catch{}
@@ -1053,6 +1079,7 @@ export default function SessionPage(){
           }catch{}
           removeSelected()
           setSelectedTool(null)
+          setSelectedToolCfg(null)
           deleted = true
         }
         // Persist immediately so deletion survives reload
@@ -1270,7 +1297,7 @@ export default function SessionPage(){
           setActiveTool(id)
           setActiveToolKey((id==='cursor'||id==='text'||id==='ruler')?null:id)
           setRulerActive(id==='ruler')
-          if(id==='cursor')setSelectedTool(null)
+          if(id==='cursor'){setSelectedTool(null);setSelectedToolCfg(null)}
         }}
         onAddTool={(toolKey)=>addTool(toolKey)}
         onRemoveSelected={removeSelected}
@@ -1279,6 +1306,7 @@ export default function SessionPage(){
           removeAllCustom()
           setDrawingCount(0)
           setSelectedTool(null)
+          setSelectedToolCfg(null)
           setSelectedDrawing(null)
           setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)
         }}
@@ -1295,7 +1323,7 @@ export default function SessionPage(){
         selectedTool={selectedTool}
         selectedLabel={selectedTool?.id?(()=>{try{const a=JSON.parse(pluginRef.current?.getLineToolByID(selectedTool.id)||'[]');return a?.[0]?.options?.text?.value??''}catch{return ''}})():''}
         toolKey={activeToolKey}
-        toolConfig={activeToolKey?toolConfigs[activeToolKey]:null}
+        toolConfig={selectedToolCfg || (activeToolKey?toolConfigs[activeToolKey]:null)}
         onUpdate={(newCfg)=>{
           const tk=activeToolKeyRef.current
           const st=selectedToolRef.current
@@ -1313,7 +1341,37 @@ export default function SessionPage(){
               }catch{}
             }
             updateToolConfig(tk,{...rest,label:''})
-            if(st?.id) applyToTool(st.id,tk,cfgForTool)
+            if(st?.id){
+              let _before=null
+              try{ _before = JSON.parse(pluginRef.current?.getLineToolByID(st.id))?.[0] }catch{}
+              if(LINE_TYPES.includes(st.toolType)){
+                // Líneas: tocar solo el sub-campo en options reales, preservando la normalización del fork.
+                try{
+                  const _cur = JSON.parse(pluginRef.current?.getLineToolByID(st.id))?.[0]
+                  if(_cur && _cur.options){
+                    const nextOpts = JSON.parse(JSON.stringify(_cur.options))
+                    nextOpts.line = nextOpts.line || {}
+                    if('color' in rest) nextOpts.line.color = rest.color
+                    if('width' in rest) nextOpts.line.width = rest.width
+                    if('style' in rest) nextOpts.line.style = rest.style
+                    if(__labelEdit && 'label' in rest){ nextOpts.text = nextOpts.text || {}; nextOpts.text.value = rest.label }
+                    pluginRef.current?.createOrUpdateLineTool(_cur.toolType, _cur.points, nextOpts, st.id)
+                  }
+                }catch{}
+                // refrescar la pill con el nuevo estado real
+                try{ const _a2 = JSON.parse(pluginRef.current?.getLineToolByID(st.id))?.[0]; setSelectedToolCfg(deriveLineCfg(_a2?.toolType, _a2?.options)) }catch{}
+              } else {
+                applyToTool(st.id,tk,cfgForTool)
+              }
+              try{
+                const _after = JSON.parse(pluginRef.current?.getLineToolByID(st.id))?.[0]
+                if(_before && _after && JSON.stringify(_before.options)!==JSON.stringify(_after.options)){
+                  pushHistory({ sys:'vendor', op:'update', id:st.id,
+                    before:{ toolType:_before.toolType, points:_before.points, options:_before.options },
+                    after:{ toolType:_after.toolType, points:_after.points, options:_after.options } })
+                }
+              }catch{}
+            }
             // Persist so changes survive reload
             setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },150)
           }
@@ -1327,6 +1385,7 @@ export default function SessionPage(){
           try{ const _id = selectedToolRef.current?.id; if(_id){ const t = JSON.parse(pluginRef.current?.getLineToolByID(_id))?.[0]; if(t) pushHistory({ sys:'vendor', op:'delete', id:_id, snapshot:{ toolType:t.toolType, points:t.points, options:t.options } }) } }catch{}
           removeSelected()
           setSelectedTool(null)
+          setSelectedToolCfg(null)
           setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)
         }}
         visibleTf={selectedTool?.id?(()=>{const e=drawingTfMap[selectedTool.id];return e?Array.isArray(e)?e:e.tfs||['M1','M5','M15','M30','H1','H4','D1']:['M1','M5','M15','M30','H1','H4','D1']})():['M1','M5','M15','M30','H1','H4','D1']}
@@ -1341,7 +1400,7 @@ export default function SessionPage(){
             setDrawingTfMap(prev=>({...prev,[selectedTool.id]:{tfs,cfg:toolConfigs[activeToolKey]||{},toolKey:activeToolKey}}))
           }
         }}
-        onDeselect={()=>setSelectedTool(null)}
+        onDeselect={()=>{setSelectedTool(null);setSelectedToolCfg(null)}}
         templates={templates}
         onSaveTemplate={async(name)=>{
           const cfg=activeToolKey?toolConfigs[activeToolKey]:{}
