@@ -1323,7 +1323,12 @@ export default function SessionPage(){
             try{const json=pluginRef.current?.getLineToolByID(selectedToolRef.current.id);const arr=JSON.parse(json);setLongShortModal({toolId:selectedToolRef.current.id,tool:arr?.[0]});}catch{}
           }
         }}
-        onDelete={()=>{removeSelected();setSelectedTool(null);setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)}}
+        onDelete={()=>{
+          try{ const _id = selectedToolRef.current?.id; if(_id){ const t = JSON.parse(pluginRef.current?.getLineToolByID(_id))?.[0]; if(t) pushHistory({ sys:'vendor', op:'delete', id:_id, snapshot:{ toolType:t.toolType, points:t.points, options:t.options } }) } }catch{}
+          removeSelected()
+          setSelectedTool(null)
+          setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)
+        }}
         visibleTf={selectedTool?.id?(()=>{const e=drawingTfMap[selectedTool.id];return e?Array.isArray(e)?e:e.tfs||['M1','M5','M15','M30','H1','H4','D1']:['M1','M5','M15','M30','H1','H4','D1']})():['M1','M5','M15','M30','H1','H4','D1']}
         onVisibilityChange={(tfs)=>{
           if(!selectedTool?.id||!activeToolKey) return
@@ -1532,7 +1537,12 @@ export default function SessionPage(){
             </div>
             <div style={SDIV}/>
             {/* Borrar */}
-            <button title="Borrar" style={sbtn(false,true)} onClick={()=>{removeDrawing(d.id);setSelectedDrawing(null)}}>
+            <button title="Borrar" style={sbtn(false,true)} onClick={()=>{
+              try{ const _d = drawingsRef.current.find(x=>x.id===d.id); if(_d) pushHistory({ sys:'custom', op:'delete', id:d.id, snapshot:{ type:_d.type, points:_d.points, metadata:_d.metadata } }) }catch{}
+              removeDrawing(d.id)
+              setSelectedDrawing(null)
+              setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() },100)
+            }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
             </button>
             {/* Cerrar */}
