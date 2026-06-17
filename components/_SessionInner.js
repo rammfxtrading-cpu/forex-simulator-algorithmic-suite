@@ -115,6 +115,18 @@ export default function SessionPage(){
   const LINE_TYPES = ['TrendLine','HorizontalRay','Path']
   const deriveLineCfg = (toolType, options) => {
     try{
+      if(toolType === 'Rectangle'){
+        const rc = options?.rectangle || {}
+        const bd = rc.border || {}
+        const bg = rc.background || {}
+        return {
+          color: bd.color ?? '#787878',
+          width: bd.width ?? 1,
+          style: bd.style ?? 0,
+          fillColor: bg.color ?? 'rgba(41,98,255,0.15)',
+          label: options?.text?.value ?? '',
+        }
+      }
       if(!LINE_TYPES.includes(toolType)) return null
       const ln = options?.line || {}
       return {
@@ -1354,6 +1366,26 @@ export default function SessionPage(){
                     if('color' in rest) nextOpts.line.color = rest.color
                     if('width' in rest) nextOpts.line.width = rest.width
                     if('style' in rest) nextOpts.line.style = rest.style
+                    if(__labelEdit && 'label' in rest){ nextOpts.text = nextOpts.text || {}; nextOpts.text.value = rest.label }
+                    pluginRef.current?.createOrUpdateLineTool(_cur.toolType, _cur.points, nextOpts, st.id)
+                  }
+                }catch{}
+                // refrescar la pill con el nuevo estado real
+                try{ const _a2 = JSON.parse(pluginRef.current?.getLineToolByID(st.id))?.[0]; setSelectedToolCfg(deriveLineCfg(_a2?.toolType, _a2?.options)) }catch{}
+              } else if(st.toolType === 'Rectangle'){
+                // Rectangle: tocar solo el sub-campo en options reales (border.* y background.color),
+                // preservando la normalización del fork. Mismo patrón que líneas.
+                try{
+                  const _cur = JSON.parse(pluginRef.current?.getLineToolByID(st.id))?.[0]
+                  if(_cur && _cur.options){
+                    const nextOpts = JSON.parse(JSON.stringify(_cur.options))
+                    nextOpts.rectangle = nextOpts.rectangle || {}
+                    nextOpts.rectangle.border = nextOpts.rectangle.border || {}
+                    nextOpts.rectangle.background = nextOpts.rectangle.background || {}
+                    if('color' in rest) nextOpts.rectangle.border.color = rest.color
+                    if('width' in rest) nextOpts.rectangle.border.width = rest.width
+                    if('style' in rest) nextOpts.rectangle.border.style = rest.style
+                    if('fillColor' in rest) nextOpts.rectangle.background.color = rest.fillColor
                     if(__labelEdit && 'label' in rest){ nextOpts.text = nextOpts.text || {}; nextOpts.text.value = rest.label }
                     pluginRef.current?.createOrUpdateLineTool(_cur.toolType, _cur.points, nextOpts, st.id)
                   }
