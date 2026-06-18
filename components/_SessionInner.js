@@ -1491,7 +1491,32 @@ export default function SessionPage(){
             if(styleOpts.textColor)   cfg.textColor=styleOpts.textColor
             if(styleOpts.borderWidth) cfg.borderWidth=styleOpts.borderWidth
             updateToolConfig(tk,cfg)
-            if(longShortModal.toolId) applyToTool(longShortModal.toolId,tk,cfg)
+            // Quirúrgico (patrón Rectangle): en vez de applyToTool→buildOptions (que
+            // reconstruye y pierde entryPtText/entryStopLossText/cursores/labels),
+            // clonamos las options REALES y tocamos SOLO los sub-campos cambiados.
+            if(longShortModal.toolId){
+              try{
+                const _a=JSON.parse(pluginRef.current?.getLineToolByID(longShortModal.toolId))?.[0]
+                if(_a?.options&&_a?.points?.length){
+                  const o=JSON.parse(JSON.stringify(_a.options))
+                  if(styleOpts.profitColor){
+                    o.entryPtRectangle.background.color=styleOpts.profitColor
+                    o.entryPtRectangle.border.color=styleOpts.profitColor
+                  }
+                  if(styleOpts.stopColor){
+                    o.entryStopLossRectangle.background.color=styleOpts.stopColor
+                    o.entryStopLossRectangle.border.color=styleOpts.stopColor
+                  }
+                  if(styleOpts.textColor) o.textColor=styleOpts.textColor
+                  if(styleOpts.borderWidth){
+                    o.entryPtRectangle.border.width=styleOpts.borderWidth
+                    o.entryStopLossRectangle.border.width=styleOpts.borderWidth
+                  }
+                  pluginRef.current?.createOrUpdateLineTool('LongShortPosition',_a.points,o,longShortModal.toolId)
+                  setSelectedToolCfg(deriveLineCfg(_a.toolType,o))
+                }
+              }catch(e){console.error('LongShort onStyleUpdate quirúrgico:',e)}
+            }
           }}
           onConfirm={(posData)=>{
             setLongShortModal(null)
