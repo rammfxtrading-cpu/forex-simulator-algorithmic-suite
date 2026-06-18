@@ -132,6 +132,19 @@ export default function Dashboard() {
   async function createSession() {
     if (!form.name || !form.dateFrom || !form.dateTo) return
     setNewErr('')
+    // Suelo: la data empieza en enero 2024; se exigen 6 meses de contexto previo → minimo 1-jul-2024.
+    const FLOOR = '2024-07-01'
+    if (form.dateFrom < FLOOR || form.dateTo < FLOOR) {
+      setNewErr('La fecha mas temprana disponible es el 1 de julio de 2024. Ajusta el inicio del backtest a esa fecha o posterior.')
+      return
+    }
+    // Tope: la data del dia actual aun no esta descargada. Maximo permitido = ayer.
+    const _y = new Date(); _y.setDate(_y.getDate() - 1)
+    const YESTERDAY = _y.toISOString().slice(0, 10)
+    if (form.dateFrom > YESTERDAY || form.dateTo > YESTERDAY) {
+      setNewErr('No se puede crear una sesion hasta el dia de hoy ni con fechas futuras: los datos del dia aun no estan disponibles. Elige como maximo la fecha de ayer.')
+      return
+    }
     const rangeDays = (new Date(form.dateTo) - new Date(form.dateFrom)) / (1000 * 60 * 60 * 24)
     if (rangeDays < 180) {
       setNewErr('Rango demasiado corto para un backtest fiable. Amplialo a un minimo de 6 meses para tener muestra suficiente.')
@@ -217,6 +230,9 @@ export default function Dashboard() {
       action: () => router.push('/admin')
     }] : []),
   ]
+
+  const _yMax = new Date(); _yMax.setDate(_yMax.getDate() - 1)
+  const MAX_DATE = _yMax.toISOString().slice(0, 10)
 
   return (
     <div style={s.root}>
@@ -486,11 +502,11 @@ export default function Dashboard() {
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:7}}>
                 <label style={{fontSize:10,fontWeight:700,color:'#1E90FF',letterSpacing:1.5}}>DATE FROM</label>
-                <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min="2024-07-01" value={form.dateFrom} onChange={e=>setForm({...form,dateFrom:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
+                <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min="2024-07-01" max={MAX_DATE} value={form.dateFrom} onChange={e=>setForm({...form,dateFrom:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:7}}>
                 <label style={{fontSize:10,fontWeight:700,color:'#1E90FF',letterSpacing:1.5}}>DATE TO</label>
-                <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min="2024-07-01" value={form.dateTo} onChange={e=>setForm({...form,dateTo:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
+                <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min="2024-07-01" max={MAX_DATE} value={form.dateTo} onChange={e=>setForm({...form,dateTo:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
               </div>
             </div>
             {newErr && (
