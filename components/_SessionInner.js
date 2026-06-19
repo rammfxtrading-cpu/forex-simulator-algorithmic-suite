@@ -140,6 +140,7 @@ export default function SessionPage(){
   const [templates,     setTemplates]     = useState([])
   const [drawingTfMap,  setDrawingTfMap]  = useState({}) // {toolId: string[]}
   const drawingTfMapRef = useRef({})
+  const sceneMirrorRef = useRef({})  // Fase C: { id: [{timestamp, price}, ...] } — foto del último estado estable, para detectar move/reshape
   const [drawingCtxMenu, setDrawingCtxMenu] = useState(null)  // {x,y}
   const [longShortModal, setLongShortModal] = useState(null)  // {toolId, tool}
   const [activeToolKey,  setActiveToolKey]  = useState(null)
@@ -367,6 +368,12 @@ export default function SessionPage(){
             if(parsed.tfMap && Object.keys(parsed.tfMap).length > 0) {
               setDrawingTfMap(parsed.tfMap)
               drawingTfMapRef.current = parsed.tfMap
+              try{
+                const sc0 = JSON.parse(pluginRef.current?.exportLineTools() || '[]')
+                const m0 = {}
+                for(const tool of sc0){ m0[tool.id] = JSON.parse(JSON.stringify(tool.points)) }
+                sceneMirrorRef.current = m0
+              }catch{}
               // Re-apply visibility after a short delay (plugin needs to finish importing)
               setTimeout(() => {
                 const tf = pairTfRef.current[activePairRef.current] || 'H1'
@@ -415,6 +422,43 @@ export default function SessionPage(){
           if(event?.stage==='lineToolFinished' || event?.stage==='pathFinished'){
             if(t?.id) pushHistory({ sys:'vendor', op:'create', id:t.id, snapshot:null })
           }
+          // Fase C: capturar MOVE/RESHAPE (todos los vendor EXCEPTO LongShort). El evento
+          // lineToolEdited llega SIN toolId; identificamos el tool comparando la escena
+          // actual contra el espejo (sceneMirrorRef) y vemos cuál cambió sus points.
+          if(event?.stage==='lineToolEdited'){
+            try{
+              const scene = JSON.parse(pluginRef.current?.exportLineTools() || '[]')
+              const samePts = (a,b)=>{
+                if(!a||!b||a.length!==b.length) return false
+                for(let i=0;i<a.length;i++){
+                  if(a[i].timestamp!==b[i].timestamp || a[i].price!==b[i].price) return false
+                }
+                return true
+              }
+              for(const tool of scene){
+                if(tool.toolType==='LongShortPosition') continue  // LongShort excluido: su reshape acopla los 3 points y corrompe el historial — pendiente de tratamiento propio
+                const before = sceneMirrorRef.current[tool.id]
+                if(before && !samePts(before, tool.points)){
+                  // Leer toolType+options reales del tool (no cambian en un move).
+                  const full = JSON.parse(pluginRef.current?.getLineToolByID(tool.id))?.[0]
+                  if(full){
+                    pushHistory({
+                      sys:'vendor', op:'update', id:tool.id,
+                      before:{ toolType:full.toolType, points:JSON.parse(JSON.stringify(before)), options:full.options },
+                      after: { toolType:full.toolType, points:JSON.parse(JSON.stringify(tool.points)), options:full.options },
+                    })
+                  }
+                }
+              }
+            }catch(e){ console.error('Fase C move capture:', e) }
+          }
+          // Fase C: refrescar el espejo SIEMPRE tras procesar (deja el "último estado bueno").
+          try{
+            const sc = JSON.parse(pluginRef.current?.exportLineTools() || '[]')
+            const m = {}
+            for(const tool of sc){ m[tool.id] = JSON.parse(JSON.stringify(tool.points)) }
+            sceneMirrorRef.current = m
+          }catch{}
         }
       }catch{}
       if(saveDrawingsRef.current) saveDrawingsRef.current()
