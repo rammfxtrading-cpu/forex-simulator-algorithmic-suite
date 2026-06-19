@@ -178,6 +178,32 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
       plugin.registerLineTool('Rectangle',          LineToolRectangle)
       plugin.registerLineTool('FibRetracement',     LineToolFibRetracement)
       plugin.registerLineTool('LongShortPosition',  LineToolLongShortPosition)
+      // ── Fix deseleccionar-todo para multi-selección (paridad TradingView) ──
+      // El _handleStandaloneClick del fork solo apaga el _selectedTool único vía
+      // deselectAllTools(), así que tras una multi-selección (varios con
+      // setSelected(true)), un clic normal en vacío o sobre otro dibujo dejaba
+      // los demás encendidos. Lo envolvemos: SIN ⌘/Ctrl, antes de la lógica
+      // original, apagamos TODOS los tools seleccionados; luego corre el original
+      // (que selecciona el clicado, o ninguno si fue en vacío). CON ⌘/Ctrl no
+      // tocamos nada (la acumulación la maneja el overlay de selección).
+      try {
+        const im = plugin._interactionManager
+        if (im && typeof im._handleStandaloneClick === 'function' && !im.__deselectAllPatched) {
+          const origStandalone = im._handleStandaloneClick.bind(im)
+          im._handleStandaloneClick = (point) => {
+            // Con ⌘/Ctrl pulsada, no interferimos con el clic suelto: la
+            // multi-selección se hace SOLO con el recuadro (⌘/Ctrl + arrastrar).
+            const metaOrCtrl = !!(typeof window !== 'undefined' && window.__modKeyDown)
+            if (metaOrCtrl) { origStandalone(point); return }
+            // Sin modificador: limpiamos TODA la selección múltiple primero.
+            im._tools?.forEach(t => { if (t.isSelected()) t.setSelected(false) })
+            im._selectedTool = null
+            // Luego la lógica original selecciona el clicado (o nada si fue vacío).
+            origStandalone(point)
+          }
+          im.__deselectAllPatched = true
+        }
+      } catch (e) { console.error('deselect-all patch:', e) }
       // Suscripcion 1x/plugin (fix s68): handlers enganchados UNA vez al crear el
       // plugin; los wrappers delegan en handlersRef.current (closure mas reciente).
       try {

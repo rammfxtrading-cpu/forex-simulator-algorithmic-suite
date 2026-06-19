@@ -19,6 +19,7 @@ import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
 import ChartConfigPanel, { useChartConfig, applyChartConfig } from './ChartConfigPanel'
 import RulerOverlay from './RulerOverlay'
+import SelectionBoxOverlay from './SelectionBoxOverlay'
 import KillzonesOverlay from './KillzonesOverlay'
 import useCustomDrawings, { DRAWING_TYPES } from './useCustomDrawings'
 import CustomDrawingsOverlay from './CustomDrawingsOverlay'
@@ -225,6 +226,11 @@ export default function SessionPage(){
   const doUndo = () => {
     try{
       const h = histFor(activePairRef.current); const e = h.undo.pop(); if(!e) return
+      // Borrado múltiple: si este entry pertenece a un grupo, tras procesarlo
+      // seguiremos deshaciendo los hermanos del mismo groupId en este mismo tic
+      // (un solo ⌘Z revierte todo el grupo, como TradingView). Marcamos aquí y
+      // ejecutamos el bucle al final de la función.
+      const _grp = e.groupId || null
       if(e.sys==='vendor'){
         if(e.op==='create'){
           // Inversa de crear = borrar. Captura el snapshot AHORA para poder rehacer.
@@ -250,6 +256,13 @@ export default function SessionPage(){
         }
       }
       h.redo.push(e)
+      // Si era de un grupo, deshacemos los hermanos restantes (mismo groupId)
+      // de forma recursiva inmediata, para que cuenten como un solo paso.
+      if(_grp){
+        while(h.undo.length && h.undo[h.undo.length-1]?.groupId===_grp){
+          doUndo()
+        }
+      }
       setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
     }catch{}
   }
@@ -257,6 +270,7 @@ export default function SessionPage(){
   const doRedo = () => {
     try{
       const h = histFor(activePairRef.current); const e = h.redo.pop(); if(!e) return
+      const _grp = e.groupId || null
       if(e.sys==='vendor'){
         if(e.op==='create'){
           // Re-crear desde el snapshot que doUndo dejó relleno.
@@ -278,6 +292,11 @@ export default function SessionPage(){
         }
       }
       h.undo.push(e)
+      if(_grp){
+        while(h.redo.length && h.redo[h.redo.length-1]?.groupId===_grp){
+          doRedo()
+        }
+      }
       setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
     }catch{}
   }
@@ -1131,9 +1150,26 @@ export default function SessionPage(){
           setSelectedDrawing(null)
           deleted = true
         }
-        // Delete vendor drawing (TrendLine, Rectangle, etc.)
-        if(selectedToolRef.current){
-          // Undo: capturar snapshot del tool ANTES de borrarlo.
+        // Delete vendor drawing(s). Si hay VARIOS seleccionados (multi-selección
+        // por recuadro ⌘/Ctrl), los borramos todos como un solo paso de historial
+        // (groupId común → un ⌘Z los recupera todos). getSelectedLineTools itera
+        // por isSelected(), así que devuelve el conjunto real marcado.
+        let _sel = []
+        try{ _sel = JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') }catch{}
+        if(_sel.length > 1){
+          const _gid = 'del-'+Date.now()
+          for(const t of _sel){
+            // Snapshot completo de cada tool ANTES de borrar (para poder rehacer/deshacer).
+            try{ const full = JSON.parse(pluginRef.current?.getLineToolByID(t.id))?.[0]
+              if(full) pushHistory({ sys:'vendor', op:'delete', id:t.id, groupId:_gid, snapshot:{ toolType:full.toolType, points:full.points, options:full.options } })
+            }catch{}
+          }
+          try{ pluginRef.current?.removeSelectedLineTools() }catch{}
+          setSelectedTool(null)
+          setSelectedToolCfg(null)
+          deleted = true
+        } else if(selectedToolRef.current){
+          // Borrado individual (un solo dibujo), como hasta ahora.
           const _id = selectedToolRef.current.id
           try{ const t = JSON.parse(pluginRef.current?.getLineToolByID(_id))?.[0]
             if(t) pushHistory({ sys:'vendor', op:'delete', id:_id, snapshot:{ toolType:t.toolType, points:t.points, options:t.options } })
@@ -1331,6 +1367,7 @@ export default function SessionPage(){
         })}
         <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} tfKey={tfKey} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'} currentTime={currentTime}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} chartTick={chartTick} />
+        <SelectionBoxOverlay chartMap={chartMap} activePair={activePair} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} chartTick={chartTick} />
         {!dataReady&&everReadyRef.current&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
