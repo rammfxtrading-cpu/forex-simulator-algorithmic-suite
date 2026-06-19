@@ -620,8 +620,10 @@ export default function SessionPage(){
       setBalance(savedBalance)
       balanceRef.current = savedBalance
       const p=data.pair||'EUR/USD', tf=data.timeframe||'H1'
-      setActivePairs([p]); setActivePair(p)
-      const initTf={[p]:tf}; setPairTf(initTf); pairTfRef.current=initTf
+      let _savedPairs=[p]
+      try{ const _sp=JSON.parse(localStorage.getItem('simPairs:'+id)||'[]'); if(Array.isArray(_sp)&&_sp.length){ _savedPairs=Array.from(new Set([p,..._sp])) } }catch{}
+      setActivePairs(_savedPairs); setActivePair(p)
+      try{ const _tf={}; _savedPairs.forEach(pp=>{ _tf[pp]=(pp===p?tf:'H1') }); setPairTf(_tf); pairTfRef.current=_tf }catch{}
       // Load previous trades for this session to show in journal
       const { data: prevTrades } = await supabase.from('sim_trades').select('*').eq('session_id',id).order('closed_at',{ascending:true})
       if(prevTrades?.length){
@@ -1076,16 +1078,19 @@ export default function SessionPage(){
     setAddingPair(false)
     if(activePairs.includes(pair)){setActivePair(pair);return}
     const nxt={...pairTfRef.current,[pair]:'H1'};pairTfRef.current=nxt;setPairTf(nxt)
-    setActivePairs(prev=>[...prev,pair]);setActivePair(pair)
-  },[activePairs])
+    const _next=[...activePairs,pair]
+    setActivePairs(_next);setActivePair(pair)
+    try{ localStorage.setItem('simPairs:'+id, JSON.stringify(_next)) }catch{}
+  },[activePairs,id])
 
   const removePair=useCallback((pair)=>{
     if(activePairs.length===1) return
     const cr=chartMap.current[pair];if(cr){try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{};delete chartMap.current[pair]}
     delete pairState.current[pair]
     const next=activePairs.filter(p=>p!==pair);setActivePairs(next)
+    try{ localStorage.setItem('simPairs:'+id, JSON.stringify(next)) }catch{}
     if(activePair===pair)setActivePair(next[0])
-  },[activePairs,activePair])
+  },[activePairs,activePair,id])
 
   // ── Shift+Click → activate ruler ─────────────────────────────────────────────
   useEffect(()=>{
