@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { getSeriesData } from '../lib/sessionData'
 
 // Overlay del recuadro de selección (paridad TradingView: ⌘/Ctrl + arrastrar).
 // Gemelo de RulerOverlay. EN ESTA PIEZA solo dibuja el recuadro mientras ⌘/Ctrl
@@ -60,85 +59,39 @@ export default function SelectionBoxOverlay({ chartMap, activePair, onSelectArea
     const plugin = cr?.plugin
     if (!plugin || !cr?.series || !cr?.chart) return
     try {
-      const ts = cr.chart.timeScale()
-      const s  = cr.series
+      const im = plugin._interactionManager
       const scene = JSON.parse(plugin.exportLineTools() || '[]')
-      // Datos de la serie para mapear timestamp → índice de vela. El chart trabaja
-      // en espacio LÓGICO (índice de barra): logicalToCoordinate(idx) da el píxel X.
-      // NO se puede usar timeToCoordinate(timestamp) porque espera fechas yyyy-mm-dd
-      // y lanza error con timestamps Unix.
-      const data = getSeriesData() || []
-      const dlen = data.length
-      // timestamp → índice lógico replicando la interpolación del fork
-      // (interpolateLogicalIndexFromTime): índice = (timestamp - time0) / interval,
-      // con interval = tiempo entre las dos primeras velas. SIN clampar: extrapola
-      // a índices fraccionarios y fuera de rango, igual que hace el plugin para
-      // dibujos en el espacio futuro/en blanco (a la derecha de la última vela).
-      // Clampar (como hacía la búsqueda binaria) colocaba mal Path/Rectangle
-      // dibujados en el hueco futuro, pegándolos al borde de los datos.
-      // Intervalo entre velas (segundos), estimado como la mediana de las
-      // diferencias para ser robusto ante irregularidades. Se usa SOLO para
-      // extrapolar dibujos que caen más allá de la última vela.
-      const lastIdx = dlen - 1
-      const lastTime = dlen > 0 ? data[lastIdx].time : null
-      const firstTime = dlen > 0 ? data[0].time : null
-      const interval = dlen > 1 ? (data[1].time - data[0].time) : 900
-      const tsToIndex = (timestamp) => {
-        if (dlen === 0) return null
-        // Antes del primer dato: extrapola hacia la izquierda (índices negativos).
-        if (timestamp <= firstTime) return (timestamp - firstTime) / interval
-        // Más allá del último dato (espacio futuro/en blanco): extrapola a la
-        // derecha desde el último índice real. Aquí NO hay velas que buscar, así
-        // que el intervalo es la única referencia (replica al fork en el hueco).
-        if (timestamp >= lastTime) return lastIdx + (timestamp - lastTime) / interval
-        // Dentro del rango: búsqueda binaria del índice real. Robusta ante huecos
-        // de fin de semana (no asume una vela cada 'interval' segundos).
-        let lo = 0, hi = lastIdx
-        while (lo <= hi) {
-          const mid = (lo + hi) >> 1
-          const tm = data[mid].time
-          if (tm === timestamp) return mid
-          if (tm < timestamp) lo = mid + 1
-          else hi = mid - 1
-        }
-        // No hay match exacto: interpola entre los dos índices vecinos (hi y lo)
-        // según la posición real del timestamp entre sus tiempos. Da un índice
-        // fraccionario preciso aun con velas irregularmente espaciadas.
-        const iLo = Math.max(0, hi), iHi = Math.min(lastIdx, lo)
-        if (iLo === iHi) return iLo
-        const tLo = data[iLo].time, tHi = data[iHi].time
-        const frac = (tHi === tLo) ? 0 : (timestamp - tLo) / (tHi - tLo)
-        return iLo + frac
-      }
-      // Caja del recuadro normalizada.
-      const rx1 = Math.min(box.x1, box.x2), ry1 = Math.min(box.y1, box.y2)
-      const rx2 = Math.max(box.x1, box.x2), ry2 = Math.max(box.y1, box.y2)
+      // Convertimos las DOS esquinas del recuadro (pantalla) a coordenadas
+      // nativas del dibujo (timestamp/price) con la propia función del plugin,
+      // que es la inversa EXACTA de cómo coloca los dibujos — incluido el espacio
+      // futuro/en blanco. Así comparamos en el MISMO espacio en que el dibujo
+      // guarda sus puntos, sin reinventar la conversión timestamp→píxel (que
+      // fallaba en los bordes por huecos de fin de semana y velas phantom).
+      const c1 = im?.screenPointToLineToolPoint?.({ x: box.x1, y: box.y1 })
+      const c2 = im?.screenPointToLineToolPoint?.({ x: box.x2, y: box.y2 })
+      if (!c1 || !c2) return
+      const tMin = Math.min(c1.timestamp, c2.timestamp)
+      const tMax = Math.max(c1.timestamp, c2.timestamp)
+      const pMin = Math.min(c1.price, c2.price)
+      const pMax = Math.max(c1.price, c2.price)
       const selectedIds = []
       for (const tool of scene) {
         if (!Array.isArray(tool.points) || tool.points.length === 0) continue
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-        let anyValid = false
+        let tTMin = Infinity, tTMax = -Infinity, tPMin = Infinity, tPMax = -Infinity
         for (const p of tool.points) {
-          const idx = tsToIndex(p.timestamp)
-          const px = (idx == null) ? null : ts.logicalToCoordinate(idx)
-          const py = s.priceToCoordinate(p.price)
-          if (px == null || py == null) continue  // point no convertible
-          anyValid = true
-          if (px < minX) minX = px
-          if (px > maxX) maxX = px
-          if (py < minY) minY = py
-          if (py > maxY) maxY = py
+          if (p.timestamp < tTMin) tTMin = p.timestamp
+          if (p.timestamp > tTMax) tTMax = p.timestamp
+          if (p.price < tPMin) tPMin = p.price
+          if (p.price > tPMax) tPMax = p.price
         }
-        if (!anyValid) continue  // dibujo sin coordenadas válidas
-        // Intersección AABB entre la caja del dibujo y el recuadro.
-        const overlaps = minX <= rx2 && maxX >= rx1 && minY <= ry2 && maxY >= ry1
+        // Intersección AABB en espacio timestamp/price.
+        const overlaps = tTMin <= tMax && tTMax >= tMin && tPMin <= pMax && tPMax >= pMin
         if (overlaps) selectedIds.push(tool.id)
       }
       if (selectedIds.length === 0) return
       // Marca cada dibujo solapado como seleccionado (sin deseleccionar el resto:
       // así un recuadro tras otro acumula, igual que ⌘+clic). setSelected hace
       // updateAllViews + requestUpdate (repinta los handles).
-      const im = plugin._interactionManager
       let last = null
       for (const id of selectedIds) {
         const t = plugin._tools?.get(id)
