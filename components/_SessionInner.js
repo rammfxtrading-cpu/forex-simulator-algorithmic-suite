@@ -254,6 +254,15 @@ export default function SessionPage(){
           // Inversa de borrar = recrear con su id original.
           if(e.snapshot) addDrawing(e.snapshot.type, e.snapshot.points, e.snapshot.metadata, e.id)
         }
+      } else if(e.sys==='clearAll'){
+        // Inversa de "borrar todo" = restaurar la escena entera capturada en el snapshot.
+        // El fork NO limpia antes de importar (es aditivo), así que borramos primero y luego reimportamos.
+        try{ pluginRef.current?.removeAllLineTools() }catch{}
+        try{ if(e.snapshot?.v) pluginRef.current?.importLineTools(e.snapshot.v) }catch{}
+        try{ if(e.snapshot?.c) customDrawingsFromJSON(e.snapshot.c) }catch{}
+        try{ if(e.snapshot?.tf){ drawingTfMapRef.current = {...e.snapshot.tf}; setDrawingTfMap({...e.snapshot.tf}) } }catch{}
+        // Contador real (acumulador-flag): nº de tools vendor + custom restaurados.
+        try{ const _vn=JSON.parse(pluginRef.current?.exportLineTools()||'[]').length; setDrawingCount(_vn + drawingsRef.current.length) }catch{}
       }
       h.redo.push(e)
       // Si era de un grupo, deshacemos los hermanos restantes (mismo groupId)
@@ -290,6 +299,13 @@ export default function SessionPage(){
           removeDrawing(e.id)
           if(selectedDrawingRef.current?.id===e.id) setSelectedDrawing(null)
         }
+      } else if(e.sys==='clearAll'){
+        // Re-hacer "borrar todo" = volver a vaciar vendor + custom y resetear contador/tfMap.
+        try{ pluginRef.current?.removeAllLineTools() }catch{}
+        try{ removeAllCustom() }catch{}
+        try{ drawingTfMapRef.current = {}; setDrawingTfMap({}) }catch{}
+        setSelectedTool(null); setSelectedDrawing(null)
+        setDrawingCount(0)
       }
       h.undo.push(e)
       if(_grp){
@@ -1400,6 +1416,17 @@ export default function SessionPage(){
         onAddTool={(toolKey)=>addTool(toolKey)}
         onRemoveSelected={removeSelected}
         onRemoveAll={()=>{
+          // Snapshot de la escena ENTERA antes de borrar (vendor + custom + tfMap), para un ⌘Z deshacible.
+          try{
+            const _v = exportTools()
+            const _c = customDrawingsToJSON()
+            const _tf = {...drawingTfMapRef.current}
+            const _hasVendor = (()=>{ try{ return JSON.parse(_v||'[]').length>0 }catch{ return false } })()
+            const _hasCustom = drawingsRef.current.length>0
+            if(_hasVendor || _hasCustom){
+              pushHistory({ sys:'clearAll', snapshot:{ v:_v, c:_c, tf:_tf } })
+            }
+          }catch{}
           removeAll()
           removeAllCustom()
           setDrawingCount(0)
