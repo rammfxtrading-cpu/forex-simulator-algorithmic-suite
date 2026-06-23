@@ -143,6 +143,19 @@ export default function SelectionBoxOverlay({ chartMap, activePair, onSelectArea
       const moved = Math.sqrt(dx*dx + dy*dy) >= 5
       if (moved && start) {
         selectInArea({ x1: start.x, y1: start.y, x2: x, y2: y })
+        // Propaga al padre las bounds en coords de VIEWPORT (sumando el origen del canvas)
+        // + el nº de tools seleccionados, para anclar una barra flotante de grupo.
+        try{
+          if(typeof onSelectArea === 'function'){
+            const vp = {
+              x1: Math.min(start.x, x) + rect.left,
+              y1: Math.min(start.y, y) + rect.top,
+              x2: Math.max(start.x, x) + rect.left,
+              y2: Math.max(start.y, y) + rect.top,
+            }
+            onSelectArea(vp)
+          }
+        }catch{}
       }
       stateRef.current = { dragging: false, start: null, end: null }
       canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)

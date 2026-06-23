@@ -73,7 +73,32 @@ export default function DrawingToolbarV2({ activeTool,onToolChange,onAddTool,onR
   )
 }
 
-// ── Config pill ───────────────────────────────────────────────────────────────
+// ── Group action bar ──────────────────────────────────────────────────────
+// Barra flotante de acciones de grupo (multi-selección por recuadro).
+// Aparece anclada arriba-centro de las bounds de la selección. Solo borrar (mover llega con group-move).
+// Reutiliza el look de la pill (PILL/btn/TrashIcon). Recibe sel={ box:{x1,y1,x2,y2}, count } y onDelete.
+export function GroupActionBar({ sel, onDelete }){
+  if(!sel || !(sel.count > 1)) return null
+  const { box } = sel
+  // Ancla: centro horizontal de la caja, justo encima del borde superior. Coords de VIEWPORT (fixed).
+  const cx = (box.x1 + box.x2) / 2
+  const top = Math.max(8, box.y1 - 44) // 44px por encima; clamp para que no se salga arriba
+  return (
+    <div style={{
+      ...PILL, position:'fixed', left:cx, top, transform:'translateX(-50%)',
+      zIndex:200, cursor:'default',
+    }}
+      onMouseDown={e=>e.stopPropagation()}
+      onClick={e=>e.stopPropagation()}
+      onPointerDown={e=>e.stopPropagation()}>
+      <span style={{ color:'#fff', fontSize:12, fontWeight:600, padding:'0 4px', whiteSpace:'nowrap' }}>{sel.count} seleccionados</span>
+      <div style={DIV}/>
+      <button title="Borrar grupo (Del)" style={btn(false,true)} onClick={onDelete}><TrashIcon/></button>
+    </div>
+  )
+}
+
+// ── Config pill ───────────────────────────────────────────────────────────
 export function DrawingConfigPill({ selectedTool,selectedLabel,toolKey,toolConfig,onUpdate,onDelete,onDeselect,templates,onSaveTemplate,onLoadTemplate,onDeleteTemplate,onOpenConfig,visibleTf,onVisibilityChange }) {
   const [pos,onMD]=useDrag({x:null,y:null})
   const [showText,setShowText]=useState(false)

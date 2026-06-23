@@ -14,7 +14,7 @@ import { initVisibleRange, scrollToTail, markUserScrollIfReal } from '../lib/cha
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
 import { realizePnl } from '../lib/trading/orders'
 import { nextSessionOpen, sessionKeyAt } from '../lib/killzonesDomain'
-import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu } from './DrawingToolbarV2'
+import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu, GroupActionBar } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
 import ChartConfigPanel, { useChartConfig, applyChartConfig } from './ChartConfigPanel'
@@ -109,6 +109,7 @@ export default function SessionPage(){
   const [activeTool,    setActiveTool]    = useState('cursor')
   const activeToolRef = useRef('cursor')
   const [drawingCount,  setDrawingCount]  = useState(0)
+  const [groupSel, setGroupSel] = useState(null) // { box:{x1,y1,x2,y2}, count } | null
   const [selectedTool,  setSelectedTool]  = useState(null)
   const [selectedToolCfg, setSelectedToolCfg] = useState(null)
   // Deriva el cfg de la pill desde las options REALES de un dibujo de LÍNEA.
@@ -221,11 +222,34 @@ export default function SessionPage(){
   const histFor = (pair) => { if(!historyRef.current[pair]) historyRef.current[pair] = { undo: [], redo: [] }; return historyRef.current[pair] }
   // Nueva acción invalida el rehacer del par.
   const pushHistory = (entry) => { const h = histFor(activePairRef.current); h.undo.push(entry); h.redo = [] }
+  // Borra TODA la multi-selección por recuadro (vendor) como un solo paso de historial.
+  // Devuelve true si había grupo (>1) y lo borró; false si no había grupo (deja que el
+  // llamador maneje el borrado individual). Reutilizada por teclado y por la barra de grupo.
+  const deleteSelectedGroup = () => {
+    let _sel = []
+    try{ _sel = JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') }catch{}
+    if(_sel.length > 1){
+      const _gid = 'del-'+Date.now()
+      for(const t of _sel){
+        try{ const full = JSON.parse(pluginRef.current?.getLineToolByID(t.id))?.[0]
+          if(full) pushHistory({ sys:'vendor', op:'delete', id:t.id, groupId:_gid, snapshot:{ toolType:full.toolType, points:full.points, options:full.options } })
+        }catch{}
+      }
+      try{ pluginRef.current?.removeSelectedLineTools() }catch{}
+      setSelectedTool(null)
+      setSelectedToolCfg(null)
+      setGroupSel(null)
+      setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
+      return true
+    }
+    return false
+  }
   // Aplica la INVERSA de la última acción del par activo. try/catch defensivo:
   // un throw no puede romper el teclado global.
   const doUndo = () => {
     try{
       const h = histFor(activePairRef.current); const e = h.undo.pop(); if(!e) return
+      setGroupSel(null)
       // Borrado múltiple: si este entry pertenece a un grupo, tras procesarlo
       // seguiremos deshaciendo los hermanos del mismo groupId en este mismo tic
       // (un solo ⌘Z revierte todo el grupo, como TradingView). Marcamos aquí y
@@ -279,6 +303,7 @@ export default function SessionPage(){
   const doRedo = () => {
     try{
       const h = histFor(activePairRef.current); const e = h.redo.pop(); if(!e) return
+      setGroupSel(null)
       const _grp = e.groupId || null
       if(e.sys==='vendor'){
         if(e.op==='create'){
@@ -520,6 +545,7 @@ export default function SessionPage(){
           if(!sel||sel.length===0){
             setSelectedTool(null)
             setSelectedToolCfg(null)
+            setGroupSel(null)
           }else{
             const t=sel[0]
             if(t?.id){
@@ -938,6 +964,7 @@ export default function SessionPage(){
   // en el TF nuevo para que ese timestamp caiga dentro del array.
   const prevTfRef = useRef(null)
   useEffect(()=>{
+    setGroupSel(null)
     // ─── sub-fase 5c — TF transition orchestrator ──────────────────────
     // Las 6 responsabilidades del cambio de TF, extraídas a funciones
     // nombradas locales con orden de ejecución explícito:
@@ -1170,19 +1197,7 @@ export default function SessionPage(){
         // por recuadro ⌘/Ctrl), los borramos todos como un solo paso de historial
         // (groupId común → un ⌘Z los recupera todos). getSelectedLineTools itera
         // por isSelected(), así que devuelve el conjunto real marcado.
-        let _sel = []
-        try{ _sel = JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') }catch{}
-        if(_sel.length > 1){
-          const _gid = 'del-'+Date.now()
-          for(const t of _sel){
-            // Snapshot completo de cada tool ANTES de borrar (para poder rehacer/deshacer).
-            try{ const full = JSON.parse(pluginRef.current?.getLineToolByID(t.id))?.[0]
-              if(full) pushHistory({ sys:'vendor', op:'delete', id:t.id, groupId:_gid, snapshot:{ toolType:full.toolType, points:full.points, options:full.options } })
-            }catch{}
-          }
-          try{ pluginRef.current?.removeSelectedLineTools() }catch{}
-          setSelectedTool(null)
-          setSelectedToolCfg(null)
+        if(deleteSelectedGroup()){
           deleted = true
         } else if(selectedToolRef.current){
           // Borrado individual (un solo dibujo), como hasta ahora.
@@ -1383,7 +1398,11 @@ export default function SessionPage(){
         })}
         <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} tfKey={tfKey} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'} currentTime={currentTime}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} chartTick={chartTick} />
-        <SelectionBoxOverlay chartMap={chartMap} activePair={activePair} />
+        <SelectionBoxOverlay chartMap={chartMap} activePair={activePair} onSelectArea={(box)=>{
+          let n = 0
+          try{ n = JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]').length }catch{}
+          setGroupSel(n > 1 ? { box, count:n } : null)
+        }} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} chartTick={chartTick} />
         {!dataReady&&everReadyRef.current&&(
           <div style={s.overlay}><Spin/><span style={s.overlayTxt}>Cargando {activePair}…</span></div>
@@ -1445,7 +1464,7 @@ export default function SessionPage(){
         onLoadTemplate={(t)=>{if(!t?.data)return;removeAll();importTools(t.data)}}
       />
       <DrawingConfigPill
-        selectedTool={selectedTool}
+        selectedTool={groupSel ? null : selectedTool}
         selectedLabel={selectedTool?.id?(()=>{try{const a=JSON.parse(pluginRef.current?.getLineToolByID(selectedTool.id)||'[]');return a?.[0]?.options?.text?.value??''}catch{return ''}})():''}
         toolKey={activeToolKey}
         toolConfig={selectedToolCfg || (activeToolKey?toolConfigs[activeToolKey]:null)}
@@ -1586,6 +1605,7 @@ export default function SessionPage(){
           }catch{}
         }}
       />
+      <GroupActionBar sel={groupSel} onDelete={()=>{ deleteSelectedGroup(); setGroupSel(null) }} />
       </>)}
       {longShortModal&&(
         <LongShortModal
