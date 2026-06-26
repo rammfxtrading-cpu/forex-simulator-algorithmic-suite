@@ -109,7 +109,8 @@ export default function SessionPage(){
   const [activeTool,    setActiveTool]    = useState('cursor')
   const activeToolRef = useRef('cursor')
   const [drawingCount,  setDrawingCount]  = useState(0)
-  const [groupSel, setGroupSel] = useState(null) // { box:{x1,y1,x2,y2}, count } | null
+  const [groupSel, setGroupSel] = useState(null) // { box:{x1,y1,x2,y2}, count, ids } | null
+  const groupSelRef = useRef(null) // s76: espejo de groupSel para leer ids fiables en deleteSelectedGroup
   const [selectedTool,  setSelectedTool]  = useState(null)
   const [selectedToolCfg, setSelectedToolCfg] = useState(null)
   // Deriva el cfg de la pill desde las options REALES de un dibujo de LÍNEA.
@@ -226,20 +227,35 @@ export default function SessionPage(){
   // Devuelve true si había grupo (>1) y lo borró; false si no había grupo (deja que el
   // llamador maneje el borrado individual). Reutilizada por teclado y por la barra de grupo.
   const deleteSelectedGroup = () => {
-    let _sel = []
-    try{ _sel = JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]') }catch{}
-    if(_sel.length > 1){
+    // s76 fix: borrar por la lista de IDs capturada en groupSel (fiable en el momento
+    // del recuadro). El flag isSelected del plugin puede perderse tras el re-import del
+    // save (es aditivo y recrea los tools sin selección), por eso NO dependemos de
+    // getSelectedLineTools() aquí. Fallback al plugin si groupSel no tiene ids.
+    let _ids = (groupSelRef.current && Array.isArray(groupSelRef.current.ids)) ? groupSelRef.current.ids.slice() : null
+    if(!_ids){
+      try{ _ids = JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]').map(t=>t.id) }catch{ _ids = [] }
+    }
+    if(_ids.length > 1){
       const _gid = 'del-'+Date.now()
-      for(const t of _sel){
-        try{ const full = JSON.parse(pluginRef.current?.getLineToolByID(t.id))?.[0]
-          if(full) pushHistory({ sys:'vendor', op:'delete', id:t.id, groupId:_gid, snapshot:{ toolType:full.toolType, points:full.points, options:full.options } })
+      for(const _id of _ids){
+        try{ const full = JSON.parse(pluginRef.current?.getLineToolByID(_id))?.[0]
+          if(full) pushHistory({ sys:'vendor', op:'delete', id:_id, groupId:_gid, snapshot:{ toolType:full.toolType, points:full.points, options:full.options } })
         }catch{}
       }
-      try{ pluginRef.current?.removeSelectedLineTools() }catch{}
+      // Borrado explícito por ID (no por selección del plugin).
+      // removeLineToolsById espera un array de strings directamente.
+      // Se difiere al siguiente tick: si el borrado se hace en el mismo tick que
+      // el mouseup del drag, el plugin aún tiene _draggedTool apuntando a un tool
+      // que destruimos y lanza "Series not attached". Un tick después, el manager
+      // ya terminó su mouseup y limpió su estado de drag.
+      const _toDelete = _ids.slice()
       setSelectedTool(null)
       setSelectedToolCfg(null)
       setGroupSel(null)
-      setTimeout(()=>{ if(saveDrawingsRef.current) saveDrawingsRef.current() }, 100)
+      setTimeout(()=>{
+        try{ pluginRef.current?.removeLineToolsById(_toDelete) }catch{}
+        if(saveDrawingsRef.current) saveDrawingsRef.current()
+      }, 0)
       return true
     }
     return false
@@ -495,19 +511,27 @@ export default function SessionPage(){
                 }
                 return true
               }
+              // s76: primero detectamos qué tools cambiaron de sitio. Si son varios
+              // (move en grupo), comparten un groupId para que un ⌘Z los revierta juntos.
+              const _moved = []
               for(const tool of scene){
                 if(tool.toolType==='LongShortPosition') continue  // LongShort excluido: su reshape acopla los 3 points y corrompe el historial — pendiente de tratamiento propio
                 const before = sceneMirrorRef.current[tool.id]
                 if(before && !samePts(before, tool.points)){
-                  // Leer toolType+options reales del tool (no cambian en un move).
-                  const full = JSON.parse(pluginRef.current?.getLineToolByID(tool.id))?.[0]
-                  if(full){
-                    pushHistory({
-                      sys:'vendor', op:'update', id:tool.id,
-                      before:{ toolType:full.toolType, points:JSON.parse(JSON.stringify(before)), options:full.options },
-                      after: { toolType:full.toolType, points:JSON.parse(JSON.stringify(tool.points)), options:full.options },
-                    })
-                  }
+                  _moved.push({ tool, before })
+                }
+              }
+              const _mvGid = _moved.length > 1 ? ('mv-'+Date.now()) : null
+              for(const _m of _moved){
+                const tool = _m.tool, before = _m.before
+                // Leer toolType+options reales del tool (no cambian en un move).
+                const full = JSON.parse(pluginRef.current?.getLineToolByID(tool.id))?.[0]
+                if(full){
+                  pushHistory({
+                    sys:'vendor', op:'update', id:tool.id, groupId:_mvGid,
+                    before:{ toolType:full.toolType, points:JSON.parse(JSON.stringify(before)), options:full.options },
+                    after: { toolType:full.toolType, points:JSON.parse(JSON.stringify(tool.points)), options:full.options },
+                  })
                 }
               }
             }catch(e){ console.error('Fase C move capture:', e) }
@@ -530,6 +554,7 @@ export default function SessionPage(){
   })
   useEffect(()=>{activePairRef.current=activePair},[activePair])
   useEffect(()=>{selectedToolRef.current=selectedTool},[selectedTool])
+  useEffect(()=>{groupSelRef.current=groupSel},[groupSel])
 
   // Sync selectedTool on click — reactivo vía subscribeClick LWC oficial (reemplaza polling 300ms s40 5f.2)
   useEffect(()=>{
@@ -1399,9 +1424,10 @@ export default function SessionPage(){
         <KillzonesOverlay chartMap={chartMap} activePair={activePair} tick={tick} tfKey={tfKey} dataReady={dataReady} currentTf={pairTf[activePair]||'H1'} currentTime={currentTime}/>
         <RulerOverlay active={rulerActive} onDeactivate={()=>{setRulerActive(false);setActiveTool('cursor')}} chartMap={chartMap} activePair={activePair} chartTick={chartTick} />
         <SelectionBoxOverlay chartMap={chartMap} activePair={activePair} onSelectArea={(box)=>{
-          let n = 0
-          try{ n = JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]').length }catch{}
-          setGroupSel(n > 1 ? { box, count:n } : null)
+          let _ids = []
+          try{ _ids = JSON.parse(pluginRef.current?.getSelectedLineTools() || '[]').map(t=>t.id) }catch{}
+          const n = _ids.length
+          setGroupSel(n > 1 ? { box, count:n, ids:_ids } : null)
         }} />
         <CustomDrawingsOverlay drawings={drawings} chartMap={chartMap} activePair={activePair} tfKey={tfKey} chartTick={chartTick} />
         {!dataReady&&everReadyRef.current&&(

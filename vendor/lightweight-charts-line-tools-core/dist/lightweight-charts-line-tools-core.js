@@ -1683,6 +1683,7 @@ class InteractionManager {
         this._draggedTool = null;
         this._draggedPointIndex = null;
         this._originalDragPoints = null;
+        this._groupOriginalDragPoints = null; // s76: {id -> puntos originales} de hermanos seleccionados para mover en grupo
         this._dragStartPoint = null;
         // Store the cursor that started the interaction
         this._activeDragCursor = null;
@@ -1920,6 +1921,8 @@ class InteractionManager {
                 return;
             }
             // A detected hit means this tool must be selected immediately.
+            // s76: si el tool tocado YA pertenece a la selección (grupo), NO deseleccionamos
+            // al resto — así un drag sobre cualquier miembro arrastra todo el grupo (estilo TradingView).
             if (!hitResult.tool.isSelected()) {
                 this.deselectAllTools();
                 this._selectedTool = hitResult.tool;
@@ -1973,6 +1976,32 @@ class InteractionManager {
             // Store the collected points for drag comparison
             this._originalDragPoints = allOriginalPoints;
             // highlight-end
+            // s76: MOVER EN GRUPO — si hay más de un tool seleccionado, capturamos los puntos
+            // originales de cada hermano (distinto del arrastrado) para trasladarlos en vivo.
+            this._groupOriginalDragPoints = null;
+            try {
+                const _selectedTools = [];
+                this._tools.forEach(t => { if (t.isSelected()) _selectedTools.push(t); });
+                if (_selectedTools.length > 1) {
+                    const _map = {};
+                    for (const _sib of _selectedTools) {
+                        if (_sib === this._draggedTool) continue;
+                        const _maxIdx = _sib.maxAnchorIndex ? _sib.maxAnchorIndex() : (_sib.pointsCount - 1);
+                        const _pts = [];
+                        if (_sib.pointsCount === -1) {
+                            const _all = _sib.getPermanentPointsForTranslation();
+                            for (const _p of _all) _pts.push(_p);
+                        } else {
+                            for (let _i = 0; _i <= _maxIdx; _i++) {
+                                const _p = _sib.getPoint(_i);
+                                if (_p !== null) _pts.push(_p);
+                            }
+                        }
+                        _map[_sib.id()] = _pts;
+                    }
+                    this._groupOriginalDragPoints = _map;
+                }
+            } catch (e) { this._groupOriginalDragPoints = null; }
             this._dragStartPoint = point;
             this._chart.applyOptions({ handleScroll: { pressedMouseMove: false } });
             console.log(`[InteractionManager] Mouse Down: Starting gesture on tool ${hitResult.tool.id()}`);
@@ -2173,6 +2202,37 @@ class InteractionManager {
                     if (outOfOrder) return;
 
                     tool.setPoints(newLogicalPoints);
+
+                    // s76: MOVER EN GRUPO — aplicar el MISMO delta de píxeles a cada hermano
+                    // seleccionado, con la misma técnica punto-por-punto (robusta a gaps).
+                    if (this._groupOriginalDragPoints) {
+                        for (const _sibId in this._groupOriginalDragPoints) {
+                            const _sibTool = this._tools.get(_sibId);
+                            if (!_sibTool) continue;
+                            const _sibOrig = this._groupOriginalDragPoints[_sibId];
+                            if (!_sibOrig || _sibOrig.length === 0) continue;
+                            const _sibNew = [];
+                            let _sibFailed = false;
+                            for (const _op of _sibOrig) {
+                                const _os = _sibTool.pointToScreenPoint(_op);
+                                if (!_os) { _sibFailed = true; break; }
+                                const _ns = _os.add(delta);
+                                const _nl = _sibTool.screenPointToPoint(_ns);
+                                if (!_nl) { _sibFailed = true; break; }
+                                _sibNew.push(_nl);
+                            }
+                            if (_sibFailed || _sibNew.length !== _sibOrig.length) continue;
+                            let _sibOOO = false;
+                            for (let _i = 1; _i < _sibNew.length; _i++) {
+                                const _os = Math.sign(_sibOrig[_i].timestamp - _sibOrig[_i - 1].timestamp);
+                                const _ns = Math.sign(_sibNew[_i].timestamp - _sibNew[_i - 1].timestamp);
+                                if (_os !== 0 && _ns !== 0 && _os !== _ns) { _sibOOO = true; break; }
+                            }
+                            if (_sibOOO) continue;
+                            _sibTool.setPoints(_sibNew);
+                            _sibTool.updateAllViews();
+                        }
+                    }
                 }
                 this._draggedTool.updateAllViews();
                 this._plugin.requestUpdate();
@@ -2484,6 +2544,7 @@ class InteractionManager {
         this._draggedPointIndex = null;
         this._dragStartPoint = null;
         this._originalDragPoints = null;
+        this._groupOriginalDragPoints = null; // s76: limpiar también el estado de grupo al terminar el gesto
         this._chart.applyOptions({ handleScroll: { pressedMouseMove: true } });
     }
     /**
