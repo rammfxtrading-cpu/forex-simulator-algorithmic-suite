@@ -203,7 +203,7 @@ export default function Dashboard() {
 
         {/* ── DASHBOARD VIEW ── */}
         {activeView === 'dashboard' && <>
-          <div style={s.header}>
+          <div style={s.header} className="dashHeader">
             <div>
               <h1 style={s.headerTitle}>Dashboard</h1>
               <p style={s.headerSub}>Welcome back, <span style={{color:'#1E90FF',fontWeight:700}}>{username}</span></p>
@@ -222,7 +222,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div style={s.ctaRow}>
+          <div style={s.ctaRow} className="dashCtaRow">
             <div className="ctaCardHover" style={s.ctaCard} onClick={()=>setShowNew(true)}>
               <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="5,3 19,12 5,21"/></svg>
@@ -249,7 +249,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div style={s.statsRow}>
+          <div style={s.statsRow} className="dashStatsRow">
             {[
               {label:'SESSIONS',value:String(sessions.length),color:'#1E90FF',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="5,3 19,12 5,21"/></svg>},
               {label:'TRADES TAKEN',value:String(trades.length),color:'#22c55e',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>},
@@ -322,7 +322,7 @@ export default function Dashboard() {
 
         {/* ── SESSIONS VIEW ── */}
         {activeView === 'sessions' && <>
-          <div style={s.header}>
+          <div style={s.header} className="dashHeader">
             <div>
               <h1 style={s.headerTitle}>Sessions</h1>
               <p style={s.headerSub}>All your backtesting sessions</p>
@@ -391,13 +391,13 @@ export default function Dashboard() {
 
       {/* NEW SESSION MODAL */}
       {showNew && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}} onClick={()=>setShowNew(false)}>
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(4px)'}} className="dashModalOverlay" onClick={()=>setShowNew(false)}>
           <div style={{background:'#030f20',border:'1px solid #0d2040',borderRadius:16,padding:'28px',width:'100%',maxWidth:520,boxShadow:'0 0 60px #1E90FF10',fontFamily:'Montserrat,sans-serif'}} onClick={e=>e.stopPropagation()}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}}>
               <div style={{fontSize:18,fontWeight:800,color:'#ffffff'}}>New Session</div>
               <button style={{background:'none',border:'none',color:'rgba(255,255,255,0.85)',cursor:'pointer',fontSize:18,fontFamily:'Montserrat,sans-serif'}} onClick={()=>setShowNew(false)}>✕</button>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}} className="dashModalGrid">
               <div style={{gridColumn:'1/-1',display:'flex',flexDirection:'column',gap:7}}>
                 <label style={{fontSize:10,fontWeight:700,color:'#1E90FF',letterSpacing:1.5}}>SESSION NAME</label>
                 <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} placeholder="e.g. EUR/USD Jan 2023" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
@@ -443,6 +443,16 @@ export default function Dashboard() {
         select option{background:#030f20;color:#fff}
         @media(max-width:767px){
           .appMain{padding:76px 16px 24px !important}
+          /* Header: título + botonera en varias líneas si no caben */
+          .dashHeader{flex-wrap:wrap;gap:12px}
+          /* CTA cards (Practice/Challenge/Operativa): apiladas a 1 columna */
+          .dashCtaRow{flex-direction:column}
+          /* Stats cards: de fila única a rejilla 2x2 */
+          .dashStatsRow{flex-wrap:wrap}
+          .dashStatsRow>div{flex:1 1 40% !important}
+          /* Modal New Session: margen lateral y formulario a 1 columna */
+          .dashModalOverlay{padding:16px}
+          .dashModalGrid{grid-template-columns:1fr !important}
         }
       `}</style>
       <ChallengeSetupModal open={showChallenge} onClose={()=>setShowChallenge(false)} />

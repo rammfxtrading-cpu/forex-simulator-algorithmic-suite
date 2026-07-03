@@ -169,7 +169,7 @@ export default function Analytics() {
       {/* MAIN */}
       <div style={s.main} className="appMain">
         {/* HEADER */}
-        <div style={s.header}>
+        <div style={s.header} className="anHeader">
           <div>
             <div style={s.headerTitle}>Analytics</div>
             <div style={s.headerSub}>Track your backtesting performance</div>
@@ -224,7 +224,7 @@ export default function Analytics() {
             </div>
 
             {/* SUMMARY CARDS */}
-            <div style={s.twoCol}>
+            <div style={s.twoCol} className="anTwoCol">
               {/* Winning Trades */}
               <div style={s.summaryCard}>
                 <div style={{ ...s.cardTitle, color: '#22c55e' }}>Winning Trades</div>
@@ -261,7 +261,7 @@ export default function Analytics() {
             </div>
 
             {/* W/L/BE DONUT + SESSIONS */}
-            <div style={s.twoCol}>
+            <div style={s.twoCol} className="anTwoCol">
               {/* Donut */}
               <div style={s.summaryCard}>
                 <div style={s.cardTitle}>Distribution</div>
@@ -371,7 +371,7 @@ export default function Analytics() {
                           fill="none" stroke={colors[i % colors.length]} strokeWidth="1" opacity="0.7" />
                       ))}
                     </svg>
-                    <div style={s.mcStatsGrid}>
+                    <div style={s.mcStatsGrid} className="anMcStatsGrid">
                       {[
                         ['Average balance', `$${mcResult.stats.avgBalance.toFixed(2)}`],
                         ['Max balance', `$${mcResult.stats.maxBalance.toFixed(2)}`],
@@ -445,6 +445,12 @@ export default function Analytics() {
         @keyframes spin{to{transform:rotate(360deg)}}
         @media(max-width:767px){
           .appMain{padding:76px 16px 24px !important}
+          /* Header: título + filtro de sesión en varias líneas si no caben */
+          .anHeader{flex-wrap:wrap;gap:12px}
+          /* Winning/Losing y Donut/Sessions: de 2 columnas a 1 */
+          .anTwoCol{grid-template-columns:1fr !important}
+          /* Stats del Monte Carlo: de 3 columnas a 2 */
+          .anMcStatsGrid{grid-template-columns:repeat(2,1fr) !important}
         }
       `}</style>
     </div>
