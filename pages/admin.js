@@ -1,16 +1,14 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
-import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
 import EquityCurve from '../components/EquityCurve'
+import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 
 export default function Admin() {
-  const router = useRouter()
   const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
   const bgCanvasRef = useRef(null)
-  const logoCanvasRef = useRef(null)
 
   const [usuarios, setUsuarios] = useState([])
   const [aggregates, setAggregates] = useState({ con_acceso: 0, total_usuarios: 0, total_sessions: 0, total_trades: 0, activos_7d: 0 })
@@ -36,9 +34,6 @@ export default function Admin() {
   const [wipeEmail, setWipeEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-
-  const [hoveredNav, setHoveredNav] = useState(null)
-  const [showMenu, setShowMenu] = useState(false)
 
   // Solo admin entra. Mientras useAuth carga, blindamos.
   const isAdmin = profile?.rol_global === 'admin'
@@ -197,8 +192,6 @@ export default function Admin() {
     setErr('')
   }
 
-  async function handleSignOut() { await supabase.auth.signOut(); router.push('/') }
-
   // ── Canvas de fondo (red cósmica) ──
   useEffect(() => {
     if (authLoading || !hasAccess || !isAdmin) return
@@ -228,30 +221,6 @@ export default function Admin() {
     const onResize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight }
     window.addEventListener('resize', onResize)
     return () => { cancelAnimationFrame(id); window.removeEventListener('resize', onResize) }
-  }, [authLoading, hasAccess, isAdmin])
-
-  // ── Canvas del logo ──
-  useEffect(() => {
-    const canvas = logoCanvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const W = canvas.width, H = canvas.height
-    const nodes = []
-    for (let i = 0; i < 25; i++) {
-      nodes.push({ x: Math.random()*W, y: Math.random()*H, vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4, r:Math.random()*1.8+0.8 })
-    }
-    let id
-    function draw() {
-      id = requestAnimationFrame(draw)
-      ctx.clearRect(0, 0, W, H)
-      for (let i=0;i<nodes.length;i++) for (let j=i+1;j<nodes.length;j++) {
-        const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy)
-        if (d<90) { ctx.strokeStyle=`rgba(30,144,255,${(1-d/90)*.35})`; ctx.lineWidth=.5; ctx.beginPath(); ctx.moveTo(nodes[i].x,nodes[i].y); ctx.lineTo(nodes[j].x,nodes[j].y); ctx.stroke() }
-      }
-      nodes.forEach(n => { ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI*2); ctx.fillStyle='rgba(30,144,255,0.7)'; ctx.fill(); n.x+=n.vx; n.y+=n.vy; if(n.x<0||n.x>W)n.vx*=-1; if(n.y<0||n.y>H)n.vy*=-1 })
-    }
-    draw()
-    return () => cancelAnimationFrame(id)
   }, [authLoading, hasAccess, isAdmin])
 
   // ── Métricas del detalle (misma lógica que /analytics + profitFactor + expectancy + drawdown + streaks) ──
@@ -393,82 +362,14 @@ export default function Admin() {
       <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
 
       {/* Sidebar */}
-      <div style={s.sidebar}>
-        <div style={s.logoWrap}>
-          <canvas ref={logoCanvasRef} width="220" height="160" style={s.logoCanvas}/>
-          <div style={s.logoText}>
-            <div style={s.logoForex}>FOREX</div>
-            <div style={s.logoSim}>SIMULATOR</div>
-            <div style={s.logoBy}>by Algorithmic Suite</div>
-          </div>
-        </div>
-        <div style={s.sidebarDivider}/>
-        <nav style={s.nav}>
-          <div
-            style={{ ...s.navItem, ...(hoveredNav === 'dashboard' ? s.navHover : {}) }}
-            onClick={() => router.push('/dashboard')}
-            onMouseEnter={() => setHoveredNav('dashboard')}
-            onMouseLeave={() => setHoveredNav(null)}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            Dashboard
-          </div>
-          <div
-            style={{ ...s.navItem, ...(hoveredNav === 'new' ? s.navHover : {}) }}
-            onClick={() => router.push('/dashboard')}
-            onMouseEnter={() => setHoveredNav('new')}
-            onMouseLeave={() => setHoveredNav(null)}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5,3 19,12 5,21"/></svg>
-            New Session
-          </div>
-          <div
-            style={{ ...s.navItem, ...(hoveredNav === 'sessions' ? s.navHover : {}) }}
-            onClick={() => router.push('/dashboard')}
-            onMouseEnter={() => setHoveredNav('sessions')}
-            onMouseLeave={() => setHoveredNav(null)}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
-            Sessions
-          </div>
-          <div
-            style={{ ...s.navItem, ...(hoveredNav === 'analytics' ? s.navHover : {}) }}
-            onClick={() => router.push('/analytics')}
-            onMouseEnter={() => setHoveredNav('analytics')}
-            onMouseLeave={() => setHoveredNav(null)}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-            Analytics
-          </div>
-          <div style={{ ...s.navItem, ...s.navActive }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4z"/></svg>
-            Admin
-          </div>
-        </nav>
-        <div style={s.userWrap} onClick={() => setShowMenu(!showMenu)}>
-          <div style={s.avatar}>{initials(profile?.nombre || profile?.email)}</div>
-          <div style={s.userInfo}>
-            <div style={s.userName}>{profile?.nombre || profile?.email?.split('@')[0]}</div>
-            <div style={s.userPlan}>VIP Member</div>
-          </div>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" strokeWidth="2"><polyline points="6,9 12,15 18,9"/></svg>
-          {showMenu && (
-            <div style={s.menu}>
-              <div style={s.menuEmail}>{user?.email}</div>
-              <div style={s.menuDivider}/>
-              <div style={{...s.menuItem, color:'#1E90FF'}} onClick={e => { e.stopPropagation(); window.location.href = 'https://algorithmicsuite.com/dashboard' }}>← Volver al hub</div>
-              <div style={{...s.menuItem, color:'#f03e3e'}} onClick={e => { e.stopPropagation(); handleSignOut() }}>Cerrar sesión</div>
-            </div>
-          )}
-        </div>
-      </div>
+      <AppSidebar active="admin" user={user} profile={profile} />
 
       {/* Main */}
-      <div style={s.main}>
+      <div style={s.main} className="appMain">
 
         {/* === LISTA === */}
         {!detailId && <>
-          <div style={s.header}>
+          <div style={s.header} className="adminHeader">
             <div>
               <h1 style={s.headerTitle}>Administración</h1>
               <p style={s.headerSub}>Métricas de alumnos y gestión de acceso al simulador</p>
@@ -485,7 +386,7 @@ export default function Admin() {
           </div>
 
           {/* Stats cards */}
-          <div style={s.statsRow}>
+          <div style={s.statsRow} className="adminStatsRow">
             <StatCard label="CON ACCESO" value={aggregates.con_acceso} sub={`de ${aggregates.total_usuarios} usuarios`} iconColor="#1E90FF" icon={<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 110-8 4 4 0 010 8z"/>}/>
             <StatCard label="SESIONES" value={aggregates.total_sessions} sub="creadas por alumnos" iconColor="#1E90FF" icon={<><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></>}/>
             <StatCard label="TRADES" value={aggregates.total_trades} sub="ejecutados en total" iconColor="#16c95d" icon={<><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></>}/>
@@ -512,8 +413,8 @@ export default function Admin() {
           {err && <div style={s.errorBox}>{err}</div>}
 
           {!loading && tab === 'with' && (
-            <div style={s.tableBox}>
-              <div style={s.tableHeaderWith}>
+            <div style={s.tableBox} className="adminTableBox">
+              <div style={s.tableHeaderWith} className="adminGridWith">
                 <div>ALUMNO</div>
                 <div style={{textAlign:'right'}}>SESIONES</div>
                 <div style={{textAlign:'right'}}>TRADES</div>
@@ -528,7 +429,7 @@ export default function Admin() {
                 const pnlColor = u.metrics.total_pnl > 0 ? '#16c95d' : u.metrics.total_pnl < 0 ? '#f03e3e' : '#c8d0e0'
                 const wrColor = u.metrics.win_rate >= 50 ? '#16c95d' : u.metrics.trades > 0 ? '#f03e3e' : '#c8d0e0'
                 return (
-                  <div key={u.id} style={s.rowWith}>
+                  <div key={u.id} style={s.rowWith} className="adminGridWith">
                     <div style={s.cellUser}>
                       <div style={{ ...s.rowAvatar, background: isSelf ? 'linear-gradient(135deg,#1E90FF,#0060cc)' : 'linear-gradient(135deg,#5a9eff,#3872cc)', boxShadow: isSelf ? '0 0 12px rgba(30,144,255,0.5)' : 'none' }}>
                         {initials(u.nombre || u.email)}
@@ -569,8 +470,8 @@ export default function Admin() {
           )}
 
           {!loading && tab === 'without' && (
-            <div style={s.tableBox}>
-              <div style={s.tableHeaderWithout}>
+            <div style={s.tableBox} className="adminTableBox">
+              <div style={s.tableHeaderWithout} className="adminGridWithout">
                 <div>ALUMNO</div>
                 <div>JOURNAL</div>
                 <div style={{textAlign:'right'}}>ALTA EN HUB</div>
@@ -578,7 +479,7 @@ export default function Admin() {
               </div>
               {sinAcceso.length === 0 && <div style={s.emptyState}>Todos los usuarios tienen acceso al simulador.</div>}
               {sinAcceso.map(u => (
-                <div key={u.id} style={s.rowWithout}>
+                <div key={u.id} style={s.rowWithout} className="adminGridWithout">
                   <div style={s.cellUser}>
                     <div style={{ ...s.rowAvatar, background:'linear-gradient(135deg,#8faacb,#5f7a9b)' }}>{initials(u.nombre || u.email)}</div>
                     <div style={{ minWidth:0, flex:1 }}>
@@ -618,7 +519,7 @@ export default function Admin() {
           {detailLoading && <div style={s.emptyState}>Cargando detalle...</div>}
 
           {detail && <>
-            <div style={s.detailHeader}>
+            <div style={s.detailHeader} className="adminDetailHeader">
               <div style={{ display:'flex', alignItems:'center', gap:16 }}>
                 <div style={{ ...s.detailAvatar, background: detail.profile.id === user.id ? 'linear-gradient(135deg,#1E90FF,#0060cc)' : 'linear-gradient(135deg,#5a9eff,#3872cc)' }}>
                   {initials(detail.profile.nombre || detail.profile.email)}
@@ -653,14 +554,14 @@ export default function Admin() {
 
             {metrics && metrics.tradesCount > 0 && <>
               {/* Fila 1 */}
-              <div style={s.statsRowDetail}>
+              <div style={s.statsRowDetail} className="adminStatsRowDetail">
                 <DetailStat label="TOTAL P&L" value={fmtMoney2(metrics.totalPnl)} color={metrics.totalPnl >= 0 ? '#16c95d' : '#f03e3e'}/>
                 <DetailStat label="WIN RATE" value={fmtPct(metrics.winRate)} color={metrics.winRate >= 50 ? '#16c95d' : '#f03e3e'}/>
                 <DetailStat label="PROFIT FACTOR" value={metrics.profitFactor == null ? '—' : metrics.profitFactor.toFixed(2)} color={metrics.profitFactor == null ? 'rgba(255,255,255,0.5)' : metrics.profitFactor >= 1 ? '#16c95d' : '#f03e3e'}/>
                 <DetailStat label="EXPECTATIVA" value={fmtMoney2(metrics.expectancy)} color={metrics.expectancy >= 0 ? '#16c95d' : '#f03e3e'}/>
               </div>
               {/* Fila 2 */}
-              <div style={s.statsRowDetail}>
+              <div style={s.statsRowDetail} className="adminStatsRowDetail">
                 <DetailStat label="TOTAL TRADES" value={metrics.tradesCount} color="#1E90FF"/>
                 <DetailStat label="R:R PROMEDIO" value={`${metrics.avgRR.toFixed(2)}R`} color="#f59e0b"/>
                 <DetailStat label="MAX DRAWDOWN" value={`-$${Math.round(metrics.maxDrawdown).toLocaleString('en-US')}`} color="#f03e3e"/>
@@ -675,7 +576,7 @@ export default function Admin() {
               />
 
               {/* Winning / Losing */}
-              <div style={s.twoCol}>
+              <div style={s.twoCol} className="adminTwoCol">
                 <div style={s.chartBox}>
                   <div style={{ ...s.chartTitle, color:'#16c95d' }}>WINNING TRADES</div>
                   <StatRow label="Total Winners" value={metrics.winsCount}/>
@@ -691,7 +592,7 @@ export default function Admin() {
               </div>
 
               {/* Distribution + Sessions */}
-              <div style={s.twoCol}>
+              <div style={s.twoCol} className="adminTwoCol">
                 <div style={s.chartBox}>
                   <div style={s.chartTitle}>DISTRIBUTION</div>
                   <div style={{ display:'flex', alignItems:'center', gap:24 }}>
@@ -753,7 +654,7 @@ export default function Admin() {
                             fill="none" stroke={colors[i % colors.length]} strokeWidth="1" opacity="0.7" />
                         ))}
                       </svg>
-                      <div style={s.mcStatsGrid}>
+                      <div style={s.mcStatsGrid} className="adminMcStatsGrid">
                         {[
                           ['Average balance', `$${mcResult.stats.avgBalance.toFixed(2)}`],
                           ['Max balance', `$${mcResult.stats.maxBalance.toFixed(2)}`],
@@ -819,7 +720,7 @@ export default function Admin() {
             </>}
 
             {detail.profile.id !== user.id && (
-              <div style={s.detailActions}>
+              <div style={s.detailActions} className="adminDetailActions">
                 <button onClick={() => openModal('message', detail.profile)} style={s.btnGhost}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                   Enviar mensaje
@@ -839,7 +740,7 @@ export default function Admin() {
 
       {/* Modales */}
       {modal && (
-        <div style={s.modalOverlay} onClick={(e) => { if (e.target === e.currentTarget) closeModal() }}>
+        <div style={s.modalOverlay} className="adminModalOverlay" onClick={(e) => { if (e.target === e.currentTarget) closeModal() }}>
           <div style={s.modal}>
 
             {modal === 'activate' && <>
@@ -920,6 +821,25 @@ export default function Admin() {
         input::placeholder,textarea::placeholder{color:#1a3050}
         button{cursor:pointer}
         button:disabled{cursor:not-allowed;opacity:0.5}
+        @media(max-width:767px){
+          .appMain{padding:76px 16px 24px !important}
+          /* Header de la lista: título + link al hub en varias líneas si no caben */
+          .adminHeader{flex-wrap:wrap;gap:10px}
+          /* Stats cards: de 4 columnas a rejilla 2x2 */
+          .adminStatsRow{grid-template-columns:repeat(2,1fr) !important}
+          /* Tablas de alumnos: scroll horizontal DENTRO de la tabla, no en la página */
+          .adminTableBox{overflow-x:auto !important}
+          .adminGridWith{min-width:1010px}
+          .adminGridWithout{min-width:720px}
+          /* Detalle de alumno */
+          .adminDetailHeader{flex-wrap:wrap;gap:12px}
+          .adminStatsRowDetail{grid-template-columns:repeat(2,1fr) !important}
+          .adminTwoCol{grid-template-columns:1fr !important}
+          .adminMcStatsGrid{grid-template-columns:repeat(2,1fr) !important}
+          .adminDetailActions{flex-wrap:wrap}
+          /* Modales: margen lateral para que no toquen los bordes */
+          .adminModalOverlay{padding:16px}
+        }
       `}</style>
     </div>
   )
@@ -1037,29 +957,6 @@ function IconBtn({ children, title, onClick, disabled, danger }) {
 const s = {
   root:{display:'flex',height:'100vh',overflow:'hidden',background:'#000',position:'relative'},
   bgCanvas:{position:'fixed',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0},
-
-  sidebar:{position:'relative',zIndex:1,width:230,flexShrink:0,background:'rgba(0,20,60,0.35)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',backdropFilter:'blur(4px)'},
-  logoWrap:{position:'relative',width:'100%',height:160,flexShrink:0},
-  logoCanvas:{position:'absolute',top:0,left:0,width:'100%',height:'100%'},
-  logoText:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:1},
-  logoForex:{fontSize:32,fontWeight:800,color:'#ffffff',letterSpacing:2,lineHeight:1.1},
-  logoSim:{fontSize:11,fontWeight:600,color:'#ffffff',letterSpacing:7,marginBottom:6},
-  logoBy:{fontSize:8,color:'rgba(255,255,255,0.6)',fontStyle:'italic'},
-  sidebarDivider:{height:1,background:'linear-gradient(90deg,transparent,#1E90FF50,transparent)',margin:'0 0 12px'},
-  nav:{flex:1,padding:'0 8px',display:'flex',flexDirection:'column',gap:2},
-  navDivider:{height:1,background:'#0d2040',margin:'10px 12px'},
-  navItem:{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,fontSize:12,fontWeight:600,color:'#ffffff',cursor:'pointer',transition:'all .15s'},
-  navActive:{background:'linear-gradient(135deg,#1E90FF20,#1E90FF08)',color:'#1E90FF',borderLeft:'2px solid #1E90FF'},
-  navHover:{background:'rgba(30,144,255,0.06)',color:'#d0e4ff'},
-  userWrap:{position:'relative',display:'flex',alignItems:'center',gap:10,padding:12,margin:'8px',borderRadius:8,background:'rgba(3,15,32,0.8)',border:'1px solid #0d2040',cursor:'pointer'},
-  avatar:{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#1E90FF,#0060cc)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 12px #1E90FF50'},
-  userInfo:{flex:1,overflow:'hidden'},
-  userName:{fontSize:11,fontWeight:600,color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},
-  userPlan:{fontSize:9,color:'#1E90FF',fontWeight:700,letterSpacing:0.5},
-  menu:{position:'absolute',bottom:'110%',left:0,right:0,background:'#030f20',border:'1px solid #0d2040',borderRadius:8,overflow:'hidden',zIndex:100},
-  menuEmail:{padding:'10px 14px',fontSize:10,color:'rgba(255,255,255,0.85)',fontWeight:500},
-  menuDivider:{height:1,background:'#0d2040'},
-  menuItem:{padding:'10px 14px',fontSize:12,fontWeight:600,cursor:'pointer'},
 
   main:{position:'relative',zIndex:1,flex:1,overflowY:'auto',padding:'32px 40px'},
 
