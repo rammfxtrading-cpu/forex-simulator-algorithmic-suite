@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import ChallengeSetupModal from '../components/ChallengeSetupModal'
 import NetworkBg from '../components/NetworkBg'
+import AppSidebar from '../components/AppSidebar'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -54,17 +55,14 @@ function getSessionVisualState(session) {
 
 export default function Dashboard() {
   const router = useRouter()
-  const logoCanvasRef = useRef(null)
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [showMenu, setShowMenu] = useState(false)
   const [sessions, setSessions] = useState([])
   const [trades, setTrades] = useState([])
   const [showNew, setShowNew] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newErr, setNewErr] = useState('')
   const [activeView, setActiveView] = useState('dashboard')
-  const [hoveredNav, setHoveredNav] = useState(null)
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
   const [profile, setProfile] = useState(null)
   const [showChallenge, setShowChallenge] = useState(false)
@@ -86,38 +84,6 @@ export default function Dashboard() {
     })
   }, [])
 
-
-  useEffect(() => {
-    const canvas = logoCanvasRef.current
-    if (!canvas || loading) return
-    const ctx = canvas.getContext('2d')
-    const W = canvas.width, H = canvas.height
-    const nodes = []
-    for (let i = 0; i < 25; i++) {
-      nodes.push({ x: Math.random()*W, y: Math.random()*H, vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4, r:Math.random()*1.8+.8, pulse:Math.random()*Math.PI*2 })
-    }
-    let id2
-    let lastT2 = 0
-    function drawLogo(ts) {
-      id2 = requestAnimationFrame(drawLogo)
-      if (document.hidden) return
-      if (ts - lastT2 < 66) return  // cap at 15fps — logo is decorative
-      lastT2 = ts
-      ctx.clearRect(0,0,W,H)
-      for (let i=0;i<nodes.length;i++) for (let j=i+1;j<nodes.length;j++) {
-        const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy)
-        if(d<60){ctx.strokeStyle=`rgba(30,144,255,${(1-d/60)*.8})`;ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.stroke()}
-      }
-      nodes.forEach(n=>{
-        ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fillStyle='rgba(120,200,255,0.9)';ctx.fill()
-        n.x+=n.vx;n.y+=n.vy
-        if(n.x<0||n.x>W)n.vx*=-1
-        if(n.y<0||n.y>H)n.vy*=-1
-      })
-    }
-    drawLogo(0)
-    return ()=>cancelAnimationFrame(id2)
-  }, [loading])
 
   async function loadSessions(userId) {
     const { data } = await supabase.from('sim_sessions').select('*').eq('user_id', userId).order('created_at', { ascending: false })
@@ -178,8 +144,6 @@ export default function Dashboard() {
     }
   }
 
-  async function handleSignOut() { await supabase.auth.signOut(); router.push('/') }
-
   function handleFullscreen() {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen()
     else document.exitFullscreen()
@@ -212,24 +176,10 @@ export default function Dashboard() {
     </div>
   )
 
-  const initials = user?.email?.slice(0,2).toUpperCase()||'FX'
   // Username de la tabla profiles (nombre asignado al invitar al alumno).
   // Fallback al email split si no hay perfil cargado todavía o falta el nombre.
   const username = profile?.nombre || user?.email?.split('@')[0] || ''
   const PAIRS = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','XAU/USD']
-
-  const navItems = [
-    { key: 'dashboard', label: 'Dashboard', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
-    { key: 'new', label: 'New Session', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5,3 19,12 5,21"/></svg>, action: () => setShowNew(true) },
-    { key: 'sessions', label: 'Sessions', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg> },
-    { key: 'analytics', label: 'Analytics', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, action: () => router.push('/analytics') },
-    ...(profile?.rol_global === 'admin' ? [{
-      key: 'admin',
-      label: 'Admin',
-      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4z"/></svg>,
-      action: () => router.push('/admin')
-    }] : []),
-  ]
 
   const _yMax = new Date(); _yMax.setDate(_yMax.getDate() - 1)
   const MAX_DATE = _yMax.toISOString().slice(0, 10)
@@ -238,56 +188,18 @@ export default function Dashboard() {
     <div style={s.root}>
       <NetworkBg />
 
-      <div style={s.sidebar}>
-        <div style={s.logoWrap}>
-          <canvas ref={logoCanvasRef} width="220" height="160" style={s.logoCanvas}/>
-          <div style={s.logoText}>
-            <div style={s.logoForex}>FOREX</div>
-            <div style={s.logoSim}>SIMULATOR</div>
-            <div style={s.logoBy}>by Algorithmic Suite</div>
-          </div>
-        </div>
-        <div style={s.sidebarDivider}/>
-        <nav style={s.nav}>
-          {navItems.map(item => {
-            const isActive = activeView === item.key
-            const isHovered = hoveredNav === item.key
-            return (
-              <div
-                key={item.key}
-                style={{
-                  ...s.navItem,
-                  ...(isActive ? s.navActive : {}),
-                  ...(isHovered && !isActive ? s.navHover : {}),
-                }}
-                onClick={() => item.action ? item.action() : setActiveView(item.key)}
-                onMouseEnter={() => setHoveredNav(item.key)}
-                onMouseLeave={() => setHoveredNav(null)}
-              >
-                {item.icon}
-                {item.label}
-              </div>
-            )
-          })}
-        </nav>
-        <div style={s.userWrap} onClick={()=>setShowMenu(!showMenu)}>
-          <div style={s.avatar}>{initials}</div>
-          <div style={s.userInfo}>
-            <div style={s.userName}>{username}</div>
-            <div style={s.userPlan}>VIP Member</div>
-          </div>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" strokeWidth="2"><polyline points="6,9 12,15 18,9"/></svg>
-          {showMenu && (
-            <div style={s.menu}>
-              <div style={s.menuEmail}>{user?.email}</div>
-              <div style={s.menuDivider}/>
-              <div style={{...s.menuItem,color:'#1E90FF'}} onClick={e=>{e.stopPropagation();window.location.href='https://algorithmicsuite.com/dashboard'}}>← Volver al hub</div>
-            </div>
-          )}
-        </div>
-      </div>
+      <AppSidebar
+        active={activeView}
+        user={user}
+        profile={profile}
+        onNavigate={(key) => {
+          if (key === 'new') { setShowNew(true); return true }
+          if (key === 'dashboard' || key === 'sessions') { setActiveView(key); return true }
+          return false
+        }}
+      />
 
-      <div style={s.main}>
+      <div style={s.main} className="appMain">
 
         {/* ── DASHBOARD VIEW ── */}
         {activeView === 'dashboard' && <>
@@ -529,6 +441,9 @@ export default function Dashboard() {
         .ctaCardHover:hover{transform:translateY(-4px);border-color:rgba(30,144,255,.75);box-shadow:0 12px 38px rgba(30,144,255,.22)}
         input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:0.5}
         select option{background:#030f20;color:#fff}
+        @media(max-width:767px){
+          .appMain{padding:76px 16px 24px !important}
+        }
       `}</style>
       <ChallengeSetupModal open={showChallenge} onClose={()=>setShowChallenge(false)} />
     </div>
@@ -538,27 +453,6 @@ export default function Dashboard() {
 const s = {
   root:{display:'flex',height:'100vh',overflow:'hidden',background:'#000',position:'relative'},
   bgCanvas:{position:'fixed',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:0},
-  sidebar:{position:'relative',zIndex:1,width:230,flexShrink:0,background:'rgba(0,20,60,0.35)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',backdropFilter:'blur(4px)'},
-  logoWrap:{position:'relative',width:'100%',height:160,flexShrink:0},
-  logoCanvas:{position:'absolute',top:0,left:0,width:'100%',height:'100%'},
-  logoText:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:1},
-  logoForex:{fontSize:32,fontWeight:800,color:'#ffffff',letterSpacing:2,lineHeight:1.1},
-  logoSim:{fontSize:11,fontWeight:600,color:'#ffffff',letterSpacing:7,marginBottom:6},
-  logoBy:{fontSize:8,color:'rgba(255,255,255,0.6)',fontStyle:'italic'},
-  sidebarDivider:{height:1,background:'linear-gradient(90deg,transparent,#1E90FF50,transparent)',margin:'0 0 12px'},
-  nav:{flex:1,padding:'0 8px',display:'flex',flexDirection:'column',gap:2},
-  navItem:{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,fontSize:12,fontWeight:600,color:'#ffffff',cursor:'pointer',transition:'all .15s'},
-  navActive:{background:'linear-gradient(135deg,#1E90FF20,#1E90FF08)',color:'#1E90FF',borderLeft:'2px solid #1E90FF'},
-  navHover:{background:'rgba(30,144,255,0.06)',color:'#d0e4ff',boxShadow:'inset 0 0 12px rgba(30,144,255,0.08)',backdropFilter:'blur(2px)'},
-  userWrap:{position:'relative',display:'flex',alignItems:'center',gap:10,padding:12,margin:'8px',borderRadius:8,background:'rgba(3,15,32,0.8)',border:'1px solid #0d2040',cursor:'pointer'},
-  avatar:{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#1E90FF,#0060cc)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 12px #1E90FF50'},
-  userInfo:{flex:1,overflow:'hidden'},
-  userName:{fontSize:11,fontWeight:600,color:'#ffffff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},
-  userPlan:{fontSize:9,color:'rgba(255,255,255,0.85)',fontWeight:600,letterSpacing:.5},
-  menu:{position:'absolute',bottom:'110%',left:0,right:0,background:'#030f20',border:'1px solid #0d2040',borderRadius:8,overflow:'hidden',zIndex:100},
-  menuEmail:{padding:'10px 14px',fontSize:10,color:'rgba(255,255,255,0.85)',fontWeight:500},
-  menuDivider:{height:1,background:'#0d2040'},
-  menuItem:{padding:'10px 14px',fontSize:12,fontWeight:600,cursor:'pointer'},
   main:{position:'relative',zIndex:1,flex:1,overflowY:'auto',padding:'32px 40px'},
   header:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:32},
   headerTitle:{fontSize:26,fontWeight:800,color:'#ffffff',marginBottom:4},
