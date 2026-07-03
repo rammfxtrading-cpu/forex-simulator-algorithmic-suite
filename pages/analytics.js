@@ -3,6 +3,7 @@ import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
+import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 
 const SESSIONS_LABEL = 'All Sessions'
@@ -11,7 +12,6 @@ export default function Analytics() {
   const router = useRouter()
   const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
   const bgCanvasRef = useRef(null)
-  const logoCanvasRef = useRef(null)
   const [sessions, setSessions] = useState([])
   const [trades, setTrades] = useState([])
   const [selectedSession, setSelectedSession] = useState(SESSIONS_LABEL)
@@ -52,30 +52,6 @@ export default function Analytics() {
     const onResize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight }
     window.addEventListener('resize', onResize)
     return () => { cancelAnimationFrame(id); window.removeEventListener('resize', onResize) }
-  }, [authLoading, hasAccess, loading])
-
-  // Animación de red cósmica detrás del logo — igual que dashboard y admin
-  useEffect(() => {
-    const canvas = logoCanvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const W = canvas.width, H = canvas.height
-    const nodes = []
-    for (let i = 0; i < 25; i++) {
-      nodes.push({ x: Math.random()*W, y: Math.random()*H, vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4, r:Math.random()*1.8+.8 })
-    }
-    let id
-    function draw() {
-      id = requestAnimationFrame(draw)
-      ctx.clearRect(0, 0, W, H)
-      for (let i=0;i<nodes.length;i++) for (let j=i+1;j<nodes.length;j++) {
-        const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y, d=Math.sqrt(dx*dx+dy*dy)
-        if (d<90) { ctx.strokeStyle=`rgba(30,144,255,${(1-d/90)*.35})`; ctx.lineWidth=.5; ctx.beginPath(); ctx.moveTo(nodes[i].x,nodes[i].y); ctx.lineTo(nodes[j].x,nodes[j].y); ctx.stroke() }
-      }
-      nodes.forEach(n => { ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI*2); ctx.fillStyle='rgba(30,144,255,0.7)'; ctx.fill(); n.x+=n.vx; n.y+=n.vy; if(n.x<0||n.x>W)n.vx*=-1; if(n.y<0||n.y>H)n.vy*=-1 })
-    }
-    draw()
-    return () => cancelAnimationFrame(id)
   }, [authLoading, hasAccess, loading])
 
   // Si el usuario está autenticado pero no tiene acceso al simulador, mostrar pantalla de bloqueo.
@@ -188,46 +164,10 @@ export default function Analytics() {
     <div style={s.root}>
       <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
       {/* SIDEBAR */}
-      <div style={s.sidebar}>
-        <div style={s.logoWrap}>
-          <canvas ref={logoCanvasRef} width="230" height="160" style={s.logoCanvas} />
-          <div style={s.logoText}>
-            <div style={s.logoForex}>FOREX</div>
-            <div style={s.logoSim}>SIMULATOR</div>
-            <div style={s.logoBy}>by Algorithmic Suite</div>
-          </div>
-        </div>
-        <div style={s.sidebarDivider} />
-        <nav style={s.nav}>
-          {[
-            { label: 'Dashboard', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>, path: '/dashboard' },
-            { label: 'New Session', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5,3 19,12 5,21"/></svg>, path: null, action: () => router.push('/dashboard') },
-            { label: 'Sessions', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>, path: '/dashboard' },
-            { label: 'Analytics', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, path: '/analytics', active: true },
-            ...(profile?.rol_global === 'admin' ? [{ label: 'Admin', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4z"/></svg>, path: '/admin' }] : []),
-          ].map(item => (
-            <div key={item.label}
-              style={{ ...s.navItem, ...(item.active ? s.navActive : {}) }}
-              onClick={() => item.path ? router.push(item.path) : item.action?.()}>
-              {item.icon}
-              <span>{item.label}</span>
-            </div>
-          ))}
-        </nav>
-        <div style={{ flex: 1 }} />
-        {user && (
-          <div style={s.userWrap} onClick={() => router.push('/dashboard')}>
-            <div style={s.avatar}>{user?.email?.slice(0,2).toUpperCase() || 'FX'}</div>
-            <div style={s.userInfo}>
-              <div style={s.userName}>{profile?.nombre || user?.email?.split('@')[0] || ''}</div>
-              <div style={s.userPlan}>VIP Member</div>
-            </div>
-          </div>
-        )}
-      </div>
+      <AppSidebar active="analytics" user={user} profile={profile} />
 
       {/* MAIN */}
-      <div style={s.main}>
+      <div style={s.main} className="appMain">
         {/* HEADER */}
         <div style={s.header}>
           <div>
@@ -503,6 +443,9 @@ export default function Analytics() {
         body{background:#000;overflow:hidden}
         select option{background:#030f20;color:#fff}
         @keyframes spin{to{transform:rotate(360deg)}}
+        @media(max-width:767px){
+          .appMain{padding:76px 16px 24px !important}
+        }
       `}</style>
     </div>
   )
@@ -511,22 +454,6 @@ export default function Analytics() {
 const s = {
   root: { display: 'flex', height: '100vh', overflow: 'hidden', background: '#000', fontFamily: "'Montserrat',sans-serif", position: 'relative' },
   bgCanvas: { position: 'fixed', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 0 },
-  sidebar: { position: 'relative', zIndex: 1, width: 230, flexShrink: 0, background: 'rgba(0,20,60,0.35)', borderRight: '1px solid #0d2040', display: 'flex', flexDirection: 'column', backdropFilter: 'blur(4px)' },
-  logoWrap: { position: 'relative', height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  logoCanvas: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
-  logoText: { position: 'relative', zIndex: 1, textAlign: 'center' },
-  logoForex: { fontSize: 32, fontWeight: 800, color: '#ffffff', letterSpacing: 2, lineHeight: 1.1 },
-  logoSim: { fontSize: 11, fontWeight: 600, color: '#ffffff', letterSpacing: 7, marginBottom: 6 },
-  logoBy: { fontSize: 8, color: 'rgba(255,255,255,0.6)', fontStyle: 'italic' },
-  sidebarDivider: { height: 1, background: 'linear-gradient(90deg,transparent,#1E90FF50,transparent)', margin: '0 0 12px' },
-  nav: { flex: 1, padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 2 },
-  navItem: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#c0d0e8', cursor: 'pointer', transition: 'all .15s' },
-  navActive: { background: 'linear-gradient(135deg,#1E90FF20,#1E90FF08)', color: '#1E90FF', borderLeft: '2px solid #1E90FF' },
-  userWrap: { position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: 12, margin: '8px', borderRadius: 8, background: 'rgba(3,15,32,0.8)', border: '1px solid #0d2040', cursor: 'pointer' },
-  avatar: { width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg,#1E90FF,#0060cc)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0, boxShadow: '0 0 12px #1E90FF50' },
-  userInfo: { flex: 1, overflow: 'hidden' },
-  userName: { fontSize: 11, fontWeight: 600, color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  userPlan: { fontSize: 9, color: 'rgba(255,255,255,0.85)', fontWeight: 600, letterSpacing: .5 },
   main: { position: 'relative', zIndex: 1, flex: 1, overflowY: 'auto', padding: '32px 40px' },
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 },
   headerTitle: { fontSize: 26, fontWeight: 800, color: '#ffffff', marginBottom: 4 },
