@@ -41,3 +41,6 @@ data_m1/
 .env.local.save
 .env*
 .backup-*/
+
+# Datos temporales de descarga de velas (no subir al repo)
+descarga-2026/
