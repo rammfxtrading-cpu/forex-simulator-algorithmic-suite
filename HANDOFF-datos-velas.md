@@ -75,3 +75,18 @@ Tras refrescar, Storage quedó en 0,682/1GB (68%) — prácticamente igual que a
 (0,681). El upsert sobrescribió sin sumar. HAY HOLGURA DE SOBRA (32% libre).
 No hay problema de límite. La automatización diaria (añade solo KB/día) no afecta.
 Vía libre para la Fase 2 sin condiciones.
+
+## FASE 2 — COMPLETADA (21 jul) ✓ AUTOMATIZACIÓN ACTIVA
+GitHub Actions montado y VERIFICADO (ejecución manual #1 en verde, 2m33s).
+- Workflow: .github/workflows/actualizar-velas.yml — cron 0 6 * * * (06:00 UTC) + workflow_dispatch.
+- Script: scripts/actualizar-diario.js (incremental, día a día, upsert, nunca borra).
+- Secretos configurados en GitHub Actions: NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY.
+- Verificado: los 9 pares leídos OK, "TODO OK", concluye al día correctamente.
+CADA NOCHE a las 06:00 UTC se actualiza solo. Problema de datos parados RESUELTO.
+
+PENDIENTE MENOR:
+- Confirmar que el cron automático se dispara solo (mirar Actions al día siguiente:
+  debe aparecer ejecución "Scheduled"). Si no saltara, revisar (a veces GitHub tarda
+  o desactiva crons en repos inactivos >60 días; se reactiva con un commit).
+- Aviso de GitHub: Node 20 se deprecia (corre con Node 24). Actualizar node-version
+  a 22 o 24 en el workflow en algún momento. Sin urgencia, no afecta.
