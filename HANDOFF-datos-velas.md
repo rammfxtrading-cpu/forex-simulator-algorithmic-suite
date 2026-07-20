@@ -69,3 +69,9 @@ ganó 2 años). REVISAR el número ya refrescado: Settings > Usage > Storage Siz
 Si cerca de 1GB, resolver ANTES de montar la automatización diaria (añadir datos
 cada noche sobre storage lleno = riesgo de 402/servicio restringido).
 Opciones si lleno: plan de pago, o comprimir el formato de las velas.
+
+## STORAGE VERIFICADO (21 jul) — RESUELTO
+Tras refrescar, Storage quedó en 0,682/1GB (68%) — prácticamente igual que antes
+(0,681). El upsert sobrescribió sin sumar. HAY HOLGURA DE SOBRA (32% libre).
+No hay problema de límite. La automatización diaria (añade solo KB/día) no afecta.
+Vía libre para la Fase 2 sin condiciones.
