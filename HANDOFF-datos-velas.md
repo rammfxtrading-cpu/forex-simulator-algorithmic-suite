@@ -90,3 +90,20 @@ PENDIENTE MENOR:
   o desactiva crons en repos inactivos >60 días; se reactiva con un commit).
 - Aviso de GitHub: Node 20 se deprecia (corre con Node 24). Actualizar node-version
   a 22 o 24 en el workflow en algún momento. Sin urgencia, no afecta.
+
+## INCIDENTE RESUELTO (22 jul) — primer cron nocturno fallo
+El cron SI se disparo solo la primera noche (automatizacion viva), pero fallo:
+"Invalid Compact JWS" en los 9 pares al SUBIR (la lectura si funcionaba).
+CAUSA: el secreto SUPABASE_SERVICE_ROLE_KEY se habia pegado mal en GitHub —
+llegaba con 38 caracteres en vez de 41; se perdieron los guiones bajos al copiar
+(en GitHub aparecia como "sbsecretIF..." en vez de "sb_secret_IF...").
+DIAGNOSTICO: se anadio al script un modo DIAG_CREDS=1 que imprime longitudes
+(nunca el valor); comparando 38 vs 41 se localizo el problema en un intento.
+SOLUCION: repegado del secreto copiandolo con pbcopy directo desde .env.local
+(evita el copiado manual que se comia caracteres) + .trim() defensivo permanente
+en el script para URL y key.
+VERIFICADO: ejecuciones #5 y #6 en verde. DIAG_CREDS ya retirado del workflow.
+
+LECCION: al pegar secretos en GitHub, copiar SIEMPRE con pbcopy desde terminal,
+nunca seleccionando texto a mano. Y si algo falla con credenciales, comparar
+longitudes es la via mas rapida de diagnostico (sin exponer el valor).
