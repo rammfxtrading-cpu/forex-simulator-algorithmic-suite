@@ -13,7 +13,18 @@ const SUBIR = process.argv.includes('--subir')
 // Credenciales: de variables de entorno (GitHub Actions) o de .env.local (local)
 function getEnv() {
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return { url: process.env.NEXT_PUBLIC_SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY }
+    // .trim() defensivo: al pegar secretos en GitHub es facil colar un espacio
+    // o salto de linea final, y Supabase rechaza el token ("Invalid Compact JWS").
+    const u = process.env.NEXT_PUBLIC_SUPABASE_URL.trim()
+    const k = process.env.SUPABASE_SERVICE_ROLE_KEY.trim()
+    if (process.env.DIAG_CREDS === '1') {
+      const crudo = process.env.SUPABASE_SERVICE_ROLE_KEY
+      console.log('[DIAG] url  -> largo:', u.length, '| empieza por https:', u.startsWith('https://'))
+      console.log('[DIAG] key  -> largo crudo:', crudo.length, '| largo tras trim:', k.length)
+      console.log('[DIAG] key  -> tenia espacios/saltos sobrantes:', crudo.length !== k.length)
+      console.log('[DIAG] key  -> prefijo:', k.slice(0, 10) + '...')
+    }
+    return { url: u, key: k }
   }
   const env = fs.readFileSync(path.join(__dirname,'..','.env.local'),'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
