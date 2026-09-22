@@ -43,6 +43,7 @@ import SessionPanels from './SessionPanels'
 import useChallengeFlow from './useChallengeFlow'
 import usePairData from './usePairData'
 import useTradingActions from './useTradingActions'
+import Estrellas from './Estrellas'
 
 // Segundos por barra de cada timeframe. Usado por el cálculo de phantoms y por
 // el offset temporal de Cmd+D (duplicar dibujo). Const única de módulo: no
@@ -1367,6 +1368,8 @@ export default function SessionPage(){
 
       {/* Constellation background */}
       <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
+      {/* Las estrellas del hub, justo despues del cielo de esta pagina */}
+      <Estrellas />
 
       {/* CHART — full screen */}
       <div style={s.chartWrap} data-chart-wrap="1">
@@ -1705,7 +1708,7 @@ export default function SessionPage(){
       />
 
       {/* TF BAR */}
-      <div style={s.tfBar}>
+      <div className="vidrio" style={s.tfBar}>
         {TF_LIST.map(tf=>(
           <button key={tf} style={{...s.tfBtn,...(activeTf===tf?s.tfActive:{})}}
             onClick={()=>{const n={...pairTfRef.current,[activePair]:tf};pairTfRef.current=n;setPairTf(n);if(id)supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(()=>{}).catch(()=>{})}}

@@ -11,7 +11,7 @@ import { ALL_PAIRS } from '../lib/sessionUi'
 export default function SessionTopBar({session,activePairs,activePair,setActivePair,pairState,removePair,addPair,addingPair,setAddingPair}){
   const router = useRouter()
   return(
-      <div style={s.topBar}>
+      <div className="vidrio" style={s.topBar}>
         {/* Left: back + session name */}
         <div style={s.topLeft}>
           <button style={s.iconBtn} onClick={()=>router.push('/dashboard')}>

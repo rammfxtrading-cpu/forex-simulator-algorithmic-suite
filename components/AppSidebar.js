@@ -140,7 +140,7 @@ export default function AppSidebar({ active, user, profile, onNavigate }) {
           )
         })}
       </nav>
-      <div style={sb.userWrap} onClick={()=>setShowMenu(!showMenu)}>
+      <div className="vidrio" style={sb.userWrap} onClick={()=>setShowMenu(!showMenu)}>
         <div style={sb.avatar}>{initials}</div>
         <div style={sb.userInfo}>
           <div style={sb.userName}>{username}</div>
@@ -148,7 +148,7 @@ export default function AppSidebar({ active, user, profile, onNavigate }) {
         </div>
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4a90d9" strokeWidth="2"><polyline points="6,9 12,15 18,9"/></svg>
         {showMenu && (
-          <div style={sb.menu}>
+          <div className="vidrio vidrio-flotante" style={sb.menu}>
             <div style={sb.menuEmail}>{user?.email}</div>
             <div style={sb.menuDivider}/>
             <div style={{...sb.menuItem,color:'#1E90FF'}} onClick={e=>{e.stopPropagation();window.location.href='https://algorithmicsuite.com/dashboard'}}>← Volver al hub</div>
@@ -164,13 +164,13 @@ export default function AppSidebar({ active, user, profile, onNavigate }) {
 
   // ESCRITORIO — columna fija idéntica a la original
   if (!isMobile) {
-    return <div style={sb.sidebar}>{sidebarInner}</div>
+    return <div className="vidrio" style={sb.sidebar}>{sidebarInner}</div>
   }
 
   // MÓVIL — barra superior + drawer deslizante
   return (
     <>
-      <div style={sb.topBar}>
+      <div className="vidrio" style={sb.topBar}>
         <div style={sb.topBarLogo}>
           <span style={sb.topBarForex}>FOREX</span>
           <span style={sb.topBarSim}>SIMULATOR</span>
@@ -178,7 +178,7 @@ export default function AppSidebar({ active, user, profile, onNavigate }) {
         <button style={sb.burger} onClick={()=>setDrawerOpen(true)} aria-label="Abrir menú">☰</button>
       </div>
       {drawerOpen && <div style={sb.overlay} onClick={()=>setDrawerOpen(false)}/>}
-      <div style={{...sb.drawer, transform: drawerOpen ? 'translateX(0)' : 'translateX(-100%)'}}>
+      <div className="vidrio" style={{...sb.drawer, transform: drawerOpen ? 'translateX(0)' : 'translateX(-100%)'}}>
         {sidebarInner}
       </div>
     </>
@@ -187,7 +187,7 @@ export default function AppSidebar({ active, user, profile, onNavigate }) {
 
 const sb = {
   // ── Escritorio (estilos copiados 1:1 del sidebar del dashboard) ──
-  sidebar:{position:'relative',zIndex:1,width:230,flexShrink:0,background:'rgba(0,20,60,0.35)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',backdropFilter:'blur(4px)'},
+  sidebar:{position:'relative',zIndex:1,width:230,flexShrink:0,borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',},
   logoWrap:{position:'relative',width:'100%',height:160,flexShrink:0},
   logoCanvas:{position:'absolute',top:0,left:0,width:'100%',height:'100%'},
   logoText:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:1},
@@ -199,22 +199,22 @@ const sb = {
   navItem:{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:7,fontSize:12,fontWeight:600,color:'#ffffff',cursor:'pointer',transition:'all .15s'},
   navActive:{background:'linear-gradient(135deg,#1E90FF20,#1E90FF08)',color:'#1E90FF',borderLeft:'2px solid #1E90FF'},
   navHover:{background:'rgba(30,144,255,0.06)',color:'#d0e4ff',boxShadow:'inset 0 0 12px rgba(30,144,255,0.08)',backdropFilter:'blur(2px)'},
-  userWrap:{position:'relative',display:'flex',alignItems:'center',gap:10,padding:12,margin:'8px',borderRadius:8,background:'rgba(3,15,32,0.8)',border:'1px solid #0d2040',cursor:'pointer'},
+  userWrap:{position:'relative',display:'flex',alignItems:'center',gap:10,padding:12,margin:'8px',borderRadius:8,cursor:'pointer'},
   avatar:{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,#1E90FF,#0060cc)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:800,color:'#fff',flexShrink:0,boxShadow:'0 0 12px #1E90FF50'},
   userInfo:{flex:1,overflow:'hidden'},
   userName:{fontSize:11,fontWeight:600,color:'#ffffff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'},
   userPlan:{fontSize:9,color:'rgba(255,255,255,0.85)',fontWeight:600,letterSpacing:.5},
-  menu:{position:'absolute',bottom:'110%',left:0,right:0,background:'#030f20',border:'1px solid #0d2040',borderRadius:8,overflow:'hidden',zIndex:100},
+  menu:{position:'absolute',bottom:'110%',left:0,right:0,borderRadius:8,overflow:'hidden',zIndex:100},
   menuEmail:{padding:'10px 14px',fontSize:10,color:'rgba(255,255,255,0.85)',fontWeight:500},
   menuDivider:{height:1,background:'#0d2040'},
   menuItem:{padding:'10px 14px',fontSize:12,fontWeight:600,cursor:'pointer'},
 
   // ── Móvil ──
-  topBar:{position:'fixed',top:0,left:0,right:0,height:56,zIndex:150,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 14px',background:'rgba(0,20,60,0.85)',borderBottom:'1px solid #0d2040',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)'},
+  topBar:{position:'fixed',top:0,left:0,right:0,height:56,zIndex:150,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 14px',borderBottom:'1px solid #0d2040',},
   topBarLogo:{display:'flex',alignItems:'baseline',gap:6},
   topBarForex:{fontSize:16,fontWeight:800,color:'#ffffff',letterSpacing:1.5},
   topBarSim:{fontSize:9,fontWeight:600,color:'#ffffff',letterSpacing:3},
   burger:{background:'rgba(3,15,32,0.8)',border:'1px solid #0d2040',borderRadius:8,color:'#fff',fontSize:18,padding:'4px 12px',cursor:'pointer',lineHeight:1.4,fontFamily:'Montserrat,sans-serif'},
   overlay:{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:200,backdropFilter:'blur(2px)',WebkitBackdropFilter:'blur(2px)'},
-  drawer:{position:'fixed',top:0,bottom:0,left:0,width:230,zIndex:210,background:'rgba(0,20,60,0.95)',borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',transition:'transform .25s ease'},
+  drawer:{position:'fixed',top:0,bottom:0,left:0,width:230,zIndex:210,borderRight:'1px solid #0d2040',display:'flex',flexDirection:'column',transition:'transform .25s ease'},
 }

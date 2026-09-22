@@ -3,7 +3,8 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #080c14;
+  /* el fondo de la casa, el mismo que se ve en el hub (antes #080c14) */
+  --bg: #04050a;
   --bg2: #0a0f1a;
   --bg3: #0d1220;
   --bg4: #111827;
@@ -45,3 +46,82 @@ select:focus { outline: none; border-color: var(--blue); }
 .b { color: var(--blue); }
 .w { color: var(--white); }
 .m { color: var(--muted); }
+
+/* ═══════════════ CIELO Y VIDRIO · como el hub (ensayo, rama cielo-y-vidrio) ═══════════════
+   La receta del hub vive AQUI, en las variables de :root, y la aplica UNA regla con UNA
+   lista. Los paneles que llevaban el estilo en linea reciben la clase .vidrio en el JSX.
+   ⛔ EL GRAFICO ES UN INSTRUMENTO: ni vidrio ni estrellas detras de las velas. El area del
+      chart (chartWrap) conserva su fondo, y todo lo que se dibuja ENCIMA de el —barras de
+      herramientas, overlays de posiciones, killzones, regla, menus contextuales, la capsula
+      de replay y el HUD del reto— se queda opaco: forma parte del instrumento.
+   · Las barras de la pagina de sesion SI llevan vidrio: quedan fuera del chart (la de arriba
+     0–40, la de timeframes 40–68 y la de abajo, que solapa 6 px con el borde inferior).
+   · Los modales que se abren sobre el chart llevan la variante FLOTANTE: una ventana donde se
+     teclea un precio no puede tener velas moviendose detras.
+   · Sin vidrio: velos de modal, botones de color, avatares, controles pequeños y chips. */
+:root {
+  --blur: 2px;
+  --vidrio-velo: linear-gradient(135deg, rgba(255,255,255,.11) 0%, rgba(255,255,255,.035) 45%, rgba(45,126,247,.06) 100%);
+  --vidrio-filtro: blur(var(--blur)) saturate(170%);
+  --vidrio-borde: rgba(255,255,255,.13);
+  --vidrio-canto:
+    inset 0 1px 0 rgba(255,255,255,.42),
+    inset 0 -1px 0 rgba(255,255,255,.05),
+    inset 1px 0 0 rgba(255,255,255,.10),
+    inset -1px 0 0 rgba(45,126,247,.14),
+    inset 0 -1px 0 rgba(45,126,247,.14),
+    inset 0 0 40px rgba(45,126,247,.07);
+  --vidrio-sombra: 0 24px 70px rgba(0,0,0,.55);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --vidrio-velo: linear-gradient(rgba(8,11,20,.86), rgba(8,11,20,.86)); }
+}
+:root:root:root :where(
+  /* card y panel */
+  .vidrio,
+  /* la landing de operativas, con su CSS propio */
+  .opv-card, .opv-step, .opv-zona, .opv-ob,
+  /* sus dos parrafos sueltos: no tienen mas contenedor que la columna entera, asi que
+     cada uno es su propia caja (nada de una lamina para toda la columna) */
+  .opv-sub, .opv-lock
+) {
+  background: var(--vidrio-velo);
+  -webkit-backdrop-filter: var(--vidrio-filtro);
+  backdrop-filter: var(--vidrio-filtro);
+  border-color: var(--vidrio-borde);
+  box-shadow: var(--vidrio-canto), var(--vidrio-sombra);
+}
+/* vidrio dentro de vidrio: conserva velo, borde y canto, no vuelve a filtrar.
+   ⚠️ La lista es la MISMA de arriba, dos veces: CSS no deja nombrar una lista. */
+:root:root:root :where(
+  /* card y panel */
+  .vidrio,
+  /* la landing de operativas, con su CSS propio */
+  .opv-card, .opv-step, .opv-zona, .opv-ob,
+  /* sus dos parrafos sueltos: no tienen mas contenedor que la columna entera, asi que
+     cada uno es su propia caja (nada de una lamina para toda la columna) */
+  .opv-sub, .opv-lock
+) :where(
+  /* card y panel */
+  .vidrio,
+  /* la landing de operativas, con su CSS propio */
+  .opv-card, .opv-step, .opv-zona, .opv-ob,
+  /* sus dos parrafos sueltos: no tienen mas contenedor que la columna entera, asi que
+     cada uno es su propia caja (nada de una lamina para toda la columna) */
+  .opv-sub, .opv-lock
+) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* vidrio FLOTANTE: los modales sobre el chart y el menu de la barra lateral. Velo sobre fondo
+   denso: detras no se ven las velas. */
+:root:root:root :where(.vidrio-flotante) {
+  background: var(--vidrio-velo), linear-gradient(rgba(8,11,20,.86), rgba(8,11,20,.86));
+}
+/* los dos parrafos sueltos de operativas no tenian borde ni relleno: forma de caja */
+:root:root:root :where(.opv-sub, .opv-lock) { border: 1px solid var(--vidrio-borde); border-radius: 12px; padding: 14px 18px; }
+/* forma: los paneles que eran estilo en linea tenian su borde ahi */
+:root:root:root :where(.vidrio) { border-width: 1px; border-style: solid; }
+/* los campos no flotan: sin la sombra larga */
+:root:root:root :where(input.vidrio, select.vidrio, textarea.vidrio) { box-shadow: var(--vidrio-canto); }
+/* ═══════════════ FIN CIELO Y VIDRIO ═══════════════ */

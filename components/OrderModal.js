@@ -60,12 +60,8 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
 
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
-      <div style={{
-        background:'rgba(0,20,60,0.55)',
-        border:'1px solid rgba(0,120,255,0.5)',
+      <div className="vidrio vidrio-flotante" style={{
         borderRadius:24,width:420,
-        backdropFilter:'blur(32px)',WebkitBackdropFilter:'blur(32px)',
-        boxShadow:`0 32px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(${accentRgb},0.15),inset 0 1px 0 rgba(255,255,255,0.25)`,
         backdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
         WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
         overflow:'hidden',

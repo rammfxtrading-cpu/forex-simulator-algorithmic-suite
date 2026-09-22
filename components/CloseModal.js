@@ -31,13 +31,8 @@ export default function CloseModal({modal,currentPrice,onClose,onConfirm}){
 
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,5,20,0.75)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',fontFamily:"'Montserrat',sans-serif"}} onClick={onClose}>
-      <div style={{
-        background:'rgba(255,255,255,0.07)',
-        border:'1px solid rgba(255,255,255,0.18)',
+      <div className="vidrio vidrio-flotante" style={{
         borderRadius:24,width:380,
-        boxShadow:'0 32px 80px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.25)',
-        backdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
-        WebkitBackdropFilter:'blur(40px) saturate(220%) brightness(1.08)',
         overflow:'hidden',
       }} onClick={e=>e.stopPropagation()}>
 

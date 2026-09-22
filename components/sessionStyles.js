@@ -18,7 +18,7 @@ export const s={
   overlayTxt:{fontSize:11,color:'#ffffff',fontWeight:700},
 
   // Top bar — floating
-  topBar:{position:'absolute',top:0,left:0,right:0,zIndex:20,height:40,background:'rgba(10,10,12,0.85)',borderBottom:'1px solid rgba(255,255,255,0.07)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',display:'flex',alignItems:'center',padding:'0 12px',gap:8},
+  topBar:{position:'absolute',top:0,left:0,right:0,zIndex:20,height:40,borderBottom:'1px solid rgba(255,255,255,0.07)',display:'flex',alignItems:'center',padding:'0 12px',gap:8},
   topLeft:{display:'flex',alignItems:'center',gap:8,flexShrink:0},
   vDiv:{width:1,height:16,background:'rgba(255,255,255,0.1)'},
   sessName:{fontSize:11,fontWeight:700,color:'#ffffff',letterSpacing:0.3},
@@ -35,14 +35,14 @@ export const s={
   fullBtn:{background:'transparent',border:'1px solid rgba(255,255,255,0.1)',borderRadius:5,color:'#ffffff',cursor:'pointer',width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',marginLeft:4},
 
   // TF bar
-  tfBar:{position:'absolute',top:40,left:0,right:0,zIndex:20,height:28,background:'rgba(10,10,12,0.75)',borderBottom:'1px solid rgba(255,255,255,0.05)',backdropFilter:'blur(16px)',WebkitBackdropFilter:'blur(16px)',display:'flex',alignItems:'center',padding:'0 12px',gap:2},
+  tfBar:{position:'absolute',top:40,left:0,right:0,zIndex:20,height:28,borderBottom:'1px solid rgba(255,255,255,0.05)',display:'flex',alignItems:'center',padding:'0 12px',gap:2},
   tfBtn:{background:'none',border:'none',color:'rgba(255,255,255,0.9)',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4,cursor:'pointer',fontFamily:"'Montserrat',sans-serif"},
   tfActive:{background:'rgba(255,255,255,0.1)',color:'#ffffff'},
   tsBadge:{fontSize:9,color:'#ffffff',fontWeight:600,padding:'2px 8px',background:'rgba(255,255,255,0.04)',borderRadius:4},
   pxBadge:{fontSize:12,color:'#ffffff',fontWeight:800,padding:'2px 10px',background:'rgba(255,255,255,0.08)',borderRadius:4,marginLeft:6},
 
   // Bottom bar
-  btmBar:{position:'absolute',bottom:0,left:0,right:0,zIndex:20,height:50,background:'rgba(10,10,12,0.85)',borderTop:'1px solid rgba(255,255,255,0.07)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',display:'flex',alignItems:'center',padding:'0 14px',gap:12},
+  btmBar:{position:'absolute',bottom:0,left:0,right:0,zIndex:20,height:50,borderTop:'1px solid rgba(255,255,255,0.07)',display:'flex',alignItems:'center',padding:'0 14px',gap:12},
   replayRow:{display:'flex',alignItems:'center',gap:4,flexShrink:0},
   ctrlBtn:{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',color:'#ffffff',width:26,height:26,borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'},
   playBtn:{background:'#fff',border:'none',color:'#000',width:30,height:30,borderRadius:'50%',boxShadow:'none'},

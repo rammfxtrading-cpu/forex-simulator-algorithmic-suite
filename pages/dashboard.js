@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import ChallengeSetupModal from '../components/ChallengeSetupModal'
 import NetworkBg from '../components/NetworkBg'
 import AppSidebar from '../components/AppSidebar'
+import Estrellas from '../components/Estrellas'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -187,6 +188,8 @@ export default function Dashboard() {
   return (
     <div style={s.root}>
       <NetworkBg />
+          {/* Las estrellas del hub, justo despues del cielo */}
+          <Estrellas />
 
       <AppSidebar
         active={activeView}
@@ -223,7 +226,7 @@ export default function Dashboard() {
           </div>
 
           <div style={s.ctaRow} className="dashCtaRow">
-            <div className="ctaCardHover" style={s.ctaCard} onClick={()=>setShowNew(true)}>
+            <div className="ctaCardHover vidrio" style={s.ctaCard} onClick={()=>setShowNew(true)}>
               <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="5,3 19,12 5,21"/></svg>
               </div>
@@ -231,7 +234,7 @@ export default function Dashboard() {
               <div style={s.ctaSub}>Replay historical candles and train your entries candle by candle</div>
               <div style={s.ctaLink}>Start now →</div>
             </div>
-            <div className="ctaCardHover" style={s.ctaCard} onClick={()=>setShowChallenge(true)}>
+            <div className="ctaCardHover vidrio" style={s.ctaCard} onClick={()=>setShowChallenge(true)}>
               <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><path d="M12 2L4 6v6c0 5 3.5 9.5 8 10 4.5-.5 8-5 8-10V6l-8-4z"/></svg>
               </div>
@@ -239,7 +242,7 @@ export default function Dashboard() {
               <div style={s.ctaSub}>Challenge tipo FTMO: supera las fases respetando las reglas de drawdown</div>
               <div style={s.ctaLink}>Start now →</div>
             </div>
-            <div className="ctaCardHover" style={s.ctaCard} onClick={()=>router.push('/operativas')}>
+            <div className="ctaCardHover vidrio" style={s.ctaCard} onClick={()=>router.push('/operativas')}>
               <div style={{...s.ctaIcon,background:'#1E90FF20',borderColor:'#1E90FF50'}}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
               </div>
@@ -256,7 +259,7 @@ export default function Dashboard() {
               {label:'WIN RATE',value:trades.length>0?`${(wins.length/closedTrades.length*100||0).toFixed(0)}%`:'—',color:'#f59e0b',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.5"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>},
               {label:'TOTAL P&L',value:`${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}`,color:totalPnl>=0?'#22c55e':'#ef4444',icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E90FF" strokeWidth="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>},
             ].map(stat=>(
-              <div key={stat.label} style={s.statCard}>
+              <div key={stat.label} className="vidrio" style={s.statCard}>
                 <div style={{...s.statIcon,borderColor:stat.color+'40',background:stat.color+'15'}}>{stat.icon}</div>
                 <div style={{...s.statValue,color:stat.color}}>{stat.value}</div>
                 <div style={s.statLabel}>{stat.label}</div>
@@ -265,7 +268,7 @@ export default function Dashboard() {
           </div>
 
           {sessions.length === 0 ? (
-            <div style={s.emptyCard}>
+            <div className="vidrio" style={s.emptyCard}>
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1a3a5c" strokeWidth="1" style={{marginBottom:14}}><polygon points="5,3 19,12 5,21"/></svg>
               <div style={s.emptyTitle}>No sessions yet</div>
               <div style={s.emptySub}>Start your first backtesting session to begin tracking your performance</div>
@@ -333,7 +336,7 @@ export default function Dashboard() {
             </button>
           </div>
           {sessions.length === 0 ? (
-            <div style={s.emptyCard}>
+            <div className="vidrio" style={s.emptyCard}>
               <div style={s.emptyTitle}>No sessions yet</div>
               <div style={s.emptySub}>Start your first backtesting session</div>
               <button onClick={()=>setShowNew(true)} style={{marginTop:20,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'12px 28px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'Montserrat,sans-serif'}}>
@@ -470,18 +473,18 @@ const s = {
   iconBtn:{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:8,padding:'8px',cursor:'pointer',color:'#a0b0c8',display:'flex',alignItems:'center',justifyContent:'center'},
   startBtn:{display:'flex',alignItems:'center',gap:8,background:'linear-gradient(135deg,#1E90FF,#0060cc)',color:'#fff',border:'none',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 20px #1E90FF30',fontFamily:'Montserrat,sans-serif'},
   ctaRow:{display:'flex',gap:16,marginBottom:28},
-  ctaCard:{flex:1,background:'linear-gradient(165deg,rgba(30,144,255,0.10),rgba(255,255,255,0.03) 55%),rgba(13,18,28,0.55)',WebkitBackdropFilter:'blur(18px) saturate(160%)',backdropFilter:'blur(18px) saturate(160%)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:14,padding:'24px 20px',cursor:'pointer',transition:'all .2s',boxShadow:'0 4px 22px rgba(0,0,0,0.35)',animation:'ctaRise .5s ease both'},
+  ctaCard:{flex:1,borderRadius:14,padding:'24px 20px',cursor:'pointer',transition:'all .2s',animation:'ctaRise .5s ease both'},
   ctaOff:{opacity:.7,cursor:'default'},
   ctaIcon:{width:44,height:44,borderRadius:10,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14},
   ctaTitle:{fontSize:14,fontWeight:700,color:'#ffffff',marginBottom:6},
   ctaSub:{fontSize:11,color:'#ffffff',lineHeight:1.5,marginBottom:16},
   ctaLink:{fontSize:12,fontWeight:700,color:'#1E90FF'},
   statsRow:{display:'flex',gap:16,marginBottom:28},
-  statCard:{flex:1,display:'flex',flexDirection:'column',gap:6,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.15)',borderRadius:12,padding:'16px 20px'},
+  statCard:{flex:1,display:'flex',flexDirection:'column',gap:6,borderRadius:12,padding:'16px 20px'},
   statIcon:{width:36,height:36,borderRadius:8,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4},
   statValue:{fontSize:24,fontWeight:800},
   statLabel:{fontSize:9,fontWeight:700,color:'#ffffff',letterSpacing:1.5},
-  emptyCard:{borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)'},
+  emptyCard:{borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',},
   emptyTitle:{fontSize:16,fontWeight:700,color:'#ffffff',marginBottom:8},
   emptySub:{fontSize:12,color:'#ffffff',lineHeight:1.6,maxWidth:380},
 }

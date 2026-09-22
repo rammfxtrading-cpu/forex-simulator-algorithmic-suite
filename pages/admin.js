@@ -5,6 +5,7 @@ import NoAccess from '../components/NoAccess'
 import EquityCurve from '../components/EquityCurve'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
+import Estrellas from '../components/Estrellas'
 
 export default function Admin() {
   const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
@@ -360,6 +361,8 @@ export default function Admin() {
   return (
     <div style={s.root}>
       <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
+      {/* Las estrellas del hub, justo despues del cielo de esta pagina */}
+      <Estrellas />
 
       {/* Sidebar */}
       <AppSidebar active="admin" user={user} profile={profile} />
@@ -380,7 +383,7 @@ export default function Admin() {
             </a>
           </div>
 
-          <div style={s.scopeHelper}>
+          <div className="vidrio" style={s.scopeHelper}>
             Aquí gestionas el <strong style={{color:'#c8d0e0'}}>acceso al simulador</strong> y revisas el rendimiento de tus alumnos. Para invitar alumnos nuevos, editar capital o gestionar el journal, usa el{' '}
             <a href="https://algorithmicsuite.com/admin" target="_blank" rel="noreferrer" style={{color:'#1E90FF', textDecoration:'none'}}>panel del hub</a>.
           </div>
@@ -413,7 +416,7 @@ export default function Admin() {
           {err && <div style={s.errorBox}>{err}</div>}
 
           {!loading && tab === 'with' && (
-            <div style={s.tableBox} className="adminTableBox">
+            <div className="vidrio" style={s.tableBox} className="adminTableBox">
               <div style={s.tableHeaderWith} className="adminGridWith">
                 <div>ALUMNO</div>
                 <div style={{textAlign:'right'}}>SESIONES</div>
@@ -470,7 +473,7 @@ export default function Admin() {
           )}
 
           {!loading && tab === 'without' && (
-            <div style={s.tableBox} className="adminTableBox">
+            <div className="vidrio" style={s.tableBox} className="adminTableBox">
               <div style={s.tableHeaderWithout} className="adminGridWithout">
                 <div>ALUMNO</div>
                 <div>JOURNAL</div>
@@ -536,7 +539,7 @@ export default function Admin() {
               <select
                 value={selectedSession}
                 onChange={e => setSelectedSession(e.target.value)}
-                style={s.selectSession}
+                className="vidrio" style={s.selectSession}
               >
                 <option value="all">Todas las sesiones</option>
                 {detail.sessions.map(sess => (
@@ -546,7 +549,7 @@ export default function Admin() {
             </div>
 
             {metrics && metrics.tradesCount === 0 && (
-              <div style={s.emptyCard}>
+              <div className="vidrio" style={s.emptyCard}>
                 <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:8 }}>Sin trades cerrados</div>
                 <div style={{ fontSize:12, color:'#8faacb', maxWidth:380 }}>Este alumno aún no tiene operaciones cerradas. Las métricas aparecerán cuando empiece a tradear.</div>
               </div>
@@ -615,7 +618,7 @@ export default function Admin() {
               </div>
 
               {/* MONTE CARLO SIMULATION — misma card que /analytics, datos del alumno mostrado */}
-              <div style={s.mcCard}>
+              <div className="vidrio" style={s.mcCard}>
                 <div style={s.chartTitle}>MONTE CARLO SIMULATION</div>
                 <div style={s.mcControls}>
                   {[
@@ -628,7 +631,7 @@ export default function Admin() {
                   ].map(([key, label]) => (
                     <div key={key} style={s.mcField}>
                       <div style={s.mcFieldLabel}>{label}</div>
-                      <input style={s.mcInput} type="number" value={mcVals[key]}
+                      <input className="vidrio" style={s.mcInput} type="number" value={mcVals[key]}
                         onChange={e => setMcFields({ ...mcVals, [key]: e.target.value })} />
                     </div>
                   ))}
@@ -741,7 +744,7 @@ export default function Admin() {
       {/* Modales */}
       {modal && (
         <div style={s.modalOverlay} className="adminModalOverlay" onClick={(e) => { if (e.target === e.currentTarget) closeModal() }}>
-          <div style={s.modal}>
+          <div className="vidrio vidrio-flotante" style={s.modal}>
 
             {modal === 'activate' && <>
               <div style={s.modalTitle}>ACTIVAR ACCESO</div>
@@ -750,7 +753,7 @@ export default function Admin() {
               <div style={s.modalText}>
                 Vas a activar el acceso al simulador. Podrá entrar inmediatamente en <code style={s.code}>simulator.algorithmicsuite.com</code>.
               </div>
-              <div style={s.modalNote}>Solo se modifica <code style={{color:'#1E90FF'}}>simulador_activo = true</code>. Su cuenta del hub y su journal no se tocan.</div>
+              <div className="vidrio" style={s.modalNote}>Solo se modifica <code style={{color:'#1E90FF'}}>simulador_activo = true</code>. Su cuenta del hub y su journal no se tocan.</div>
               {err && <div style={s.errorBox}>{err}</div>}
               <div style={s.modalActions}>
                 <button onClick={closeModal} style={s.btnGhost} disabled={busy}>Cancelar</button>
@@ -765,7 +768,7 @@ export default function Admin() {
               <div style={s.modalText}>
                 Vas a desactivar el acceso al simulador para <strong style={{color:'#fff'}}>{modalTarget?.nombre || modalTarget?.email?.split('@')[0]}</strong>. No podrá entrar hasta que lo reactives.
               </div>
-              <div style={{ ...s.modalNote, background:'rgba(240,62,62,0.06)', borderColor:'rgba(240,62,62,0.15)' }}>
+              <div className="vidrio" style={{ ...s.modalNote, background:'rgba(240,62,62,0.06)', borderColor:'rgba(240,62,62,0.15)' }}>
                 Esto <strong style={{color:'#fff'}}>no borra</strong> sus sesiones, trades ni dibujos. Solo pone <code style={{color:'#f03e3e'}}>simulador_activo = false</code>. Sus datos quedan intactos.
               </div>
               {err && <div style={s.errorBox}>{err}</div>}
@@ -782,11 +785,11 @@ export default function Admin() {
               <div style={s.modalText}>
                 Vas a borrar <strong style={{color:'#fff'}}>TODOS</strong> los datos del simulador de este alumno: sesiones, trades, dibujos, configuración de charts y plantillas. También se pone <code style={{color:'#f03e3e'}}>simulador_activo = false</code>.
               </div>
-              <div style={{ ...s.modalNote, background:'rgba(240,62,62,0.06)', borderColor:'rgba(240,62,62,0.15)' }}>
+              <div className="vidrio" style={{ ...s.modalNote, background:'rgba(240,62,62,0.06)', borderColor:'rgba(240,62,62,0.15)' }}>
                 Acción <strong style={{color:'#f03e3e'}}>IRREVERSIBLE</strong>. Su cuenta del hub y su journal no se tocan. Si vuelve a suscribirse, empieza de 0.
               </div>
               <label style={s.modalLabel}>ESCRIBE SU EMAIL PARA CONFIRMAR</label>
-              <input type="text" value={wipeEmail} onChange={e => setWipeEmail(e.target.value)} placeholder={modalTarget?.email || ''} style={s.modalInput}/>
+              <input type="text" value={wipeEmail} onChange={e => setWipeEmail(e.target.value)} placeholder={modalTarget?.email || ''} className="vidrio" style={s.modalInput}/>
               {err && <div style={s.errorBox}>{err}</div>}
               <div style={s.modalActions}>
                 <button onClick={closeModal} style={s.btnGhost} disabled={busy}>Cancelar</button>
@@ -799,10 +802,10 @@ export default function Admin() {
               <div style={s.modalSub}>Para: {modalTarget?.nombre || modalTarget?.email?.split('@')[0]}</div>
               <div style={s.modalDivider}/>
               <label style={s.modalLabel}>ASUNTO</label>
-              <input type="text" value={msgSubject} onChange={e => setMsgSubject(e.target.value)} placeholder="Ej: Feedback sobre tu última sesión" style={s.modalInput}/>
+              <input type="text" value={msgSubject} onChange={e => setMsgSubject(e.target.value)} placeholder="Ej: Feedback sobre tu última sesión" className="vidrio" style={s.modalInput}/>
               <label style={s.modalLabel}>MENSAJE</label>
-              <textarea value={msgBody} onChange={e => setMsgBody(e.target.value)} placeholder="Escribe el mensaje..." style={s.modalTextarea}/>
-              <div style={s.modalNote}>El alumno lo verá en su buzón del hub (<code style={{color:'#1E90FF'}}>algorithmicsuite.com</code>).</div>
+              <textarea value={msgBody} onChange={e => setMsgBody(e.target.value)} placeholder="Escribe el mensaje..." className="vidrio" style={s.modalTextarea}/>
+              <div className="vidrio" style={s.modalNote}>El alumno lo verá en su buzón del hub (<code style={{color:'#1E90FF'}}>algorithmicsuite.com</code>).</div>
               {err && <div style={s.errorBox}>{err}</div>}
               <div style={s.modalActions}>
                 <button onClick={closeModal} style={s.btnGhost} disabled={busy}>Cancelar</button>
@@ -849,7 +852,7 @@ export default function Admin() {
 
 function StatCard({ label, value, sub, icon, iconColor }) {
   return (
-    <div style={s.statCard}>
+    <div className="vidrio" style={s.statCard}>
       <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
         <div style={{ ...s.statIcon, borderColor: `${iconColor}4d`, background: `${iconColor}1a` }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2">{icon}</svg>
@@ -864,7 +867,7 @@ function StatCard({ label, value, sub, icon, iconColor }) {
 
 function DetailStat({ label, value, color }) {
   return (
-    <div style={s.detailStatCard}>
+    <div className="vidrio" style={s.detailStatCard}>
       <div style={s.detailStatLabel}>{label}</div>
       <div style={{ ...s.detailStatValue, color }}>{value}</div>
     </div>
@@ -965,10 +968,10 @@ const s = {
   headerSub:{fontSize:13,color:'#8faacb'},
   linkHub:{color:'#8faacb',fontSize:11,textDecoration:'none',display:'inline-flex',alignItems:'center',gap:6,padding:'6px 10px',borderRadius:6,transition:'all .15s'},
 
-  scopeHelper:{marginBottom:24,padding:'10px 14px',background:'rgba(30,144,255,0.05)',border:'1px solid rgba(30,144,255,0.12)',borderRadius:8,fontSize:11,color:'#8faacb',lineHeight:1.5},
+  scopeHelper:{marginBottom:24,padding:'10px 14px',borderRadius:8,fontSize:11,color:'#8faacb',lineHeight:1.5},
 
   statsRow:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:24},
-  statCard:{background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.15)',borderRadius:12,padding:'16px 20px'},
+  statCard:{borderRadius:12,padding:'16px 20px'},
   statIcon:{width:30,height:30,borderRadius:7,border:'1px solid',display:'flex',alignItems:'center',justifyContent:'center'},
   statLabel:{fontSize:9,fontWeight:700,color:'#8faacb',letterSpacing:1.5},
   statValue:{fontSize:28,fontWeight:800,color:'#fff'},
@@ -980,7 +983,7 @@ const s = {
   tabCount:{background:'#0d2040',color:'#8faacb',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,letterSpacing:0},
   tabCountActive:{background:'rgba(30,144,255,0.15)',color:'#1E90FF'},
 
-  tableBox:{background:'rgba(4,10,24,0.5)',border:'1px solid rgba(30,144,255,0.12)',borderRadius:12,overflow:'hidden'},
+  tableBox:{borderRadius:12,overflow:'hidden'},
   tableHeaderWith:{display:'grid',gridTemplateColumns:'minmax(220px,2fr) 90px 90px 100px 110px 130px 130px',gap:16,padding:'12px 20px',background:'rgba(0,20,60,0.3)',borderBottom:'1px solid #0d2040',fontSize:9,fontWeight:700,color:'#8faacb',letterSpacing:1.5},
   tableHeaderWithout:{display:'grid',gridTemplateColumns:'minmax(240px,2fr) 120px 130px 140px',gap:16,padding:'12px 20px',background:'rgba(0,20,60,0.3)',borderBottom:'1px solid #0d2040',fontSize:9,fontWeight:700,color:'#8faacb',letterSpacing:1.5},
   rowWith:{display:'grid',gridTemplateColumns:'minmax(220px,2fr) 90px 90px 100px 110px 130px 130px',gap:16,padding:'16px 20px',borderBottom:'1px solid #0a1a32',alignItems:'center',transition:'background .15s'},
@@ -1005,7 +1008,7 @@ const s = {
   btnBack:{color:'#8faacb',fontSize:11,padding:'8px 12px',border:'1px solid #0d2040',background:'rgba(3,8,16,0.6)',borderRadius:8,display:'inline-flex',alignItems:'center',gap:6,transition:'all .15s'},
 
   emptyState:{padding:'40px',textAlign:'center',color:'#8faacb',fontSize:13},
-  emptyCard:{background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)',borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',marginBottom:24},
+  emptyCard:{borderRadius:12,padding:'60px 40px',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',marginBottom:24},
 
   errorBox:{background:'rgba(240,62,62,0.06)',border:'1px solid rgba(240,62,62,0.3)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'#f03e3e',marginBottom:12},
 
@@ -1014,10 +1017,10 @@ const s = {
   detailAvatar:{width:52,height:52,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:800,color:'#fff',boxShadow:'0 0 16px rgba(30,144,255,0.3)'},
   detailName:{fontSize:22,fontWeight:800,color:'#fff'},
   detailEmail:{fontSize:12,color:'#8faacb'},
-  selectSession:{background:'rgba(3,8,16,0.8)',border:'1px solid #0d2040',borderRadius:8,padding:'10px 14px',color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'},
+  selectSession:{borderRadius:8,padding:'10px 14px',color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'},
 
   statsRowDetail:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:14},
-  detailStatCard:{background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.15)',borderRadius:12,padding:'18px 22px'},
+  detailStatCard:{borderRadius:12,padding:'18px 22px'},
   detailStatLabel:{fontSize:10,fontWeight:700,color:'#1E90FF',letterSpacing:1.5,marginBottom:10},
   detailStatValue:{fontSize:28,fontWeight:800},
 
@@ -1031,24 +1034,24 @@ const s = {
 
   // Modal
   modalOverlay:{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000},
-  modal:{background:'rgba(3,8,16,0.95)',border:'1px solid #0d2040',borderRadius:16,padding:32,width:'100%',maxWidth:480,boxShadow:'0 30px 80px rgba(0,0,0,0.9),0 0 60px rgba(30,144,255,0.1)'},
+  modal:{borderRadius:16,padding:32,width:'100%',maxWidth:480,},
   modalTitle:{fontSize:14,fontWeight:800,letterSpacing:2,color:'#fff',marginBottom:4},
   modalSub:{fontSize:11,color:'#8faacb',fontStyle:'italic',marginBottom:20},
   modalDivider:{height:1,background:'linear-gradient(90deg,transparent,rgba(30,144,255,0.5),transparent)',marginBottom:20},
   modalText:{fontSize:13,color:'#c8d0e0',lineHeight:1.6,marginBottom:16},
-  modalNote:{padding:'12px 14px',background:'rgba(30,144,255,0.06)',border:'1px solid rgba(30,144,255,0.15)',borderRadius:8,fontSize:11,color:'#8faacb',lineHeight:1.5,marginBottom:20},
+  modalNote:{padding:'12px 14px',borderRadius:8,fontSize:11,color:'#8faacb',lineHeight:1.5,marginBottom:20},
   modalLabel:{fontSize:10,fontWeight:700,color:'#1E90FF',letterSpacing:1.5,marginBottom:6,display:'block'},
-  modalInput:{width:'100%',background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',transition:'border-color .2s',marginBottom:16},
-  modalTextarea:{width:'100%',background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',transition:'border-color .2s',marginBottom:16,resize:'vertical',minHeight:90,fontFamily:'inherit'},
+  modalInput:{width:'100%',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',transition:'border-color .2s',marginBottom:16},
+  modalTextarea:{width:'100%',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',transition:'border-color .2s',marginBottom:16,resize:'vertical',minHeight:90,fontFamily:'inherit'},
   modalActions:{display:'flex',gap:10,justifyContent:'flex-end',marginTop:8},
 
   code:{color:'#1E90FF',background:'#0d2040',padding:'1px 6px',borderRadius:4,fontSize:12,fontFamily:'monospace'},
 
-  mcCard:{borderRadius:12,padding:'20px 24px',marginTop:16,background:'rgba(4,10,24,0.7)',border:'1px solid rgba(30,144,255,0.18)'},
+  mcCard:{borderRadius:12,padding:'20px 24px',marginTop:16,},
   mcControls:{display:'flex',gap:12,flexWrap:'wrap',marginTop:4},
   mcField:{flex:1,minWidth:130},
   mcFieldLabel:{fontSize:9,fontWeight:700,color:'#4a6080',letterSpacing:1,marginBottom:6},
-  mcInput:{width:'100%',background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'9px 12px',fontSize:12,color:'#fff',outline:'none',fontFamily:'inherit',boxSizing:'border-box'},
+  mcInput:{width:'100%',borderRadius:8,padding:'9px 12px',fontSize:12,color:'#fff',outline:'none',fontFamily:'inherit',boxSizing:'border-box'},
   mcBtnRow:{display:'flex',justifyContent:'center',gap:12,margin:'16px 0 4px'},
   mcResetBtn:{background:'transparent',border:'1px solid #0d1f3c',color:'#8faacb',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'},
   mcStartBtn:{background:'linear-gradient(135deg,#1E90FF,#0060cc)',border:'none',color:'#fff',borderRadius:8,padding:'10px 20px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'},

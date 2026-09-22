@@ -13,7 +13,7 @@ export default function TfInputModal({tfInput,activeTf}){
   const ok=!!match
   return(
     <div style={{position:'fixed',inset:0,zIndex:9000,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none',fontFamily:"'Montserrat',sans-serif"}}>
-      <div style={{background:'rgba(255,255,255,0.10)',border:'1px solid '+(ok?'rgba(41,98,255,0.7)':'rgba(255,255,255,0.22)'),borderRadius:20,backdropFilter:'blur(40px) saturate(200%) brightness(1.1)',WebkitBackdropFilter:'blur(40px) saturate(200%) brightness(1.1)',boxShadow:'0 24px 80px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.25)',padding:'20px 28px 18px',minWidth:240,textAlign:'center'}}>
+      <div className="vidrio vidrio-flotante" style={{borderColor:(ok?'rgba(41,98,255,0.7)':'rgba(255,255,255,0.22)'),borderRadius:20,padding:'20px 28px 18px',minWidth:240,textAlign:'center'}}>
         <div style={{fontSize:38,fontWeight:900,color:ok?'#2962FF':'#ffffff',letterSpacing:2,marginBottom:8,lineHeight:1}}>
           {tfInput}<span style={{display:'inline-block',width:2,height:38,background:ok?'#2962FF':'rgba(255,255,255,0.6)',marginLeft:3,verticalAlign:'middle',animation:'blink 1s step-end infinite'}}/>
         </div>

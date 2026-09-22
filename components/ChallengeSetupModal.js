@@ -72,7 +72,7 @@ export default function ChallengeSetupModal({ open, onClose }) {
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div className="vidrio vidrio-flotante" style={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={styles.headerRow}>
           <div>
@@ -183,13 +183,10 @@ const styles = {
     maxWidth: '100%',
     maxHeight: '90vh',
     overflowY: 'auto',
-    background: '#041530',
-    border: '1px solid #0d2040',
     borderRadius: 12,
     padding: '24px 28px',
     color: '#ffffff',
     fontFamily: "'Montserrat', sans-serif",
-    boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
   },
   headerRow: {
     display: 'flex',

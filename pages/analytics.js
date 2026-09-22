@@ -5,6 +5,7 @@ import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
+import Estrellas from '../components/Estrellas'
 
 const SESSIONS_LABEL = 'All Sessions'
 
@@ -163,6 +164,8 @@ export default function Analytics() {
   return (
     <div style={s.root}>
       <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
+      {/* Las estrellas del hub, justo despues del cielo de esta pagina */}
+      <Estrellas />
       {/* SIDEBAR */}
       <AppSidebar active="analytics" user={user} profile={profile} />
 
@@ -182,7 +185,7 @@ export default function Analytics() {
         </div>
 
         {!hasTrades ? (
-          <div style={s.emptyCard}>
+          <div className="vidrio" style={s.emptyCard}>
             <div style={{ fontSize: 40, marginBottom: 16, opacity: 0.3 }}>⟨∿⟩</div>
             <div style={s.emptyTitle}>No trades yet</div>
             <div style={s.emptySub}>Complete backtesting sessions to see your analytics here.</div>
@@ -199,7 +202,7 @@ export default function Analytics() {
                 { label: 'TOTAL TRADES', value: closedTrades.length, color: '#1E90FF' },
                 { label: 'AVG R:R', value: avgRR.toFixed(2), color: '#f59e0b' },
               ].map(stat => (
-                <div key={stat.label} style={s.statCard}>
+                <div key={stat.label} className="vidrio" style={s.statCard}>
                   <div style={s.statLabel}>{stat.label}</div>
                   <div style={{ ...s.statValue, color: stat.color }}>{stat.value}</div>
                 </div>
@@ -226,7 +229,7 @@ export default function Analytics() {
             {/* SUMMARY CARDS */}
             <div style={s.twoCol} className="anTwoCol">
               {/* Winning Trades */}
-              <div style={s.summaryCard}>
+              <div className="vidrio" style={s.summaryCard}>
                 <div style={{ ...s.cardTitle, color: '#22c55e' }}>Winning Trades</div>
                 <div style={s.summaryGrid}>
                   {[
@@ -243,7 +246,7 @@ export default function Analytics() {
               </div>
 
               {/* Losing Trades */}
-              <div style={s.summaryCard}>
+              <div className="vidrio" style={s.summaryCard}>
                 <div style={{ ...s.cardTitle, color: '#ef4444' }}>Losing Trades</div>
                 <div style={s.summaryGrid}>
                   {[
@@ -263,7 +266,7 @@ export default function Analytics() {
             {/* W/L/BE DONUT + SESSIONS */}
             <div style={s.twoCol} className="anTwoCol">
               {/* Donut */}
-              <div style={s.summaryCard}>
+              <div className="vidrio" style={s.summaryCard}>
                 <div style={s.cardTitle}>Distribution</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 32, marginTop: 16 }}>
                   <svg viewBox="0 0 120 120" style={{ width: 120, height: 120, flexShrink: 0 }}>
@@ -309,7 +312,7 @@ export default function Analytics() {
               </div>
 
               {/* Sessions breakdown */}
-              <div style={s.summaryCard}>
+              <div className="vidrio" style={s.summaryCard}>
                 <div style={s.cardTitle}>Trades by Session</div>
                 <div style={s.summaryGrid}>
                   {[
@@ -345,7 +348,7 @@ export default function Analytics() {
                 ].map(([key, label]) => (
                   <div key={key} style={s.mcField}>
                     <div style={s.mcFieldLabel}>{label}</div>
-                    <input style={s.mcInput} type="number" value={mcVals[key]}
+                    <input className="vidrio" style={s.mcInput} type="number" value={mcVals[key]}
                       onChange={e => setMcFields({ ...mcVals, [key]: e.target.value })} />
                   </div>
                 ))}
@@ -466,25 +469,25 @@ const s = {
   headerSub: { fontSize: 13, color: '#c0d0e8' },
   sessionFilter: { background: '#030f20', border: '1px solid #0d2040', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: '#fff', outline: 'none', fontFamily: 'Montserrat,sans-serif', cursor: 'pointer', minWidth: 180 },
   statsRow: { display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' },
-  statCard: { flex: 1, minWidth: 140, background: 'rgba(3,8,16,0.8)', border: '1px solid #0d2040', borderRadius: 10, padding: '16px 20px', backdropFilter: 'blur(8px)' },
+  statCard: { flex: 1, minWidth: 140, borderRadius: 10, padding: '16px 20px',},
   statLabel: { fontSize: 9, fontWeight: 700, color: '#4a6080', letterSpacing: 1.5, marginBottom: 6 },
   statValue: { fontSize: 22, fontWeight: 800 },
   chartCard: { background: 'rgba(3,8,16,0.8)', border: '1px solid #0d2040', borderRadius: 12, padding: '20px 24px', marginBottom: 20, backdropFilter: 'blur(8px)' },
   cardTitle: { fontSize: 11, fontWeight: 700, color: '#a0b8d0', letterSpacing: 1, marginBottom: 12, textTransform: 'uppercase' },
   twoCol: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 },
-  summaryCard: { background: 'rgba(3,8,16,0.8)', border: '1px solid #0d2040', borderRadius: 12, padding: '20px 24px', backdropFilter: 'blur(8px)' },
+  summaryCard: { borderRadius: 12, padding: '20px 24px',},
   summaryGrid: { display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 },
   summaryRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #0d2040', paddingBottom: 10 },
   summaryLabel: { fontSize: 12, color: '#4a6080' },
   summaryValue: { fontSize: 13, fontWeight: 700 },
-  emptyCard: { background: 'rgba(3,8,16,0.8)', border: '1px solid #0d2040', borderRadius: 12, padding: '80px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', backdropFilter: 'blur(8px)' },
+  emptyCard: { borderRadius: 12, padding: '80px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center',},
   emptyTitle: { fontSize: 16, fontWeight: 700, color: '#ffffff', marginBottom: 8 },
   emptySub: { fontSize: 12, color: '#a0b8d0', lineHeight: 1.6, maxWidth: 380, marginBottom: 24 },
   startBtn: { display: 'flex', alignItems: 'center', gap: 8, background: 'linear-gradient(135deg,#1E90FF,#0060cc)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Montserrat,sans-serif' },
   mcControls: { display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 },
   mcField: { flex: 1, minWidth: 130 },
   mcFieldLabel: { fontSize: 9, fontWeight: 700, color: '#4a6080', letterSpacing: 1, marginBottom: 6 },
-  mcInput: { width: '100%', background: '#030f20', border: '1px solid #0d2040', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#fff', outline: 'none', fontFamily: 'Montserrat,sans-serif', boxSizing: 'border-box' },
+  mcInput: { width: '100%', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#fff', outline: 'none', fontFamily: 'Montserrat,sans-serif', boxSizing: 'border-box' },
   mcBtnRow: { display: 'flex', justifyContent: 'center', gap: 12, margin: '16px 0 4px' },
   mcResetBtn: { background: 'transparent', border: '1px solid #0d2040', color: '#a0b8d0', borderRadius: 8, padding: '10px 20px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Montserrat,sans-serif' },
   mcStartBtn: { background: 'linear-gradient(135deg,#1E90FF,#0060cc)', border: 'none', color: '#fff', borderRadius: 8, padding: '10px 20px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Montserrat,sans-serif' },

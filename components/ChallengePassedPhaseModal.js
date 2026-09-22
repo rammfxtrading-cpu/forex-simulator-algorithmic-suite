@@ -53,7 +53,7 @@ export default function ChallengePassedPhaseModal({ status, onClose, onAdvance, 
 
   return (
     <div style={s.backdrop}>
-      <div style={s.modal}>
+      <div className="vidrio vidrio-flotante" style={s.modal}>
         <div style={s.hero}/>
         <div style={s.body}>
           {/* Phase progress */}
@@ -140,12 +140,9 @@ const s = {
     fontFamily:FONT,
   },
   modal: {
-    background:'rgba(4,10,24,0.97)',
-    border:'1px solid rgba(255,255,255,0.08)',
     borderRadius:16,
     width:'100%', maxWidth:540,
     overflow:'hidden',
-    boxShadow:'0 24px 80px rgba(0,0,0,0.75)',
     position:'relative',
   },
   hero: {

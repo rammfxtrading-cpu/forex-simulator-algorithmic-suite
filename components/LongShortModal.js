@@ -8,11 +8,7 @@ import { isJpy, pipMult, pipSize, pipValue } from '../lib/trading/pricing'
 
 const PILL = {
   fontFamily: "'Montserrat',sans-serif",
-  background: 'rgba(4,10,24,0.97)',
-  border: '1px solid rgba(30,144,255,0.3)',
   borderRadius: 16,
-  boxShadow: '0 24px 80px rgba(0,0,0,0.8)',
-  backdropFilter: 'blur(40px)',
   WebkitBackdropFilter: 'blur(40px)',
   color: '#fff',
   width: 420,
@@ -131,7 +127,7 @@ export default function LongShortModal({ tool, toolId, activePair, balance, init
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,5,20,0.7)', zIndex:600, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(8px)', fontFamily:"'Montserrat',sans-serif" }}
       onClick={onClose}>
-      <div style={PILL} onClick={e => e.stopPropagation()}>
+      <div className="vidrio vidrio-flotante" style={PILL} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ padding:'18px 22px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>

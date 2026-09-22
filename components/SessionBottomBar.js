@@ -10,7 +10,7 @@ import ChallengeHUD from './ChallengeHUD'
 
 export default function SessionBottomBar({lastTrade,challengeLocked,setOrderModal,currentPrice,activePair,dataReady,balance,realized,unrealized,allTrades,challengeStatus,openPositions,pendingOrders,showPos,setShowPos,showOrders,setShowOrders,showTrades,setShowTrades}){
   return(
-      <div style={s.btmBar}>
+      <div className="vidrio" style={s.btmBar}>
         {/* BUY / SELL */}
         <div style={s.tradeActions}>
           <button

@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
 import NetworkBg from '../components/NetworkBg'
+import Estrellas from '../components/Estrellas'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // /operativas — Operativas R.A.M.M.FX TRADING (página huérfana hasta el switch
@@ -281,6 +282,8 @@ export default function Operativas() {
       ) : (
         <>
           <NetworkBg />
+          {/* Las estrellas del hub, justo despues del cielo */}
+          <Estrellas />
           <div className="opv-glow" />
           <div className="opv-scroll" style={open ? { overflow: 'hidden' } : undefined}>
             <div className="opv-wrap">
