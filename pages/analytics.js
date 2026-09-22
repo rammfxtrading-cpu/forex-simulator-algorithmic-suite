@@ -467,7 +467,9 @@ const s = {
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 },
   headerTitle: { fontSize: 26, fontWeight: 800, color: '#ffffff', marginBottom: 4 },
   headerSub: { fontSize: 13, color: '#c0d0e8' },
-  sessionFilter: { background: '#030f20', border: '1px solid #0d2040', borderRadius: 8, padding: '10px 16px', fontSize: 12, color: '#fff', outline: 'none', fontFamily: 'Montserrat,sans-serif', cursor: 'pointer', minWidth: 180 },
+  // 16 px, no menos: por debajo, Safari de iPhone amplia al enfocar el campo y el zoom se
+  // queda despues (el mismo fallo que se arreglo en la calculadora y en Forex Killer)
+  sessionFilter: { background: '#030f20', border: '1px solid #0d2040', borderRadius: 8, padding: '10px 16px', fontSize: 16, color: '#fff', outline: 'none', fontFamily: 'Montserrat,sans-serif', cursor: 'pointer', minWidth: 180 },
   statsRow: { display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' },
   statCard: { flex: 1, minWidth: 140, borderRadius: 10, padding: '16px 20px',},
   statLabel: { fontSize: 9, fontWeight: 700, color: '#4a6080', letterSpacing: 1.5, marginBottom: 6 },
