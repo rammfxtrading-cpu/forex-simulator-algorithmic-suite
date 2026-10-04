@@ -1,0 +1,201 @@
+// Supabase FALSO en memoria para el simulador (sustituye a @supabase/supabase-js
+// en lo que importa el repo; ver cargador.mjs). Copiado del arnes del journal.
+// ⛔ Es un MODELO del cliente, no de la base: NO hay RLS, ni grants, ni CHECK,
+//    ni triggers, ni cascadas. Lo real de la base se pide con
+//    sql/consultas/s04-esquema-simulador.sql.
+//    Estado unico en globalThis.__db, lo use el servidor o el navegador.
+//
+//   db.tablas[t]      filas de cada tabla
+//   db.tokens[jwt]    usuario que devuelve auth.getUser(jwt) (servidor)
+//   db.sesion         la sesion que ve auth.getSession() (navegador)
+//   db.storage[b][r]  contenido (texto) del objeto r del bucket b; un bucket que
+//                     no esta, no existe
+//   db.maxFilas       tope de filas por respuesta (el max-rows de PostgREST); null = sin tope
+//   db.falla(ctx)     → un error {message,code} para esa operacion, o nada
+//   db.pausa(ctx)     → una promesa que retiene esa operacion (carreras)
+//   db.pierde(ctx)    → true: la operacion SE EJECUTA pero la respuesta no llega
+//                       (se devuelve un error de transporte, como supabase-js ante
+//                       un fetch roto a la vuelta)
+//   db.log            cada operacion: { cliente, tabla, op, payload, filtros }
+import { randomUUID } from 'node:crypto'
+const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
+export const db = globalThis.__db ??= {}
+export function reset() {
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, pierde: null, log: [], auth: [], oyentesAuth: [] })
+}
+if (!db.tablas) reset()
+const tick = () => new Promise(r => setImmediate(r))
+const copia = x => x === undefined ? undefined : structuredClone(x)
+const proyecta = (f, cols) => {
+  if (!cols || cols.trim() === '*') return f
+  return Object.fromEntries(cols.split(',').map(c => c.trim()).filter(Boolean).map(c => [c, f[c]]))
+}
+
+class Q {
+  constructor(t) { Object.assign(this, { tabla: t, op: 'select', filtros: [], desc: [], devolver: false, modo: null, orden: [], lim: null, cols: '*', contar: false, cabeza: false }) }
+  select(cols = '*', o = {}) { if (this.op !== 'select') this.devolver = true; else this.cols = cols; if (o.count) this.contar = true; if (o.head) this.cabeza = true; return this }
+  insert(p) { this.op = 'insert'; this.payload = p; return this }
+  update(p) { this.op = 'update'; this.payload = p; return this }
+  upsert(p) { this.op = 'upsert'; this.payload = p; return this }
+  delete(o = {}) { this.op = 'delete'; if (o.count) this.contar = true; return this }
+  eq(c, v) { this.desc.push(`${c}=eq.${v}`); this.filtros.push(f => f[c] === v); return this }
+  neq(c, v) { this.desc.push(`${c}=neq.${v}`); this.filtros.push(f => f[c] !== v); return this }
+  in(c, a) { this.desc.push(`${c}=in.(${a})`); this.filtros.push(f => a.includes(f[c])); return this }
+  // como PostgREST/Postgres: ASC deja los NULL al final y DESC al principio,
+  // salvo nullsFirst explicito
+  order(c, o = {}) { const asc = o.ascending !== false; this.orden.push([c, asc, o.nullsFirst ?? !asc]); return this }
+  limit(n) { this.lim = n; return this }
+  range(desde, hasta) { this.rango = [desde, hasta]; return this }
+  single() { this.modo = 'single'; return this }
+  maybeSingle() { this.modo = 'maybe'; return this }
+  then(ok, ko) { return this.ejecuta().then(async r => {
+    if (db.pierde && await db.pierde(this.ctx)) return { data: null, error: { message: 'TypeError: Failed to fetch', code: '', details: null, hint: null }, count: null }
+    return r
+  }).then(ok, ko) }
+  async ejecuta() {
+    await tick()
+    const ctx = { cliente: quien, tabla: this.tabla, op: this.op, payload: copia(this.payload ?? null), filtros: [...this.desc],
+      orden: this.orden.map(([c, asc, nf]) => `${c}.${asc ? 'asc' : 'desc'}.${nf ? 'nullsfirst' : 'nullslast'}`) }
+    db.log.push(ctx)
+    this.ctx = ctx
+    if (db.pausa) await db.pausa(ctx)
+    const err = db.falla && await db.falla(ctx)
+    if (err) return { data: null, error: err, count: null }
+    const filas = (db.tablas[this.tabla] ??= [])
+    let res
+    if (this.op === 'insert' || this.op === 'upsert') {
+      res = (Array.isArray(this.payload) ? this.payload : [this.payload]).map(p => ({ id: randomUUID(), created_at: new Date().toISOString(), ...copia(p) }))
+      // la clave primaria, como en Postgres: un id que ya esta no entra
+      if (res.some(n => filas.some(f => f.id === n.id))) return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint "${this.tabla}_pkey"` }, count: null }
+      filas.push(...res)
+      res = res.map(copia)
+    } else {
+      let sel = filas.filter(f => this.filtros.every(g => g(f)))
+      if (this.op === 'update') for (const f of sel) Object.assign(f, copia(this.payload))
+      else if (this.op === 'delete') db.tablas[this.tabla] = filas.filter(f => !sel.includes(f))
+      // orden estable por las columnas pedidas y nada mas: los empates quedan en
+      // el orden de insercion (Postgres no promete ni eso).
+      for (const [c, asc, nf] of [...this.orden].reverse()) sel = [...sel].sort((a, b) => {
+        const na = a[c] == null, nb = b[c] == null
+        if (na || nb) return na === nb ? 0 : (na ? (nf ? -1 : 1) : (nf ? 1 : -1))
+        return (asc ? 1 : -1) * String(a[c]).localeCompare(String(b[c]))
+      })
+      // count=exact de PostgREST: el total que casa con los filtros, no lo devuelto
+      this.total = sel.length
+      if (this.rango) sel = sel.slice(this.rango[0], this.rango[1] + 1)
+      if (this.lim != null) sel = sel.slice(0, this.lim)
+      if (this.op === 'select' && db.maxFilas != null) sel = sel.slice(0, db.maxFilas)
+      res = sel.map(f => copia(this.op === 'select' ? proyecta(f, this.cols) : f))
+    }
+    const count = this.contar ? (this.total ?? res.length) : null
+    if (this.cabeza) return { data: null, error: null, count }
+    if (this.op !== 'select' && !this.devolver && !this.modo) return { data: null, error: null, count }
+    if (this.modo === 'single') return res.length === 1 ? { data: res[0], error: null } : { data: null, error: { code: 'PGRST116', message: `JSON object requested, multiple (or no) rows returned (${res.length})` } }
+    if (this.modo === 'maybe') return res.length <= 1 ? { data: res[0] ?? null, error: null } : { data: null, error: { code: 'PGRST116', message: 'varias' } }
+    return { data: res, error: null, count }
+  }
+}
+
+// Storage, con el contrato del SDK instalado (storage-js): download devuelve un
+// Blob; upload acepta Blob o texto y, sin upsert, no pisa; un objeto o bucket
+// que no esta da error. Los errores se DEVUELVEN ({ data, error }), no se lanzan.
+function bucket(nombre) {
+  const objetos = () => db.storage[nombre]
+  const op = async (tipo, payload) => {
+    await tick()
+    const ctx = { cliente: quien, tabla: 'storage:' + nombre, op: tipo, payload, filtros: [] }
+    db.log.push(ctx)
+    if (db.pausa) await db.pausa(ctx)
+    return (db.falla && await db.falla(ctx)) || null
+  }
+  const noExiste = { data: null, error: { message: 'Bucket not found', statusCode: '404' } }
+  return {
+    async download(ruta) {
+      const err = await op('download', ruta); if (err) return { data: null, error: err }
+      if (!objetos()) return noExiste
+      if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: { message: 'Object not found', statusCode: '404' } }
+      return { data: new Blob([objetos()[ruta]], { type: 'application/json' }), error: null }
+    },
+    async upload(ruta, cuerpo, o = {}) {
+      const texto = typeof cuerpo === 'string' ? cuerpo : await cuerpo.text()
+      const err = await op('upload', { ruta, bytes: texto.length, upsert: !!o.upsert }); if (err) return { data: null, error: err }
+      if (!objetos()) return noExiste
+      if (Object.hasOwn(objetos(), ruta) && !o.upsert) return { data: null, error: { message: 'The resource already exists', statusCode: '409' } }
+      objetos()[ruta] = texto
+      return { data: { path: ruta }, error: null }
+    },
+    async list(prefijo = '', o = {}) {
+      const err = await op('list', { prefijo, ...o }); if (err) return { data: null, error: err }
+      if (!objetos()) return noExiste
+      const lim = o.limit ?? 100, off = o.offset ?? 0
+      const nombres = Object.keys(objetos()).filter(n => n.startsWith(prefijo + '/')).map(n => n.slice(prefijo.length + 1)).sort()
+      return { data: nombres.slice(off, off + lim).map(name => ({ name })), error: null }
+    },
+    async remove(rutas) {
+      const err = await op('remove', rutas); if (err) return { data: null, error: err }
+      if (!objetos()) return noExiste
+      const fuera = rutas.filter(r => Object.hasOwn(objetos(), r))
+      for (const r of fuera) delete objetos()[r]
+      return { data: fuera.map(name => ({ name })), error: null }
+    },
+  }
+}
+
+const auth = {
+  async getUser(token) {
+    await tick(); db.auth.push({ cliente: quien, op: 'getUser' })
+    const u = db.tokens[token]
+    return u ? { data: { user: copia(u) }, error: null } : { data: { user: null }, error: { message: 'invalid JWT' } }
+  },
+  async getSession() {
+    await tick(); db.auth.push({ cliente: quien, op: 'getSession' })
+    const err = db.falla && await db.falla({ cliente: quien, tabla: 'auth', op: 'getSession', filtros: [] })
+    if (err) return { data: { session: null }, error: err }
+    return { data: { session: copia(db.sesion) }, error: null }
+  },
+  // Como auth-js 2.43 (_signOut): si el servidor falla (no 401/403/404), devuelve
+  // el error y la sesion SE QUEDA; si va bien, la borra y avisa SIGNED_OUT.
+  async signOut() {
+    await tick(); db.auth.push({ cliente: quien, op: 'signOut' })
+    const err = db.falla && await db.falla({ cliente: quien, tabla: 'auth', op: 'signOut', filtros: [] })
+    if (err) return { error: err }
+    db.sesion = null
+    for (const cb of [...db.oyentesAuth]) cb('SIGNED_OUT', null)
+    return { error: null }
+  },
+  async updateUser(p) { await tick(); db.auth.push({ cliente: quien, op: 'updateUser', campos: Object.keys(p) }); return db.sesion ? { data: { user: db.sesion.user }, error: null } : { data: { user: null }, error: { message: 'Auth session missing!' } } },
+  // Como supabase-js: al suscribirse llega INITIAL_SESSION; despues, cada cambio.
+  onAuthStateChange(cb) {
+    db.auth.push({ cliente: quien, op: 'onAuthStateChange' })
+    db.oyentesAuth.push(cb)
+    const sesion = copia(db.sesion)
+    queueMicrotask(() => { if (db.oyentesAuth.includes(cb)) cb('INITIAL_SESSION', sesion) })
+    return { data: { subscription: { unsubscribe() { db.oyentesAuth = db.oyentesAuth.filter(f => f !== cb) } } } }
+  },
+}
+
+// Cambia la sesion y avisa a quien escuche, como hace supabase-js en ESTA
+// pestaña. (Un cambio hecho en otra pestaña o en el hub NO avisa: solo cambia
+// la cookie; para eso, cambiar db.sesion a mano.)
+export function emiteAuth(evento, sesion) {
+  db.sesion = sesion
+  for (const cb of [...db.oyentesAuth]) cb(evento, copia(sesion))
+}
+
+export function createClient() {
+  return { from: t => new Q(t), storage: { from: bucket }, auth, rpc: async n => ({ data: null, error: { code: 'PGRST202', message: 'rpc desconocida ' + n } }) }
+}
+
+// Llama a un handler de pages/api como lo haria Next (pages router).
+export async function llama(handler, { token = null, cookie = null, body, method = 'POST', query = {}, headers = {} } = {}) {
+  const h = { ...headers }
+  if (token) h.authorization = `Bearer ${token}`
+  if (cookie) h.cookie = cookie
+  const req = { method, headers: h, body, query }
+  let estado = 200, cuerpo, terminado = false
+  const cabeceras = {}
+  const res = { status(s) { estado = s; return this }, json(j) { cuerpo = j; terminado = true; return this }, setHeader(k, v) { cabeceras[k.toLowerCase()] = v; return this }, end() { terminado = true; return this } }
+  let excepcion = null
+  try { await handler(req, res) } catch (e) { excepcion = e }
+  return { estado: excepcion ? 500 : estado, cuerpo, terminado, excepcion, cabeceras }
+}

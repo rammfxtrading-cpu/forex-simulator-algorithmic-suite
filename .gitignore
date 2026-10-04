@@ -44,3 +44,6 @@ data_m1/
 
 # Datos temporales de descarga de velas (no subir al repo)
 descarga-2026/
+
+# Salida de las pruebas (pruebas/tanda.sh, pruebas/fase1.sh)
+/.pruebas/
