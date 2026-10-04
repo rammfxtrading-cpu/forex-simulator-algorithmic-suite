@@ -23,8 +23,27 @@ const THRESHOLD_BY_WEEKDAY = {
   6: 0,     // Sabado
 }
 
-// In-memory cache per pair+year
-const cache = {}
+// Cache en memoria por par y año, CON CADUCIDAD (auditoria D05, 4-oct-2026):
+// antes no caducaba nunca y una instancia caliente seguia sirviendo el año
+// viejo despues de que el actualizador lo completara. El año en curso cambia
+// cada dia (cron 06:00 y 14:00 UTC): 5 minutos. Los años cerrados casi nunca:
+// 1 hora. (Por instancia: cada instancia caduca la suya.)
+const cacheVelas = new Map()   // 'PAR_AÑO' → { velas, caduca }
+const TTL_ANIO_EN_CURSO = 5 * 60 * 1000
+const TTL_ANIO_CERRADO = 60 * 60 * 1000
+const cache = {
+  get(key) {
+    const e = cacheVelas.get(key)
+    if (!e) return null
+    if (Date.now() >= e.caduca) { cacheVelas.delete(key); return null }
+    return e.velas
+  },
+  set(key, velas) {
+    const anio = Number(key.split('_')[1])
+    const ttl = anio >= new Date(Date.now()).getUTCFullYear() ? TTL_ANIO_EN_CURSO : TTL_ANIO_CERRADO
+    cacheVelas.set(key, { velas, caduca: Date.now() + ttl })
+  },
+}
 
 // ── Lista cerrada (auditoria S03, 4-oct-2026) ───────────────────────────────
 // Los 9 pares que hay en el bucket forex-data, que son los que ofrece la
@@ -70,9 +89,10 @@ async function leerAnio(pair, year) {
 
 async function loadFromSupabase(pair, year) {
   const key = `${pair}_${year}`
-  if (cache[key]) return { estado: 'ok', velas: cache[key] }
+  const enCache = cache.get(key)
+  if (enCache) return { estado: 'ok', velas: enCache }
   const r = await leerAnio(pair, year)
-  if (r.estado === 'ok') cache[key] = r.velas
+  if (r.estado === 'ok') cache.set(key, r.velas)
   return r
 }
 
@@ -230,13 +250,13 @@ async function fetchFromDukascopy(pair, year) {
   const calidad = validaAnioParaPublicar(allCandles, Number(year), Date.now() / 1000)
   if (!calidad.ok) {
     console.error(`[candles] ${path} descargado NO valido, no se publica: ${calidad.problemas.join(' · ')}`)
-    if (existente.estado === 'ok') { cache[key] = existente.velas; return { velas: existente.velas } }
+    if (existente.estado === 'ok') { cache.set(key, existente.velas); return { velas: existente.velas } }
     return { error: 'incompleto', problemas: calidad.problemas }
   }
 
   if (existente.estado === 'ok' && allCandles.length < existente.velas.length) {
     console.warn(`[candles] PROTECCION ANTI-DEGRADACION ${path}: descargada=${allCandles.length} velas, guardada=${existente.velas.length}. No se sube; se sirve la guardada.`)
-    cache[key] = existente.velas
+    cache.set(key, existente.velas)
     return { velas: existente.velas }
   }
 
@@ -256,7 +276,7 @@ async function fetchFromDukascopy(pair, year) {
     console.log(`[candles] Saved ${allCandles.length} M1 candles -> forex-data/${path}${partialTag}`)
   }
   // la descargada tiene al menos tantas velas como la guardada (o no habia)
-  cache[key] = allCandles
+  cache.set(key, allCandles)
   return { velas: allCandles }
 }
 

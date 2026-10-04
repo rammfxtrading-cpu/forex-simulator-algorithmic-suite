@@ -56,55 +56,95 @@ async function bajarDia(pair, y, m, d) {
   }
 }
 
-async function procesarPar(pair) {
-  const year = new Date().getUTCFullYear()
-  const keyFile = `${pair.toUpperCase()}/M1/${year}.json`
+// ── Reconciliacion (auditoria D05, 4-oct-2026) ─────────────────────────────
+// Antes solo se bajaba desde el dia SIGUIENTE a la ultima vela: un ultimo dia a
+// medias o un dia interior vacio no se volvian a pedir nunca, y el 1 de enero no
+// habia fichero del año nuevo y el par se quedaba en error. Ahora, por par:
+//   · se piden la COLA (del ultimo dia guardado a ayer, todos los dias, como
+//     antes: el domingo abre a las 21:00) y los dias LABORABLES CORTOS del
+//     interior (umbral y festivos de lib/mercado/calidad.js, copiados aqui
+//     porque este script es CommonJS en Node 20);
+//   · un dia vuelto a bajar solo sustituye al guardado si trae MAS velas;
+//   · si el fichero del año no existe (404 real), se arranca el año desde el
+//     1-ene; en enero se repasa tambien el año anterior (su 31-dic);
+//   · como mucho MAX_DIAS_POR_PASADA dias por par y año en cada pasada, los mas
+//     recientes primero: un hueco que el proveedor nunca rellena no dispara el
+//     coste (se reintenta en la pasada siguiente).
+const UMBRAL_LABORABLE = { 1: 1200, 2: 1200, 3: 1200, 4: 1200, 5: 1000 }   // = lib/mercado/calidad.js
+const FESTIVOS_MMDD = new Set(['01-01', '12-25'])                           // = lib/mercado/calidad.js
+const MAX_DIAS_POR_PASADA = 40
+const DIA_MS = 86400000
+const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 
-  // 1) Descargar el archivo actual de Supabase
+// → { estado: 'ok', velas } | { estado: 'no-existe' } | { estado: 'error', motivo }
+// «No existe» = el 404 de storage-js (statusCode '404'); cualquier otro error, no se pudo leer.
+async function leerAnio(keyFile) {
   const { data, error } = await sb.storage.from(BUCKET).download(keyFile)
-  if (error) return { pair, estado:`✗ no se pudo leer ${keyFile}: ${error.message}` }
-  const velas = JSON.parse(await data.text())
-  if (!velas.length) return { pair, estado:`✗ archivo vacío` }
+  if (error) return (String(error.statusCode) === '404' || error.status === 404) ? { estado: 'no-existe' } : { estado: 'error', motivo: error.message || String(error) }
+  try { const v = JSON.parse(await data.text()); return Array.isArray(v) ? { estado: 'ok', velas: v } : { estado: 'error', motivo: 'no es una lista' } }
+  catch (e) { return { estado: 'error', motivo: 'JSON ilegible' } }
+}
 
-  // 2) Última fecha que ya tiene (día UTC de la última vela)
-  const ultTime = velas[velas.length-1].time
-  const ultDia = new Date(ultTime*1000)
-  const ultYMD = ultDia.toISOString().slice(0,10)
-
-  // 3) Rango a bajar: desde el día SIGUIENTE al último, hasta AYER (hoy no ha cerrado)
-  const hoy = new Date()
-  const ayer = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate()-1))
-  const desde = new Date(Date.UTC(ultDia.getUTCFullYear(), ultDia.getUTCMonth(), ultDia.getUTCDate()+1))
-
-  if (desde > ayer) return { pair, estado:`✓ al día (última: ${ultYMD}, nada que añadir)` }
-
-  // 4) Bajar día a día en ese rango
-  const nuevas = []
-  let diasBajados = 0, diasConDatos = 0
-  for (let t = new Date(desde); t <= ayer; t.setUTCDate(t.getUTCDate()+1)) {
-    const dv = await bajarDia(pair, t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate())
-    diasBajados++
-    if (dv && dv.length) { nuevas.push(...dv); diasConDatos++ }
-    await sleep(400)
+// Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los laborables cortos.
+function diasPendientes(velas, year, ayerMs) {
+  const porDia = {}
+  for (const v of velas) { const d = ymd(v.time * 1000); porDia[d] = (porDia[d] || 0) + 1 }
+  const inicio = Date.UTC(year, 0, 1)
+  const fin = Math.min(Date.UTC(year, 11, 31), ayerMs)
+  const ultDiaMs = velas.length ? Date.UTC(...ymd(velas[velas.length - 1].time * 1000).split('-').map((x, i) => i === 1 ? x - 1 : +x)) : inicio - DIA_MS
+  const cola = [], cortos = []
+  for (let t = inicio; t <= fin; t += DIA_MS) {
+    const d = ymd(t)
+    if (t > ultDiaMs) { cola.push(d); continue }          // cola: todos los dias
+    const umbral = UMBRAL_LABORABLE[new Date(t).getUTCDay()]
+    if (umbral && !FESTIVOS_MMDD.has(d.slice(5)) && (porDia[d] || 0) < umbral) cortos.push(d)
   }
+  // el ultimo dia guardado, si esta a medias, entra en los cortos (es laborable) o en la cola
+  return [...cola.reverse(), ...cortos.reverse()].slice(0, MAX_DIAS_POR_PASADA)
+}
 
-  if (!nuevas.length) return { pair, estado:`✓ sin velas nuevas (${diasBajados} días revisados, eran findes/festivos)` }
+// Baja los dias pendientes y los fusiona: un dia solo se sustituye si trae mas velas.
+async function reconciliaAnio(pair, year, ayerMs) {
+  const keyFile = `${pair.toUpperCase()}/M1/${year}.json`
+  const leido = await leerAnio(keyFile)
+  if (leido.estado === 'error') return { keyFile, estado: `✗ no se pudo leer ${keyFile}: ${leido.motivo}` }
+  const nuevoAnio = leido.estado === 'no-existe'
+  const velas = nuevoAnio ? [] : leido.velas
+  const pendientes = diasPendientes(velas, year, ayerMs)
+  if (!pendientes.length) return { keyFile, estado: `✓ al dia (${keyFile})` }
 
-  // 5) Añadir sin duplicar (por time) y ordenar
-  const vistos = new Set(velas.map(v=>v.time))
-  const añadir = nuevas.filter(v=>!vistos.has(v.time))
-  if (!añadir.length) return { pair, estado:`✓ nada nuevo real (ya estaban)` }
-  const combinado = velas.concat(añadir).sort((a,b)=>a.time-b.time)
+  const porDia = {}
+  for (const v of velas) (porDia[ymd(v.time * 1000)] ??= []).push(v)
+  let mejorados = 0, sinMejora = 0, añadidas = 0
+  for (const d of pendientes) {
+    const [y, m, dd] = d.split('-').map(Number)
+    const dv = (await bajarDia(pair, y, m - 1, dd)) || []
+    await sleep(400)
+    const antes = (porDia[d] || []).length
+    if (dv.length > antes) { porDia[d] = dv; mejorados++; añadidas += dv.length - antes } else sinMejora++
+  }
+  if (!mejorados) return { keyFile, estado: `✓ ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado` }
 
-  const nuevoUlt = new Date(combinado[combinado.length-1].time*1000).toISOString().slice(0,10)
+  const combinado = Object.keys(porDia).sort().flatMap(d => porDia[d]).sort((a, b) => a.time - b.time)
+  const resumen = `${nuevoAnio ? 'año NUEVO, ' : ''}+${añadidas} velas en ${mejorados} dia(s) (${sinMejora} sin mejora); ultima ${ymd(combinado[combinado.length - 1].time * 1000)}`
+  if (!SUBIR) return { keyFile, estado: `[SECO] ${keyFile}: ${resumen}` }
+  const up = await sb.storage.from(BUCKET).upload(keyFile, JSON.stringify(combinado), { contentType: 'application/json', upsert: true })
+  if (up.error) return { keyFile, estado: `✗ fallo subida ${keyFile}: ${up.error.message}` }
+  return { keyFile, estado: `✓ SUBIDO ${keyFile}: ${resumen}` }
+}
 
-  if (!SUBIR) return { pair, estado:`[SECO] añadiría ${añadir.length} velas (${diasConDatos} días). Última pasaría de ${ultYMD} a ${nuevoUlt}` }
-
-  // 6) Resubir con upsert
-  const body = JSON.stringify(combinado)
-  const up = await sb.storage.from(BUCKET).upload(keyFile, body, { contentType:'application/json', upsert:true })
-  if (up.error) return { pair, estado:`✗ fallo subida: ${up.error.message}` }
-  return { pair, estado:`✓ SUBIDO: +${añadir.length} velas. Última ${ultYMD} -> ${nuevoUlt}` }
+async function procesarPar(pair) {
+  const hoy = new Date()
+  const ayerMs = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1)
+  const year = hoy.getUTCFullYear()
+  const anios = hoy.getUTCMonth() === 0 ? [year - 1, year] : [year]   // en enero, tambien el 31-dic anterior
+  const partes = []
+  for (const y of anios) {
+    if (Date.UTC(y, 0, 1) > ayerMs) continue           // el 1-ene aun no ha cerrado: nada que pedir de ese año
+    partes.push((await reconciliaAnio(pair, y, ayerMs)).estado)
+  }
+  const fallo = partes.find(p => p.startsWith('✗'))
+  return { pair, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
 }
 
 async function main() {
@@ -150,9 +190,11 @@ async function main() {
 
   for (const pair of PAIRS) {
     try {
-      const { data, error } = await sb.storage.from(BUCKET).download(`${pair.toUpperCase()}/M1/${year}.json`)
-      if (error) { console.log(`  ${pair.toUpperCase().padEnd(8)} ✗ no legible`); descolgados.push(`${pair}: archivo no legible`); continue }
-      const arr = JSON.parse(await data.text())
+      // el año en curso; si aun no tiene fichero (1-ene festivo sin datos), el anterior
+      let leido = await leerAnio(`${pair.toUpperCase()}/M1/${year}.json`)
+      if (leido.estado === 'no-existe') leido = await leerAnio(`${pair.toUpperCase()}/M1/${year - 1}.json`)
+      if (leido.estado !== 'ok' || !leido.velas.length) { console.log(`  ${pair.toUpperCase().padEnd(8)} ✗ no legible`); descolgados.push(`${pair}: archivo no legible`); continue }
+      const arr = leido.velas
       const ult = new Date(arr[arr.length-1].time*1000)
       const retraso = diasMercadoEntre(ult, ayer)
       const ok = retraso <= MAX_DIAS_MERCADO_RETRASO
