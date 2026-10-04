@@ -73,7 +73,7 @@ export default function Analytics() {
   // Filter trades by selected session
   const filteredTrades = selectedSession === SESSIONS_LABEL
     ? trades
-    : trades.filter(t => t.session_id === sessions.find(s => s.name === selectedSession)?.id)
+    : trades.filter(t => t.session_id === selectedSession)   // por id: dos sesiones pueden llamarse igual (C03)
 
   // Stats calculations
   const closedTrades = filteredTrades.filter(t => t.result && t.result !== 'OPEN')
@@ -89,7 +89,7 @@ export default function Analytics() {
   const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + (t.pnl || 0), 0) / losses.length : 0
 
   // Session balance for selected
-  const selectedSessionData = sessions.find(s => s.name === selectedSession)
+  const selectedSessionData = sessions.find(s => s.id === selectedSession)
   const initialBalance = selectedSession === SESSIONS_LABEL
     ? sessions.reduce((s, sess) => s + (parseFloat(sess.capital) || 0), 0)
     : parseFloat(selectedSessionData?.capital || 0)
@@ -179,8 +179,8 @@ export default function Analytics() {
           </div>
           {/* Session Filter */}
           <select style={s.sessionFilter} value={selectedSession} onChange={e => { setSelectedSession(e.target.value); setMcFields(null); setMcResult(null) }}>
-            <option>{SESSIONS_LABEL}</option>
-            {sessions.map(s => <option key={s.id}>{s.name}</option>)}
+            <option value={SESSIONS_LABEL}>{SESSIONS_LABEL}</option>
+            {sessions.map(s => <option key={s.id} value={s.id}>{`${s.name} · ${s.pair} · ${s.date_from} → ${s.date_to}`}</option>)}
           </select>
         </div>
 
