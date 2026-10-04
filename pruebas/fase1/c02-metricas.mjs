@@ -18,8 +18,17 @@
  *   · el R:R medio es el mismo numero para el alumno y para el mentor
  *   · el capital de partida de «todas las sesiones» es el mismo en las dos
  *     (cual de los dos —60.000 o el de una sesion— es decision de producto)
+ * Decisiones del CTO (4-oct, bloque B): un unico modulo de metricas;
+ * expectativa = suma de P&L / trades; R:R con una sola definicion; orden por
+ * cierre; capital = suma de las sesiones incluidas; actividad por fecha real.
+ *   · capital de «todas»: 10.000 + 50.000 = 60.000 en las dos
+ *   · orden por cierre: abiertas G (09:00), P (10:00), G (12:00), cerradas
+ *     P (11:00), G (13:00), G (16:00) → racha maxima 2 ganadoras y 1 perdedora
+ *   · actividad: un trade registrado ayer (created_at) de mercado de 2025
+ *     cuenta como activo en los ultimos 7 dias
  */
-import { titulo, ver, oraculo, fin, escenario, sesionSim, tradeSim, perfil, importa, monta, A, ADM, db } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, sesionSim, tradeSim, perfil, importa, monta, A, ADM, db, tok } from '../lib.mjs'
+import { llama } from '../supabase-falso.mjs'
 const Analytics = (await importa('pages/analytics.js')).default
 const Admin = (await importa('pages/admin.js')).default
 const s1 = sesionSim({ id: 's-diez', name: 'Diez mil', capital: 10000, balance: 10000, created_at: '2026-09-20T00:00:00Z' })
@@ -69,4 +78,29 @@ oraculo('C02', 'expectativa del admin = (100 − 100 + 0) / 3 = 0', /^\+?\$?0\.0
 oraculo('C02', 'el R:R medio es el mismo para alumno y mentor', parseFloat(rrA) === parseFloat(rrMentor), `alumno ${rrA} · mentor ${rrMentor}`)
 ver('control: se leyo el capital de partida de las dos', !!sbA && !!sbM, `${sbA} / ${sbM}`)
 oraculo('C02', '«todas las sesiones» parte del mismo capital en las dos', sbA === sbM, `alumno ${sbA} · admin ${sbM}`)
+oraculo('C02', 'y es la suma de las sesiones incluidas: 60.000', Number(sbA) === 60000 && Number(sbM) === 60000, `alumno ${sbA} · admin ${sbM}`)
+
+titulo('4 · orden por cierre (racha en el admin)')
+const ORDEN = [
+  tradeSim({ session_id: 's-diez', pnl: 100, rr: 1, result: 'WIN', opened_at: '2025-03-04T09:00:00Z', closed_at: '2025-03-04T16:00:00Z' }),
+  tradeSim({ session_id: 's-diez', pnl: -100, rr: -1, result: 'LOSS', opened_at: '2025-03-04T10:00:00Z', closed_at: '2025-03-04T11:00:00Z' }),
+  tradeSim({ session_id: 's-diez', pnl: 100, rr: 1, result: 'WIN', opened_at: '2025-03-04T12:00:00Z', closed_at: '2025-03-04T13:00:00Z' }),
+]
+escenario({ sesion: ADM, perfiles: [perfil(A), perfil(ADM, { rol_global: 'admin' })], sim_sessions: [s1], sim_trades: ORDEN })
+const pr = monta(Admin, {}); await pr.asienta(100)
+const filaR = pr.todos(x => x.props?.title === 'Ver analytics').find(b => { let n = b; for (let i = 0; i < 8 && n; i++) { if (pr.texto(n).includes('a@ejemplo.test')) return true; n = n.padre } return false })
+pr.pulsa(filaR); await pr.asienta(100)
+const racha = valorDe(pr, 'RACHA MAX')
+ver('control: el detalle enseña la racha', !!racha, racha)
+oraculo('C02', 'racha en orden de cierre: 2W / 1L', racha === '2W / 1L', `admin enseña ${racha} (orden de apertura: 1W / 1L)`)
+pr.desmonta()
+
+titulo('5 · actividad por fecha real (lista de alumnos del admin)')
+const ayer = new Date(Date.now() - 86400000).toISOString()
+escenario({ sesion: ADM, perfiles: [perfil(A), perfil(ADM, { rol_global: 'admin' })], sim_sessions: [{ ...s1, created_at: '2026-01-10T00:00:00Z' }],
+  sim_trades: [tradeSim({ session_id: 's-diez', opened_at: '2025-03-04T09:00:00Z', closed_at: '2025-03-04T10:00:00Z', created_at: ayer })] })
+const lista = await llama((await importa('pages/api/admin/list-alumnos-sim.js')).default, { method: 'GET', token: tok(ADM) })
+ver('control: la lista respondio con el alumno A', lista.estado === 200 && lista.cuerpo.usuarios.some(u => u.id === A), lista.estado)
+oraculo('C02', 'un trade registrado ayer (de mercado 2025) cuenta como actividad de los ultimos 7 dias', lista.cuerpo.aggregates?.activos_7d === 1,
+  `activos_7d ${lista.cuerpo.aggregates?.activos_7d}; ultima actividad ${lista.cuerpo.usuarios.find(u => u.id === A)?.metrics?.last_activity}`)
 fin()

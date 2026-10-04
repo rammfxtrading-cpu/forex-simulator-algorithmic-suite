@@ -1,3 +1,4 @@
+import { metricas } from '../lib/metricas'
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
@@ -229,32 +230,18 @@ export default function Admin() {
     if (!detail) return null
     const { trades, sessions } = detail
     const filtered = selectedSession === 'all' ? trades : trades.filter(t => t.session_id === selectedSession)
-    const closed = filtered.filter(t => t.result && t.result !== 'OPEN')
-    const w = closed.filter(t => t.result === 'WIN')
-    const l = closed.filter(t => t.result === 'LOSS')
-    const be = closed.filter(t => t.result === 'BREAKEVEN')
-    const totalPnl = closed.reduce((s, t) => s + (t.pnl || 0), 0)
-    const winRate = closed.length > 0 ? (w.length / closed.length * 100) : 0
-    const avgRR = closed.length > 0 ? closed.reduce((s, t) => s + (t.rr || 0), 0) / closed.length : 0
-    const bestWin = w.length > 0 ? Math.max(...w.map(t => t.pnl || 0)) : 0
-    const worstLoss = l.length > 0 ? Math.min(...l.map(t => t.pnl || 0)) : 0
-    const avgWin = w.length > 0 ? w.reduce((s, t) => s + (t.pnl || 0), 0) / w.length : 0
-    const avgLoss = l.length > 0 ? l.reduce((s, t) => s + (t.pnl || 0), 0) / l.length : 0
-    const grossProfit = w.reduce((s, t) => s + (t.pnl || 0), 0)
-    const grossLoss = Math.abs(l.reduce((s, t) => s + (t.pnl || 0), 0))
-    // Profit factor: ratio gross profit / gross loss. Sin losses no es
-    // calculable (división por 0); marcamos null para que la UI lo muestre
-    // como '—' (consistente entre dashboard, admin y analytics).
-    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : null
-    const expectancy = closed.length > 0 ? (winRate/100 * avgWin) + ((1 - winRate/100) * avgLoss) : 0
-    const selSess = sessions.find(s => s.id === selectedSession)
-    const initialBalance = selectedSession === 'all'
-      ? (sessions.length > 0 ? parseFloat(sessions[0]?.capital || 0) : 0)
-      : parseFloat(selSess?.capital || 0)
-    let ddPeak = initialBalance, maxDD = 0, ddRun = initialBalance
-    closed.forEach(t => { ddRun += (t.pnl||0); if(ddRun>ddPeak)ddPeak=ddRun; const dd=ddPeak-ddRun; if(dd>maxDD)maxDD=dd })
-    let maxW=0, maxL=0, curW=0, curL=0
-    closed.forEach(t => { if(t.result==='WIN'){curW++;curL=0;if(curW>maxW)maxW=curW}else if(t.result==='LOSS'){curL++;curW=0;if(curL>maxL)maxL=curL} })
+    // Una sola definicion para alumno y mentor (lib/metricas.js, auditoria C02):
+    // expectativa = P&L / trades, R medio por operacion, orden de cierre y
+    // capital = suma de las sesiones incluidas.
+    const incluidas = selectedSession === 'all' ? sessions : sessions.filter(s => s.id === selectedSession)
+    const m = metricas(filtered, incluidas)
+    const closed = m.cerrados
+    const totalPnl = m.totalPnl, winRate = m.winRate, avgRR = m.rrMedio
+    const bestWin = m.mejorGanadora, worstLoss = m.peorPerdedora, avgWin = m.mediaGanadora, avgLoss = m.mediaPerdedora
+    const profitFactor = m.profitFactor, expectancy = m.expectativa
+    const initialBalance = m.capitalInicial
+    const maxDD = m.maxDrawdown, maxW = m.maxRachaGanadora, maxL = m.maxRachaPerdedora
+    const w = m.ganadoras, l = m.perdedoras, be = m.breakevens
     // Nota: la curva de capital se calcula ahora dentro del componente <EquityCurve>.
     return {
       totalPnl, winRate, avgRR, bestWin, worstLoss, avgWin, avgLoss,

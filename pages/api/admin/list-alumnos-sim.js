@@ -1,3 +1,4 @@
+import { metricas, ultimaActividad, activoEnLosUltimos } from '../../../lib/metricas'
 import { requireAdmin } from '../../../lib/authApi'
 
 /**
@@ -34,8 +35,8 @@ export default async function handler(req, res) {
 
   if (activeIds.length > 0) {
     const [{ data: sessions }, { data: trades }] = await Promise.all([
-      supabaseAdmin.from('sim_sessions').select('id, user_id, capital').in('user_id', activeIds),
-      supabaseAdmin.from('sim_trades').select('user_id, result, pnl, closed_at, opened_at').in('user_id', activeIds)
+      supabaseAdmin.from('sim_sessions').select('id, user_id, capital, created_at').in('user_id', activeIds),
+      supabaseAdmin.from('sim_trades').select('id, user_id, result, pnl, rr, closed_at, opened_at, created_at').in('user_id', activeIds)
     ])
 
     for (const s of sessions || []) {
@@ -49,23 +50,19 @@ export default async function handler(req, res) {
   }
 
   // 3) Calcular métricas por usuario
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
   const usuarios = profiles.map(p => {
     const userSessions = sessionsByUser[p.id] || []
     const userTrades = tradesByUser[p.id] || []
-    const closed = userTrades.filter(t => t.result && t.result !== 'OPEN')
-    const wins = closed.filter(t => t.result === 'WIN')
-    const totalPnl = closed.reduce((sum, t) => sum + (parseFloat(t.pnl) || 0), 0)
-    const winRate = closed.length > 0 ? (wins.length / closed.length) * 100 : 0
-
-    // Última actividad: último opened_at o closed_at
-    let lastActivity = null
-    for (const t of userTrades) {
-      const d = t.closed_at || t.opened_at
-      if (d && (!lastActivity || d > lastActivity)) lastActivity = d
-    }
-    const isActive7d = lastActivity && new Date(lastActivity) > sevenDaysAgo
+    // Mismas definiciones que el alumno (lib/metricas.js, auditoria C02); la
+    // actividad, por la fecha REAL en que se registro (created_at), no por la
+    // fecha del mercado que se estaba practicando.
+    const m = metricas(userTrades, userSessions)
+    const closed = m.cerrados
+    const totalPnl = m.totalPnl
+    const winRate = m.winRate
+    const lastActivity = ultimaActividad(userTrades, userSessions)
+    const isActive7d = activoEnLosUltimos(lastActivity, 7)
 
     return {
       id: p.id,

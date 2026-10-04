@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
+import { metricas } from '../lib/metricas'
 import NoAccess from '../components/NoAccess'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
@@ -75,34 +76,18 @@ export default function Analytics() {
     ? trades
     : trades.filter(t => t.session_id === selectedSession)   // por id: dos sesiones pueden llamarse igual (C03)
 
-  // Stats calculations
-  const closedTrades = filteredTrades.filter(t => t.result && t.result !== 'OPEN')
-  const wins = closedTrades.filter(t => t.result === 'WIN')
-  const losses = closedTrades.filter(t => t.result === 'LOSS')
-  const breakevens = closedTrades.filter(t => t.result === 'BREAKEVEN')
-  const totalPnl = closedTrades.reduce((s, t) => s + (t.pnl || 0), 0)
-  const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length * 100) : 0
-  const avgRR = wins.length > 0 ? wins.reduce((s, t) => s + (t.rr || 0), 0) / wins.length : 0
-  const bestWin = wins.length > 0 ? Math.max(...wins.map(t => t.pnl || 0)) : 0
-  const worstLoss = losses.length > 0 ? Math.min(...losses.map(t => t.pnl || 0)) : 0
-  const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + (t.pnl || 0), 0) / wins.length : 0
-  const avgLoss = losses.length > 0 ? losses.reduce((s, t) => s + (t.pnl || 0), 0) / losses.length : 0
-
-  // Session balance for selected
-  const selectedSessionData = sessions.find(s => s.id === selectedSession)
-  const initialBalance = selectedSession === SESSIONS_LABEL
-    ? sessions.reduce((s, sess) => s + (parseFloat(sess.capital) || 0), 0)
-    : parseFloat(selectedSessionData?.capital || 0)
-  const currentBalance = initialBalance + totalPnl
-
-  // Equity curve data points
-  const equityPoints = (() => {
-    let running = initialBalance
-    return [{ x: 0, y: running }, ...closedTrades.map((t, i) => {
-      running += (t.pnl || 0)
-      return { x: i + 1, y: running }
-    })]
-  })()
+  // Una sola definicion para alumno y mentor (lib/metricas.js, auditoria C02):
+  // orden de cierre, expectativa = P&L / trades, R medio por operacion cerrada
+  // y capital = suma de las sesiones incluidas.
+  const incluidas = selectedSession === SESSIONS_LABEL ? sessions : sessions.filter(s => s.id === selectedSession)
+  const m = metricas(filteredTrades, incluidas)
+  const closedTrades = m.cerrados
+  const wins = m.ganadoras, losses = m.perdedoras, breakevens = m.breakevens
+  const totalPnl = m.totalPnl, winRate = m.winRate, avgRR = m.rrMedio
+  const bestWin = m.mejorGanadora, worstLoss = m.peorPerdedora, avgWin = m.mediaGanadora, avgLoss = m.mediaPerdedora
+  const initialBalance = m.capitalInicial
+  const currentBalance = m.saldoFinal
+  const equityPoints = m.curva
 
   // Sessions by type
   const sessionStats = {

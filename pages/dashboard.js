@@ -5,6 +5,7 @@ import ChallengeSetupModal from '../components/ChallengeSetupModal'
 import NetworkBg from '../components/NetworkBg'
 import AppSidebar from '../components/AppSidebar'
 import Estrellas from '../components/Estrellas'
+import { metricas } from '../lib/metricas'
 import NoAccess from '../components/NoAccess'
 
 /**
@@ -200,12 +201,11 @@ export default function Dashboard() {
   }
 
   // ── ANALYTICS CALCULATIONS ──
+  // Mismas definiciones que Analytics y el admin (lib/metricas.js, auditoria C02)
   const metrics = useMemo(() => {
-    const closed = trades.filter(t => t.result && t.result !== 'OPEN')
-    const w = closed.filter(t => t.result === 'WIN')
-    const totalPnl = closed.reduce((s, t) => s + (t.pnl || 0), 0)
-    return { closedTrades:closed, wins:w, totalPnl }
-  }, [trades])
+    const m = metricas(trades, sessions)
+    return { closedTrades: m.cerrados, wins: m.ganadoras, totalPnl: m.totalPnl }
+  }, [trades, sessions])
 
   const { closedTrades, wins, totalPnl } = metrics
 
