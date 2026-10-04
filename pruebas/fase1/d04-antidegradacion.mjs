@@ -57,13 +57,13 @@ oraculo('D04', 'y la siguiente peticion (cache) tampoco', r1b.cuerpo?.count >= 1
 oraculo('D04', 'el bucket conserva las 10.000', velasEn('GBPJPY/M1/2025.json') === 10000, velasEn('GBPJPY/M1/2025.json'))
 
 titulo('1b · «no existe» al leer, existe al comprobar (carrera)')
-escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'EURJPY/M1/2025.json': DIEZMIL } } })
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'USDJPY/M1/2025.json': DIEZMIL } } })
 descargas(NO_EXISTE)
 proveedor.responde = () => diaM1('2025-01-06')
-const rc = await llama(candles, { method: 'GET', token: tok(A), query: q('EURJPY') })
+const rc = await llama(candles, { method: 'GET', token: tok(A), query: q('USDJPY') })
 ver('control: se fue al proveedor (la primera lectura dijo «no existe»)', proveedor.llamadas.length === 1)
 oraculo('D04', 'sirve la existente de 10.000, no la nueva de 1.440', rc.estado === 200 && rc.cuerpo.count === 10000, `estado ${rc.estado}, sirve ${rc.cuerpo?.count}`)
-oraculo('D04', 'y no la sube', !db.log.some(l => l.op === 'upload') && velasEn('EURJPY/M1/2025.json') === 10000, `${db.log.filter(l => l.op === 'upload').length} uploads`)
+oraculo('D04', 'y no la sube', !db.log.some(l => l.op === 'upload') && velasEn('USDJPY/M1/2025.json') === 10000, `${db.log.filter(l => l.op === 'upload').length} uploads`)
 
 titulo('2 · Storage no deja leer (todas las lecturas fallan)')
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'USDCHF/M1/2025.json': DIEZMIL } } })
