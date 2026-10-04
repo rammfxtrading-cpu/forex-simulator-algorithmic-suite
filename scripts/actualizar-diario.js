@@ -22,7 +22,9 @@ function getEnv() {
       console.log('[DIAG] url  -> largo:', u.length, '| empieza por https:', u.startsWith('https://'))
       console.log('[DIAG] key  -> largo crudo:', crudo.length, '| largo tras trim:', k.length)
       console.log('[DIAG] key  -> tenia espacios/saltos sobrantes:', crudo.length !== k.length)
-      console.log('[DIAG] key  -> prefijo:', k.slice(0, 10) + '...')
+      // S05 (auditoria 4-oct-2026): ni un caracter de la clave en el log; solo
+      // cuantas partes separadas por punto tiene (un JWT tiene 3)
+      console.log('[DIAG] key  -> partes separadas por punto:', k.split('.').length)
     }
     return { url: u, key: k }
   }

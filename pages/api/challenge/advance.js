@@ -221,11 +221,11 @@ export default async function handler(req, res) {
   // B1: loggear flotantes descartados antes de cerrar la fase. NO se persisten
   // en sim_trades ni se contabilizan en balance. La hija nace virgen.
   if (open_positions.length > 0) {
+    // S05 (auditoria 4-oct-2026): solo el evento y cuantas; ni las posiciones
+    // (operativa del alumno) ni su usuario: la sesion ya basta para correlacionar.
     console.log('[challenge/advance] descarte de flotantes en passed_phase', {
       session_id,
-      user_id: user.id,
       discarded_positions: open_positions.length,
-      positions: open_positions,
     })
   }
   const { data: closed, error: uErr } = await supabaseAdmin

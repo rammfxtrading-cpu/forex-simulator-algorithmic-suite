@@ -103,8 +103,7 @@ export default async function handler(req, res) {
 
   console.log('[admin/wipe-simulador] wipe ejecutado', {
     admin_id: user.id,
-    target_user_id: user_id,
-    target_email: profile.email,
+    target_user_id: user_id,   // S05 (auditoria 4-oct-2026): sin email en el log
     deleted,
   })
 
