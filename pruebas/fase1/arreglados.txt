@@ -11,3 +11,4 @@ d03-historico-parcial
 d05-actualizador-y-cache
 o01-anio-nuevo
 d06-borrado
+p02-barras-fantasma
