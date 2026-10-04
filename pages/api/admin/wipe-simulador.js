@@ -5,8 +5,8 @@ import { requireAdmin } from '../../../lib/authApi'
  * Body: { user_id: string, confirm_email: string }
  *
  * Cancelacion DEFINITIVA del simulador de un alumno:
- *  - Borra TODOS sus datos de simulador (5 tablas) por user_id.
- *  - Pone simulador_activo = false en su perfil.
+ *  - Pone simulador_activo = false en su perfil (PRIMERO).
+ *  - Borra TODOS sus datos de simulador (7 tablas) por user_id.
  *  - NO toca el perfil del hub ni el journal.
  *
  * Reglas:
@@ -57,15 +57,33 @@ export default async function handler(req, res) {
     })
   }
 
-  // Borrado explicito de las 5 tablas por user_id.
-  // No se confia en CASCADE: session_chart_config no tiene FK.
-  // sim_sessions va ULTIMA: su CASCADE arrastra posibles filas hijas
-  // con user_id null que el borrado directo por user_id no alcanza.
+  // Auditoria D06 (4-oct-2026). Antes: se revocaba el acceso AL FINAL, y si un
+  // borrado fallaba a mitad el libro ya estaba perdido con el acceso activo; y
+  // la lista omitia user_chart_config y user_tool_config.
+  // Ahora: 1) se REVOCA PRIMERO (si falla, no se borra nada); 2) se borran las
+  // 7 tablas del simulador, comprobando cada error; si una falla, el alumno ya
+  // no tiene acceso y repetir el wipe termina el trabajo (los deletes son
+  // idempotentes). sim_sessions va ULTIMA: su CASCADE arrastra sim_trades,
+  // session_drawings y (desde sim-001b) session_chart_config.
+  const { error: toggleErr } = await supabaseAdmin
+    .from('profiles')
+    .update({ simulador_activo: false })
+    .eq('id', user_id)
+
+  if (toggleErr) {
+    return res.status(500).json({
+      error: 'No se ha podido quitar el acceso al simulador. No se ha borrado nada.',
+      detail: toggleErr.message,
+    })
+  }
+
   const tables = [
     'sim_trades',
     'session_drawings',
     'session_chart_config',
     'sim_drawing_templates',
+    'user_chart_config',
+    'user_tool_config',
     'sim_sessions',
   ]
 
@@ -75,30 +93,16 @@ export default async function handler(req, res) {
       .from(table)
       .delete()
       .eq('user_id', user_id)
-      .select('id')
+      .select('user_id')
 
     if (error) {
       return res.status(500).json({
-        error: `Error borrando ${table}. Wipe INCOMPLETO.`,
+        error: `Error borrando ${table}. Wipe INCOMPLETO: el acceso ya esta quitado; vuelve a lanzar el wipe para terminarlo.`,
         detail: error.message,
         deleted_so_far: deleted,
       })
     }
     deleted[table] = (data || []).length
-  }
-
-  // Quitar el acceso al simulador en el mismo acto (perfil del hub intacto)
-  const { error: toggleErr } = await supabaseAdmin
-    .from('profiles')
-    .update({ simulador_activo: false })
-    .eq('id', user_id)
-
-  if (toggleErr) {
-    return res.status(500).json({
-      error: 'Datos borrados pero fallo al desactivar simulador_activo',
-      detail: toggleErr.message,
-      deleted,
-    })
   }
 
   console.log('[admin/wipe-simulador] wipe ejecutado', {

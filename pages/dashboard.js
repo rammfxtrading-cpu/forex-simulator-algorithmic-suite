@@ -68,6 +68,8 @@ export default function Dashboard() {
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
   const [profile, setProfile] = useState(null)
   const [acceso, setAcceso] = useState(null)   // null comprobando · 'si' · 'no' · 'error'
+  const [borrando, setBorrando] = useState(null)        // id de la sesion que se esta borrando
+  const [errorBorrado, setErrorBorrado] = useState('')
   const [showChallenge, setShowChallenge] = useState(false)
 
   useEffect(() => {
@@ -102,6 +104,35 @@ export default function Dashboard() {
   async function loadTrades(userId) {
     const { data } = await supabase.from('sim_trades').select('*').eq('user_id', userId).order('opened_at', { ascending: true })
     if (data) setTrades(data)
+  }
+
+  // Borrar una sesion (auditoria D06, 4-oct-2026). Antes: cuatro deletes en
+  // paralelo sin mirar ningun { error } y la tarjeta se quitaba siempre; las
+  // metricas seguian contando los trades borrados. Ahora: en orden, parando en
+  // el primer error; la pantalla solo cambia cuando la base lo ha confirmado,
+  // y si algo falla se dice y se recarga lo que hay de verdad.
+  async function borrarSesion(session) {
+    if (!confirm('¿Eliminar sesión y todos sus datos?')) return
+    const sid = session.id
+    setBorrando(sid); setErrorBorrado('')
+    const pasos = [
+      ['operaciones', () => supabase.from('sim_trades').delete().eq('session_id', sid)],
+      ['dibujos', () => supabase.from('session_drawings').delete().eq('session_id', sid)],
+      ['configuración del gráfico', () => supabase.from('session_chart_config').delete().eq('session_id', sid)],
+      ['sesión', () => supabase.from('sim_sessions').delete().eq('id', sid)],
+    ]
+    for (const [que, borra] of pasos) {
+      const { error } = await borra()
+      if (error) {
+        setErrorBorrado(`No se ha podido borrar «${session.name}» (falló al borrar ${que}). Puede haber quedado a medias: vuelve a intentarlo.`)
+        setBorrando(null)
+        if (user) { loadSessions(user.id); loadTrades(user.id) }
+        return
+      }
+    }
+    setSessions(p => p.filter(s => s.id !== sid))
+    setTrades(p => p.filter(t => t.session_id !== sid))
+    setBorrando(null)
   }
 
   async function createSession() {
@@ -283,6 +314,7 @@ export default function Dashboard() {
             ))}
           </div>
 
+          {errorBorrado && <div role="alert" style={{background:'rgba(239,68,68,0.12)',border:'1px solid rgba(239,68,68,0.4)',color:'#fca5a5',borderRadius:8,padding:'10px 14px',fontSize:13,marginBottom:12}}>{errorBorrado}</div>}
           {sessions.length === 0 ? (
             <div className="vidrio" style={s.emptyCard}>
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1a3a5c" strokeWidth="1" style={{marginBottom:14}}><polygon points="5,3 19,12 5,21"/></svg>
@@ -300,15 +332,7 @@ export default function Dashboard() {
                 <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:`1px solid ${vs.borderColor}`,borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
-                    <button onClick={async()=>{if(!confirm('¿Eliminar sesión y todos sus datos?'))return
-                      const sid=session.id
-                      await Promise.all([
-                        supabase.from('sim_trades').delete().eq('session_id',sid),
-                        supabase.from('session_drawings').delete().eq('session_id',sid),
-                        supabase.from('session_chart_config').delete().eq('session_id',sid),
-                        supabase.from('sim_sessions').delete().eq('id',sid),
-                      ])
-                      setSessions(p=>p.filter(s=>s.id!==sid))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
+                    <button onClick={()=>borrarSesion(session)} disabled={borrando===session.id} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>
@@ -351,6 +375,7 @@ export default function Dashboard() {
               New Session
             </button>
           </div>
+          {errorBorrado && <div role="alert" style={{background:'rgba(239,68,68,0.12)',border:'1px solid rgba(239,68,68,0.4)',color:'#fca5a5',borderRadius:8,padding:'10px 14px',fontSize:13,marginBottom:12}}>{errorBorrado}</div>}
           {sessions.length === 0 ? (
             <div className="vidrio" style={s.emptyCard}>
               <div style={s.emptyTitle}>No sessions yet</div>
@@ -367,15 +392,7 @@ export default function Dashboard() {
                 <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:`1px solid ${vs.borderColor}`,borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                     <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
-                    <button onClick={async()=>{if(!confirm('¿Eliminar sesión y todos sus datos?'))return
-                      const sid=session.id
-                      await Promise.all([
-                        supabase.from('sim_trades').delete().eq('session_id',sid),
-                        supabase.from('session_drawings').delete().eq('session_id',sid),
-                        supabase.from('session_chart_config').delete().eq('session_id',sid),
-                        supabase.from('sim_sessions').delete().eq('id',sid),
-                      ])
-                      setSessions(p=>p.filter(s=>s.id!==sid))}} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
+                    <button onClick={()=>borrarSesion(session)} disabled={borrando===session.id} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
                     <span style={{background:'#1E90FF15',border:'1px solid #1E90FF30',color:'#1E90FF',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:4}}>{session.pair}</span>

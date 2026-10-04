@@ -36,9 +36,9 @@ ver('control: la tarjeta y los dos trades (+400) en pantalla', p.texto().include
 db.falla = c => c.op === 'delete' ? { message: 'permission denied for table ' + c.tabla, code: '42501' } : null
 const boton = p.busca(x => x.tipo === 'button' && p.texto(x) === '✕')
 p.pulsa(boton); await p.asienta()
-ver('control: se intentaron los cuatro deletes y fallaron todos', db.log.filter(l => l.op === 'delete').length === 4 && db.tablas.sim_sessions.length === 1)
-oraculo('D06', 'A: la tarjeta sigue (no se borro nada)', p.texto().includes('Sesion-A-uno'), 'la tarjeta desaparece')
-oraculo('D06', 'A: y se dice que no se ha podido borrar', /no se ha podido|error/i.test(p.texto()), 'ningun aviso')
+ver('control: se intento borrar, fallo, y la base sigue con la sesion y sus 2 trades', db.log.some(l => l.op === 'delete') && db.tablas.sim_sessions.length === 1 && db.tablas.sim_trades.length === 2)
+oraculo('D06', 'A: la tarjeta sigue (no se borro nada)', p.texto().includes('Sesion-A-uno'), p.texto().includes('Sesion-A-uno') ? '' : 'la tarjeta desaparece')
+oraculo('D06', 'A: y se dice que no se ha podido borrar', /no se ha podido|error/i.test(p.texto()), /no se ha podido|error/i.test(p.texto()) ? '' : 'ningun aviso')
 p.desmonta()
 
 titulo('A2 · el mismo borrado, esta vez con exito')

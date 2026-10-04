@@ -10,3 +10,4 @@ o01-restaurar
 d03-historico-parcial
 d05-actualizador-y-cache
 o01-anio-nuevo
+d06-borrado
