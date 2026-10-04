@@ -25,18 +25,24 @@ import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 const candles = (await importa('pages/api/candles.js')).default
 const q = { pair: 'USDCAD', timeframe: 'M1', from: '1736121600', to: '1736207999', year: '2025' }
+// Una descarga VALIDA (D03: cobertura del año entero): el año en curso completo
+// hasta ayer, 1.200 velas por dia laborable.
+const ANIO = new Date().getUTCFullYear(), DIA = 86400000, HOY0 = Math.floor(Date.now() / DIA) * DIA
+const anioValido = []
+for (let t = Date.UTC(ANIO, 0, 1); t < HOY0; t += DIA) { const d = new Date(t).getUTCDay(); if (d >= 1 && d <= 5) anioValido.push(...diaM1(new Date(t).toISOString().slice(0, 10), 1200)) }
+const qValido = { pair: 'USDCAD', timeframe: 'M1', from: String(Date.UTC(ANIO, 0, 1) / 1000), to: String(Date.UTC(ANIO, 0, 31) / 1000), year: String(ANIO) }
 
 titulo('1 · doce peticiones simultaneas con la cache fria')
 escenario({ perfiles: [perfil(A)] })
 const suelta = puerta()
 proveedor.pausa = () => suelta.p
-proveedor.responde = () => diaM1('2025-01-06')       // un lunes completo: sin reintentos
-const vuelo = Array.from({ length: 12 }, () => llama(candles, { method: 'GET', token: tok(A), query: q }))
+proveedor.responde = () => anioValido                 // un año valido: sin reintentos
+const vuelo = Array.from({ length: 12 }, () => llama(candles, { method: 'GET', token: tok(A), query: qValido }))
 await asienta(200)
 const enVuelo = proveedor.llamadas.length
 suelta.abrir()
 const rs = await Promise.all(vuelo)
-ver('control: las doce respondieron 200 con las velas del lunes', rs.every(r => r.estado === 200 && r.cuerpo.count === 1440), rs.map(r => r.estado).join(','))
+ver('control: las doce respondieron 200 con las mismas velas', rs.every(r => r.estado === 200 && r.cuerpo.count === rs[0].cuerpo.count && r.cuerpo.count > 0), rs.map(r => r.estado).join(','))
 oraculo('S03', 'doce peticiones del mismo año → una sola descarga', enVuelo <= 1, `${enVuelo} descargas anuales simultaneas`)
 
 titulo('2 · metodo')

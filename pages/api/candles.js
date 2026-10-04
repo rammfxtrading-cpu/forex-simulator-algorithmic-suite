@@ -1,4 +1,5 @@
 import { requireSimulador, supabaseAdmin } from '../../lib/authApi'
+import { validaAnioParaPublicar } from '../../lib/mercado/calidad'
 import { getHistoricalRates } from 'dukascopy-node'
 
 const TIMEFRAMES = {
@@ -181,8 +182,9 @@ async function fetchFromDukascopyWithRetry(pair, year, maxRetries = 3) {
   return null
 }
 
-// → { velas } | { velas: null } (el proveedor no dio nada) | { error } (no se
-// pudo comprobar lo guardado: ni se sube ni se sirve la descargada)
+// → { velas } | { velas: null } (el proveedor no dio nada) | { error: 'incompleto',
+// problemas } (no pasa la calidad: D03) | { error: 'no-comprobable' } (no se pudo
+// leer lo guardado: ni se sube ni se sirve la descargada, D04)
 async function fetchFromDukascopy(pair, year) {
   let result
   try {
@@ -220,6 +222,18 @@ async function fetchFromDukascopy(pair, year) {
     console.error(`[candles] No se pudo comprobar la version guardada de ${path} (${existente.motivo}): no se sube ni se sirve la descargada.`)
     return { error: 'no-comprobable' }
   }
+
+  // Calidad ANTES DE PUBLICAR (D03): orden, unicidad, OHLC y cobertura del año
+  // entero hasta ayer (lib/mercado/calidad.js). Si no pasa, ni se sube ni se
+  // cachea: un año a medias no puede pasar por el año. Si hay una version
+  // guardada, se sigue sirviendo esa; si no, error.
+  const calidad = validaAnioParaPublicar(allCandles, Number(year), Date.now() / 1000)
+  if (!calidad.ok) {
+    console.error(`[candles] ${path} descargado NO valido, no se publica: ${calidad.problemas.join(' · ')}`)
+    if (existente.estado === 'ok') { cache[key] = existente.velas; return { velas: existente.velas } }
+    return { error: 'incompleto', problemas: calidad.problemas }
+  }
+
   if (existente.estado === 'ok' && allCandles.length < existente.velas.length) {
     console.warn(`[candles] PROTECCION ANTI-DEGRADACION ${path}: descargada=${allCandles.length} velas, guardada=${existente.velas.length}. No se sube; se sirve la guardada.`)
     cache[key] = existente.velas
@@ -313,6 +327,7 @@ export default async function handler(req, res) {
     if (!m1) {
       console.log(`[candles] No Supabase data for ${cleanPair}/${yr} — fetching from Dukascopy with retry+validation`)
       const r = await unaVez(`reconstruir:${cleanPair}_${yr}`, () => fetchFromDukascopy(cleanPair, yr))
+      if (r.error === 'incompleto') return res.status(502).json({ error: `Historico de ${cleanPair} ${yr} incompleto o invalido: no se puede usar`, problemas: r.problemas })
       if (r.error) return res.status(503).json({ error: 'No se ha podido comprobar el historico guardado. Prueba de nuevo en unos segundos.' })
       m1 = r.velas
     }

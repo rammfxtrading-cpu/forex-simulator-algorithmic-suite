@@ -33,6 +33,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         pair, dateFrom: sess.date_from, dateTo: sess.date_to
       })
       if (!result) return
+      // D03: sin velas validas no se crea el motor (no hay sesion «valida»)
+      if (result.error) { console.error('[loadPair]', pair, result.error); return }
       const { candles: ordinalCandles, replayTs, toTs } = result
 
       const engine=new ReplayEngine()

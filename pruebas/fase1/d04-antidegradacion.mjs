@@ -83,12 +83,16 @@ ver('control: se fue al proveedor', proveedor.llamadas.length === 1)
 oraculo('D04', 'sin poder comprobar lo guardado, no se pisa', velasEn('NZDUSD/M1/2025.json') === 10000, `el bucket pasa de 10000 a ${velasEn('NZDUSD/M1/2025.json')} velas`)
 
 titulo('3 · el upload falla')
+// una descarga VALIDA (D03: cobertura del año entero): el año en curso hasta ayer
+const ANIO = new Date().getUTCFullYear(), DIA = 86400000, HOY0 = Math.floor(Date.now() / DIA) * DIA
+const anioValido = []
+for (let t = Date.UTC(ANIO, 0, 1); t < HOY0; t += DIA) { const d = new Date(t).getUTCDay(); if (d >= 1 && d <= 5) anioValido.push(...diaM1(new Date(t).toISOString().slice(0, 10), 1200)) }
 escenario({ perfiles: [perfil(A)] })
 db.falla = c => c.op === 'upload' ? { name: 'StorageApiError', message: 'Payload too large', status: 413, statusCode: '413' } : null
-proveedor.responde = () => diaM1('2025-01-06')
+proveedor.responde = () => anioValido
 logs.length = 0
-await llama(candles, { method: 'GET', token: tok(A), query: q('AUDCAD') })
-ver('control: el upload se intento y fallo (no hay fichero)', db.log.some(l => l.op === 'upload') && !db.storage['forex-data']['AUDCAD/M1/2025.json'])
+await llama(candles, { method: 'GET', token: tok(A), query: { pair: 'AUDCAD', timeframe: 'M1', from: String(Date.UTC(ANIO, 0, 1) / 1000), to: String(Date.UTC(ANIO, 0, 31) / 1000), year: String(ANIO) } })
+ver('control: el upload se intento y fallo (no hay fichero)', db.log.some(l => l.op === 'upload') && !db.storage['forex-data'][`AUDCAD/M1/${ANIO}.json`])
 const delHandler = () => logs.filter(l => l.startsWith('[candles]'))
 const dice = delHandler().find(l => /Saved/.test(l))
 oraculo('D04', 'un upload fallido no se registra como «Saved»', !dice, dice ?? '')
