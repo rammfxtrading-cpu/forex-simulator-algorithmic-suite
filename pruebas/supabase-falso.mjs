@@ -113,7 +113,9 @@ function bucket(nombre) {
     async download(ruta) {
       const err = await op('download', ruta); if (err) return { data: null, error: err }
       if (!objetos()) return noExiste
-      if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: { message: 'Object not found', statusCode: '404' } }
+      // como storage-js 2.102: la API responde 400 con cuerpo { statusCode: '404',
+      // error: 'not_found', message: 'Object not found' } → StorageApiError
+      if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: { name: 'StorageApiError', message: 'Object not found', status: 400, statusCode: '404' } }
       return { data: new Blob([objetos()[ruta]], { type: 'application/json' }), error: null }
     },
     async upload(ruta, cuerpo, o = {}) {

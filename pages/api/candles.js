@@ -45,17 +45,32 @@ function unaVez(clave, trabajo) {
 }
 
 // ── Supabase Storage loader ───────────────────────────────────────────────────
+// Auditoria D04 (4-oct-2026): un error de lectura NO es «fichero inexistente».
+// «No existe» segun storage-js 2.102: StorageApiError con statusCode '404' (la
+// API responde 400 con cuerpo { statusCode: '404', error: 'not_found' }).
+// Cualquier otro error (red, 5xx, JSON ilegible) es «no se pudo leer».
+const noExiste = e => String(e?.statusCode) === '404' || e?.status === 404
 
-async function loadFromSupabase(pair, year) {
-  const key = `${pair}_${year}`
-  if (cache[key]) return cache[key]
+// → { estado: 'ok', velas } | { estado: 'no-existe' } | { estado: 'error', motivo }
+async function leerAnio(pair, year) {
   const { data, error } = await supabaseAdmin.storage
     .from('forex-data')
     .download(`${pair}/M1/${year}.json`)
-  if (error || !data) return null
-  const candles = JSON.parse(await data.text())
-  cache[key] = candles
-  return candles
+  if (error) return noExiste(error) ? { estado: 'no-existe' } : { estado: 'error', motivo: error.message || String(error) }
+  try {
+    const velas = JSON.parse(await data.text())
+    return Array.isArray(velas) ? { estado: 'ok', velas } : { estado: 'error', motivo: 'el fichero no es una lista de velas' }
+  } catch (e) {
+    return { estado: 'error', motivo: 'JSON ilegible: ' + e.message }
+  }
+}
+
+async function loadFromSupabase(pair, year) {
+  const key = `${pair}_${year}`
+  if (cache[key]) return { estado: 'ok', velas: cache[key] }
+  const r = await leerAnio(pair, year)
+  if (r.estado === 'ok') cache[key] = r.velas
+  return r
 }
 
 // ── Helpers de validacion (deuda 5.2) ────────────────────────────────────────
@@ -164,23 +179,25 @@ async function fetchFromDukascopyWithRetry(pair, year, maxRetries = 3) {
   return null
 }
 
+// → { velas } | { velas: null } (el proveedor no dio nada) | { error } (no se
+// pudo comprobar lo guardado: ni se sube ni se sirve la descargada)
 async function fetchFromDukascopy(pair, year) {
   let result
   try {
     result = await fetchFromDukascopyWithRetry(pair, year)
   } catch (e) {
     console.error('[candles] Dukascopy fatal error:', e.message)
-    return null
+    return { velas: null }
   }
 
-  if (!result) return null
+  if (!result) return { velas: null }
 
   // result puede ser: array directo (limpio) o { data, gaps, partial: true }
   const isPartial = result.partial === true
   const rawData = isPartial ? result.data : result
   const gapsInfo = isPartial ? result.gaps : []
 
-  if (!rawData?.length) return null
+  if (!rawData?.length) return { velas: null }
 
   const allCandles = rawData.map(c => ({
     time: Math.floor(c.timestamp / 1000),
@@ -190,50 +207,41 @@ async function fetchFromDukascopy(pair, year) {
     close: c.close,
     volume: c.volume ?? 0,
   }))
+  const key = `${pair}_${year}`
+  const path = `${pair}/M1/${year}.json`
 
-  // Proteccion anti-degradacion: si ya existe version en bucket,
-  // solo sobreescribir si la nueva tiene >= 95% velas que la actual.
-  let shouldUpload = true
-  let existingCount = 0
+  // Proteccion anti-degradacion (D04): nunca se sirve, cachea ni sube una
+  // version con MENOS velas que la guardada; y si lo guardado no se puede
+  // leer, no se sabe si la nueva es peor: no se toca nada.
+  const existente = await leerAnio(pair, year)
+  if (existente.estado === 'error') {
+    console.error(`[candles] No se pudo comprobar la version guardada de ${path} (${existente.motivo}): no se sube ni se sirve la descargada.`)
+    return { error: 'no-comprobable' }
+  }
+  if (existente.estado === 'ok' && allCandles.length < existente.velas.length) {
+    console.warn(`[candles] PROTECCION ANTI-DEGRADACION ${path}: descargada=${allCandles.length} velas, guardada=${existente.velas.length}. No se sube; se sirve la guardada.`)
+    cache[key] = existente.velas
+    return { velas: existente.velas }
+  }
+
+  let up
   try {
-    const { data: existingBlob, error: dlError } = await supabaseAdmin.storage
+    const blob = new Blob([JSON.stringify(allCandles)], { type: 'application/json' })
+    up = await supabaseAdmin.storage
       .from('forex-data')
-      .download(`${pair}/M1/${year}.json`)
-
-    if (!dlError && existingBlob) {
-      const existing = JSON.parse(await existingBlob.text())
-      existingCount = existing.length
-      const ratio = allCandles.length / existingCount
-      if (ratio < 0.95) {
-        shouldUpload = false
-        console.warn(`[candles] PROTECCION ANTI-DEGRADACION activada para ${pair}/${year}: nueva=${allCandles.length} velas, existente=${existingCount}, ratio=${(ratio * 100).toFixed(1)}%. NO se sobreescribe.`)
-      }
-    }
+      .upload(path, blob, { upsert: true, contentType: 'application/json' })
   } catch (e) {
-    // Sin version previa o error de lectura: continuamos con upload normal.
-    console.log(`[candles] Sin version previa de ${pair}/${year} en bucket o error de lectura. Procediendo con upload.`)
+    up = { error: e }
   }
-
-  if (shouldUpload) {
-    try {
-      const json = JSON.stringify(allCandles)
-      const blob = new Blob([json], { type: 'application/json' })
-      const path = `${pair}/M1/${year}.json`
-      await supabaseAdmin.storage
-        .from('forex-data')
-        .upload(path, blob, { upsert: true, contentType: 'application/json' })
-      cache[`${pair}_${year}`] = allCandles
-      const partialTag = isPartial ? ` (PARCIAL: ${gapsInfo.length} agujeros tras ${3} intentos)` : ''
-      console.log(`[candles] Saved ${allCandles.length} M1 candles -> forex-data/${path}${partialTag}`)
-    } catch (e) {
-      console.error('[candles] Supabase upload error:', e)
-    }
+  if (up?.error) {
+    console.error(`[candles] Fallo al subir ${path}: ${up.error.message || up.error} (statusCode ${up.error.statusCode ?? '-'}). NO guardado; se sirve la descargada.`)
   } else {
-    // No subimos pero atendemos la peticion actual con los datos en memoria.
-    cache[`${pair}_${year}`] = allCandles
+    const partialTag = isPartial ? ` (PARCIAL: ${gapsInfo.length} agujeros tras ${3} intentos)` : ''
+    console.log(`[candles] Saved ${allCandles.length} M1 candles -> forex-data/${path}${partialTag}`)
   }
-
-  return allCandles
+  // la descargada tiene al menos tantas velas como la guardada (o no habia)
+  cache[key] = allCandles
+  return { velas: allCandles }
 }
 
 // ── Aggregator (M1 → any TF) ──────────────────────────────────────────────────
@@ -292,11 +300,19 @@ export default async function handler(req, res) {
   if (!anioValido(yr)) return res.status(400).json({ error: `Año no disponible: ${yr}` })
 
   try {
-    let m1 = await unaVez(`leer:${cleanPair}_${yr}`, () => loadFromSupabase(cleanPair, yr))
+    const lectura = await unaVez(`leer:${cleanPair}_${yr}`, () => loadFromSupabase(cleanPair, yr))
+    // D04: si no se pudo leer, NO es «no hay fichero»: ni proveedor ni nada
+    if (lectura.estado === 'error') {
+      console.error(`[candles] No se pudo leer ${cleanPair}/${yr}: ${lectura.motivo}`)
+      return res.status(503).json({ error: 'No se ha podido leer el historico. Prueba de nuevo en unos segundos.' })
+    }
+    let m1 = lectura.estado === 'ok' ? lectura.velas : null
 
     if (!m1) {
       console.log(`[candles] No Supabase data for ${cleanPair}/${yr} — fetching from Dukascopy with retry+validation`)
-      m1 = await unaVez(`reconstruir:${cleanPair}_${yr}`, () => fetchFromDukascopy(cleanPair, yr))
+      const r = await unaVez(`reconstruir:${cleanPair}_${yr}`, () => fetchFromDukascopy(cleanPair, yr))
+      if (r.error) return res.status(503).json({ error: 'No se ha podido comprobar el historico guardado. Prueba de nuevo en unos segundos.' })
+      m1 = r.velas
     }
 
     if (!m1?.length) {
