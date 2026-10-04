@@ -70,6 +70,15 @@ export function cluster() {
     const r = corre('psql', ['-h', dir, '-p', puerto, '-U', 'postgres', '-X', '-q', '-tA', '-v', 'ON_ERROR_STOP=1', '-d', db, '-f', f])
     return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() }
   }
+  // Una orden como un rol (con su auth.uid()), dentro de una transaccion que se
+  // deshace: la siguiente casilla parte de los mismos datos.
+  const como = (rol, sub, q, db = 'sim') => {
+    const r = psql(`begin; set local role ${rol}; select set_config('request.jwt.claim.sub', '${sub}', true) \\g /dev/null
+  ${q}
+  rollback;`, db)
+    if (!r.ok) return /permission denied/.test(r.err) ? 'DENEGADO' : /row-level security/.test(r.err) ? 'RLS' : 'ERROR: ' + r.err.split('\n')[0]
+    return r.out.split('\n').filter(l => !/^(BEGIN|SET|ROLLBACK)$/.test(l)).join(' ')
+  }
   const arranca = () => {
     const init = corre('initdb', ['-D', path.join(dir, 'd'), '-U', 'postgres', '--auth=trust'])
     if (init.status !== 0) throw new Error('initdb: ' + init.stderr)
@@ -78,5 +87,5 @@ export function cluster() {
   }
   const cierra = () => { corre('pg_ctl', ['-D', path.join(dir, 'd'), '-m', 'immediate', 'stop']); rmSync(dir, { recursive: true, force: true }) }
   const base = nombre => { psql(`create database ${nombre}`, 'postgres'); return psql(STUB, nombre) }
-  return { psql, arranca, cierra, base, dir }
+  return { psql, como, arranca, cierra, base, dir }
 }
