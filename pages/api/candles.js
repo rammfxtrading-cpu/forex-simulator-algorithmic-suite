@@ -26,11 +26,13 @@ const THRESHOLD_BY_WEEKDAY = {
 const cache = {}
 
 // ── Lista cerrada (auditoria S03, 4-oct-2026) ───────────────────────────────
-// Los pares que ofrece la interfaz: lib/sessionUi.js ALL_PAIRS mas la lista de
-// nueva sesion de pages/dashboard.js (que añade XAU/USD). Si una de esas listas
-// cambia, esta tambien (pruebas/fase1/s03-coste-de-velas lo comprueba).
+// Los 9 pares que hay en el bucket forex-data, que son los que ofrece la
+// interfaz (lib/sessionUi.js ALL_PAIRS y la lista de nueva sesion de
+// pages/dashboard.js). EUR/GBP, EUR/JPY y XAU/USD, retirados hasta nuevo aviso
+// (CTO, 4-oct-2026: no estan en el bucket y no se suben datos nuevos).
+// pruebas/fase1/s03-coste-de-velas comprueba que las listas coinciden.
 const PARES = new Set(['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD',
-  'AUDCAD', 'EURGBP', 'EURJPY', 'GBPJPY', 'XAUUSD'])
+  'AUDCAD', 'GBPJPY'])
 // Años: desde 2024 (el primero con datos) hasta el año UTC en curso.
 const PRIMER_ANIO = 2024
 const anioValido = y => /^\d{4}$/.test(String(y)) && Number(y) >= PRIMER_ANIO && Number(y) <= new Date().getUTCFullYear()

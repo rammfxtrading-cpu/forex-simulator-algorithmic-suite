@@ -15,6 +15,10 @@
  * tocar Storage ni el proveedor. Control: TODOS los pares que ofrece la
  * interfaz (lib/sessionUi.js ALL_PAIRS y la lista de pages/dashboard.js) se
  * siguen aceptando.
+ * Decision del CTO (4-oct, tras el bloque A): EUR/GBP, EUR/JPY y XAU/USD se
+ * ocultan de la interfaz y salen de la lista cerrada hasta nuevo aviso (no
+ * estan en el bucket y el almacenamiento esta al 95 %: no se suben datos
+ * nuevos). Ninguna sesion existente los usa (copia del 4-oct 12:27).
  */
 import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, puerta, asienta, importa, fuente, db } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
@@ -51,7 +55,13 @@ escenario({ perfiles: [perfil(A)], storage: { 'forex-data': Object.fromEntries(o
 const pide = (pair, year) => llama(candles, { method: 'GET', token: tok(A), query: { pair, timeframe: 'M1', from: '1736121600', to: '1736207999', year } })
 const rechazados = []
 for (const p of ofrecidos) { const r = await pide(p, '2025'); if (r.estado !== 200) rechazados.push(`${p}:${r.estado}`) }
-ver(`control: los ${ofrecidos.length} pares que ofrece la interfaz se aceptan`, rechazados.length === 0, rechazados.join(', ') || ofrecidos.join(' '))
+ver(`control: los ${ofrecidos.length} pares que ofrece la interfaz (y estan en el bucket) se aceptan`, rechazados.length === 0, rechazados.join(', ') || ofrecidos.join(' '))
+const RETIRADOS = ['EURGBP', 'EURJPY', 'XAUUSD']
+const retiradosOfrecidos = RETIRADOS.filter(p => ofrecidos.includes(p))
+const retiradosAceptados = []
+for (const p of RETIRADOS) { const r = await pide(p, '2025'); if (r.estado !== 400) retiradosAceptados.push(`${p}:${r.estado}`) }
+oraculo('S03', 'EUR/GBP, EUR/JPY y XAU/USD: ni se ofrecen en la interfaz ni los acepta la API (400)', retiradosOfrecidos.length === 0 && retiradosAceptados.length === 0,
+  `ofrecidos: ${retiradosOfrecidos.join(',') || 'ninguno'}; aceptados: ${retiradosAceptados.join(',') || 'ninguno'}`)
 proveedor.llamadas.length = 0; db.log.length = 0
 const raros = [['BTCUSD', '2025'], ['../../etc', '2025'], ['EURUSD', '2019'], ['EURUSD', '2099'], ['EURUSD', '2025abc']]
 const res = []

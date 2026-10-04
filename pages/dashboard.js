@@ -195,7 +195,8 @@ export default function Dashboard() {
   // Username de la tabla profiles (nombre asignado al invitar al alumno).
   // Fallback al email split si no hay perfil cargado todavía o falta el nombre.
   const username = profile?.nombre || user?.email?.split('@')[0] || ''
-  const PAIRS = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','XAU/USD']
+  // EUR/GBP, EUR/JPY y XAU/USD retirados hasta nuevo aviso (CTO, 4-oct-2026): no hay datos en el bucket
+  const PAIRS = ['EUR/USD','GBP/USD','USD/JPY','USD/CHF','AUD/USD','USD/CAD','NZD/USD','GBP/JPY']
 
   const _yMax = new Date(); _yMax.setDate(_yMax.getDate() - 1)
   const MAX_DATE = _yMax.toISOString().slice(0, 10)
