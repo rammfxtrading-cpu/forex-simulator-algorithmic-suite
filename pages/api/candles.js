@@ -25,6 +25,25 @@ const THRESHOLD_BY_WEEKDAY = {
 // In-memory cache per pair+year
 const cache = {}
 
+// ── Lista cerrada (auditoria S03, 4-oct-2026) ───────────────────────────────
+// Los pares que ofrece la interfaz: lib/sessionUi.js ALL_PAIRS mas la lista de
+// nueva sesion de pages/dashboard.js (que añade XAU/USD). Si una de esas listas
+// cambia, esta tambien (pruebas/fase1/s03-coste-de-velas lo comprueba).
+const PARES = new Set(['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD',
+  'AUDCAD', 'EURGBP', 'EURJPY', 'GBPJPY', 'XAUUSD'])
+// Años: desde 2024 (el primero con datos) hasta el año UTC en curso.
+const PRIMER_ANIO = 2024
+const anioValido = y => /^\d{4}$/.test(String(y)) && Number(y) >= PRIMER_ANIO && Number(y) <= new Date().getUTCFullYear()
+
+// Una sola carga/reconstruccion en curso por par y año: las peticiones que
+// llegan mientras tanto esperan la misma promesa en vez de repetir el trabajo.
+// (Por instancia del servidor: dos instancias pueden coincidir.)
+const enCurso = new Map()
+function unaVez(clave, trabajo) {
+  if (!enCurso.has(clave)) enCurso.set(clave, Promise.resolve().then(trabajo).finally(() => enCurso.delete(clave)))
+  return enCurso.get(clave)
+}
+
 // ── Supabase Storage loader ───────────────────────────────────────────────────
 
 async function loadFromSupabase(pair, year) {
@@ -245,6 +264,12 @@ function aggregate(m1Candles, tf, fromTs, toTs) {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
+  // Solo lectura (auditoria S03): cualquier otro metodo, fuera antes del guard.
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET')
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
   // Seguridad: solo usuarios con el simulador activo (o admin) pueden pedir
   // velas (auditoria S01, 4-oct-2026). Evita scraping y uso abusivo.
   const auth = await requireSimulador(req, res)
@@ -255,18 +280,23 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing params: pair, timeframe, from' })
   }
 
-  const tf = TIMEFRAMES[timeframe] || 1
+  // Lista cerrada (S03): nada fuera de ella llega a Storage ni al proveedor.
+  const cleanPair = String(pair).toUpperCase().replace('/', '')
+  if (!PARES.has(cleanPair)) return res.status(400).json({ error: `Par no disponible: ${cleanPair}` })
+  if (!TIMEFRAMES[timeframe]) return res.status(400).json({ error: `Timeframe no valido: ${timeframe}` })
+  if (!/^\d+$/.test(String(from)) || (to != null && !/^\d+$/.test(String(to)))) return res.status(400).json({ error: 'from/to deben ser enteros (segundos)' })
+  const tf = TIMEFRAMES[timeframe]
   const fromTs = parseInt(from)
   const toTs = to ? parseInt(to) : fromTs + 86400
-  const yr = year || new Date(fromTs * 1000).getFullYear().toString()
-  const cleanPair = pair.toUpperCase().replace('/', '')
+  const yr = year || new Date(fromTs * 1000).getUTCFullYear().toString()
+  if (!anioValido(yr)) return res.status(400).json({ error: `Año no disponible: ${yr}` })
 
   try {
-    let m1 = await loadFromSupabase(cleanPair, yr)
+    let m1 = await unaVez(`leer:${cleanPair}_${yr}`, () => loadFromSupabase(cleanPair, yr))
 
     if (!m1) {
       console.log(`[candles] No Supabase data for ${cleanPair}/${yr} — fetching from Dukascopy with retry+validation`)
-      m1 = await fetchFromDukascopy(cleanPair, yr)
+      m1 = await unaVez(`reconstruir:${cleanPair}_${yr}`, () => fetchFromDukascopy(cleanPair, yr))
     }
 
     if (!m1?.length) {

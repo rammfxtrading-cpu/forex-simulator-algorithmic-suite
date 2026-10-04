@@ -10,8 +10,13 @@
  *
  * ORACULOS: doce peticiones simultaneas del mismo par y año → como mucho UNA
  * descarga al proveedor (las demas esperan esa). POST → 405.
+ * Decision del CTO (4-oct, bloque A): lista cerrada de pares y años. Un par
+ * que la interfaz no ofrece, o un año fuera de 2024..año en curso → 400, sin
+ * tocar Storage ni el proveedor. Control: TODOS los pares que ofrece la
+ * interfaz (lib/sessionUi.js ALL_PAIRS y la lista de pages/dashboard.js) se
+ * siguen aceptando.
  */
-import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, puerta, asienta, importa } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, puerta, asienta, importa, fuente, db } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 const candles = (await importa('pages/api/candles.js')).default
@@ -36,4 +41,22 @@ const get = await llama(candles, { method: 'GET', token: tok(A), query: q })
 ver('control: GET → 200', get.estado === 200)
 const post = await llama(candles, { method: 'POST', token: tok(A), query: q })
 oraculo('S03', 'POST → 405', post.estado === 405, `estado ${post.estado}`)
+
+titulo('3 · lista cerrada de pares y años')
+const { ALL_PAIRS } = await importa('lib/sessionUi.js')
+const delDashboard = JSON.parse(/const PAIRS = (\[[^\]]+\])/.exec(fuente('pages/dashboard.js'))[1].replace(/'/g, '"'))
+const ofrecidos = [...new Set([...ALL_PAIRS, ...delDashboard].map(p => p.replace('/', '')))]
+const UNA = JSON.stringify([{ time: 1736150400, open: 1, high: 1, low: 1, close: 1, volume: 1 }])
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': Object.fromEntries(ofrecidos.map(p => [`${p}/M1/2025.json`, UNA])) } })
+const pide = (pair, year) => llama(candles, { method: 'GET', token: tok(A), query: { pair, timeframe: 'M1', from: '1736121600', to: '1736207999', year } })
+const rechazados = []
+for (const p of ofrecidos) { const r = await pide(p, '2025'); if (r.estado !== 200) rechazados.push(`${p}:${r.estado}`) }
+ver(`control: los ${ofrecidos.length} pares que ofrece la interfaz se aceptan`, rechazados.length === 0, rechazados.join(', ') || ofrecidos.join(' '))
+proveedor.llamadas.length = 0; db.log.length = 0
+const raros = [['BTCUSD', '2025'], ['../../etc', '2025'], ['EURUSD', '2019'], ['EURUSD', '2099'], ['EURUSD', '2025abc']]
+const res = []
+for (const [pp, y] of raros) res.push(`${pp}/${y}:${(await pide(pp, y)).estado}`)
+oraculo('S03', 'par no ofrecido o año fuera de 2024..año en curso → 400', res.every(x => x.endsWith(':400')), res.join(' · '))
+oraculo('S03', 'y sin tocar Storage ni el proveedor', proveedor.llamadas.length === 0 && !db.log.some(l => l.tabla === 'storage:forex-data'),
+  `${proveedor.llamadas.length} descargas, ${db.log.filter(l => l.tabla === 'storage:forex-data').length} lecturas de Storage`)
 fin()
