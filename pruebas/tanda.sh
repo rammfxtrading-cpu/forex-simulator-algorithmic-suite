@@ -47,7 +47,7 @@ echo "pruebas/"
 corre arnes $NODO pruebas/arnes.mjs
 for f in pruebas/*.mjs; do
   case "$(basename "$f")" in
-    arnes.mjs|lib.mjs|cargador.mjs|registro.mjs|sin-red.mjs|entorno.mjs|supabase-falso.mjs|react-falso.mjs|next-falso.mjs|decorado-falso.mjs|proveedor-falso.mjs|pg-ensayo.mjs|banco-motor.mjs|script-falso.mjs) continue ;;
+    arnes.mjs|lib.mjs|cargador.mjs|registro.mjs|sin-red.mjs|entorno.mjs|supabase-falso.mjs|react-falso.mjs|next-falso.mjs|decorado-falso.mjs|proveedor-falso.mjs|pg-ensayo.mjs|banco-motor.mjs|script-falso.mjs|estado-s04.mjs) continue ;;
   esac
   corre "$(basename "$f" .mjs)" $NODO "$f"
 done
