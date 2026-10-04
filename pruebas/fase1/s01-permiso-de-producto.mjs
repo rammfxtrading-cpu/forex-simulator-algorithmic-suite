@@ -12,8 +12,10 @@
  * ORACULO: sin simulador_activo (y sin ser admin) → 403, sin leer velas ni
  * crear nada. Controles: sin token → 401 (el guard de identidad funciona), y la
  * misma peticion con permiso → 200.
+ * Decision del CTO (4-oct, bloque A): el dashboard exige tambien el permiso:
+ * sin el, la pantalla de «sin acceso» y ni una lectura de sesiones ni trades.
  */
-import { titulo, ver, oraculo, fin, escenario, perfil, A, B, db, sesionSim, tradeSim } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, perfil, A, B, ADM, db, sesionSim, tradeSim, importa, monta } from '../lib.mjs'
 const VELAS = JSON.stringify([{ time: 1741168800, open: 1.1, high: 1.1, low: 1.1, close: 1.1, volume: 1 }])
 const montaje = (conPermiso) => {
   const ses = sesionSim({ id: 'reto1', user_id: A, challenge_type: '2F', challenge_phase: 1, capital: 100000, balance: 100000 })
@@ -48,4 +50,28 @@ for (const [n, f] of LLAMADAS) {
   oraculo('S01', `${n} sin permiso → 403`, r.estado === 403,
     `estado ${r.estado}; lecturas de profiles ${lecturasPermiso}; ${r.cuerpo?.count != null ? `velas servidas ${r.cuerpo.count}; ` : ''}escrituras: ${escrituras.join(', ') || 'ninguna'}${r.cuerpo?.action ? '; ' + r.cuerpo.action : ''}`)
 }
+
+titulo('2b · el perfil no se puede leer (fallo transitorio)')
+montaje(true)
+db.falla = c => c.tabla === 'profiles' ? { message: 'upstream timeout', code: '57014' } : null
+const caido = await LLAMADAS[0][1]()
+db.falla = null
+oraculo('S01', 'si no se puede comprobar el permiso, no se sirve nada: 503 (ni 200, ni 403)', caido.estado === 503, `estado ${caido.estado}`)
+
+titulo('3 · el dashboard')
+const Dashboard = (await importa('pages/dashboard.js')).default
+const lecturas = () => db.log.filter(l => ['sim_sessions', 'sim_trades'].includes(l.tabla)).length
+montaje(true)
+let p = monta(Dashboard, {}); await p.asienta(60)
+ver('control: con permiso, el dashboard carga sus sesiones', p.texto().includes('Sesion') && lecturas() >= 2, `${lecturas()} lecturas`)
+p.desmonta()
+montaje(false)
+p = monta(Dashboard, {}); await p.asienta(60)
+oraculo('S01', 'dashboard sin permiso: pantalla de sin acceso y cero lecturas de sesiones y trades', lecturas() === 0 && !p.texto().includes('Sesion 1') && /acceso/i.test(p.texto()),
+  `${lecturas()} lecturas; ${p.texto().includes('New Session') ? 'enseña el dashboard normal' : 'no enseña el dashboard'}`)
+p.desmonta()
+escenario({ sesion: ADM, perfiles: [perfil(A), perfil(ADM, { rol_global: 'admin', simulador_activo: false })] })
+p = monta(Dashboard, {}); await p.asienta(60)
+ver('control: un admin sin simulador_activo SI entra', lecturas() >= 2, `${lecturas()} lecturas`)
+p.desmonta()
 fin()

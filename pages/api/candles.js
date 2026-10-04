@@ -1,4 +1,4 @@
-import { requireUser, supabaseAdmin } from '../../lib/authApi'
+import { requireSimulador, supabaseAdmin } from '../../lib/authApi'
 import { getHistoricalRates } from 'dukascopy-node'
 
 const TIMEFRAMES = {
@@ -245,9 +245,9 @@ function aggregate(m1Candles, tf, fromTs, toTs) {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
-  // Seguridad: solo usuarios autenticados pueden pedir velas.
-  // Evita scraping anonimo y uso abusivo del endpoint.
-  const auth = await requireUser(req, res)
+  // Seguridad: solo usuarios con el simulador activo (o admin) pueden pedir
+  // velas (auditoria S01, 4-oct-2026). Evita scraping y uso abusivo.
+  const auth = await requireSimulador(req, res)
   if (!auth) return
 
   const { pair, timeframe, from, to, year } = req.query

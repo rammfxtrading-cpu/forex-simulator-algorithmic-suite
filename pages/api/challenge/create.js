@@ -1,4 +1,4 @@
-import { requireUser } from '../../../lib/authApi'
+import { requireSimulador } from '../../../lib/authApi'
 import { getChallengeConfig } from '../../../lib/challengeRules'
 
 /**
@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const auth = await requireUser(req, res)
+  const auth = await requireSimulador(req, res)
   if (!auth) return
   const { user, supabaseAdmin } = auth
 

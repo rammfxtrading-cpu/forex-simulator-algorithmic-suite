@@ -5,6 +5,7 @@ import ChallengeSetupModal from '../components/ChallengeSetupModal'
 import NetworkBg from '../components/NetworkBg'
 import AppSidebar from '../components/AppSidebar'
 import Estrellas from '../components/Estrellas'
+import NoAccess from '../components/NoAccess'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -66,6 +67,7 @@ export default function Dashboard() {
   const [activeView, setActiveView] = useState('dashboard')
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
   const [profile, setProfile] = useState(null)
+  const [acceso, setAcceso] = useState(null)   // null comprobando · 'si' · 'no' · 'error'
   const [showChallenge, setShowChallenge] = useState(false)
 
   useEffect(() => {
@@ -73,12 +75,18 @@ export default function Dashboard() {
       if (!session) { router.replace('/'); return }
       setUser(session.user)
       // Cargar perfil para saber si es admin
-      const { data: prof } = await supabase
+      const { data: prof, error: profErr } = await supabase
         .from('profiles')
         .select('id, email, nombre, rol_global, journal_activo, simulador_activo, plan')
         .eq('id', session.user.id)
-        .single()
+        .maybeSingle()
+      // Permiso de producto (auditoria S01, 4-oct-2026): sin simulador_activo
+      // (o admin) no se carga nada del simulador. Si el perfil no se puede leer,
+      // no se sabe: se dice, y tampoco se carga.
+      if (profErr) { setAcceso('error'); setLoading(false); return }
       if (prof) setProfile(prof)
+      if (!prof || !(prof.rol_global === 'admin' || prof.simulador_activo === true)) { setAcceso('no'); setLoading(false); return }
+      setAcceso('si')
       loadSessions(session.user.id)
       loadTrades(session.user.id)
       setLoading(false)
@@ -174,6 +182,13 @@ export default function Dashboard() {
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000'}}>
       <div className="spinner"/>
       <style>{`.spinner{width:32px;height:32px;border:2px solid #0a1628;border-top-color:#1E90FF;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
+
+  if (acceso === 'no') return <NoAccess profile={profile} producto="Simulador" />
+  if (acceso === 'error') return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000',color:'#fff',fontFamily:'Montserrat,sans-serif',padding:24,textAlign:'center'}}>
+      No se ha podido comprobar tu acceso al simulador. Recarga la página en unos segundos.
     </div>
   )
 
