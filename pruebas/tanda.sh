@@ -10,8 +10,10 @@
 #    (ver pruebas/cargador.mjs). Cero escrituras en la base.
 #
 # Orden: el arnes primero (si el arnes miente, todo lo demas tambien), luego
-# las pruebas de pruebas/*.mjs. Las reproducciones de la auditoria (fase 1, que
-# HOY estan en rojo a proposito) van aparte, con su propio guion:
+# las pruebas de pruebas/*.mjs, y despues las reproducciones de la auditoria
+# YA ARREGLADAS (las de pruebas/fase1/arreglados.txt), que aqui tienen que
+# salir en verde: codigo 0, ningun oraculo en rojo. Las que siguen en rojo a
+# proposito van aparte, con su propio guion:
 #   sh pruebas/fase1.sh
 #
 # Salida: el detalle va a .pruebas/tanda.log; en pantalla, una linea por
@@ -31,7 +33,7 @@ corre() {  # corre ETIQUETA COMANDO...
   printf '\n######## %s\n' "$etiqueta" >> "$LOG"
   # perl alarm: macOS no trae `timeout`
   if env -i PATH="$PATH" HOME="$HOME" TZ="Europe/Madrid" \
-       perl -e 'alarm shift; exec @ARGV' 300 "$@" >> "$LOG" 2>&1; then
+       perl -e 'alarm shift; exec @ARGV' 300 "$@" < /dev/null >> "$LOG" 2>&1; then
     echo "  ✓ $etiqueta"
   else
     echo "  ✗ $etiqueta   (ver $LOG)"
@@ -49,6 +51,16 @@ for f in pruebas/*.mjs; do
   esac
   corre "$(basename "$f" .mjs)" $NODO "$f"
 done
+
+echo "pruebas/fase1/ (arregladas)"
+if [ -f pruebas/fase1/arreglados.txt ]; then
+  while IFS= read -r base; do
+    [ -z "$base" ] && continue
+    case "$base" in \#*) continue ;; esac
+    if [ -f "pruebas/fase1/$base.mjs" ]; then corre "fase1/$base" $NODO "pruebas/fase1/$base.mjs"
+    else n=$((n + 1)); echo "  ✗ fase1/$base   (no existe pruebas/fase1/$base.mjs)"; fallos="$fallos fase1/$base"; fi
+  done < pruebas/fase1/arreglados.txt
+fi
 
 if [ -z "$fallos" ]; then
   printf '\ntodo verde · %s pruebas\n' "$n"

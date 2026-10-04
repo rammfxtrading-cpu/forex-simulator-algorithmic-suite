@@ -4,11 +4,13 @@
  * Astra (4-oct): el interruptor solo cambia estado visual
  * (components/OrderModal.js:23, :179); el payload de confirmar no lo lleva
  * (:187) y ningun codigo lo ejecuta.
+ * Decision del CTO (4-oct, bloque A): ocultar el control hasta que exista.
  *
- * Se ejecuta: el OrderModal REAL; se activa el interruptor y se confirma. Y se
- * busca en TODO el codigo de la app (components/, lib/, pages/) quien podria
- * leer esa opcion. El buscador tiene control positivo: encuentra la variable
- * en el propio OrderModal.
+ * Se ejecuta: el OrderModal REAL; si el control esta, se activa y se confirma.
+ * Y se busca en TODO el codigo de la app (components/, lib/, pages/) quien
+ * podria leer esa opcion. El buscador tiene control positivo (una opcion que
+ * SI existe, «riskPct», se encuentra fuera del modal) y negativo (no confunde
+ * el resultado BREAKEVEN).
  *
  * ORACULO: si la interfaz ofrece una proteccion, la orden la lleva y algo la
  * ejecuta; o el control no esta.
@@ -19,29 +21,28 @@ import { titulo, ver, oraculo, fin, importa, escenario, monta, REPO } from '../l
 const OrderModal = (await importa('components/OrderModal.js')).default
 escenario()
 
-titulo('1 · activar AUTO BREAK-EVEN y confirmar')
+titulo('1 · el modal')
 let enviado = null
 const r = monta(OrderModal, { modal: { side: 'BUY', entry: 1.1, pair: 'EUR/USD', isLimit: false }, balance: 10000, initialBalance: 10000, isChallenge: false,
   currentPrice: 1.1, onClose() {}, onConfirm: d => { enviado = d } })
+ver('control: el modal se pinto (boton Ejecutar Buy)', !!r.boton('Ejecutar Buy'))
 const fila = () => r.busca(x => x.tipo === 'div' && typeof x.props.onClick === 'function' && /AUTO BREAK-EVEN/.test(r.texto(x)) && !/Ejecutar/.test(r.texto(x)))
-ver('control: el control esta en pantalla', !!fila())
-const antes = fila().hijos[0].hijos[0].props.style.left
-r.pulsa(fila()); r.render()
-const despues = fila().hijos[0].hijos[0].props.style.left
-ver('control: el interruptor cambia (se ve activado)', antes === 2 && despues === 18, `${antes} → ${despues}`)
+const enPantalla = /AUTO BREAK-EVEN/i.test(r.texto())
+if (enPantalla) { r.pulsa(fila()); r.render() }
 r.pulsa(r.boton('Ejecutar Buy'))
 ver('control: se confirmo', !!enviado, Object.keys(enviado || {}).join(','))
-oraculo('U01', 'la orden confirmada lleva la regla de break-even', Object.keys(enviado).some(k => /be|break/i.test(k)), `payload: ${Object.keys(enviado).join(',')}`)
+const lleva = Object.keys(enviado).some(k => /autobe|breakeven|break_even/i.test(k))
 
 titulo('2 · quien lee la opcion')
 const ficheros = []
 const recorre = d => { for (const f of readdirSync(d)) { const p = path.join(d, f); statSync(p).isDirectory() ? recorre(p) : /\.js$/.test(f) && ficheros.push(p) } }
 for (const d of ['components', 'lib', 'pages']) recorre(REPO + d)
-// Sin /i: «BREAKEVEN» es el RESULTADO de un trade (lib/trading/orders.js:16),
-// no la opcion. El buscador mira el nombre de la opcion en el codigo.
-const OPCION = /\bautoBE\b|autoBreakEven|auto_be\b|AUTO BREAK-EVEN/
-const usan = ficheros.filter(f => OPCION.test(readFileSync(f, 'utf8'))).map(f => path.relative(REPO, f))
-ver('control positivo del buscador: encuentra autoBE en OrderModal', usan.includes('components/OrderModal.js'), usan.join(', '))
+const busca = re => ficheros.filter(f => re.test(readFileSync(f, 'utf8'))).map(f => path.relative(REPO, f))
+// Sin /i: «BREAKEVEN» es el RESULTADO de un trade (lib/trading/orders.js:16), no la opcion.
+const usan = busca(/\bautoBE\b|autoBreakEven|auto_be\b/)
+ver('control positivo del buscador: encuentra riskPct (una opcion del modal que SI existe) en el modal', busca(/\briskPct\b/).includes('components/OrderModal.js'))
 ver('control negativo: no confunde el resultado BREAKEVEN de lib/trading/orders.js', !usan.includes('lib/trading/orders.js') && /BREAKEVEN/.test(readFileSync(REPO + 'lib/trading/orders.js', 'utf8')))
-oraculo('U01', 'algo fuera del modal ejecuta el break-even', usan.some(f => f !== 'components/OrderModal.js'), `solo: ${usan.join(', ')}`)
+const ejecuta = usan.some(f => f !== 'components/OrderModal.js')
+oraculo('U01', 'AUTO BREAK-EVEN: o no se ofrece, o la orden lo lleva y algo lo ejecuta', !enPantalla || (lleva && ejecuta),
+  `en pantalla: ${enPantalla}; en el payload: ${lleva}; quien lo lee: ${usan.join(', ') || 'nadie'}`)
 fin()

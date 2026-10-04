@@ -20,7 +20,6 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
   const [riskPct,setRiskPct]=useState(1)
   const [slPips,setSlPips]=useState(initSlPips||10)
   const [tpPips,setTpPips]=useState(initTpPips||20)
-  const [autoBE,setAutoBE]=useState(false)
   // Si OrderModal nace de LongShortModal, recibimos sl/tp EXACTOS del dibujo.
   // Mientras el usuario no edite pips, respetamos esos precios al pie de la
   // letra. En cuanto edite pips, recalculamos a partir de entry ± pips
@@ -175,13 +174,9 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
             </div>
           </div>
 
-          {/* Auto BE */}
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,cursor:'pointer'}} onClick={()=>setAutoBE(v=>!v)}>
-            <div style={{width:36,height:20,borderRadius:10,background:autoBE?accentColor:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.15)',position:'relative',transition:'all .2s'}}>
-              <div style={{position:'absolute',top:2,left:autoBE?18:2,width:14,height:14,borderRadius:'50%',background:'#fff',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
-            </div>
-            <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.8)',letterSpacing:0.5}}>AUTO BREAK-EVEN</span>
-          </div>
+          {/* AUTO BREAK-EVEN retirado (auditoria U01, 4-oct-2026): el interruptor
+              no llegaba al motor y prometia una proteccion que nunca actuaba.
+              Vuelve cuando el motor de eventos ejecute la regla. */}
 
           {/* Confirm */}
           <button onClick={()=>onConfirm({lots,sl,tp,slPips,tpPips,rr:parseFloat(rrRatio),estLoss,estProfit,riskPct,riskAmt})} style={{
