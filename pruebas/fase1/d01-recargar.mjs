@@ -16,7 +16,11 @@
  *
  * ORACULOS:
  *   · saldo guardado 0 con capital 10.000 → la pagina enseña Balance $0.00
- *   · al salir con una posicion abierta y el replay avanzado, se guarda algo
+ *   · al salir con una posicion abierta, se guarda algo (al menos el saldo y
+ *     last_timestamp)
+ * ⚠️ LIMITES (H08, revision de Astra): el reloj NO se avanza antes de salir;
+ *    no prueba que se guarde un cursor movido, ni la reanudacion en el punto
+ *    exacto. La aceptacion de la cartera durable lo exigira (A15, A16, A22).
  *     (al menos last_timestamp y el saldo)
  *   · al volver, la posicion abierta sigue: «1 POS»
  *   · (limit pendiente: el loader crea el estado del par SIN `orders` y nada

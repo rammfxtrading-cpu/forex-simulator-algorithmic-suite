@@ -13,6 +13,10 @@
  * base falsa) y el onTick REAL llama a checkChallengeBreach, que cierra con
  * closePosition REAL.
  *
+ * ⚠️ LIMITES (H08, revision de Astra): el banco va SIN usuario, asi que el
+ *    cierre forzado no se persiste; el contraste final con el evaluador se hace
+ *    en memoria con el cierre del banco, no leyendo cierres guardados. La
+ *    aceptacion del reto (A06, A13, A14) lo hara contra cierres persistidos.
  * ORACULOS, a mano (regla de perdida diaria: la equity no puede bajar del
  * saldo de inicio del dia menos el 5 % del capital inicial; total: no bajar
  * del capital menos el 10 %). Capital 100.000; 1 lote EURUSD = 10 USD/pip.

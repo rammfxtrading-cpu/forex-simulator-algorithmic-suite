@@ -16,6 +16,9 @@
  * ⚠️ El doble modela una sola regla de la libreria; no es la libreria. Lo que
  * se mide es el numero de setData, no FPS ni latencia.
  *
+ * ⚠️ LIMITES (H08, revision de Astra): el grafico es un doble con UNA regla de
+ *    lightweight-charts; no es la libreria, ni FPS, ni latencia. La aceptacion
+ *    del render se hara contra la libreria real en navegador.
  * ORACULO: carga inicial = 1 setData; tres ticks dentro de la misma vela H1 y
  * una vela H1 nueva = 0 setData mas (solo update).
  */

@@ -29,3 +29,11 @@ Ningún doble fabrica los núcleos de los 23 hallazgos (Astra lo comprobó), per
 | `next-falso.mjs` | navegación (`push` solo se apunta); `dynamic` carga el módulo de verdad | — |
 | `banco-motor.mjs` | copia dos fragmentos de `_SessionInner` (alta de mercado y reset del Go to), verificados por `copiasVigentes()` | Si `_SessionInner` cambia esas líneas, el banco lo dice. |
 | `pg-ensayo.mjs` / `estado-s04.mjs` | el esquema es **inventado** con los hechos de la s04; no es el baseline real | Acredita los objetos del stub, no la base viva. |
+
+## Límites de precisión de algunas pruebas (H08)
+
+| Prueba | Qué no prueba | Lo cubrirá |
+|---|---|---|
+| `fase1/d01-recargar` | No avanza el reloj antes de salir: no prueba que se guarde un cursor movido ni la reanudación exacta. | aceptación de la cartera durable (A15, A16, A22 de la revisión de diseño) |
+| `fase1/m06-breach-intravela` | El banco va sin usuario (el cierre forzado no se persiste) y el contraste con el evaluador se hace en memoria. | aceptación del reto contra cierres persistidos (A06, A13, A14) |
+| `fase1/p01-tick-incremental` | El gráfico es un doble con una sola regla de lightweight-charts: ni la librería, ni FPS, ni latencia. | aceptación del render con la librería real en navegador |
