@@ -11,6 +11,8 @@ Sin red (cortada por el sistema y en JS; ver `aislar.sh`, `sin-red.cjs`), sin se
 
 `historicas.sh` corre también `aceptacion/` contra el código auditado: ahí **tienen que salir en rojo**. Una prueba de aceptación que sale verde contra el código viejo aprueba en vacío.
 
+**H04 (bloque D, 5-oct):** `tanda.sh` termina corriendo `historicas.sh` y falla si no salen todas en rojo: el contraste histórico ya no es opcional. Y `fin()` (en `lib.mjs`) no aprueba una prueba de `aceptacion/`, `fase1/` o `historicas/` sin oráculos, ni una de `aceptacion/` por debajo del mínimo que declara `aceptacion/minimos.json` (código 2). Una aceptación nueva tiene que declarar su mínimo; quitar oráculos exige bajarlo a la vista. Lo comprueba `pruebas/recuento.mjs` con `fixtures/aceptacion/`.
+
 **Cuando se arregla un hallazgo:** la prueba de `fase1/` se convierte en contrato (o se escribe uno nuevo) en `aceptacion/`; la original, si sus controles fijaban el comportamiento viejo, se copia tal cual a `historicas/`. Nunca se convierte a verde un control que describe el código defectuoso: el contrato se escribe aparte.
 
 Códigos de salida de cada prueba: `1` algún oráculo en rojo · `0` todos en verde · `2` control roto · `3` excepción (fallo de la prueba). Un `2` o un `3` nunca cuentan como reproducción.

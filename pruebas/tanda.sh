@@ -12,9 +12,11 @@
 # Orden: el arnes primero (si el arnes miente, todo lo demas tambien), luego
 # las pruebas de pruebas/*.mjs, y despues las de ACEPTACION de lo ya arreglado
 # (pruebas/aceptacion/), que tienen que salir en verde: codigo 0, ningun
-# oraculo en rojo. Aparte (ver pruebas/LEEME.md):
+# oraculo en rojo, y al menos los oraculos de pruebas/aceptacion/minimos.json
+# (H04). Al final, OBLIGATORIO (H04, bloque D 5-oct): el contraste historico
+# (pruebas/historicas.sh): cada aceptacion tiene que salir en ROJO contra el
+# codigo auditado, o aprueba en vacio. Aparte (ver pruebas/LEEME.md):
 #   sh pruebas/fase1.sh       lo que sigue roto (en rojo a proposito)
-#   sh pruebas/historicas.sh  reproducciones originales contra el codigo auditado
 #
 # Salida: el detalle va a .pruebas/tanda.log; en pantalla, una linea por
 # prueba. Codigo 0 solo si TODO esta en verde. Se juzga por el codigo de
@@ -58,6 +60,16 @@ for f in pruebas/aceptacion/*.mjs; do
   [ -f "$f" ] || continue
   corre "aceptacion/$(basename "$f" .mjs)" $NODO "$f"
 done
+
+echo "contraste historico (obligatorio):"
+n=$((n + 1))
+printf '\n######## historicas\n' >> "$LOG"
+if sh pruebas/historicas.sh >> "$LOG" 2>&1; then
+  echo "  ✓ historicas (todas en rojo contra el codigo auditado)"
+else
+  echo "  ✗ historicas   (ver $LOG y .pruebas/auditado-*/.pruebas/historicas.log)"
+  fallos="$fallos historicas"
+fi
 
 if [ -z "$fallos" ]; then
   printf '\ntodo verde · %s pruebas\n' "$n"

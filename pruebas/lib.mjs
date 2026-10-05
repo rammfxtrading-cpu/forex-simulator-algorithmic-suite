@@ -46,8 +46,28 @@ export function oraculo(id, desc, correcto, cifras = '') {
   appendFileSync(REPO + '.pruebas/fase1.jsonl', JSON.stringify({ id, desc, reproducido: !correcto, cifras: String(cifras), fichero: path.basename(process.argv[1]) }) + '\n')
   return correcto
 }
+// H04 (Astra, 5-oct; bloque D, punto 8): una prueba de aceptacion/, fase1/ o
+// historicas/ sin oraculos NO aprueba (codigo 2); y en aceptacion/ tiene que
+// llegar al minimo que declara su minimos.json (un fichero sin minimo
+// declarado tampoco vale). En el contraste historico (copia en .pruebas/) el
+// minimo no se aplica: contra el codigo viejo basta con que haya oraculos.
 export const fin = () => {
   console.log(`\n${rojos} en rojo · ${verdes} en verde · ${controlesMal} controles rotos`)
+  const fichero = process.argv[1] ? path.resolve(process.argv[1]) : ''
+  const carpeta = path.basename(path.dirname(fichero))
+  let invalida = ''
+  if (['aceptacion', 'fase1', 'historicas'].includes(carpeta)) {
+    const n = rojos + verdes
+    if (n === 0) invalida = 'ningun oraculo: una prueba vacia no aprueba'
+    else if (carpeta === 'aceptacion' && !fichero.includes(`${path.sep}.pruebas${path.sep}`)) {
+      let minimos = null
+      try { minimos = JSON.parse(readFileSync(path.join(path.dirname(fichero), 'minimos.json'), 'utf8')) } catch { minimos = null }
+      const min = minimos?.[path.basename(fichero, '.mjs')]
+      if (!Number.isInteger(min)) invalida = `sin minimo declarado en ${carpeta}/minimos.json`
+      else if (n < min) invalida = `${n} oraculos, por debajo del minimo declarado (${min})`
+    }
+  }
+  if (invalida) { console.log(`✗ RECUENTO (H04): ${invalida}`); process.exit(2) }
   process.exit(controlesMal ? 2 : rojos ? 1 : 0)
 }
 

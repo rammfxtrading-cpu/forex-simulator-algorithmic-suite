@@ -1,0 +1,19 @@
+{
+  "c02-metricas": 7,
+  "c03-sesiones-mismo-nombre": 3,
+  "c04-estados-honestos": 22,
+  "d03-historico-parcial": 16,
+  "d04-antidegradacion": 12,
+  "d05-actualizador-y-cache": 8,
+  "d06-borrado": 8,
+  "gz01-velas-comprimidas": 12,
+  "m13-horario-nueva-york": 4,
+  "mp01-mercado-un-escritor": 15,
+  "o01-anio-nuevo": 1,
+  "o01-restaurar": 9,
+  "p02-barras-fantasma": 2,
+  "s01-permiso-de-producto": 6,
+  "s03-coste-de-velas": 8,
+  "s05-logs": 3,
+  "u01-auto-break-even": 1
+}
