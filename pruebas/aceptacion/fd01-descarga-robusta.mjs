@@ -102,5 +102,16 @@ const r5 = await corre()
 const l5 = r5.salida.filter(l => /AUDUSD 2026-01-26/.test(l))
 oraculo('FD01', 'un 404 es «sin datos»: un solo intento, sin reintentar, y no cuenta como fallo de descarga', l5.length === 1 && /HTTP 404 · 0 bytes · sin datos/.test(l5[0]) && !/sin descargar/.test(linea(r5, 'AUDUSD')), l5.join(' | ') + ' · ' + linea(r5, 'AUDUSD'))
 proveedor.http = null
+
+titulo('5 · presupuesto de tiempo por par y por job')
+escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
+proveedor.http = (url, n, { instrumento, dia }) => (instrumento === 'audusd' && dia === '2026-01-26') ? { status: 503, body: '' } : { status: 200, body: filas(dia) }
+const r6 = await correScript('scripts/actualizar-diario.js', { ahora: AHORA, argv: ['--subir'], env: { ...ENV, PRESUPUESTO_PAR_S: '1' } })
+const l6 = r6.salida.filter(l => /AUDUSD 2026-01-26 · intento/.test(l))
+oraculo('FD01', 'presupuesto por par de 1 s: el 503 no se reintenta mas alla del limite → «presupuesto»', l6.length === 1 && /sin descargar: 2026-01-26 \(presupuesto/.test(linea(r6, 'AUDUSD')), `${l6.length} intento(s) · ${linea(r6, 'AUDUSD')}`)
+escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
+proveedor.http = null; proveedor.llamadas.length = 0
+const r7 = await correScript('scripts/actualizar-diario.js', { ahora: AHORA, argv: ['--subir'], env: { ...ENV, PRESUPUESTO_JOB_S: '0' } })
+oraculo('FD01', 'presupuesto del job agotado: ningun par pide nada y cada uno dice «sin tiempo»', proveedor.llamadas.length === 0 && r7.salida.filter(l => /SIN TIEMPO/.test(l)).length === 9, `${proveedor.llamadas.length} peticiones · ${r7.salida.filter(l => /SIN TIEMPO/.test(l)).length} pares sin tiempo`)
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(e => e.terminoPor !== 'timeout'))
 fin()

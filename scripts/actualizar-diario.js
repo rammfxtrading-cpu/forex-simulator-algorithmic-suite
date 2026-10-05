@@ -42,15 +42,23 @@ const PAIRS = ['audcad','audusd','eurusd','gbpjpy','gbpusd','nzdusd','usdcad','u
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+// Bloque F, punto 5: presupuesto de tiempo. El workflow corta a los 30 minutos:
+// el job se da 24 y cada par 4 como mucho (lo que quede del job si es menos).
+// Pasado el limite, la descarga para («presupuesto») y lo que falte espera a la
+// pasada siguiente; los pares que no llegan a empezar dicen «SIN TIEMPO».
+const segs = (v, def) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : def }
+const PRESUPUESTO_JOB_MS = segs(process.env.PRESUPUESTO_JOB_S, 24 * 60) * 1000
+const PRESUPUESTO_PAR_MS = segs(process.env.PRESUPUESTO_PAR_S, 4 * 60) * 1000
+
 // Baja UN dia por la DESCARGA PROPIA (bloque F, punto 4: lib/mercado/descarga.mjs):
 // estado HTTP, bytes e intento de cada peticion en el log; esperas crecientes
 // con azar y Retry-After; «sin datos» (no se reintenta) frente a «servidor» y
 // «red». Lanza ErrorDescarga si no se pudo. → velas del dia ([] si no hay datos)
 const dukascopy = require('dukascopy-node')
 let DESC   // lib/mercado/descarga.mjs (ESM, se carga en main)
-async function bajarDia(pair, y, m, d) {
+async function bajarDia(pair, y, m, d, limite = Infinity) {
   const dia = new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10)
-  const r = await DESC.bajaDia({ sdk: dukascopy, fetch: (...a) => globalThis.fetch(...a), espera: sleep, log: l => console.log('    ' + l), par: pair, dia })
+  const r = await DESC.bajaDia({ sdk: dukascopy, fetch: (...a) => globalThis.fetch(...a), espera: sleep, log: l => console.log('    ' + l), par: pair, dia, limite })
   return r.velas
 }
 
@@ -142,7 +150,7 @@ function componer(guardadas, bajados) {
 }
 
 // Baja los dias pendientes y los publica por la funcion comun.
-async function reconciliaAnio(pair, year, ayerMs) {
+async function reconciliaAnio(pair, year, ayerMs, limite = Infinity) {
   const keyFile = F.rutaEscritura(pair, year)     // .json; .json.gz solo con MERCADO_GZIP=1
   const leido = await leerAnio(pair, year)
   if (leido.estado === 'error') return { keyFile, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
@@ -160,7 +168,7 @@ async function reconciliaAnio(pair, year, ayerMs) {
     const enCola = d > ultimaGuardada
     if (enCola && colaCortada) continue              // punto 2: cortada la cola, lo de despues no se publicaria
     const [y, m, dd] = d.split('-').map(Number)
-    try { bajados[d] = (await bajarDia(pair, y, m - 1, dd)) || [] }
+    try { bajados[d] = (await bajarDia(pair, y, m - 1, dd, limite)) || [] }
     catch (e) { fallidos.push(`${d} (${e?.message || e})`); if (enCola) colaCortada = true }
     if (enCola && bajados[d] && !completo(d, bajados[d].length)) colaCortada = true
     await sleep(400)
@@ -183,7 +191,9 @@ async function reconciliaAnio(pair, year, ayerMs) {
   return { keyFile, publicacion: true, estado: `✗ PUBLICACION ${r.estado} ${keyFile}: ${r.problemas.join(' · ')}${avisos}` }
 }
 
-async function procesarPar(pair) {
+async function procesarPar(pair, finJob = Infinity) {
+  if (Date.now() >= finJob) return { pair, sinTiempo: true, estado: `✗ SIN TIEMPO: el presupuesto del job (${PRESUPUESTO_JOB_MS / 1000} s) se agoto antes de este par` }
+  const limite = Math.min(finJob, Date.now() + PRESUPUESTO_PAR_MS)
   const hoy = new Date()
   const ayerMs = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1)
   const year = hoy.getUTCFullYear()
@@ -191,7 +201,7 @@ async function procesarPar(pair) {
   const partes = []
   for (const y of anios) {
     if (Date.UTC(y, 0, 1) > ayerMs) continue           // el 1-ene aun no ha cerrado: nada que pedir de ese año
-    partes.push((await reconciliaAnio(pair, y, ayerMs)).estado)
+    partes.push((await reconciliaAnio(pair, y, ayerMs, limite)).estado)
   }
   const fallo = partes.find(p => p.startsWith('✗'))
   return { pair, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
@@ -203,12 +213,13 @@ async function main() {
   C = await import('../lib/mercado/calidad.mjs')
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()} ===\n`)
   const resultados = []
+  const finJob = Date.now() + PRESUPUESTO_JOB_MS
   let primero = true
   for (const pair of PAIRS) {
     if (!primero) await sleep(8000)  // pausa anti-rafaga entre pares
     primero = false
     process.stdout.write(`  ${pair.toUpperCase()}... `)
-    try { const r = await procesarPar(pair); console.log(r.estado); resultados.push(r) }
+    try { const r = await procesarPar(pair, finJob); console.log(r.estado); resultados.push(r) }
     catch(e) { console.log(`✗ ERROR: ${e.message}`); resultados.push({pair, estado:`✗ ${e.message}`}) }
   }
   const fallos = resultados.filter(r=>r.estado.startsWith('✗'))
