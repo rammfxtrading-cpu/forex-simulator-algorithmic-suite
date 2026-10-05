@@ -18,7 +18,7 @@ import { banco, velasEnStorage } from '../banco-motor.mjs'
 const T = Date.parse('2025-03-03T10:00:00Z') / 1000
 const ses = sesionSim()
 escenario({ sim_sessions: [ses] })
-velasEnStorage('EUR/USD', Array.from({ length: 5 }, (_, i) => vela(T + i * 60, 1.1, 1.1, 1.1, 1.1)), [2024])
+velasEnStorage('EUR/USD', Array.from({ length: 5 }, (_, i) => vela(T + i * 60, 1.1, 1.1, 1.1, 1.1)), [2024], { tramoAbierto: true })
 
 titulo('1 · la segunda carga se retrasa')
 let n = 0

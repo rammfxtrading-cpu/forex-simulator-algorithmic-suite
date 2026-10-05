@@ -26,7 +26,7 @@ const base = () => {
 }
 async function cierra(falla) {
   escenario({ sim_sessions: [ses] })
-  velasEnStorage('EUR/USD', [vela(T, 1.1, 1.1, 1.1, 1.1), vela(T + 60, 1.1, 1.1, 1.1, 1.1)], [2024])
+  velasEnStorage('EUR/USD', [vela(T, 1.1, 1.1, 1.1, 1.1), vela(T + 60, 1.1, 1.1, 1.1, 1.1)], [2024], { tramoAbierto: true })
   const b = await banco({ sesion: ses, userId: A })
   const pos = b.abreMercado({ side: 'BUY', entry: 1.1000, sl: 1.0900, tp: 1.1100, lots: 1 })
   db.falla = falla

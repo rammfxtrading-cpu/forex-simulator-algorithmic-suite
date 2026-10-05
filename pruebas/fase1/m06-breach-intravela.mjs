@@ -34,7 +34,7 @@ const T = Date.parse('2025-03-04T10:00:00Z') / 1000
 async function caso({ realizados, saldo, minimo, par }) {
   const ses = sesionSim({ pair: par, capital: 100000, balance: saldo, challenge_type: '2F', challenge_phase: 1, date_from: '2025-03-04', date_to: '2025-03-07' })
   escenario({ sim_sessions: [ses], sim_trades: realizados.map(([hora, pnl]) => tradeSim({ session_id: ses.id, pair: par, pnl, result: pnl > 0 ? 'WIN' : 'LOSS', closed_at: `2025-03-04T${hora}:00Z` })) })
-  velasEnStorage(par, [vela(T, 1.2000, 1.2001, 1.1999, 1.2000), vela(T + 60, 1.1990, 1.1995, minimo, minimo + 0.0050), vela(T + 120, 1.1950, 1.1960, 1.1940, 1.1950)], [2024])
+  velasEnStorage(par, [vela(T, 1.2000, 1.2001, 1.1999, 1.2000), vela(T + 60, 1.1990, 1.1995, minimo, minimo + 0.0050), vela(T + 120, 1.1950, 1.1960, 1.1940, 1.1950)], [2024], { tramoAbierto: true })
   const b = await banco({ sesion: ses })
   await b.repinta()
   const ev = () => b.caja.valor.reto.challengeStatus?.evaluation

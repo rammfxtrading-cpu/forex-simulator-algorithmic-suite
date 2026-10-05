@@ -31,7 +31,7 @@ ver('control: las lineas copiadas de _SessionInner siguen ahi', Object.values(co
 // velas y un cierre tardio (en la vela siguiente) aprobaba el «control».
 async function caso(conOtra) {
   escenario({ sim_sessions: [ses] })
-  velasEnStorage('EUR/USD', VELAS, [2024])
+  velasEnStorage('EUR/USD', VELAS, [2024], { tramoAbierto: true })
   const b = await banco({ sesion: ses })
   if (conOtra) b.abreMercado({ side: 'BUY', entry: 1.1020, sl: 1.0900, tp: 1.1200, lots: 1 })
   const orden = await b.pendiente({ side: 'BUY_LIMIT', entry: 1.1000, sl: 1.0990, tp: 1.1030, lots: 1 })
@@ -75,7 +75,7 @@ const GOTO = [
 async function goto(saltando) {
   const s2 = sesionSim({ pair: 'GBP/USD', date_from: '2025-01-07', date_to: '2025-01-10' })
   escenario({ sim_sessions: [s2] })
-  velasEnStorage('GBP/USD', GOTO, [2024])
+  velasEnStorage('GBP/USD', GOTO, [2024], { tramoAbierto: true })
   const b = await banco({ sesion: s2 })
   await b.pendiente({ side: 'BUY_LIMIT', entry: 1.1000, sl: 1.0990, tp: 1.1030, lots: 1 })
   const destino = saltando ? await b.irA('nyam') : (await b.paso(3), null)

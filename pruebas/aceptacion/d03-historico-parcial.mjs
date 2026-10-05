@@ -29,7 +29,7 @@
  *   sesion completa SI opera; un año de CONTEXTO caido no invalida la sesion;
  *   datos que acaban antes del final de la sesion no son un hueco.
  */
-import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db, retenApi, api, guardado } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db, retenApi, api, guardado, fuente } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { respuesta } from '../entorno.mjs'
@@ -102,7 +102,51 @@ escenario({ perfiles: [perfil(A)], storage: { 'forex-data': semana('USDJPY') } }
 retenApi.responde = u => /year=2024/.test(u) ? respuesta(500, { error: 'Storage timeout' }) : null
 const res8 = await sesion('USD/JPY')
 ver('control: el año de CONTEXTO caido no invalida la sesion', valida(res8) && res8.candles.length === 6000, res8?.error ?? `${res8?.candles?.length} velas, contexto ${res8?.contextoIncompleto}`)
+
+titulo('8 · bloque D, punto 4: tramo actual abierto ≠ historico cerrado incompleto')
+// Astra (cierres, 5-oct): sesion 3–7 mar 2025 con UNA sola vela del dia 3 daba
+// ok (se excluia de la cobertura el ultimo dia con datos y todo lo posterior,
+// sin distinguir un año cerrado del tramo actual).
+const unaVela = { 'NZDUSD/M1/2025.json': JSON.stringify([{ time: Date.parse('2025-03-03T00:00:00Z') / 1000, open: 1.1, high: 1.1, low: 1.1, close: 1.1, volume: 1 }]), 'NZDUSD/M1/2024.json': '[]' }
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': unaVela } })
+const res10 = await sesion('NZD/USD')
+oraculo('D03', 'historico cerrado con una sola vela del dia 3: no se opera', !valida(res10), res10?.error ?? `devuelve ${res10?.candles?.length} velas sin aviso`)
+oraculo('D03', 'y el error dice hasta donde hay datos', /datos hasta 3-mar-2025/.test(res10?.error ?? ''), res10?.error ?? '')
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': semana('EURUSD', [], 5) } })
 const res9 = await sesion('EUR/USD')
-ver('control: datos que acaban el miercoles 5 en una sesion hasta el viernes no son un hueco', valida(res9), res9?.error ?? res9?.candles?.length)
+oraculo('D03', 'sesion cerrada (3–7 mar 2025) con datos solo hasta el miercoles 5: incompleta, no se opera', !valida(res9), res9?.error ?? `${res9?.candles?.length} velas sin aviso`)
+oraculo('D03', 'y lo dice: datos hasta 5-mar-2025', /datos hasta 5-mar-2025/.test(res9?.error ?? ''), res9?.error ?? '')
+
+// El tramo abierto: una sesion que llega a hoy. La ventana abierta son los dos
+// ultimos dias de mercado antes de hoy (el margen del actualizador): ahi el
+// dato puede faltar todavia. Datos completos hasta antes de la ventana y nada
+// despues: se opera y se enseña «datos hasta…».
+const DIA_S = 86400, HOY = Math.floor(Date.now() / 1000 / DIA_S) * DIA_S
+const laborableS = t => { const w = new Date(t * 1000).getUTCDay(); return w >= 1 && w <= 5 }
+let ventana = HOY, n = 0
+while (n < 2) { ventana -= DIA_S; if (laborableS(ventana)) n++ }       // primer dia de la ventana abierta
+const desdeS = ventana - 10 * DIA_S
+const abiertas = []
+for (let t = desdeS; t < ventana; t += DIA_S) if (laborableS(t)) abiertas.push(...diaM1(new Date(t * 1000).toISOString().slice(0, 10), 1440).map(c => ({ time: c.timestamp / 1000, open: 1.1, high: 1.1, low: 1.1, close: 1.1, volume: 1 })))
+const ymdS = t => new Date(t * 1000).toISOString().slice(0, 10)
+const anioS = new Date(desdeS * 1000).getUTCFullYear()
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { [`AUDUSD/M1/${anioS}.json`]: JSON.stringify(abiertas), [`AUDUSD/M1/${anioS - 1}.json`]: '[]' } } })
+const res11 = await fetchSessionCandles({ pair: 'AUD/USD', dateFrom: ymdS(desdeS), dateTo: ymdS(HOY + 3 * DIA_S) })
+oraculo('D03', 'sesion que llega a hoy con datos hasta antes de la ventana abierta: se opera', valida(res11), res11?.error ?? '')
+oraculo('D03', 'marcada como tramo abierto, con su «datos hasta»', res11?.tramoAbierto === true && res11?.datosHasta === abiertas[abiertas.length - 1].time, JSON.stringify({ tramoAbierto: res11?.tramoAbierto, datosHasta: res11?.datosHasta }))
+const quitaDia = abiertas.filter(v => ymdS(v.time) !== ymdS(abiertas[0].time + 3 * DIA_S))
+ver('control del fixture: hay un dia laborable que quitar dentro de lo cerrado', quitaDia.length < abiertas.length)
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { [`AUDUSD/M1/${anioS}.json`]: JSON.stringify(quitaDia), [`AUDUSD/M1/${anioS - 1}.json`]: '[]' } } })
+const res12 = await fetchSessionCandles({ pair: 'AUD/USD', dateFrom: ymdS(desdeS), dateTo: ymdS(HOY + 3 * DIA_S) })
+ver('control: un dia cerrado vacio antes de la ventana sigue siendo un hueco', !valida(res12), res12?.error ?? '')
+
+titulo('9 · el alumno ve «datos hasta…» en la sesion')
+const { banco } = await import('../banco-motor.mjs')
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { [`AUDUSD/M1/${anioS}.json`]: JSON.stringify(abiertas), [`AUDUSD/M1/${anioS - 1}.json`]: '[]' } } })
+const ses = { id: 's-abierta', user_id: A, name: 'abierta', pair: 'AUD/USD', timeframe: 'M1', balance: 10000, capital_inicial: 10000, date_from: ymdS(desdeS), date_to: ymdS(HOY + 3 * DIA_S), last_timestamp: null, challenge_type: null, status: 'active' }
+const bb = await banco({ sesion: ses })
+oraculo('D03', 'la sesion de tramo abierto se carga (motor real)', !!bb.motor())
+const aviso = bb.ps()?.avisoDatos ?? ''
+oraculo('D03', 'el estado del par lleva el aviso «datos hasta …» (lo pinta la sesion)', /datos hasta \d{1,2}-[a-z]{3}-\d{4}/.test(aviso), aviso)
+oraculo('D03', 'y la sesion lo pinta para el par activo', /avisoDatos/.test(fuente('components/_SessionInner.js')))
 fin()

@@ -29,7 +29,7 @@ velasEnStorage('EUR/USD', [
   vela(T, 1.1000, 1.1002, 1.0998, 1.1000),
   vela(T + 60, 1.1000, 1.1003, 1.0995, 1.1001),
   vela(T + 120, 1.1001, 1.1002, 1.0985, 1.0988),      // solo esta toca el SL (1,0990)
-], [2024])
+], [2024], { tramoAbierto: true })
 const b = await banco({ sesion: ses })
 b.abreMercado({ side: 'BUY', entry: 1.1000, sl: 1.0990, tp: 1.1100, lots: 1 })
 let finales = 0

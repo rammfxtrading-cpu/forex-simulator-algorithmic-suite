@@ -23,7 +23,7 @@ import { velasEnStorage } from '../banco-motor.mjs'
 const Sesion = (await importa('components/_SessionInner.js')).default
 escenario({ sim_sessions: [sesionSim({ id: 'ses-m05', capital: 10000, balance: 10000 })] })
 const T = Date.parse('2025-03-03T10:00:00Z') / 1000
-velasEnStorage('EUR/USD', Array.from({ length: 30 }, (_, i) => { const px = +(1.1 + i * 0.001).toFixed(4); return vela(T + i * 60, px, px, px, px) }), [2024])
+velasEnStorage('EUR/USD', Array.from({ length: 30 }, (_, i) => { const px = +(1.1 + i * 0.001).toFixed(4); return vela(T + i * 60, px, px, px, px) }), [2024], { tramoAbierto: true })
 router.query = { id: 'ses-m05' }
 
 const p = monta(Sesion, {}); await p.asienta(300)

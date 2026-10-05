@@ -20,7 +20,7 @@ velasEnStorage('EUR/USD', [
   vela(T, 1.1000, 1.1002, 1.0998, 1.1000),
   vela(T + 60, 1.0950, 1.0960, 1.0940, 1.0955),       // abre por debajo del SL
   vela(T + 120, 1.0955, 1.0956, 1.0954, 1.0955),
-], [2024])
+], [2024], { tramoAbierto: true })
 
 titulo('1 · BUY 1,1000 / SL 1,0990 y la vela siguiente abre en 1,0950')
 const b = await banco({ sesion: ses })

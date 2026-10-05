@@ -20,12 +20,28 @@ const { router } = await import('./next-falso.mjs')
 
 // Pone las velas M1 (segundos) en forex-data/<PAR>/M1/<año>.json y un [] en los
 // años de contexto que pida la sesion, para que nadie llame al proveedor.
-export function velasEnStorage(par, velas, anios = []) {
+// { tramoAbierto: true } — RELOJ DE DATOS (bloque D, punto 4, 5-oct): los
+// fixtures del motor son unas pocas velas, no un mercado completo, y una sesion
+// CERRADA incompleta ya no se opera (lib/mercado/calidad.mjs). Con esta opcion
+// el banco publica las velas «recien publicadas»: desplaza Date.now (sin
+// pararlo: los ids de ordenes lo usan) al dia siguiente de la primera vela, asi
+// la sesion es TRAMO ABIERTO y el motor ve exactamente las velas de la prueba.
+// Solo cambia el reloj de pared (la ventana abierta del contrato de datos y los
+// ids); el motor avanza por el tiempo de las velas. Es OPCIONAL y explicito: una
+// prueba que quiere datos invalidos (c04) no debe volverse valida sin pedirlo.
+const ahoraReal = Date.now.bind(Date)
+export function velasEnStorage(par, velas, anios = [], { tramoAbierto = false } = {}) {
   const p = par.replace('/', '')
   const porAnio = {}
   for (const v of velas) (porAnio[new Date(v.time * 1000).getUTCFullYear()] ??= []).push(v)
   for (const a of anios) porAnio[a] ??= []
   for (const [a, vs] of Object.entries(porAnio)) db.storage['forex-data'][`${p}/M1/${a}.json`] = JSON.stringify(vs)
+  if (tramoAbierto && velas.length) {
+    const primera = Math.min(...velas.map(v => v.time))
+    const objetivo = (Math.floor(primera / 86400) + 1) * 86400 * 1000 + 12 * 3600 * 1000   // dia siguiente, 12:00 UTC
+    const desfase = objetivo - ahoraReal()
+    Date.now = () => ahoraReal() + desfase
+  }
 }
 
 export async function banco({ sesion, par = sesion.pair, balance = Number(sesion.balance), userId = null }) {

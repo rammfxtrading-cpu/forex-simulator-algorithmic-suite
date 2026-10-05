@@ -21,7 +21,7 @@ velasEnStorage('EUR/USD', [
   vela(T, 1.1000, 1.1002, 1.0998, 1.1000),
   vela(T + 60, 1.1000, 1.1020, 1.0980, 1.1000),      // toca TP (1,1010) y SL (1,0990)
   vela(T + 120, 1.1000, 1.1001, 1.0999, 1.1000),
-], [2024])
+], [2024], { tramoAbierto: true })
 
 titulo('1 · BUY 1,1000 / SL 1,0990 / TP 1,1010 y una vela que toca los dos')
 const b = await banco({ sesion: ses })
@@ -43,7 +43,7 @@ oraculo('M02', 'y el cierre queda marcado como ambiguo (ambigua === true, con ca
 
 titulo('2 · control: una vela que solo toca el TP')
 escenario({ sim_sessions: [ses] })
-velasEnStorage('EUR/USD', [vela(T, 1.1, 1.1002, 1.0998, 1.1), vela(T + 60, 1.1, 1.1020, 1.0995, 1.1015), vela(T + 120, 1.1, 1.1, 1.1, 1.1)], [2024])
+velasEnStorage('EUR/USD', [vela(T, 1.1, 1.1002, 1.0998, 1.1), vela(T + 60, 1.1, 1.1020, 1.0995, 1.1015), vela(T + 120, 1.1, 1.1, 1.1, 1.1)], [2024], { tramoAbierto: true })
 const c = await banco({ sesion: ses })
 c.abreMercado({ side: 'BUY', entry: 1.1000, sl: 1.0990, tp: 1.1010, lots: 1 })
 await c.paso(1)

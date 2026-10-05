@@ -38,7 +38,7 @@ const saldo = p => /Balance: \$([\d.,-]+)/.exec(p.texto())?.[1]
 
 titulo('1 · saldo guardado 0')
 escenario({ sim_sessions: [sesionSim({ id: 'ses0', balance: 0, capital: 10000 })] })
-velasEnStorage('EUR/USD', VELAS, [2024]); router.query = { id: 'ses0' }
+velasEnStorage('EUR/USD', VELAS, [2024], { tramoAbierto: true }); router.query = { id: 'ses0' }
 const p0 = await entra()
 ver('control: la pagina cargo la sesion (sin errores de pintado)', p0.errores.length === 0 && /Sesion/.test(p0.texto()), p0.errores.map(e => e.message).join(';'))
 oraculo('D01', 'saldo guardado 0 → la pagina enseña $0.00', saldo(p0) === '0.00', `enseña $${saldo(p0)}`)
@@ -47,7 +47,7 @@ p0.desmonta()
 titulo('2 · una compra a mercado y salir')
 const ses = sesionSim({ id: 'ses1', balance: 10000, capital: 10000 })
 escenario({ sim_sessions: [ses] })
-velasEnStorage('EUR/USD', VELAS, [2024]); router.query = { id: 'ses1' }
+velasEnStorage('EUR/USD', VELAS, [2024], { tramoAbierto: true }); router.query = { id: 'ses1' }
 const p1 = await entra()
 ver('control: el boton Buy esta activo (datos y precio cargados)', p1.boton('▲ Buy')?.props.disabled === false)
 p1.pulsa(p1.boton('▲ Buy')); await p1.asienta(100)
