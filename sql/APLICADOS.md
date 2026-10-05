@@ -6,7 +6,7 @@ Lo que se ha ejecutado de `sql/` en la base viva, con el informe del propio fich
 |---|---|---|---|
 | `consultas/s04-esquema-simulador.sql` | **consulta de solo lectura** (catálogo, sin datos): el esquema real de las 9 tablas y de Storage | **sí** · **4/10/2026**, la ejecutó Ramón en el editor SQL de Supabase | `a639b0b` · `bb9aee948988519c39541be2a93817aa22d440964c5c4839ed67fb4ae783dee7` |
 | `sim-001-permisos-e-integridad.sql` | anon fuera de las 7 tablas; sin TRUNCATE/REFERENCES/TRIGGER para authenticated; FK con CASCADE en session_chart_config; 3 índices; NOT NULL donde no hay nulos | **ejecutado, NO aplicado** · 4/10/2026, Ramón en el editor SQL de Supabase: **falló con su precondición** y no aplicó nada (ver abajo) | `92f7c08` · `73782606f6002c7f05e2208dd7827cdfb67700dc4b3b0d67339199681ccc720f` |
-| `sim-001b-permisos-e-integridad.sql` | sim-001 + borrar antes, en el mismo DO, las filas huérfanas de session_chart_config (salvaguarda: más de 10, no hace nada) | **no** (pendiente) | — |
+| `sim-001b-permisos-e-integridad.sql` | sim-001 + borrar antes, en el mismo DO, las filas huérfanas de session_chart_config (salvaguarda: más de 10, no hace nada) | **sí** · según el CTO (5-oct-2026), lo ejecutó Ramón. **Sin el informe**: ver abajo | `c95110b` · `a5cd4783dab3e0ed56628471410362f998cdd9e99ac27938b9d47155fab95fa0` (el fichero del commit; ver abajo) |
 
 ## s04 · resultado (4-oct-2026)
 
@@ -41,3 +41,17 @@ Lo que pasó el CTO, tal cual:
 Es la precondición del propio fichero: hay filas de session_chart_config cuyo `session_id` no existe en sim_sessions. El bloque DO revienta antes de tocar nada, así que **no se aplicó nada**: ni los revoke, ni la FK, ni los índices, ni los NOT NULL.
 
 **Decisión del CTO (4-oct):** esas 2 filas son restos de sesiones borradas (D06: el dashboard borraba sin comprobar errores) y se eliminan. **No se edita sim-001**, que es lo que se ejecutó. Lo sustituye `sim-001b-permisos-e-integridad.sql`, que hace lo mismo y, dentro del mismo DO y antes de la FK, borra esas huérfanas. Si fueran más de 10, revienta sin hacer nada.
+
+## sim-001b · ejecución (comunicada el 5-oct-2026)
+
+El CTO comunica que está **aplicado en producción**. **No ha llegado el informe final** (las filas de la SELECT que acaba en «FIN | sim-001b aplicada»), así que aquí no constan las firmas literales:
+
+- cuántas huérfanas borró (el sim-001 había encontrado 2);
+- los grants resultantes;
+- la FK;
+- los índices;
+- qué NOT NULL se aplicaron y cuántos nulos quedaron.
+
+**Qué texto se ejecutó.** El fichero abierto en TextEdit tenía una línea en blanco añadida al principio (por TextEdit, 4-oct 15:18:23; sha256 `1c843fc6…`). El SQL es el mismo; solo cambia esa línea. El 5-oct se restauró el fichero del repositorio al del commit `c95110b` (sha256 `a5cd4783…`).
+
+**Para cerrar esta fila:** el informe pegado tal cual.
