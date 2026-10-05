@@ -16,13 +16,12 @@
  *   CACHE     la version es la del fichero vigente: si aparece el .json.gz de un
  *             año que estaba en cache como .json, se relee.
  *
- * Se ejecuta el handler REAL y los scripts REALES actualizar-diario.js y
- * restore-2026.js (pruebas/script-falso.mjs: proveedor y Supabase falsos, reloj
- * fijo, sin .env real).
- * NO se ejecutan: subir-a-supabase.js (lee el .env.local del repo: el arnes lo
- * deniega) ni listar-bucket.js (no imprime veredicto final y su filtro f.id no
- * lo cumple el list del doble); los dos usan scripts/ficheros-velas.js, que si
- * se ejercita aqui a traves de los otros dos.
+ * Se ejecuta el handler REAL (lectura) y los escritores REALES
+ * actualizar-diario.js y restore-2026.js (pruebas/script-falso.mjs: proveedor
+ * y Supabase falsos, reloj fijo, sin .env real). Bloque D (5-oct): son los
+ * unicos escritores (lib/mercado/ficheros.mjs); subir-a-supabase.js se retiro.
+ * NO se ejecuta listar-bucket.js (no imprime veredicto final y su filtro f.id
+ * no lo cumple el list del doble).
  *
  * Contra c470c8f (pruebas/historicas.sh) tiene que salir en rojo: aquel codigo
  * solo conoce el .json.
@@ -45,7 +44,8 @@ const DOS = [...velasDe('2026-09-30'), ...velasDe('2026-10-01')]     // 2.880
 const UNO = velasDe('2026-09-30')                                     // 1.440
 const candles = (await importa('pages/api/candles.js')).default
 const pide = par => llama(candles, { method: 'GET', token: tok(A), query: { pair: par, timeframe: 'M1', from: String(Date.parse('2026-09-30T00:00:00Z') / 1000), to: String(Date.parse('2026-10-02T00:00:00Z') / 1000), year: '2026' } })
-const ops = op => db.log.filter(l => l.op === op)
+// los cerrojos de publicacion (_cerrojos/, lib/mercado/ficheros.mjs) no son datos de mercado
+const ops = op => db.log.filter(l => l.op === op && !String(l.payload?.ruta ?? l.payload).includes('_cerrojos/'))
 // cada seccion usa un par distinto: la cache del handler vive en el modulo
 const bucket = objetos => { escenario({ perfiles: [perfil(A)], storage: { 'forex-data': objetos } }); proveedor.responde = () => [] }
 
@@ -86,19 +86,8 @@ db.storage['forex-data']['USDCAD/M1/2026.json.gz'] = gz(DOS)     // la migracion
 const r6b = await pide('USDCAD')
 oraculo('GZ01', 'la siguiente peticion sirve el .json.gz (2.880), no la cache del .json', r6b.estado === 200 && r6b.cuerpo?.count === 2880, `${r6b.cuerpo?.count ?? '-'} velas`)
 
-titulo('7 · ESCRITOR /api/candles: un año nuevo se sube como .json.gz')
-const ANIO = new Date().getUTCFullYear(), HOY0 = Math.floor(Date.now() / DIA) * DIA
-const anio = []
-for (let t = Date.UTC(ANIO, 0, 1); t < HOY0; t += DIA) { const d = new Date(t).getUTCDay(); if (d >= 1 && d <= 5) anio.push(...diaM1(new Date(t).toISOString().slice(0, 10), 1200)) }
-bucket({})
-proveedor.responde = () => anio
-const r7 = await llama(candles, { method: 'GET', token: tok(A), query: { pair: 'NZDUSD', timeframe: 'M1', from: String(Date.UTC(ANIO, 0, 1) / 1000), to: String(Date.UTC(ANIO, 0, 31) / 1000), year: String(ANIO) } })
-const up7 = ops('upload')
-ver(`control: el proveedor dio ${anio.length} velas, el handler respondio 200 y subio una vez`, r7.estado === 200 && up7.length === 1, `estado ${r7.estado}; ${up7.length} uploads`)
-oraculo('GZ01', 'sube {AÑO}.json.gz con contentType application/gzip', up7[0]?.payload.ruta === `NZDUSD/M1/${ANIO}.json.gz` && up7[0]?.payload.contentType === 'application/gzip', JSON.stringify(up7[0]?.payload ?? null))
-const sub7 = db.storage['forex-data'][`NZDUSD/M1/${ANIO}.json.gz`]
-oraculo('GZ01', 'el contenido es gzip y descomprime a las mismas velas', esGzip(sub7) && JSON.parse(gunzipSync(sub7)).length === anio.length, sub7 ? `${esGzip(sub7) ? 'gzip' : 'NO gzip'}, ${sub7.length} bytes` : 'no hay .json.gz')
-oraculo('GZ01', 'y no crea ningun .json', !Object.hasOwn(db.storage['forex-data'], `NZDUSD/M1/${ANIO}.json`))
+// (La seccion 7 publicaba por /api/candles: desde el bloque D, 5-oct, la API no
+// escribe; lo prueban mp01 y d04. La escritura .json.gz: secciones 8 y 10.)
 
 titulo('8 · ESCRITOR actualizar-diario: solo habia .json')
 const historial = antesDe => { const v = []; for (let t = Date.UTC(2026, 0, 1); t < Date.parse(antesDe + 'T00:00:00Z'); t += DIA) { const d = new Date(t).getUTCDay(); if (d >= 1 && d <= 5) v.push(...velasDe(new Date(t).toISOString().slice(0, 10))) } return v }

@@ -35,7 +35,9 @@ const completo = ({ dates }) => {
   for (let t = Date.UTC(2026, 0, 1); t < dates.to.getTime(); t += 86400000) { const d = new Date(t); if (d.getUTCDay() % 6) out.push(...diaM1(d.toISOString().slice(0, 10))) }
   return out
 }
-const escrituras = () => db.log.filter(l => l.op === 'upload' || l.op === 'remove')
+// los cerrojos de publicacion (_cerrojos/, lib/mercado/ficheros.mjs) no son datos de mercado
+const deDatos = l => !String(l.payload?.ruta ?? l.payload).includes('_cerrojos/')
+const escrituras = () => db.log.filter(l => (l.op === 'upload' || l.op === 'remove') && deDatos(l))
 const quedan2023 = () => Object.keys(db.storage['forex-data']).filter(k => k.includes('2023')).length
 const corre = argv => correScript('scripts/restore-2026.js', { ahora: AHORA, argv })
 
@@ -62,15 +64,15 @@ oraculo('O01', 'B: falla con codigo distinto de cero', (b.exitCode ?? 0) !== 0, 
 titulo('C · --subir con solo el lunes 5 (1 de 11 dias)')
 escenario({ storage: BUCKET() }); proveedor.responde = () => diaM1('2026-01-05')
 const c = await corre(['--subir'])
-oraculo('O01', 'C: no sube un 2026 parcial', !db.log.some(l => l.op === 'upload'), `${db.log.filter(l => l.op === 'upload').length} uploads`)
+oraculo('O01', 'C: no sube un 2026 parcial', !db.log.some(l => l.op === 'upload' && deDatos(l)), db.log.filter(l => l.op === 'upload' && deDatos(l)).map(l => l.payload.ruta).join(' ') || '0 uploads')
 oraculo('O01', 'C: falla con codigo distinto de cero', (c.exitCode ?? 0) !== 0, `codigo ${c.exitCode ?? 0}`)
 
 titulo('D · --subir con los 11 dias completos')
 escenario({ storage: BUCKET() }); proveedor.responde = completo
 const d = await corre(['--subir'])
-const subidos = db.log.filter(l => l.op === 'upload').map(l => l.payload.ruta)
+const subidos = db.log.filter(l => l.op === 'upload' && deDatos(l)).map(l => l.payload.ruta)
 ver('control: subio los 6 pares de 2026', subidos.length === 6 && subidos.every(r => /\/M1\/2026\.json(\.gz)?$/.test(r)), subidos.join(' '))
-oraculo('O01', 'D: no borra nada (los dos 2023 siguen)', quedan2023() === 2 && !db.log.some(l => l.op === 'remove'), `quedan ${quedan2023()} de 2`)
+oraculo('O01', 'D: no borra nada (los dos 2023 siguen)', quedan2023() === 2 && !db.log.some(l => l.op === 'remove' && deDatos(l)), `quedan ${quedan2023()} de 2`)
 oraculo('O01', 'D: acaba bien (codigo 0)', (d.exitCode ?? 0) === 0, `codigo ${d.exitCode ?? 0}`)
 ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))
 fin()

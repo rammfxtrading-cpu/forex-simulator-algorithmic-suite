@@ -5,11 +5,13 @@
  * lanzan doce descargas anuales al proveedor; el metodo no se comprueba (POST
  * se acepta). pages/api/candles.js:247-283.
  *
- * Se ejecuta: el handler REAL con el proveedor FALSO retenido hasta que llegan
- * las doce (asi se ve cuantas descargas arrancan a la vez).
+ * Se ejecuta: el handler REAL con Storage FALSO retenido hasta que llegan las
+ * doce (asi se ve cuantas descargas arrancan a la vez).
  *
  * ORACULOS: doce peticiones simultaneas del mismo par y año → como mucho UNA
- * descarga al proveedor (las demas esperan esa). POST → 405.
+ * descarga (las demas esperan esa), y ninguna al proveedor. POST → 405.
+ * Bloque D (CTO, 5-oct): /api/candles ya no va nunca al proveedor; la descarga
+ * cara que queda es la del objeto anual de Storage.
  * Decision del CTO (4-oct, bloque A): lista cerrada de pares y años. Un par
  * que la interfaz no ofrece, o un año fuera de 2024..año en curso → 400, sin
  * tocar Storage ni el proveedor. Control: TODOS los pares que ofrece la
@@ -25,25 +27,23 @@ import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 const candles = (await importa('pages/api/candles.js')).default
 const q = { pair: 'USDCAD', timeframe: 'M1', from: '1736121600', to: '1736207999', year: '2025' }
-// Una descarga VALIDA (D03: cobertura del año entero): el año en curso completo
-// hasta ayer, 1.200 velas por dia laborable.
-const ANIO = new Date().getUTCFullYear(), DIA = 86400000, HOY0 = Math.floor(Date.now() / DIA) * DIA
-const anioValido = []
-for (let t = Date.UTC(ANIO, 0, 1); t < HOY0; t += DIA) { const d = new Date(t).getUTCDay(); if (d >= 1 && d <= 5) anioValido.push(...diaM1(new Date(t).toISOString().slice(0, 10), 1200)) }
-const qValido = { pair: 'USDCAD', timeframe: 'M1', from: String(Date.UTC(ANIO, 0, 1) / 1000), to: String(Date.UTC(ANIO, 0, 31) / 1000), year: String(ANIO) }
+// El año publicado en Storage: una semana de enero de 2025, 1.200 velas por dia
+const SEMANA = JSON.stringify([6, 7, 8, 9, 10].flatMap(d => diaM1(`2025-01-${String(d).padStart(2, '0')}`, 1200).map(c => ({ time: c.timestamp / 1000, open: 1, high: 1, low: 1, close: 1, volume: 1 }))))
 
 titulo('1 · doce peticiones simultaneas con la cache fria')
-escenario({ perfiles: [perfil(A)] })
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'USDCAD/M1/2025.json': SEMANA } } })
 const suelta = puerta()
-proveedor.pausa = () => suelta.p
-proveedor.responde = () => anioValido                 // un año valido: sin reintentos
-const vuelo = Array.from({ length: 12 }, () => llama(candles, { method: 'GET', token: tok(A), query: qValido }))
+db.pausa = c => c.op === 'download' ? suelta.p : null    // la descarga del año, retenida hasta que llegan las doce
+proveedor.responde = () => []
+const vuelo = Array.from({ length: 12 }, () => llama(candles, { method: 'GET', token: tok(A), query: q }))
 await asienta(200)
-const enVuelo = proveedor.llamadas.length
+const enVuelo = db.log.filter(l => l.op === 'download').length
 suelta.abrir()
 const rs = await Promise.all(vuelo)
+db.pausa = null
 ver('control: las doce respondieron 200 con las mismas velas', rs.every(r => r.estado === 200 && r.cuerpo.count === rs[0].cuerpo.count && r.cuerpo.count > 0), rs.map(r => r.estado).join(','))
-oraculo('S03', 'doce peticiones del mismo año → una sola descarga', enVuelo <= 1, `${enVuelo} descargas anuales simultaneas`)
+oraculo('S03', 'doce peticiones del mismo año → una sola descarga', enVuelo <= 1 && db.log.filter(l => l.op === 'download').length <= 1, `${enVuelo} descargas simultaneas, ${db.log.filter(l => l.op === 'download').length} en total`)
+oraculo('S03', 'y ninguna al proveedor', proveedor.llamadas.length === 0, `${proveedor.llamadas.length} descargas anuales al proveedor`)
 
 titulo('2 · metodo')
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'USDCAD/M1/2025.json': JSON.stringify([{ time: 1736150400, open: 1, high: 1, low: 1, close: 1, volume: 1 }]) } } })

@@ -1,27 +1,9 @@
 import { requireSimulador, supabaseAdmin } from '../../lib/authApi'
-import { validaAnioParaPublicar } from '../../lib/mercado/calidad'
-import { getHistoricalRates } from 'dukascopy-node'
-import { gzipSync, gunzipSync } from 'zlib'
+import { leerRuta, versionVigente } from '../../lib/mercado/ficheros.mjs'
 
 const TIMEFRAMES = {
   M1: 1, M3: 3, M5: 5, M15: 15, M30: 30,
   H1: 60, H2: 120, H3: 180, H4: 240, D1: 1440
-}
-
-// ── Umbrales de "dia completo" segun dia de la semana (UTC) ─────────────────
-// Calibrados contra datos historicos reales de Dukascopy EUR/USD.
-// Domingo: apertura sesion ~21-22 UTC -> ~60-180 velas reales.
-// Lun-Jue: dias completos, ~1438-1440 velas teoricas.
-// Viernes: cierre ~21 UTC -> ~1260 velas reales.
-// Sabado: mercado cerrado.
-const THRESHOLD_BY_WEEKDAY = {
-  0: 50,    // Domingo
-  1: 1200,  // Lunes
-  2: 1200,  // Martes
-  3: 1200,  // Miercoles
-  4: 1200,  // Jueves
-  5: 1000,  // Viernes
-  6: 0,     // Sabado
 }
 
 // Cache en memoria por par y año, VALIDADA POR VERSION (decision del CTO,
@@ -32,8 +14,8 @@ const THRESHOLD_BY_WEEKDAY = {
 const cacheVelas = new Map()   // 'PAR_AÑO' → { velas, version }
 const cache = {
   get: key => cacheVelas.get(key) ?? null,
-  // version null = no se sabe (lo acaba de descargar el proveedor): la proxima
-  // consulta de version no coincidira y se releera una vez
+  // version null = Storage no dio etag: la proxima consulta no coincidira y se
+  // releera (nunca se da por buena una version desconocida)
   set: (key, velas, version = null) => { cacheVelas.set(key, { velas, version }) },
   quita: key => { cacheVelas.delete(key) },
 }
@@ -50,8 +32,8 @@ const PARES = new Set(['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD
 const PRIMER_ANIO = 2024
 const anioValido = y => /^\d{4}$/.test(String(y)) && Number(y) >= PRIMER_ANIO && Number(y) <= new Date().getUTCFullYear()
 
-// Una sola carga/reconstruccion en curso por par y año: las peticiones que
-// llegan mientras tanto esperan la misma promesa en vez de repetir el trabajo.
+// Una sola lectura en curso por par y año: las peticiones que llegan mientras
+// tanto esperan la misma promesa en vez de repetir el trabajo.
 // (Por instancia del servidor: dos instancias pueden coincidir.)
 const enCurso = new Map()
 function unaVez(clave, trabajo) {
@@ -59,257 +41,25 @@ function unaVez(clave, trabajo) {
   return enCurso.get(clave)
 }
 
-// ── Supabase Storage loader ───────────────────────────────────────────────────
-// Auditoria D04 (4-oct-2026): un error de lectura NO es «fichero inexistente».
-// «No existe» segun storage-js 2.102: StorageApiError con statusCode '404' (la
-// API responde 400 con cuerpo { statusCode: '404', error: 'not_found' }).
-// Cualquier otro error (red, 5xx, JSON ilegible) es «no se pudo leer».
-const noExiste = e => String(e?.statusCode) === '404' || e?.status === 404
-
-// Compresion (CTO, 5-oct-2026): un año puede estar como {PAR}/M1/{AÑO}.json.gz
-// (gzip, el formato nuevo) o {PAR}/M1/{AÑO}.json (el de siempre). Se lee el
-// .json.gz si existe y, si no existe (404 real), el .json; un error que no es 404
-// en el .json.gz es «no se pudo leer» (el .json puede ser una version vieja). Se
-// escribe solo .json.gz y aqui no se borra nunca el .json (eso es la migracion).
-// Se descomprime por los bytes magicos de gzip, no por la extension. La misma
-// regla, para los scripts CommonJS: scripts/ficheros-velas.js.
-const rutasAnio = (pair, year) => [`${pair}/M1/${year}.json.gz`, `${pair}/M1/${year}.json`]
-const esGzip = b => b.length >= 2 && b[0] === 0x1f && b[1] === 0x8b
-
-// → { estado: 'ok', velas } | { estado: 'no-existe' } | { estado: 'error', motivo }
-async function leerRuta(ruta) {
-  const { data, error } = await supabaseAdmin.storage.from('forex-data').download(ruta)
-  if (error) return noExiste(error) ? { estado: 'no-existe' } : { estado: 'error', motivo: error.message || String(error) }
-  try {
-    let b = Buffer.from(await data.arrayBuffer())
-    if (esGzip(b)) b = gunzipSync(b)
-    const velas = JSON.parse(b.toString('utf8'))
-    return Array.isArray(velas) ? { estado: 'ok', velas } : { estado: 'error', motivo: 'el fichero no es una lista de velas' }
-  } catch (e) {
-    return { estado: 'error', motivo: 'fichero ilegible: ' + e.message }
-  }
-}
-
-// El fichero vigente del año: el .json.gz o, si no existe, el .json.
-async function leerAnio(pair, year) {
-  for (const ruta of rutasAnio(pair, year)) {
-    const r = await leerRuta(ruta)
-    if (r.estado !== 'no-existe') return r
-  }
-  return { estado: 'no-existe' }
-}
-
-// La version (etag) del fichero vigente, sin descargarlo.
-// → { estado: 'ok', ruta, version } | { estado: 'no-existe' } | { estado: 'error', motivo }
-async function versionAnio(pair, year) {
-  for (const ruta of rutasAnio(pair, year)) {
-    const { data, error } = await supabaseAdmin.storage.from('forex-data').info(ruta)
-    if (error) {
-      if (noExiste(error)) continue
-      return { estado: 'error', motivo: error.message || String(error) }
-    }
-    return { estado: 'ok', ruta, version: data?.etag ?? data?.version ?? data?.lastModified ?? null }
-  }
-  return { estado: 'no-existe' }
-}
-
+// ── Lectura de Storage (solo lectura: bloque D, punto 1) ─────────────────────
+// Esta ruta NO escribe ni reconstruye desde el proveedor (CTO, 5-oct-2026):
+// escriben solo scripts/actualizar-diario.js y scripts/restore-2026.js por la
+// funcion comun de lib/mercado/ficheros.mjs. Si el año no esta publicado, 503
+// con mensaje. Formato (.json.gz o .json) y «no existe» frente a «no se pudo
+// leer» (D04): lib/mercado/ficheros.mjs.
 async function loadFromSupabase(pair, year) {
   const key = `${pair}_${year}`
   const enCache = cache.get(key)
-  const v = await versionAnio(pair, year)
+  const v = await versionVigente(supabaseAdmin, pair, year)
   // si no se puede consultar la version: la ultima version verificada, o error
   if (v.estado === 'error') return enCache ? { estado: 'ok', velas: enCache.velas } : { estado: 'error', motivo: v.motivo }
   if (v.estado === 'no-existe') { cache.quita(key); return { estado: 'no-existe' } }
   // la version identifica fichero Y contenido: pasar de .json a .json.gz tambien relee
   const version = v.version == null ? null : `${v.ruta}#${v.version}`
   if (enCache && version != null && enCache.version === version) return { estado: 'ok', velas: enCache.velas }
-  const r = await leerRuta(v.ruta)
+  const r = await leerRuta(supabaseAdmin, v.ruta)
   if (r.estado === 'ok') cache.set(key, r.velas, version)
   return r
-}
-
-// ── Helpers de validacion (deuda 5.2) ────────────────────────────────────────
-
-// Cuenta velas por dia (clave: 'YYYY-MM-DD' UTC).
-// Acepta tanto candles del simulador (time en segundos) como respuesta cruda
-// de dukascopy-node (timestamp en milisegundos).
-function countCandlesPerDay(items, timeField = 'time', timeUnit = 's') {
-  const byDay = {}
-  for (const c of items) {
-    const ms = timeUnit === 'ms' ? c[timeField] : c[timeField] * 1000
-    const d = new Date(ms).toISOString().slice(0, 10)
-    byDay[d] = (byDay[d] || 0) + 1
-  }
-  return byDay
-}
-
-// Detecta dias laborables con menos velas que el umbral. Excluye el dia "hoy"
-// si la descarga llega hasta el momento actual (ese dia no esta cerrado todavia).
-function detectGaps(byDay, isLastDayOpen) {
-  const allDates = Object.keys(byDay).sort()
-  if (!allDates.length) return []
-
-  const first = new Date(allDates[0] + 'T00:00:00Z')
-  const last = new Date(allDates[allDates.length - 1] + 'T00:00:00Z')
-  const todayStr = new Date().toISOString().slice(0, 10)
-
-  const gaps = []
-  for (let d = new Date(first); d <= last; d.setUTCDate(d.getUTCDate() + 1)) {
-    const date = d.toISOString().slice(0, 10)
-    // Si la descarga llega hasta hoy, ignoramos el dia de hoy (sesion abierta).
-    if (isLastDayOpen && date === todayStr) continue
-    const count = byDay[date] || 0
-    const weekday = d.getUTCDay()
-    const threshold = THRESHOLD_BY_WEEKDAY[weekday]
-    if (count < threshold) {
-      gaps.push({ date, weekday, count, threshold })
-    }
-  }
-  return gaps
-}
-
-// ── Dukascopy fetcher con retry + validacion + proteccion anti-degradacion ──
-
-async function fetchFromDukascopyWithRetry(pair, year, maxRetries = 3) {
-  const now = new Date()
-  const from = new Date(`${year}-01-01T00:00:00Z`)
-  let to = new Date(`${Number(year) + 1}-01-01T00:00:00Z`)
-  const isLastDayOpen = to > now
-  if (isLastDayOpen) to = now
-
-  let lastError = null
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`[candles] Dukascopy fetch ${pair}/${year} intento ${attempt}/${maxRetries}`)
-      const t0 = Date.now()
-      const data = await getHistoricalRates({
-        instrument: pair.toLowerCase(),
-        dates: { from, to },
-        timeframe: 'm1',
-        format: 'json',
-        volumes: true,
-      })
-      const secs = ((Date.now() - t0) / 1000).toFixed(1)
-
-      if (!data?.length) {
-        console.warn(`[candles] Dukascopy devolvio 0 velas en intento ${attempt}`)
-        if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 5000))
-          continue
-        }
-        return null
-      }
-
-      // Validar completitud
-      const byDay = countCandlesPerDay(data, 'timestamp', 'ms')
-      const gaps = detectGaps(byDay, isLastDayOpen)
-
-      console.log(`[candles] ${pair}/${year} intento ${attempt}: ${data.length} velas en ${secs}s, ${gaps.length} agujeros`)
-
-      if (gaps.length === 0) {
-        return data  // Limpio. Listo para subir.
-      }
-
-      // Hay agujeros. Reintentar si quedan intentos.
-      console.warn(`[candles] Agujeros detectados en intento ${attempt}:`, gaps.map(g => `${g.date}(${g.count}/${g.threshold})`).join(', '))
-      if (attempt < maxRetries) {
-        console.log(`[candles] Esperando 5s antes de reintentar...`)
-        await new Promise(r => setTimeout(r, 5000))
-        continue
-      }
-      // Ultimo intento con agujeros: devolvemos data + warning.
-      // El caller decide si subir o no segun la proteccion anti-degradacion.
-      return { data, gaps, partial: true }
-
-    } catch (e) {
-      lastError = e
-      console.error(`[candles] Dukascopy error intento ${attempt}: ${e.message}`)
-      if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, 5000))
-      }
-    }
-  }
-
-  if (lastError) throw lastError
-  return null
-}
-
-// → { velas } | { velas: null } (el proveedor no dio nada) | { error: 'incompleto',
-// problemas } (no pasa la calidad: D03) | { error: 'no-comprobable' } (no se pudo
-// leer lo guardado: ni se sube ni se sirve la descargada, D04)
-async function fetchFromDukascopy(pair, year) {
-  let result
-  try {
-    result = await fetchFromDukascopyWithRetry(pair, year)
-  } catch (e) {
-    console.error('[candles] Dukascopy fatal error:', e.message)
-    return { velas: null }
-  }
-
-  if (!result) return { velas: null }
-
-  // result puede ser: array directo (limpio) o { data, gaps, partial: true }
-  const isPartial = result.partial === true
-  const rawData = isPartial ? result.data : result
-  const gapsInfo = isPartial ? result.gaps : []
-
-  if (!rawData?.length) return { velas: null }
-
-  const allCandles = rawData.map(c => ({
-    time: Math.floor(c.timestamp / 1000),
-    open: c.open,
-    high: c.high,
-    low: c.low,
-    close: c.close,
-    volume: c.volume ?? 0,
-  }))
-  const key = `${pair}_${year}`
-  const path = `${pair}/M1/${year}.json.gz`   // se escribe solo gzip (compresion, 5-oct-2026)
-
-  // Proteccion anti-degradacion (D04): nunca se sirve, cachea ni sube una
-  // version con MENOS velas que la guardada; y si lo guardado no se puede
-  // leer, no se sabe si la nueva es peor: no se toca nada.
-  const existente = await leerAnio(pair, year)
-  if (existente.estado === 'error') {
-    console.error(`[candles] No se pudo comprobar la version guardada de ${path} (${existente.motivo}): no se sube ni se sirve la descargada.`)
-    return { error: 'no-comprobable' }
-  }
-
-  // Calidad ANTES DE PUBLICAR (D03): orden, unicidad, OHLC y cobertura del año
-  // entero hasta ayer (lib/mercado/calidad.js). Si no pasa, ni se sube ni se
-  // cachea: un año a medias no puede pasar por el año. Si hay una version
-  // guardada, se sigue sirviendo esa; si no, error.
-  const calidad = validaAnioParaPublicar(allCandles, Number(year), Date.now() / 1000)
-  if (!calidad.ok) {
-    console.error(`[candles] ${path} descargado NO valido, no se publica: ${calidad.problemas.join(' · ')}`)
-    if (existente.estado === 'ok') { cache.set(key, existente.velas); return { velas: existente.velas } }
-    return { error: 'incompleto', problemas: calidad.problemas }
-  }
-
-  if (existente.estado === 'ok' && allCandles.length < existente.velas.length) {
-    console.warn(`[candles] PROTECCION ANTI-DEGRADACION ${path}: descargada=${allCandles.length} velas, guardada=${existente.velas.length}. No se sube; se sirve la guardada.`)
-    cache.set(key, existente.velas)
-    return { velas: existente.velas }
-  }
-
-  let up
-  try {
-    const cuerpo = gzipSync(Buffer.from(JSON.stringify(allCandles), 'utf8'))
-    up = await supabaseAdmin.storage
-      .from('forex-data')
-      .upload(path, cuerpo, { upsert: true, contentType: 'application/gzip' })
-  } catch (e) {
-    up = { error: e }
-  }
-  if (up?.error) {
-    console.error(`[candles] Fallo al subir ${path}: ${up.error.message || up.error} (statusCode ${up.error.statusCode ?? '-'}). NO guardado; se sirve la descargada.`)
-  } else {
-    const partialTag = isPartial ? ` (PARCIAL: ${gapsInfo.length} agujeros tras ${3} intentos)` : ''
-    console.log(`[candles] Saved ${allCandles.length} M1 candles -> forex-data/${path}${partialTag}`)
-  }
-  // la descargada tiene al menos tantas velas como la guardada (o no habia)
-  cache.set(key, allCandles)
-  return { velas: allCandles }
 }
 
 // ── Aggregator (M1 → any TF) ──────────────────────────────────────────────────
@@ -374,19 +124,11 @@ export default async function handler(req, res) {
       console.error(`[candles] No se pudo leer ${cleanPair}/${yr}: ${lectura.motivo}`)
       return res.status(503).json({ error: 'No se ha podido leer el historico. Prueba de nuevo en unos segundos.' })
     }
-    let m1 = lectura.estado === 'ok' ? lectura.velas : null
-
-    if (!m1) {
-      console.log(`[candles] No Supabase data for ${cleanPair}/${yr} — fetching from Dukascopy with retry+validation`)
-      const r = await unaVez(`reconstruir:${cleanPair}_${yr}`, () => fetchFromDukascopy(cleanPair, yr))
-      if (r.error === 'incompleto') return res.status(502).json({ error: `Historico de ${cleanPair} ${yr} incompleto o invalido: no se puede usar`, problemas: r.problemas })
-      if (r.error) return res.status(503).json({ error: 'No se ha podido comprobar el historico guardado. Prueba de nuevo en unos segundos.' })
-      m1 = r.velas
+    // Bloque D: si el año no esta publicado, 503 con mensaje; nada se reconstruye aqui
+    if (lectura.estado === 'no-existe' || !lectura.velas?.length) {
+      return res.status(503).json({ error: `El historico de ${cleanPair} ${yr} todavia no esta disponible. Se publica con la actualizacion diaria; prueba mas tarde.` })
     }
-
-    if (!m1?.length) {
-      return res.status(404).json({ error: `No data for ${cleanPair} ${yr}` })
-    }
+    const m1 = lectura.velas
 
     const candles = aggregate(m1, tf, fromTs, toTs)
     return res.status(200).json({ candles, count: candles.length, source: 'ok' })

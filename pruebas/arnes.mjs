@@ -66,10 +66,20 @@ const q = supabase.from('sim_sessions')
 ver('lib/supabase.js usa el doble (navegador)', typeof q.ejecuta === 'function')
 const authApi = await importa('lib/authApi.js')
 ver('lib/authApi.js usa el doble (servidor)', typeof authApi.supabaseAdmin.from('x').ejecuta === 'function')
+// Bloque D (5-oct): /api/candles ya no llama al proveedor (solo lee Storage); lo
+// llaman los scripts, que reciben el doble por script-falso.mjs (require
+// interceptado). OJO: el cargador solo redirige lo que importa el codigo del
+// producto; un import('dukascopy-node') desde pruebas/ da el REAL (y lo para el
+// corte de red): las pruebas importan proveedor-falso.mjs directamente.
+const { correScript } = await import('./script-falso.mjs')
+escenario({ storage: { 'forex-data': {} } })
+proveedor.responde = a => diaM1(a.dates.from.toISOString().slice(0, 10))
+await correScript('scripts/actualizar-diario.js', { ahora: '2026-01-07T06:00:00Z', argv: [], env: { NEXT_PUBLIC_SUPABASE_URL: 'https://falso.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'falsa' } })
+ver('los scripts llaman al proveedor FALSO (en seco: sin subir)', proveedor.llamadas.length >= 1 && proveedor.llamadas.some(l => l.instrumento === 'eurusd') && !db.log.some(l => l.op === 'upload'), `${proveedor.llamadas.length} llamadas, ${db.log.filter(l => l.op === 'upload').length} subidas`)
 const candles = (await importa('pages/api/candles.js')).default
-proveedor.responde = () => diaM1('2025-01-06')     // un lunes completo: sin reintentos
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2025.json': JSON.stringify(diaM1('2025-01-06').map(c => ({ time: c.timestamp / 1000, open: 1, high: 1, low: 1, close: 1, volume: 1 }))) } } })
 const r = await llama(candles, { method: 'GET', token: tok(A), query: { pair: 'EURUSD', timeframe: 'M1', from: '1736121600', year: '2025' } })
-ver('/api/candles llama al proveedor FALSO', proveedor.llamadas.length >= 1 && proveedor.llamadas[0].instrumento === 'eurusd', `${proveedor.llamadas.length} llamadas · estado ${r.estado}`)
+ver('/api/candles lee el Storage FALSO', r.estado === 200 && r.cuerpo.count === 1440 && db.log.some(l => l.tabla === 'storage:forex-data'), `estado ${r.estado} · ${r.cuerpo?.count} velas`)
 
 titulo('3 · el doble es perezoso como PostgREST')
 escenario()

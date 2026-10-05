@@ -14,7 +14,8 @@ async function main() {
   const { data: pares, error } = await sb.storage.from(BUCKET).list('', { limit: 1000 })
   if(error) throw error
 
-  const soloPares = (pares || []).filter(p => !p.id) // carpetas, no archivos
+  // carpetas, no archivos; _cerrojos/ es de lib/mercado/ficheros.mjs (cerrojos de publicacion)
+  const soloPares = (pares || []).filter(p => !p.id && !p.name.startsWith('_'))
   console.log(`Pares encontrados: ${soloPares.length}\n`)
 
   for(const p of soloPares.sort((a,b)=>a.name.localeCompare(b.name))) {

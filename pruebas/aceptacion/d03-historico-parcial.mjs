@@ -10,14 +10,15 @@
  * OHLC antes de publicar y antes de operar; el cliente comprueba r.ok; un año
  * fallido no da una sesion «valida».
  *
- * Se ejecuta: el handler REAL con el proveedor FALSO, y fetchSessionCandles
- * REAL sobre /api/candles REAL (Storage falso) con fallos inventados.
+ * Se ejecuta: el escritor REAL scripts/restore-2026.js con el proveedor FALSO
+ * (bloque D, 5-oct: /api/candles ya no publica; los escritores publican por
+ * lib/mercado/ficheros.mjs), /api/candles REAL para ver que sirve, y
+ * fetchSessionCandles REAL sobre /api/candles REAL con fallos inventados.
  *
  * ORACULOS, a mano (cobertura: cada dia laborable UTC con al menos 1.200
  * velas de lunes a jueves y 1.000 el viernes; 1-ene y 25-dic no se exigen):
- *   Publicar (servidor):
- *   · 2025 es un año cerrado: ~260 dias laborables; un solo lunes no se
- *     publica ni se sirve como el año
+ *   Publicar (restore de 2026, hoy 16-ene: exige del 1 al 15 de enero):
+ *   · un solo lunes no se publica ni /api/candles lo sirve como el año
  *   · un año completo con UNA vela de high < low no se publica
  *   · un año completo con un minuto repetido con otro precio no se publica
  *   Operar (cliente):
@@ -32,6 +33,7 @@ import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, import
 import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { respuesta } from '../entorno.mjs'
+import { correScript } from '../script-falso.mjs'
 const candles = (await importa('pages/api/candles.js')).default
 const { fetchSessionCandles } = await importa('lib/sessionData.js')
 const DIA = 86400000
@@ -42,39 +44,34 @@ const anioProveedor = (desdeMs, hastaMs) => {
   for (let t = desdeMs; t < hastaMs; t += DIA) if (laborable(t)) out.push(...diaM1(new Date(t).toISOString().slice(0, 10), 1200))
   return out
 }
-const hoy0 = Math.floor(Date.now() / DIA) * DIA
-const ANIO = new Date().getUTCFullYear()
-const pideAnio = (par, anio) => llama(candles, { method: 'GET', token: tok(A), query: { pair: par, timeframe: 'M1', from: String(Date.UTC(anio, 0, 1) / 1000), to: String(Date.UTC(anio, 11, 31) / 1000), year: String(anio) } })
-
-titulo('1 · el proveedor devuelve un solo lunes para todo 2025')
+// restore-2026 publica 2026 de seis pares; hoy 16-ene-2026 exige del 1 al 15
+const AHORA = '2026-01-16T12:00:00Z'
+const completo = anioProveedor(Date.UTC(2026, 0, 1), Date.UTC(2026, 0, 16))
+const malo = completo.map((c, i) => i === 5000 ? { ...c, high: 1.0, low: 1.2 } : c)
+const dup = [...completo.slice(0, 5001), { ...completo[5000], close: 1.3, high: 1.3 }, ...completo.slice(5001)]
+const POR_PAR = { nzdusd: diaM1('2026-01-05'), audusd: completo, usdcad: malo, gbpusd: dup, eurusd: completo, usdchf: completo }
 escenario({ perfiles: [perfil(A)] })
-proveedor.responde = () => diaM1('2025-01-06')
-const r = await pideAnio('NZDUSD', 2025)
-ver('control: el proveedor fue llamado para 2025', proveedor.llamadas.length >= 1 && proveedor.llamadas[0].desde.startsWith('2025-01-01'), JSON.stringify(proveedor.llamadas[0]))
-const subido = guardado('NZDUSD/M1/2025').velas   // .json.gz o .json (compresion, 5-oct)
-oraculo('D03', 'un año de un solo dia no se sube al bucket como 2025', !subido, subido ? `subido con ${subido.length} velas` : '')
-oraculo('D03', 'ni se sirve como el año completo', r.estado !== 200, `estado ${r.estado}, ${r.cuerpo?.count} velas, source=${r.cuerpo?.source}`)
+proveedor.responde = a => POR_PAR[a.instrument]
+const sr = await correScript('scripts/restore-2026.js', { ahora: AHORA, argv: ['--subir'] })
+ver('control: restore pidio los seis pares desde el 1-ene', ['nzdusd', 'audusd', 'usdcad', 'gbpusd'].every(p => proveedor.llamadas.some(l => l.instrumento === p && l.desde.startsWith('2026-01-01'))), proveedor.llamadas.map(l => l.instrumento).join(' '))
+const pide = par => llama(candles, { method: 'GET', token: tok(A), query: { pair: par, timeframe: 'M1', from: String(Date.UTC(2026, 0, 5) / 1000), to: String(Date.UTC(2026, 0, 6) / 1000), year: '2026' } })
 
-titulo(`2 · control: ${ANIO} completo hasta ayer SI se publica`)
-escenario({ perfiles: [perfil(A)] })
-const completo = anioProveedor(Date.UTC(ANIO, 0, 1), hoy0)
-proveedor.responde = () => completo
-const r2 = await pideAnio('AUDUSD', ANIO)
-ver(`control: un año completo (${completo.length} velas) se publica y se sirve`, r2.estado === 200 && !!guardado(`AUDUSD/M1/${ANIO}`).velas, `estado ${r2.estado}`)
+titulo('1 · el proveedor devuelve un solo lunes para todo el año')
+const subido = guardado('NZDUSD/M1/2026').velas   // .json.gz o .json (compresion, 5-oct)
+oraculo('D03', 'un año de un solo dia no se sube al bucket como 2026', !subido, subido ? `subido con ${subido.length} velas` : '')
+const r = await pide('NZDUSD')
+oraculo('D03', 'ni se sirve como el año completo', r.estado !== 200, `estado ${r.estado}, ${r.cuerpo?.count} velas`)
+
+titulo('2 · control: el año completo hasta ayer SI se publica y se sirve')
+const r2 = await pide('AUDUSD')
+ver(`control: un año completo (${completo.length} velas) se publica y se sirve`, r2.estado === 200 && guardado('AUDUSD/M1/2026').velas?.length === completo.length, `estado ${r2.estado}`)
 
 titulo('3 · completo, pero con una vela de high < low')
-escenario({ perfiles: [perfil(A)] })
-const malo = completo.map((c, i) => i === 5000 ? { ...c, high: 1.0, low: 1.2 } : c)
-proveedor.responde = () => malo
-const r3 = await pideAnio('USDCAD', ANIO)
-oraculo('D03', 'un año con OHLC incoherente no se publica', !guardado(`USDCAD/M1/${ANIO}`).velas, `estado ${r3.estado}`)
+oraculo('D03', 'un año con OHLC incoherente no se publica', !guardado('USDCAD/M1/2026').velas)
 
 titulo('4 · completo, pero con un minuto repetido con otro precio')
-escenario({ perfiles: [perfil(A)] })
-const dup = [...completo.slice(0, 5001), { ...completo[5000], close: 1.3, high: 1.3 }, ...completo.slice(5001)]
-proveedor.responde = () => dup
-const r4 = await pideAnio('GBPUSD', ANIO)
-oraculo('D03', 'un año con un minuto repetido no se publica', !guardado(`GBPUSD/M1/${ANIO}`).velas, `estado ${r4.estado}`)
+oraculo('D03', 'un año con un minuto repetido no se publica', !guardado('GBPUSD/M1/2026').velas)
+oraculo('D03', 'restore acaba con codigo 1 (hay pares sin publicar)', (sr.exitCode ?? 0) === 1, `codigo ${sr.exitCode}`)
 
 // ── el cliente ──────────────────────────────────────────────────────────────
 const semana = (par, quitar = [], hastaDia = 7) => {

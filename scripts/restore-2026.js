@@ -8,19 +8,20 @@
 // incluido), borraba los 2023 sin mirar el resultado y acababa en «Done.» con
 // codigo 0. Ahora:
 //   · NO borra nada, nunca.
-//   · Por par, antes de subir: el proveedor no puede venir vacio ni PARCIAL
-//     (dias laborables del 1-ene a ayer con menos velas que el umbral de
-//     pages/api/candles.js, con una pequeña tolerancia para festivos), y lo
-//     nuevo no puede tener menos velas que lo guardado. Si lo guardado no se
+//   · Por par, antes de subir: el proveedor no puede venir vacio ni PARCIAL, y
+//     lo nuevo no puede tener menos velas que lo guardado. Si lo guardado no se
 //     puede leer, no se sube (no se sabe si lo nuevo es peor).
 //   · Se comprueba el { error } del upload.
 //   · Si algun par falla, acaba con codigo 1.
-// Compresion (5-oct-2026): lee el .json.gz o, si no hay, el .json; sube .json.gz
-// (scripts/ficheros-velas.js). No borra el .json.
+// Bloque D, punto 1 (CTO, 5-oct-2026): publica SOLO por la funcion comun
+// publicarAnio de lib/mercado/ficheros.mjs (cerrojo por par y año, relee justo
+// antes de subir, valida con lib/mercado/calidad.mjs, ningun dia con menos
+// velas que lo releido, verifica despues). Cobertura exigida: cada dia
+// laborable del 1-ene a AYER; las excepciones son por FECHA (festivos), ya no
+// una cantidad tolerada de dias. Sube .json.gz; no borra el .json.
 const fs = require('fs')
 const { getHistoricalRates } = require('dukascopy-node')
 const { createClient } = require('@supabase/supabase-js')
-const { leerVelas, subirVelas, empaqueta } = require('./ficheros-velas')
 
 const SUBIR = process.argv.includes('--subir')
 
@@ -35,12 +36,6 @@ const env = fs.readFileSync('.env.local', 'utf8')
 const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 const PAIRS = ['eurusd', 'gbpusd', 'audusd', 'nzdusd', 'usdchf', 'usdcad']
 const YEAR = 2026
-
-// Umbral de «dia completo» por dia de la semana (UTC): el mismo que
-// pages/api/candles.js (THRESHOLD_BY_WEEKDAY) para lunes a viernes.
-const UMBRAL_LABORABLE = { 1: 1200, 2: 1200, 3: 1200, 4: 1200, 5: 1000 }
-// Festivos (1-ene, 25-dic...) dan dias cortos de verdad: se toleran unos pocos.
-const toleranciaDias = laborables => Math.max(2, Math.ceil(laborables * 0.03))
 
 async function downloadWithRetry(pair, attempt = 1) {
   const now = new Date()
@@ -64,34 +59,16 @@ async function downloadWithRetry(pair, attempt = 1) {
   }
 }
 
-// Dias laborables del 1-ene a AYER (UTC) por debajo del umbral.
-function diasCortos(candles) {
-  const porDia = {}
-  for (const c of candles) { const d = new Date(c.time * 1000).toISOString().slice(0, 10); porDia[d] = (porDia[d] || 0) + 1 }
-  const hoy = new Date()
-  const ayer = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1)
-  const cortos = []
-  let laborables = 0
-  for (let t = Date.UTC(YEAR, 0, 1); t <= ayer && new Date(t).getUTCFullYear() === YEAR; t += 86400000) {
-    const umbral = UMBRAL_LABORABLE[new Date(t).getUTCDay()]
-    if (!umbral) continue
-    laborables++
-    const d = new Date(t).toISOString().slice(0, 10)
-    if ((porDia[d] || 0) < umbral) cortos.push(`${d}(${porDia[d] || 0}/${umbral})`)
-  }
-  return { laborables, cortos }
-}
-
-// Lo guardado: { estado: 'ok', velas } | { estado: 'no-existe' } | { estado: 'error', motivo }
-// «No existe» = el 404 de storage-js (statusCode '404'); cualquier otro error, no se pudo leer.
-// El .json.gz si existe; si no, el .json (scripts/ficheros-velas.js).
-const leerGuardado = pair => leerVelas(sb, 'forex-data', pair, YEAR)
-
 async function main() {
+  // los modulos comunes son ESM (.mjs): import() desde este script CommonJS
+  const F = await import('../lib/mercado/ficheros.mjs')
+  const C = await import('../lib/mercado/calidad.mjs')
   console.log(`Restaurando ${YEAR} (${SUBIR ? '⚠️ REAL: sube' : '🔍 SECO: no escribe nada; para subir, --subir'})...\n`)
+  const hoy = new Date()
+  const ayerSeg = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1) / 1000
   const fallos = []
   for(const pair of PAIRS) {
-    const path = `${pair.toUpperCase()}/M1/${YEAR}.json.gz`
+    const path = F.rutasAnio(pair, YEAR).gz
     try {
       console.log(`↓ ${pair.toUpperCase()}...`)
       const data = await downloadWithRetry(pair)
@@ -101,19 +78,22 @@ async function main() {
         volume: c.volume ?? 0,
       }))
       if (!candles.length) throw new Error('el proveedor devolvio 0 velas')
-      const { laborables, cortos } = diasCortos(candles)
-      if (cortos.length > toleranciaDias(laborables)) {
-        throw new Error(`PARCIAL: ${cortos.length} de ${laborables} dias laborables por debajo del umbral (tolerancia ${toleranciaDias(laborables)}): ${cortos.slice(0, 5).join(', ')}${cortos.length > 5 ? '…' : ''}`)
+      if (!SUBIR) {
+        // en seco: la misma validacion contra lo guardado ahora (sin cerrojo)
+        const g = await F.leerVigente(sb, pair, YEAR)
+        if (g.estado === 'error') throw new Error(`no se pudo leer lo guardado (${g.motivo}): no se sabe si lo nuevo es peor`)
+        const v = C.validaParaPublicar(candles, g.estado === 'ok' ? g.velas : null, { anio: YEAR, exigeHasta: ayerSeg })
+        if (!v.ok) throw new Error(`no se publicaria: ${v.problemas.join(' · ')}`)
+        console.log(`  [SECO] subiria ${path}: ${candles.length} velas (${(F.empaqueta(candles).length/1024/1024).toFixed(1)}MB comprimido)`)
+        continue
       }
-      const guardado = await leerGuardado(pair)
-      if (guardado.estado === 'error') throw new Error(`no se pudo leer lo guardado (${guardado.motivo}): no se sabe si lo nuevo es peor`)
-      if (guardado.estado === 'ok' && candles.length < guardado.velas.length) {
-        throw new Error(`lo nuevo tiene ${candles.length} velas y lo guardado ${guardado.velas.length}: no se empeora`)
-      }
-      if (!SUBIR) { console.log(`  [SECO] subiria ${path}: ${candles.length} velas (${(empaqueta(candles).length/1024/1024).toFixed(1)}MB comprimido; ${cortos.length} dias cortos tolerados)`); continue }
-      const up = await subirVelas(sb, 'forex-data', pair, YEAR, candles)
-      if(up.error) throw new Error(`fallo al subir: ${up.error.message || up.error}`)
-      console.log(`  ✓ ${up.ruta}: ${candles.length} candles, ${(up.bytes/1024/1024).toFixed(1)}MB comprimido`)
+      // se publica el año del proveedor; la funcion comun relee lo vigente justo
+      // antes y lo rechaza si algun dia quedaria con menos velas
+      const r = await F.publicarAnio(sb, { pair, year: YEAR, componer: () => candles, exigeHasta: ayerSeg, dueno: 'restore-2026' })
+      for (const a of r.avisos || []) console.log(`  aviso: ${a}`)
+      if (r.estado === 'sin-cambios') { console.log(`  ✓ ${path}: igual que lo guardado, nada que subir`); continue }
+      if (r.estado !== 'publicado') throw new Error(`${r.estado}: ${r.problemas.join(' · ')}`)
+      console.log(`  ✓ ${path}: ${r.velas} candles, ${(r.bytes/1024/1024).toFixed(1)}MB comprimido (verificado)`)
     } catch(e) {
       console.log(`  ✗ ${pair.toUpperCase()}: ${e.message}`)
       fallos.push(pair.toUpperCase())

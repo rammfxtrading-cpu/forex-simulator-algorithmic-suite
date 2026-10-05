@@ -1,6 +1,6 @@
 // ACTUALIZACIÓN INCREMENTAL DIARIA. Para cada par: lee el año de Supabase ({año}.json.gz
-// o, si no hay, {año}.json; se sube SIEMPRE .json.gz y no se borra el .json:
-// scripts/ficheros-velas.js, compresion del 5-oct-2026),
+// o, si no hay, {año}.json; se publica SIEMPRE .json.gz por la funcion comun
+// publicarAnio de lib/mercado/ficheros.mjs y no se borra el .json),
 // baja DÍA A DÍA desde su última vela hasta AYER, añade sin duplicar, valida y resube.
 // NUNCA borra el bucket. Pensado para correr en GitHub Actions cada noche.
 // Uso:
@@ -9,7 +9,6 @@
 const { getHistoricalRates } = require('dukascopy-node')
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
-const { leerVelas, subirVelas, rutasAnio } = require('./ficheros-velas')
 
 const SUBIR = process.argv.includes('--subir')
 
@@ -73,16 +72,25 @@ async function bajarDia(pair, y, m, d) {
 //   · como mucho MAX_DIAS_POR_PASADA dias por par y año en cada pasada, los mas
 //     recientes primero: un hueco que el proveedor nunca rellena no dispara el
 //     coste (se reintenta en la pasada siguiente).
-const UMBRAL_LABORABLE = { 1: 1200, 2: 1200, 3: 1200, 4: 1200, 5: 1000 }   // = lib/mercado/calidad.js
-const FESTIVOS_MMDD = new Set(['01-01', '12-25'])                           // = lib/mercado/calidad.js
+//
+// Bloque D, punto 1 (CTO, 5-oct-2026): este script y restore-2026.js son los
+// UNICOS escritores del bucket, y solo publican por publicarAnio (cerrojo por
+// par y año; RELEE justo antes de subir y compone sobre lo releido; valida
+// forma, OHLC, unicidad y cobertura con lib/mercado/calidad.mjs; ningun dia
+// con menos velas que lo releido; VERIFICA despues). Un dia bajado solo entra
+// en la cola publicada si los anteriores de la cola estan completos: el
+// primero a medias es el ultimo que se publica (tramo abierto) y lo demas
+// espera a la pasada siguiente. Umbrales y festivos: los de calidad.mjs.
+// Los modulos comunes son ESM (.mjs): se cargan con import() en main().
+let F, C   // lib/mercado/ficheros.mjs, lib/mercado/calidad.mjs
 const MAX_DIAS_POR_PASADA = 40
 const DIA_MS = 86400000
 const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 
 // → { estado: 'ok', velas, ruta } | { estado: 'no-existe' } | { estado: 'error', ruta, motivo }
 // «No existe» = el 404 de storage-js en los dos formatos; cualquier otro error, no
-// se pudo leer (scripts/ficheros-velas.js).
-const leerAnio = (pair, year) => leerVelas(sb, BUCKET, pair, year)
+// se pudo leer (lib/mercado/ficheros.mjs).
+const leerAnio = (pair, year) => F.leerVigente(sb, pair, year)
 
 // Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los laborables cortos.
 function diasPendientes(velas, year, ayerMs) {
@@ -95,16 +103,40 @@ function diasPendientes(velas, year, ayerMs) {
   for (let t = inicio; t <= fin; t += DIA_MS) {
     const d = ymd(t)
     if (t > ultDiaMs) { cola.push(d); continue }          // cola: todos los dias
-    const umbral = UMBRAL_LABORABLE[new Date(t).getUTCDay()]
-    if (umbral && !FESTIVOS_MMDD.has(d.slice(5)) && (porDia[d] || 0) < umbral) cortos.push(d)
+    const umbral = C.UMBRAL_LABORABLE[new Date(t).getUTCDay()]
+    if (umbral && !C.FESTIVOS_MMDD.has(d.slice(5)) && (porDia[d] || 0) < umbral) cortos.push(d)
   }
   // el ultimo dia guardado, si esta a medias, entra en los cortos (es laborable) o en la cola
   return [...cola.reverse(), ...cortos.reverse()].slice(0, MAX_DIAS_POR_PASADA)
 }
 
-// Baja los dias pendientes y los fusiona: un dia solo se sustituye si trae mas velas.
+// ¿Dia completo? (laborable con el umbral; fin de semana y festivos, siempre)
+const completo = (d, n) => { const u = C.UMBRAL_LABORABLE[new Date(d + 'T00:00:00Z').getUTCDay()]; return !u || C.FESTIVOS_MMDD.has(d.slice(5)) || n >= u }
+
+// Compone lo publicado sobre `guardadas` (lo RELEIDO justo antes de subir):
+//   · un dia solo se sustituye si el bajado trae MAS velas;
+//   · la cola (dias posteriores a la ultima vela guardada) entra en orden y se
+//     corta tras el primer dia laborable a medias, que es el ultimo publicado.
+// → velas | null (nada mejora lo guardado)
+function componer(guardadas, bajados) {
+  const porDia = {}
+  for (const v of guardadas || []) (porDia[ymd(v.time * 1000)] ??= []).push(v)
+  const ultima = guardadas?.length ? ymd(guardadas[guardadas.length - 1].time * 1000) : ''
+  let cambia = false, cortada = false
+  for (const d of Object.keys(bajados).sort()) {
+    const dv = bajados[d]
+    if (d > ultima) {                       // cola
+      if (cortada) continue
+      if (dv.length > (porDia[d] || []).length) { porDia[d] = dv; cambia = true }
+      if (!completo(d, (porDia[d] || []).length)) cortada = true
+    } else if (dv.length > (porDia[d] || []).length) { porDia[d] = dv; cambia = true }
+  }
+  return cambia ? Object.keys(porDia).sort().flatMap(d => porDia[d]).sort((a, b) => a.time - b.time) : null
+}
+
+// Baja los dias pendientes y los publica por la funcion comun.
 async function reconciliaAnio(pair, year, ayerMs) {
-  const keyFile = rutasAnio(pair, year).gz
+  const keyFile = F.rutasAnio(pair, year).gz
   const leido = await leerAnio(pair, year)
   if (leido.estado === 'error') return { keyFile, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
   const nuevoAnio = leido.estado === 'no-existe'
@@ -112,24 +144,24 @@ async function reconciliaAnio(pair, year, ayerMs) {
   const pendientes = diasPendientes(velas, year, ayerMs)
   if (!pendientes.length) return { keyFile, estado: `✓ al dia (${keyFile})` }
 
-  const porDia = {}
-  for (const v of velas) (porDia[ymd(v.time * 1000)] ??= []).push(v)
-  let mejorados = 0, sinMejora = 0, añadidas = 0
+  const bajados = {}
   for (const d of pendientes) {
     const [y, m, dd] = d.split('-').map(Number)
-    const dv = (await bajarDia(pair, y, m - 1, dd)) || []
+    bajados[d] = (await bajarDia(pair, y, m - 1, dd)) || []
     await sleep(400)
-    const antes = (porDia[d] || []).length
-    if (dv.length > antes) { porDia[d] = dv; mejorados++; añadidas += dv.length - antes } else sinMejora++
   }
-  if (!mejorados) return { keyFile, estado: `✓ ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado` }
-
-  const combinado = Object.keys(porDia).sort().flatMap(d => porDia[d]).sort((a, b) => a.time - b.time)
-  const resumen = `${nuevoAnio ? 'año NUEVO, ' : ''}+${añadidas} velas en ${mejorados} dia(s) (${sinMejora} sin mejora); ultima ${ymd(combinado[combinado.length - 1].time * 1000)}`
-  if (!SUBIR) return { keyFile, estado: `[SECO] ${keyFile}: ${resumen}` }
-  const up = await subirVelas(sb, BUCKET, pair, year, combinado)
-  if (up.error) return { keyFile, estado: `✗ fallo subida ${keyFile}: ${up.error.message}` }
-  return { keyFile, estado: `✓ SUBIDO ${keyFile}: ${resumen}` }
+  const previsto = componer(nuevoAnio ? null : velas, bajados)
+  if (!previsto) return { keyFile, estado: `✓ ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado` }
+  const resumen = n => `${nuevoAnio ? 'año NUEVO, ' : ''}${n} velas (antes ${velas.length}); ultima ${ymd(previsto[previsto.length - 1].time * 1000)}`
+  if (!SUBIR) {
+    const v = C.validaParaPublicar(previsto, nuevoAnio ? null : velas, { anio: year })
+    return { keyFile, estado: `[SECO] ${keyFile}: ${resumen(previsto.length)}${v.ok ? '' : ` — NO se publicaria: ${v.problemas.join(' · ')}`}` }
+  }
+  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(g, bajados), dueno: 'actualizar-diario' })
+  const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
+  if (r.estado === 'publicado') return { keyFile, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}` }
+  if (r.estado === 'sin-cambios') return { keyFile, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir` }
+  return { keyFile, publicacion: true, estado: `✗ PUBLICACION ${r.estado} ${keyFile}: ${r.problemas.join(' · ')}${avisos}` }
 }
 
 async function procesarPar(pair) {
@@ -147,6 +179,8 @@ async function procesarPar(pair) {
 }
 
 async function main() {
+  F = await import('../lib/mercado/ficheros.mjs')
+  C = await import('../lib/mercado/calidad.mjs')
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()} ===\n`)
   const resultados = []
   let primero = true
@@ -202,12 +236,21 @@ async function main() {
     } catch(e) { console.log(`  ${pair.toUpperCase().padEnd(8)} ✗ ${e.message}`); descolgados.push(`${pair}: ${e.message}`) }
   }
 
+  // una publicacion rechazada, sin verificar o sin cerrojo NO es un fallo de
+  // descarga puntual: siempre se avisa y el job acaba con codigo 1
+  const publicaciones = resultados.filter(r => r.estado.includes('✗ PUBLICACION'))
+  if (publicaciones.length) {
+    console.log(`\n  ✗ ${publicaciones.length} publicacion(es) sin completar: ${publicaciones.map(r => r.pair).join(', ')}`)
+    process.exitCode = 1
+  }
   if (descolgados.length) {
     console.log(`\n=== ⚠️ ATENCION: ${descolgados.length} PAR(ES) DESCOLGADO(S) (>${MAX_DIAS_MERCADO_RETRASO} dias de mercado) ===`)
     descolgados.forEach(d=>console.log(`  ${d}`))
     console.log(`\n  Los fallos de descarga puntuales son normales (Dukascopy es intermitente),`)
     console.log(`  pero estos pares llevan varias pasadas sin recuperarse. Revisar.`)
     process.exitCode = 1
+  } else if (publicaciones.length) {
+    console.log(`\n=== ⚠️ ATENCION: ${publicaciones.length} publicacion(es) sin completar (ver ✗ PUBLICACION arriba) ===`)
   } else {
     console.log(`\n=== ✓ TODO OK — todos los pares dentro del margen (<=${MAX_DIAS_MERCADO_RETRASO} dias de mercado) ===`)
     if (fallos.length) console.log(`  (los fallos de descarga de arriba no afectan: esos pares ya estaban al dia)`)
