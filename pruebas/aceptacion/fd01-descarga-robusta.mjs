@@ -113,5 +113,25 @@ escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(his
 proveedor.http = null; proveedor.llamadas.length = 0
 const r7 = await correScript('scripts/actualizar-diario.js', { ahora: AHORA, argv: ['--subir'], env: { ...ENV, PRESUPUESTO_JOB_S: '0' } })
 oraculo('FD01', 'presupuesto del job agotado: ningun par pide nada y cada uno dice «sin tiempo»', proveedor.llamadas.length === 0 && r7.salida.filter(l => /SIN TIEMPO/.test(l)).length === 9, `${proveedor.llamadas.length} peticiones · ${r7.salida.filter(l => /SIN TIEMPO/.test(l)).length} pares sin tiempo`)
+
+titulo('6 · veredicto separado: «proveedor no disponible» frente a «descolgado»')
+const NUEVE = ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD', 'AUDCAD', 'GBPJPY']
+const hastaVie30 = JSON.stringify(historial('2026-01-30'))
+const seccion = (r, titulo) => { const i = r.salida.findIndex(l => l.includes(titulo)); if (i < 0) return []; const out = []; for (let k = i + 1; k < r.salida.length && !/^\s*===/.test(r.salida[k]) && r.salida[k].trim() !== ''; k++) out.push(r.salida[k]); return out }
+// (a) todos al dia hasta el viernes 30; el domingo 1-feb el proveedor falla (red) solo para AUDUSD
+escenario({ storage: { 'forex-data': Object.fromEntries(NUEVE.map(p => [`${p}/M1/2026.json`, hastaVie30])) } })
+proveedor.http = (url, n, { instrumento, dia }) => { if (instrumento === 'audusd') throw new TypeError('fetch failed'); return { status: 200, body: filas(dia) } }
+const r8 = await corre()
+proveedor.http = null
+const pnd8 = seccion(r8, 'PROVEEDOR NO DISPONIBLE')
+oraculo('FD01', '(a) AUDUSD aparece en «PROVEEDOR NO DISPONIBLE» con el dia y la clase (red)', pnd8.some(l => /AUDUSD/.test(l) && /2026-02-01/.test(l) && /red/.test(l)), pnd8.join(' | '))
+oraculo('FD01', '(a) no esta descolgado (retraso 0): el job acaba bien y no lo llama «descolgado»', r8.codigo === 0 && !r8.salida.some(l => /DESCOLGADO/.test(l)), `codigo ${r8.codigo}`)
+// (b) AUDUSD guardado hasta el 23-ene y el proveedor no responde: descolgado Y sin proveedor
+escenario({ storage: { 'forex-data': { ...Object.fromEntries(NUEVE.map(p => [`${p}/M1/2026.json`, hastaVie30])), 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
+proveedor.http = (url, n, { instrumento, dia }) => { if (instrumento === 'audusd') return { status: 503, body: '' }; return { status: 200, body: filas(dia) } }
+const r9 = await corre()
+proveedor.http = null
+const desc9 = seccion(r9, 'DESCOLGADO'), pnd9 = seccion(r9, 'PROVEEDOR NO DISPONIBLE')
+oraculo('FD01', '(b) AUDUSD en las dos secciones, por separado: proveedor no disponible (servidor) y descolgado, con su causa', pnd9.some(l => /AUDUSD/.test(l) && /servidor/.test(l)) && desc9.some(l => /AUDUSD/.test(l) && /proveedor no disponible/.test(l)) && r9.codigo === 1, `PND: ${pnd9.join(' | ')} · DESC: ${desc9.join(' | ')} · codigo ${r9.codigo}`)
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(e => e.terminoPor !== 'timeout'))
 fin()
