@@ -5,7 +5,7 @@ import { useAuth } from '../lib/useAuth'
 import { metricas } from '../lib/metricas'
 import NoAccess from '../components/NoAccess'
 import ErrorCarga from '../components/ErrorCarga'
-import { leerTodo } from '../lib/paginado'
+import { leerTodo, porColumnas } from '../lib/paginado'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 import Estrellas from '../components/Estrellas'
@@ -71,10 +71,11 @@ export default function Analytics() {
   // comprobado; un fallo se dice, no se convierte en «0 trades».
   async function loadData(userId) {
     const [rs, rt] = await Promise.all([
-      leerTodo((desde, hasta) => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId)
-        .order('created_at', { ascending: false }).order('id').range(desde, hasta)),
-      leerTodo((desde, hasta) => supabase.from('sim_trades').select('*', { count: 'exact' }).eq('user_id', userId)
-        .order('opened_at', { ascending: true }).order('id').range(desde, hasta)),
+      // bloque D, punto 5: por clave (created_at, id); el orden de siempre, despues
+      leerTodo(() => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId),
+        { ordena: porColumnas([['created_at', 'desc'], ['id', 'asc']]) }),
+      leerTodo(() => supabase.from('sim_trades').select('*', { count: 'exact' }).eq('user_id', userId),
+        { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) }),
     ])
     if (rs.error || rt.error) {
       setErrorDatos('No se han podido cargar tus sesiones u operaciones. Comprueba tu conexión y vuelve a intentarlo.')

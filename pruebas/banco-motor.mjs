@@ -57,7 +57,7 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
     const datos = usePairData({ id: sesion.id, session: estado.sesionVisible ?? null, activePair: estado.activa ?? null, ...refs,
       setIsPlaying: v => { estado.isPlaying = typeof v === 'function' ? v(estado.isPlaying) : v },
       setCurrentTime: v => { estado.currentTime = v }, setProgress: nada, setCurrentPrice: v => { estado.precio = v }, setDataReady: nada, setTick: nada,
-      exportTools: () => '[]' })
+      exportTools: () => '[]', setErrorDatos: v => { estado.errorDatos = v } })
     const reto = useChallengeFlow({ id: sesion.id, router, session: estado.sesionVisible ?? null, setSession: nada, sessionRef: refs.sessionRef,
       currentTime: estado.currentTime, pairState: refs.pairState, balanceRef: refs.balanceRef, closePositionRef: refs.closePositionRef,
       setIsPlaying: v => { estado.isPlaying = v } })

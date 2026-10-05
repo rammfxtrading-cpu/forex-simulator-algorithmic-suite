@@ -33,6 +33,35 @@ const proyecta = (f, cols) => {
   return Object.fromEntries(cols.split(',').map(c => c.trim()).filter(Boolean).map(c => [c, f[c]]))
 }
 
+const cmpTexto = (a, b) => String(a).localeCompare(String(b))
+// trozos separados por comas al primer nivel (respeta parentesis y comillas)
+function trozos(s) {
+  const out = []; let nivel = 0, comillas = false, cur = ''
+  for (const ch of s) {
+    if (ch === '"') comillas = !comillas
+    if (!comillas && ch === '(') nivel++
+    if (!comillas && ch === ')') nivel--
+    if (!comillas && nivel === 0 && ch === ',') { out.push(cur); cur = ''; continue }
+    cur += ch
+  }
+  if (cur) out.push(cur)
+  return out
+}
+const OPS = { eq: x => x === 0, gt: x => x > 0, gte: x => x >= 0, lt: x => x < 0, lte: x => x <= 0 }
+function arbolLogico(tipo, expr) {
+  const hijos = trozos(expr).map(t => {
+    const m = /^(and|or)\((.*)\)$/s.exec(t)
+    if (m) return arbolLogico(m[1], m[2])
+    const i = t.indexOf('.'), j = t.indexOf('.', i + 1)
+    const col = t.slice(0, i), op = t.slice(i + 1, j)
+    let val = t.slice(j + 1)
+    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1)
+    if (!OPS[op]) throw new Error(`supabase-falso: operador no soportado en or(): ${op}`)
+    return f => f[col] != null && OPS[op](cmpTexto(f[col], val))
+  })
+  return tipo === 'and' ? f => hijos.every(h => h(f)) : f => hijos.some(h => h(f))
+}
+
 class Q {
   constructor(t) { Object.assign(this, { tabla: t, op: 'select', filtros: [], desc: [], devolver: false, modo: null, orden: [], lim: null, cols: '*', contar: false, cabeza: false }) }
   select(cols = '*', o = {}) { if (this.op !== 'select') this.devolver = true; else this.cols = cols; if (o.count) this.contar = true; if (o.head) this.cabeza = true; return this }
@@ -43,6 +72,15 @@ class Q {
   eq(c, v) { this.desc.push(`${c}=eq.${v}`); this.filtros.push(f => f[c] === v); return this }
   neq(c, v) { this.desc.push(`${c}=neq.${v}`); this.filtros.push(f => f[c] !== v); return this }
   in(c, a) { this.desc.push(`${c}=in.(${a})`); this.filtros.push(f => a.includes(f[c])); return this }
+  // comparaciones como el orden de este doble (texto): ISO-8601 y uuid ordenan igual
+  // que en Postgres si todos tienen el mismo formato. NULL no casa con nada.
+  gt(c, v) { this.desc.push(`${c}=gt.${v}`); this.filtros.push(f => f[c] != null && cmpTexto(f[c], v) > 0); return this }
+  gte(c, v) { this.desc.push(`${c}=gte.${v}`); this.filtros.push(f => f[c] != null && cmpTexto(f[c], v) >= 0); return this }
+  lt(c, v) { this.desc.push(`${c}=lt.${v}`); this.filtros.push(f => f[c] != null && cmpTexto(f[c], v) < 0); return this }
+  lte(c, v) { this.desc.push(`${c}=lte.${v}`); this.filtros.push(f => f[c] != null && cmpTexto(f[c], v) <= 0); return this }
+  // or('col.op.valor,and(col.op.valor,...)') con la sintaxis de PostgREST: valores
+  // entre comillas dobles si llevan , . : ( ); ops eq gt gte lt lte; and()/or() anidados
+  or(expr) { this.desc.push(`or=(${expr})`); const g = arbolLogico('or', expr); this.filtros.push(f => g(f)); return this }
   // como PostgREST/Postgres: ASC deja los NULL al final y DESC al principio,
   // salvo nullsFirst explicito
   order(c, o = {}) { const asc = o.ascending !== false; this.orden.push([c, asc, o.nullsFirst ?? !asc]); return this }

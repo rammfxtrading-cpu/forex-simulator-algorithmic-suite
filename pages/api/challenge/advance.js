@@ -1,4 +1,4 @@
-import { leerTodo } from '../../../lib/paginado'
+import { leerTodo, porColumnas } from '../../../lib/paginado'
 import { requireSimulador } from '../../../lib/authApi'
 import { evaluateChallenge, isChallengeOver } from '../../../lib/challengeEngine'
 import { getChallengeConfig } from '../../../lib/challengeRules'
@@ -121,12 +121,11 @@ export default async function handler(req, res) {
   // ── 5. Re-evaluar con el motor para validar que el outcome que pide el
   //      cliente coincide con el estado real.
   // Todas las operaciones, paginadas y con el total comprobado (C04)
-  const { data: trades, error: tErr } = await leerTodo((desde, hasta) => supabaseAdmin
+  // Bloque D, punto 5: por clave (created_at, id), con duplicados y reintento.
+  const { data: trades, error: tErr } = await leerTodo(() => supabaseAdmin
     .from('sim_trades')
-    .select('id, pnl, result, closed_at', { count: 'exact' })
-    .eq('session_id', session_id)
-    .order('id')
-    .range(desde, hasta))
+    .select('id, pnl, result, closed_at, created_at', { count: 'exact' })
+    .eq('session_id', session_id), { ordena: porColumnas([['id', 'asc']]) })
 
   if (tErr) {
     return res.status(503).json({ error: 'No se han podido leer todas las operaciones. Prueba de nuevo.', detail: tErr.message })

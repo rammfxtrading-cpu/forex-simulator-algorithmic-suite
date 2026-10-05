@@ -27,7 +27,7 @@ import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from './NoAccess'
 import ErrorCarga from './ErrorCarga'
-import { leerTodo } from '../lib/paginado'
+import { leerTodo, porColumnas } from '../lib/paginado'
 import ChallengePassedPhaseModal from './ChallengePassedPhaseModal'
 import ChallengePassedAllModal from './ChallengePassedAllModal'
 import ChallengeFailedModal from './ChallengeFailedModal'
@@ -86,7 +86,6 @@ export default function SessionPage(){
   const [currentPrice,setCurrentPrice]= useState(null)
   const [dataReady,   setDataReady]   = useState(false)
   const [errorSesion, setErrorSesion] = useState('')   // C04: la sesion no existe o no se pudo leer
-  const [errorDatos,  setErrorDatos]  = useState('')   // C04/D03: las velas no estan o no son validas
   const everReadyRef = useRef(false) // mini-corte H: true tras el primer dataReady; decide orbe vs mini-overlay
   const [balance,     setBalance]     = useState(10000)
   const [lots,        setLots]        = useState(0.01)
@@ -720,8 +719,9 @@ export default function SessionPage(){
       try{ const _tf={}; _savedPairs.forEach(pp=>{ _tf[pp]=(pp===p?tf:'H1') }); setPairTf(_tf); pairTfRef.current=_tf }catch{}
       // Load previous trades for this session to show in journal
       // todas, paginadas y con el total comprobado (C04)
-      const { data: prevTrades, error: prevErr } = await leerTodo((desde, hasta) => supabase.from('sim_trades').select('*', { count: 'exact' })
-        .eq('session_id',id).order('closed_at',{ascending:true}).order('id').range(desde, hasta))
+      // bloque D, punto 5: por clave (created_at, id); el orden de cierre, despues
+      const { data: prevTrades, error: prevErr } = await leerTodo(() => supabase.from('sim_trades').select('*', { count: 'exact' })
+        .eq('session_id',id), { ordena: porColumnas([['closed_at','asc'],['id','asc']]) })
       if(prevErr){setErrorSesion('No se han podido cargar las operaciones de esta sesión. Comprueba tu conexión y vuelve a intentarlo.');setLoading(false);return}
       if(prevTrades?.length){
         // Put them in pairState so allTrades shows them
@@ -745,7 +745,7 @@ export default function SessionPage(){
     pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef,
     checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef,
     setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick,
-    exportTools, setErrorDatos,
+    exportTools,
   })
 
   // ── Mount chart ───────────────────────────────────────────────────────────────
@@ -1172,6 +1172,14 @@ export default function SessionPage(){
   }
 
   // ── Multi-pair ────────────────────────────────────────────────────────────────
+  // Bloque D, punto 5: reintentar la carga de un par que fallo (sin recargar la pagina)
+  const reintentaPar=useCallback((pair)=>{
+    const st=pairState.current[pair]
+    if(st) delete st.error
+    setTick(t=>t+1)
+    loadPair(pair)
+  },[loadPair])
+
   const addPair=useCallback((pair)=>{
     setAddingPair(false)
     if(activePairs.includes(pair)){setActivePair(pair);return}
@@ -1373,7 +1381,7 @@ export default function SessionPage(){
   if(!authLoading && authError) return <ErrorCarga mensaje={authError} />
   if(!authLoading && !hasAccess) return <NoAccess profile={profile} producto="Simulador" />
   if(errorSesion) return <ErrorCarga mensaje={errorSesion} enlace={{href:'/dashboard',texto:'Volver al dashboard'}} />
-  if(errorDatos) return <ErrorCarga mensaje={errorDatos} enlace={{href:'/dashboard',texto:'Volver al dashboard'}} />
+  // (bloque D, punto 5: un fallo de velas ya no tapa la sesion: va al par, abajo)
 
   if(loading) return <AntimatterLoader/>
 
@@ -1391,6 +1399,17 @@ export default function SessionPage(){
           background:'rgba(4,10,24,0.85)',border:'1px solid rgba(45,126,247,0.45)',borderRadius:6,padding:'4px 10px',
           color:'#cfe0ff',fontSize:12,fontFamily:"'Montserrat',sans-serif",pointerEvents:'none',maxWidth:'calc(100% - 32px)',textAlign:'center'}}>
           {pairState.current[activePair].avisoDatos}
+        </div>
+      ) : null}
+
+      {/* Bloque D, punto 5: el fallo de velas del par activo, en su grafico, con reintento */}
+      {pairState.current[activePair]?.error ? (
+        <div role="alert" style={{position:'absolute',top:'40%',left:'50%',transform:'translate(-50%,-50%)',zIndex:40,
+          background:'rgba(4,10,24,0.92)',border:'1px solid rgba(255,90,90,0.5)',borderRadius:8,padding:'14px 18px',
+          color:'#ffd6d6',fontSize:13,fontFamily:"'Montserrat',sans-serif",maxWidth:'min(520px, calc(100% - 32px))',textAlign:'center'}}>
+          <div style={{marginBottom:10}}>{pairState.current[activePair].error}</div>
+          <div style={{fontSize:12,color:'#cfe0ff',marginBottom:10}}>Los demas pares y sus posiciones siguen aqui, en pausa.</div>
+          <button onClick={()=>reintentaPar(activePair)} style={{background:'#2d7ef7',color:'#fff',border:'none',borderRadius:6,padding:'6px 14px',cursor:'pointer',fontFamily:'inherit'}}>Reintentar</button>
         </div>
       ) : null}
 

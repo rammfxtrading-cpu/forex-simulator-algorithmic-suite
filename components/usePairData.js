@@ -19,11 +19,25 @@ import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/char
 import { computePhantomsNeeded } from '../lib/sessionUi'
 import { fechaCorta } from '../lib/mercado/calidad.mjs'
 
-export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools, setErrorDatos }){
+export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools }){
   const saveProgress=useCallback(async(ts)=>{
     if(!id||!ts) return
     try{ await supabase.from('sim_sessions').update({last_timestamp:ts,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id) }catch(e){}
   },[id])
+
+  // Bloque D, punto 5 (CTO, 5-oct; Astra, regresion de C04): el fallo de un par
+  // se queda EN ESE PAR. Antes iba a setErrorDatos y la pagina entera se
+  // sustituia por un error sin pausar el motor del otro par, que seguia
+  // operando sin controles. Ahora: se pausan todos los motores, el par guarda
+  // su error (lo que ya tuviera, p. ej. trades previos, se conserva) y
+  // _SessionInner lo pinta en su grafico con un reintento.
+  const falloPar=useCallback((pair,mensaje)=>{
+    Object.values(pairState.current).forEach(st=>st?.engine?.pause?.())
+    setIsPlaying(false)
+    const previo=pairState.current[pair]||{engine:null,positions:[],trades:[],orders:[]}
+    pairState.current[pair]={...previo,ready:false,error:mensaje}
+    setTick(t=>t+1)
+  },[])
 
   // ── Load pair data ────────────────────────────────────────────────────────────
   const loadPair=useCallback(async(pair)=>{
@@ -33,9 +47,10 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       const result = await fetchSessionCandles({
         pair, dateFrom: sess.date_from, dateTo: sess.date_to
       })
-      if (!result) return
+      // C04/D5: una respuesta sin velas no es silencio: error visible en el par
+      if (!result) { falloPar(pair, `No hay velas de ${pair} para las fechas de esta sesion.`); return }
       // D03: sin velas validas no se crea el motor (no hay sesion «valida»)
-      if (result.error) { console.error('[loadPair]', pair, result.error); setErrorDatos?.(result.error); return }
+      if (result.error) { console.error('[loadPair]', pair, result.error); falloPar(pair, result.error); return }
       const { candles: ordinalCandles, replayTs, toTs } = result
 
       const engine=new ReplayEngine()
@@ -81,7 +96,11 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         setCurrentPrice(agg.slice(-1)[0]?.close??null)
       }
       setTick(t=>t+1)
-    }catch(e){console.error('loadPair',pair,e)}
+    }catch(e){
+      // C04/D5: fetch rechazado (red) o respuesta ilegible: visible en el par
+      console.error('loadPair',pair,e)
+      falloPar(pair,`No se han podido cargar las velas de ${pair} (${e?.message||e}). Comprueba tu conexion y reintenta.`)
+    }
   },[])
 
   // ── Update chart ──────────────────────────────────────────────────────────────

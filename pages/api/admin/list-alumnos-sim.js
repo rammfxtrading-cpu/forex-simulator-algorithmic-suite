@@ -1,6 +1,6 @@
 import { metricas, ultimaActividad, activoEnLosUltimos } from '../../../lib/metricas'
 import { requireAdmin } from '../../../lib/authApi'
-import { leerTodo } from '../../../lib/paginado'
+import { leerTodo, porColumnas } from '../../../lib/paginado'
 
 /**
  * GET /api/admin/list-alumnos-sim
@@ -21,12 +21,11 @@ export default async function handler(req, res) {
   // 1) Traer todos los perfiles
   // Todas las lecturas paginadas y con el total comprobado; un error es un
   // error, nunca un 200 con ceros (auditoria C04, 4-oct-2026).
-  const { data: profiles, error: profErr } = await leerTodo((desde, hasta) => supabaseAdmin
+  // bloque D, punto 5: por clave (created_at, id); el orden de siempre, despues
+  const { data: profiles, error: profErr } = await leerTodo(() => supabaseAdmin
     .from('profiles')
-    .select('id, email, nombre, rol_global, journal_activo, simulador_activo, plan, created_at', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .order('id')
-    .range(desde, hasta))
+    .select('id, email, nombre, rol_global, journal_activo, simulador_activo, plan, created_at', { count: 'exact' }),
+    { ordena: porColumnas([['created_at', 'desc'], ['id', 'asc']]) })
 
   if (profErr) {
     return res.status(503).json({ error: 'No se han podido leer los perfiles. Prueba de nuevo.', detail: profErr.message })
@@ -40,10 +39,10 @@ export default async function handler(req, res) {
 
   if (activeIds.length > 0) {
     const [{ data: sessions, error: sErr }, { data: trades, error: tErr }] = await Promise.all([
-      leerTodo((desde, hasta) => supabaseAdmin.from('sim_sessions').select('id, user_id, capital, created_at', { count: 'exact' })
-        .in('user_id', activeIds).order('id').range(desde, hasta)),
-      leerTodo((desde, hasta) => supabaseAdmin.from('sim_trades').select('id, user_id, result, pnl, rr, closed_at, opened_at, created_at', { count: 'exact' })
-        .in('user_id', activeIds).order('id').range(desde, hasta)),
+      leerTodo(() => supabaseAdmin.from('sim_sessions').select('id, user_id, capital, created_at', { count: 'exact' })
+        .in('user_id', activeIds), { ordena: porColumnas([['id', 'asc']]) }),
+      leerTodo(() => supabaseAdmin.from('sim_trades').select('id, user_id, result, pnl, rr, closed_at, opened_at, created_at', { count: 'exact' })
+        .in('user_id', activeIds), { ordena: porColumnas([['id', 'asc']]) }),
     ])
     if (sErr || tErr) {
       return res.status(503).json({ error: 'No se han podido leer las sesiones u operaciones. Prueba de nuevo.', detail: (sErr || tErr).message })

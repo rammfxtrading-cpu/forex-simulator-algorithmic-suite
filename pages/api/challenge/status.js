@@ -1,4 +1,4 @@
-import { leerTodo } from '../../../lib/paginado'
+import { leerTodo, porColumnas } from '../../../lib/paginado'
 import { requireSimulador } from '../../../lib/authApi'
 import { evaluateChallenge } from '../../../lib/challengeEngine'
 import { getChallengeConfig } from '../../../lib/challengeRules'
@@ -85,12 +85,11 @@ export default async function handler(req, res) {
   // ── 4. Cargar los trades de esta sesión
   // Todas las operaciones, paginadas y con el total comprobado (C04): por
   // encima del max-rows del servidor se evaluaba una fraccion sin aviso.
-  const { data: trades, error: tErr } = await leerTodo((desde, hasta) => supabaseAdmin
+  // Bloque D, punto 5: por clave (created_at, id), con duplicados y reintento.
+  const { data: trades, error: tErr } = await leerTodo(() => supabaseAdmin
     .from('sim_trades')
-    .select('id, pnl, result, closed_at, opened_at', { count: 'exact' })
-    .eq('session_id', sessionId)
-    .order('id')
-    .range(desde, hasta))
+    .select('id, pnl, result, closed_at, opened_at, created_at', { count: 'exact' })
+    .eq('session_id', sessionId), { ordena: porColumnas([['id', 'asc']]) })
 
   if (tErr) {
     return res.status(503).json({ error: 'No se han podido leer todas las operaciones. Prueba de nuevo.', detail: tErr.message })

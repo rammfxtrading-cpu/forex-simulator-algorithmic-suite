@@ -8,7 +8,7 @@ import Estrellas from '../components/Estrellas'
 import { metricas } from '../lib/metricas'
 import NoAccess from '../components/NoAccess'
 import ErrorCarga from '../components/ErrorCarga'
-import { leerTodo } from '../lib/paginado'
+import { leerTodo, porColumnas } from '../lib/paginado'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -105,15 +105,16 @@ export default function Dashboard() {
   // Lecturas completas, paginadas y con el total comprobado (C04). Devuelven
   // { error } para que quien llama lo diga.
   async function loadSessions(userId) {
-    const r = await leerTodo((desde, hasta) => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId)
-      .order('created_at', { ascending: false }).order('id').range(desde, hasta))
+    // bloque D, punto 5: por clave (created_at, id); el orden de siempre, despues
+    const r = await leerTodo(() => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId),
+      { ordena: porColumnas([['created_at', 'desc'], ['id', 'asc']]) })
     if (!r.error) setSessions(r.data)
     return r
   }
 
   async function loadTrades(userId) {
-    const r = await leerTodo((desde, hasta) => supabase.from('sim_trades').select('*', { count: 'exact' }).eq('user_id', userId)
-      .order('opened_at', { ascending: true }).order('id').range(desde, hasta))
+    const r = await leerTodo(() => supabase.from('sim_trades').select('*', { count: 'exact' }).eq('user_id', userId),
+      { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) })
     if (!r.error) setTrades(r.data)
     return r
   }
