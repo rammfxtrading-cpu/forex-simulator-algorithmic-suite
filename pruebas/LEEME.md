@@ -14,3 +14,18 @@ Sin red (cortada por el sistema y en JS; ver `aislar.sh`, `sin-red.cjs`), sin se
 **Cuando se arregla un hallazgo:** la prueba de `fase1/` se convierte en contrato (o se escribe uno nuevo) en `aceptacion/`; la original, si sus controles fijaban el comportamiento viejo, se copia tal cual a `historicas/`. Nunca se convierte a verde un control que describe el código defectuoso: el contrato se escribe aparte.
 
 Códigos de salida de cada prueba: `1` algún oráculo en rojo · `0` todos en verde · `2` control roto · `3` excepción (fallo de la prueba). Un `2` o un `3` nunca cuentan como reproducción.
+
+## Límites de los dobles (H07, revisión de Astra del 4-oct-2026)
+
+Ningún doble fabrica los núcleos de los 23 hallazgos (Astra lo comprobó), pero **ninguno certifica** lo que no modela. Para eso: SQL real aislado (los ensayos de `pg-ensayo.mjs`) o navegador real.
+
+| Doble | Qué NO modela | Consecuencia |
+|---|---|---|
+| `supabase-falso.mjs` | RLS, grants, FK, cascadas, triggers, CHECK, aislamiento SQL; `upsert` = `insert` (con clave repetida da 23505 en vez de actualizar); `order` compara como texto (una columna numérica saldría en orden lexicográfico; hoy solo se ordena por fechas ISO e ids) | No vale para certificar permisos, RPC, upsert ni cascadas: eso se prueba en PostgreSQL (`sim-001*.mjs`). |
+| `react-falso.mjs` | concurrencia, StrictMode, Suspense, DOM y layout, refs de callback, eventos con burbuja; un `<button>` de envío dispara el `onSubmit` de su `<form>` **aunque el `onClick` haya llamado a `preventDefault`** | No vale para certificar interacción real: la página de sesión se monta sin gráfico. |
+| `entorno.mjs` | `requestAnimationFrame` nunca llama (el bucle de reproducción no corre solo: las pruebas avanzan velas a mano); `ResizeObserver` no observa; `window` y `document` mínimos | El rendimiento y el tiempo real no se miden aquí. |
+| `proveedor-falso.mjs` | latencia, límites y opciones de dukascopy-node (`retryOnEmpty`, `pauseBetweenRetriesMs`…) | Solo modela qué velas devuelve. |
+| `script-falso.mjs` | un `process.exit` real (una `SalidaDeScript` puede quedar atrapada en un `catch` del propio script); solo fija `Date.now()` y `new Date()` sin argumentos; `setTimeout` inmediato, `setInterval` no | Los scripts corren en el mismo proceso, con su `require` interceptado. |
+| `next-falso.mjs` | navegación (`push` solo se apunta); `dynamic` carga el módulo de verdad | — |
+| `banco-motor.mjs` | copia dos fragmentos de `_SessionInner` (alta de mercado y reset del Go to), verificados por `copiasVigentes()` | Si `_SessionInner` cambia esas líneas, el banco lo dice. |
+| `pg-ensayo.mjs` / `estado-s04.mjs` | el esquema es **inventado** con los hechos de la s04; no es el baseline real | Acredita los objetos del stub, no la base viva. |

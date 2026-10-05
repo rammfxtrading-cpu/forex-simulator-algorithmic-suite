@@ -1,5 +1,7 @@
 // Supabase FALSO en memoria para el simulador (sustituye a @supabase/supabase-js
 // en lo que importa el repo; ver cargador.mjs). Copiado del arnes del journal.
+// ⚠️ LIMITES (H07): ver pruebas/LEEME.md. Ademas de lo de abajo: upsert
+//    equivale a insert (clave repetida → 23505) y `order` compara como texto.
 // ⛔ Es un MODELO del cliente, no de la base: NO hay RLS, ni grants, ni CHECK,
 //    ni triggers, ni cascadas. Lo real de la base se pide con
 //    sql/consultas/s04-esquema-simulador.sql.

@@ -1,5 +1,7 @@
 // UN REACT MINIMO para ejecutar las paginas y componentes REALES del simulador
 // sin navegador (no hay jsdom en node_modules ni red para instalarlo).
+// ⚠️ LIMITES (H07): ver pruebas/LEEME.md. Un <button> de envio dispara el
+//    onSubmit de su <form> aunque su onClick haya llamado a preventDefault.
 //
 // Implementa lo que el journal usa y nada mas: useState, useEffect, useRef,
 // useMemo/useCallback, createContext/useContext, Fragment y el runtime
