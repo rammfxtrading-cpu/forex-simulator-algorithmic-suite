@@ -106,8 +106,10 @@ function diasPendientes(velas, year, ayerMs) {
     const umbral = C.UMBRAL_LABORABLE[new Date(t).getUTCDay()]
     if (umbral && !C.FESTIVOS_MMDD.has(d.slice(5)) && (porDia[d] || 0) < umbral) cortos.push(d)
   }
-  // el ultimo dia guardado, si esta a medias, entra en los cortos (es laborable) o en la cola
-  return [...cola.reverse(), ...cortos.reverse()].slice(0, MAX_DIAS_POR_PASADA)
+  // el ultimo dia guardado, si esta a medias, entra en los cortos (es laborable) o en la cola.
+  // Bloque F, punto 2: del MAS ANTIGUO al mas reciente, cortos del interior
+  // incluidos; si hay mas de MAX_DIAS_POR_PASADA, los recientes esperan.
+  return [...cortos, ...cola].sort().slice(0, MAX_DIAS_POR_PASADA)
 }
 
 // ¿Dia completo? (laborable con el umbral; fin de semana y festivos, siempre)
@@ -156,10 +158,15 @@ async function reconciliaAnio(pair, year, ayerMs) {
   // Bloque F, punto 1: el fallo de un dia NO tira el par. Se apunta y se sigue;
   // componer corta la cola en el primer dia que falte.
   const bajados = {}, fallidos = []
+  const ultimaGuardada = velas.length ? ymd(velas[velas.length - 1].time * 1000) : ''
+  let colaCortada = false
   for (const d of pendientes) {
+    const enCola = d > ultimaGuardada
+    if (enCola && colaCortada) continue              // punto 2: cortada la cola, lo de despues no se publicaria
     const [y, m, dd] = d.split('-').map(Number)
     try { bajados[d] = (await bajarDia(pair, y, m - 1, dd)) || [] }
-    catch (e) { fallidos.push(`${d} (${e?.message || e})`) }
+    catch (e) { fallidos.push(`${d} (${e?.message || e})`); if (enCola) colaCortada = true }
+    if (enCola && bajados[d] && !completo(d, bajados[d].length)) colaCortada = true
     await sleep(400)
   }
   const nota = fallidos.length ? ` · sin descargar: ${fallidos.join(', ')}` : ''

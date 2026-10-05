@@ -53,7 +53,8 @@ titulo('2 · un dia interior vacio')
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': JSON.stringify([...historial('2026-09-30'), ...velasDe('2026-09-30')]) } } })
 proveedor.responde = ({ dates }) => { const d = dates.from.toISOString().slice(0, 10); return d === '2026-10-01' ? [] : diaM1(d) }
 await correScript('scripts/actualizar-diario.js', { ahora: '2026-10-03T06:00:00Z', argv: ['--subir'], env: ENV })
-ver('control: primera pasada pidio el 1-oct (vacio) y el 2-oct', [...pedidos()].sort().join() === '2026-10-01,2026-10-02', pedidos().join())
+// bloque F, punto 2: el 1-oct vacio corta la cola; el 2-oct ya no se pide (no se publicaria)
+oraculo('D05', 'primera pasada: pide el 1-oct (vacio) y, cortada la cola, no el 2-oct', pedidos().join() === '2026-10-01', pedidos().join())
 proveedor.llamadas.length = 0
 proveedor.responde = ({ dates }) => diaM1(dates.from.toISOString().slice(0, 10))
 await correScript('scripts/actualizar-diario.js', { ahora: '2026-10-06T06:00:00Z', argv: ['--subir'], env: ENV })

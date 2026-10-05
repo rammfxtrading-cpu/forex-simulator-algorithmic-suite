@@ -54,5 +54,17 @@ proveedor.responde = a => (a.instrument === 'audusd' && diaDe(a) === '2026-01-28
 await corre()
 const g3 = guardado('AUDUSD/M1/2026').velas
 oraculo('FD01', 'sin datos el 28: se publica hasta el 27 y nada despues', enDia(g3, '2026-01-27') === 1440 && enDia(g3, '2026-01-29') === 0 && enDia(g3, '2026-01-30') === 0, `27: ${enDia(g3, '2026-01-27')}, 29: ${enDia(g3, '2026-01-29')}`)
+
+titulo('2 · los dias pendientes, del mas antiguo al mas reciente (con los cortos del interior)')
+escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23', '2026-01-14')) } } })
+proveedor.responde = a => diaM1(diaDe(a))
+await corre()
+const orden = proveedor.llamadas.filter(l => l.instrumento === 'audusd').map(l => l.desde.slice(0, 10))
+oraculo('FD01', 'AUDUSD pide en orden ascendente, empezando por el 14-ene (corto del interior)', orden.length > 1 && orden[0] === '2026-01-14' && orden.every((d, i) => i === 0 || d > orden[i - 1]), orden.join(' '))
+escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
+proveedor.responde = a => (a.instrument === 'audusd' && diaDe(a) === '2026-01-27') ? RED() : diaM1(diaDe(a))
+await corre()
+const tras = proveedor.llamadas.filter(l => l.instrumento === 'audusd' && l.desde.slice(0, 10) > '2026-01-27').length
+oraculo('FD01', 'cortada la cola en el 27 (fallo), no se piden los dias de despues (no se publicarian)', tras === 0, `${tras} peticiones despues del 27`)
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(e => e.terminoPor !== 'timeout'))
 fin()
