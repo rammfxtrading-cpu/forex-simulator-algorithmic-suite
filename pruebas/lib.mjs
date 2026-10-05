@@ -29,7 +29,9 @@ export const asienta = async (n = 40) => { for (let k = 0; k < n; k++) await new
 let controlesMal = 0, rojos = 0, verdes = 0
 // Una excepcion no capturada NO es un hallazgo reproducido: node saldria con 1,
 // que es el codigo de «en rojo». Se fuerza el 3 (fallo del arnes o de la prueba).
-for (const ev of ['uncaughtException', 'unhandledRejection']) process.on(ev, e => { console.log(`\n✗ FALLO DE LA PRUEBA (${ev}): ${e?.stack || e}`); process.exit(3) })
+// (Un process.exit de un script corrido por script-falso.mjs es una SalidaDeScript
+// marcada: no es un fallo de la prueba, se ignora aqui.)
+for (const ev of ['uncaughtException', 'unhandledRejection']) process.on(ev, e => { if (e?.salidaDeScript) return; console.log(`\n✗ FALLO DE LA PRUEBA (${ev}): ${e?.stack || e}`); process.exit(3) })
 export const titulo = t => console.log('\n── ' + t)
 export const ver = (d, c, extra = '') => {
   if (!c) controlesMal++

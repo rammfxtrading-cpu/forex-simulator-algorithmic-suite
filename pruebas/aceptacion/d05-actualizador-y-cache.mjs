@@ -29,7 +29,7 @@
 import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
-import { correScript } from '../script-falso.mjs'
+import { correScript, ejecucionesScripts } from '../script-falso.mjs'
 const DIA = 86400
 const velasDe = (dia, n = 1440) => diaM1(dia, n).map(c => ({ time: c.timestamp / 1000, open: c.open, high: c.high, low: c.low, close: c.close, volume: 1 }))
 const enDia = (arr, dia) => arr.filter(v => new Date(v.time * 1000).toISOString().startsWith(dia)).length
@@ -78,4 +78,5 @@ Date.now = () => ahoraReal() + 6 * 60 * 1000          // pasan 6 minutos
 const b = await llama(candles, { method: 'GET', token: tok(A), query: q })
 Date.now = ahoraReal
 oraculo('D05', 'tras la actualizacion se sirve el 1-oct', b.cuerpo?.count === 2880, `sirve ${b.cuerpo?.count} velas; lecturas de Storage nuevas: ${db.log.filter(l => l.op === 'download').length - lecturas}`)
+ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))
 fin()

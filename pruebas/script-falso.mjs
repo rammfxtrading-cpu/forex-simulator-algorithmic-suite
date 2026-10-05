@@ -20,7 +20,17 @@ import { REPO } from './lib.mjs'
 // Termina cuando el script imprime su veredicto final (actualizar-diario: «=== ✓
 // TODO OK» o «=== ⚠️ ATENCION»; restore-2026: «Done.»), un Fatal o un process.exit.
 const FINAL = /=== ✓ TODO OK|=== ⚠️ ATENCION|^Done\.$|^Fatal/
-export async function correScript(rel, { ahora, argv = [], env = {} } = {}) {
+// H06 (revision de Astra, 4-oct): se devuelve COMO termino el script.
+//   terminoPor 'final'   imprimio su veredicto final (codigo = process.exitCode ?? 0)
+//   terminoPor 'exit'    llamo a process.exit(c) (codigo = c): gana la primera
+//                        llamada, se corta el codigo sincrono que la sigue (como un
+//                        exit real) y lo que imprima despues ya no cuenta
+//   terminoPor 'timeout' no termino en limiteMs (codigo null): la prueba que lo
+//                        use tiene que fallar (control «termino, no por timeout»)
+// Cada ejecucion, para el control final de las pruebas: ninguna por timeout.
+export const ejecucionesScripts = []
+export class SalidaDeScript extends Error { constructor(c) { super(`process.exit(${c})`); this.salidaDeScript = true; this.codigo = c } }
+export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 20000 } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'simscript-'))
   fs.writeFileSync(path.join(tmp, '.env.local'), 'NEXT_PUBLIC_SUPABASE_URL=https://falso.supabase.co\nSUPABASE_SERVICE_ROLE_KEY=falsa\n')
   const salida = [], envLeidos = [], envTodos = []
@@ -31,6 +41,7 @@ export async function correScript(rel, { ahora, argv = [], env = {} } = {}) {
   const fijo = new orig.Date(ahora).getTime()
   class FechaFija extends orig.Date { constructor(...a) { a.length ? super(...a) : super(fijo) } static now() { return fijo } }
   let terminado, final = new Promise(r => { terminado = r })
+  let terminoPor = null, codigo = null
   try {
     Module._load = function (spec, ...resto) {
       if (spec === 'dukascopy-node') return proveedorFalso
@@ -56,19 +67,25 @@ export async function correScript(rel, { ahora, argv = [], env = {} } = {}) {
     fs.promises.open = function (p, ...resto) { guarda(p, 'promises.open'); return orig.fs.promisesOpen.call(this, p, ...resto) }
     globalThis.setTimeout = (f, ms, ...a) => orig.st(f, 0, ...a)
     globalThis.Date = FechaFija
-    const apunta = (...a) => { const l = a.join(' '); salida.push(l); if (FINAL.test(l.trim())) orig.st(terminado, 30) }
+    const apunta = (...a) => { if (terminoPor === 'exit') return; const l = a.join(' '); salida.push(l); if (!terminoPor && FINAL.test(l.trim())) { terminoPor = 'final'; orig.st(terminado, 30) } }
     console.log = apunta; console.error = apunta
-    process.stdout.write = s => { salida.push(String(s)); return true }
-    process.exit = c => { salida.push(`[process.exit(${c})]`); terminado(); }
+    process.stdout.write = s => { if (terminoPor !== 'exit') salida.push(String(s)); return true }
+    process.exit = c => {
+      if (terminoPor !== 'exit') { terminoPor = 'exit'; codigo = c ?? process.exitCode ?? 0; salida.push(`[process.exit(${codigo})]`); terminado() }
+      throw new SalidaDeScript(codigo)
+    }
     process.chdir(tmp)
     process.argv = [process.argv[0], path.join(REPO, rel), ...argv]
     Object.assign(process.env, env)
     process.exitCode = undefined
     const req = createRequire(path.join(REPO, 'package.json'))
     delete req.cache[req.resolve(path.join(REPO, rel))]
-    req(path.join(REPO, rel))
-    await Promise.race([final, new Promise(r => orig.st(r, 20000))])
-    return { salida, envLeidos, envTodos, exitCode: process.exitCode, tmp }
+    try { req(path.join(REPO, rel)) } catch (e) { if (!e?.salidaDeScript) throw e }
+    await Promise.race([final, new Promise(r => orig.st(r, limiteMs))])
+    if (!terminoPor) terminoPor = 'timeout'
+    else if (terminoPor === 'final') codigo = process.exitCode ?? 0
+    ejecucionesScripts.push({ rel, terminoPor, codigo })
+    return { salida, envLeidos, envTodos, codigo, terminoPor, exitCode: codigo, tmp }
   } finally {
     Module._load = orig.load
     for (const via of ['readFileSync', 'openSync', 'createReadStream', 'readFile', 'open']) fs[via] = orig.fs[via]

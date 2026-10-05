@@ -25,7 +25,7 @@
  */
 import { titulo, ver, oraculo, fin, escenario, proveedor, db } from '../lib.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
-import { correScript } from '../script-falso.mjs'
+import { correScript, ejecucionesScripts } from '../script-falso.mjs'
 const AHORA = '2026-01-16T12:00:00Z'
 const cien = JSON.stringify(diaM1('2026-01-05', 100).map(c => ({ time: c.timestamp / 1000, open: 1, high: 1, low: 1, close: 1, volume: 1 })))
 const BUCKET = () => ({ 'forex-data': { 'EURUSD/M1/2026.json': cien, 'EURUSD/M1/2023.json': '[]', 'GBPUSD/M1/2023.json': '[]' } })
@@ -72,4 +72,5 @@ const subidos = db.log.filter(l => l.op === 'upload').map(l => l.payload.ruta)
 ver('control: subio los 6 pares de 2026', subidos.length === 6 && subidos.every(r => r.endsWith('/M1/2026.json')), subidos.join(' '))
 oraculo('O01', 'D: no borra nada (los dos 2023 siguen)', quedan2023() === 2 && !db.log.some(l => l.op === 'remove'), `quedan ${quedan2023()} de 2`)
 oraculo('O01', 'D: acaba bien (codigo 0)', (d.exitCode ?? 0) === 0, `codigo ${d.exitCode ?? 0}`)
+ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))
 fin()

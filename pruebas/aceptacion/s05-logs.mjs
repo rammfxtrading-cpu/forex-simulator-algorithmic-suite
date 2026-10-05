@@ -19,7 +19,7 @@
  */
 import { titulo, ver, oraculo, fin, escenario, sesionSim, tradeSim, perfil, importa, db, A, B, ADM, tok } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
-import { correScript } from '../script-falso.mjs'
+import { correScript, ejecucionesScripts } from '../script-falso.mjs'
 const advance = (await importa('pages/api/challenge/advance.js')).default
 const wipe = (await importa('pages/api/admin/wipe-simulador.js')).default
 const capturado = []
@@ -52,4 +52,5 @@ const diag = d.salida.filter(l => /\[DIAG\]/.test(l))
 ver('control: el diagnostico se imprimio (sigue diciendo largos y espacios sobrantes)', diag.length >= 2 && diag.some(l => /largo/.test(l)), diag.join(' | '))
 const trozos = [CLAVE.slice(0, 6), CLAVE.slice(6, 12), CLAVE.slice(-6)].filter(x => d.salida.join('\n').includes(x))
 oraculo('S05', 'actualizar-diario: ningun trozo de la clave en la salida', trozos.length === 0, trozos.length ? `aparece «${trozos[0]}…»` : '')
+ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))
 fin()
