@@ -10,11 +10,11 @@
 #    (ver pruebas/cargador.mjs). Cero escrituras en la base.
 #
 # Orden: el arnes primero (si el arnes miente, todo lo demas tambien), luego
-# las pruebas de pruebas/*.mjs, y despues las reproducciones de la auditoria
-# YA ARREGLADAS (las de pruebas/fase1/arreglados.txt), que aqui tienen que
-# salir en verde: codigo 0, ningun oraculo en rojo. Las que siguen en rojo a
-# proposito van aparte, con su propio guion:
-#   sh pruebas/fase1.sh
+# las pruebas de pruebas/*.mjs, y despues las de ACEPTACION de lo ya arreglado
+# (pruebas/aceptacion/), que tienen que salir en verde: codigo 0, ningun
+# oraculo en rojo. Aparte (ver pruebas/LEEME.md):
+#   sh pruebas/fase1.sh       lo que sigue roto (en rojo a proposito)
+#   sh pruebas/historicas.sh  reproducciones originales contra el codigo auditado
 #
 # Salida: el detalle va a .pruebas/tanda.log; en pantalla, una linea por
 # prueba. Codigo 0 solo si TODO esta en verde. Se juzga por el codigo de
@@ -53,15 +53,11 @@ for f in pruebas/*.mjs; do
   corre "$(basename "$f" .mjs)" $NODO "$f"
 done
 
-echo "pruebas/fase1/ (arregladas)"
-if [ -f pruebas/fase1/arreglados.txt ]; then
-  while IFS= read -r base; do
-    [ -z "$base" ] && continue
-    case "$base" in \#*) continue ;; esac
-    if [ -f "pruebas/fase1/$base.mjs" ]; then corre "fase1/$base" $NODO "pruebas/fase1/$base.mjs"
-    else n=$((n + 1)); echo "  ✗ fase1/$base   (no existe pruebas/fase1/$base.mjs)"; fallos="$fallos fase1/$base"; fi
-  done < pruebas/fase1/arreglados.txt
-fi
+echo "pruebas/aceptacion/"
+for f in pruebas/aceptacion/*.mjs; do
+  [ -f "$f" ] || continue
+  corre "aceptacion/$(basename "$f" .mjs)" $NODO "$f"
+done
 
 if [ -z "$fallos" ]; then
   printf '\ntodo verde · %s pruebas\n' "$n"
