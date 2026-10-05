@@ -50,7 +50,7 @@ async function main() {
     const ultima = l.velas.length ? l.velas[l.velas.length - 1].time : null
     const cortos = C.diasCortos(l.velas, Date.UTC(anio, 0, 1) / 1000, hasta)
     const m = [
-      `${par} ${anio}: ${l.ruta} · ${l.velas.length} velas · sha256 ${sha}${releida === sha ? ' (copia verificada)' : ' ✗ LA COPIA NO COINCIDE'}`,
+      `${par} ${anio}: ${l.ruta} · ${l.velas.length} velas · ${fs.statSync(fichero).size} bytes · sha256 ${sha}${releida === sha ? ' (copia verificada)' : ' ✗ LA COPIA NO COINCIDE'}`,
       `  ultima vela real: ${ultima ? new Date(ultima * 1000).toISOString() : '-'}`,
       `  dias laborables cortos o sin datos hasta ${ymd(hasta)}: ${cortos.length}${cortos.length ? ' → ' + cortos.join(', ') : ''}`,
     ].join('\n')

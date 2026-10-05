@@ -31,6 +31,7 @@ const faltan = r.salida.find(l => l.includes('dias laborables cortos')) ?? ''
 ver('y los dias que faltan hasta ayer: 1-ene (no, festivo), 8, 9, 12 y 13 de enero', /: 4 → 2026-01-08 \(0\/1200\), 2026-01-09 \(0\/1000\), 2026-01-12 \(0\/1200\), 2026-01-13 \(0\/1200\)$/.test(faltan), faltan)
 ver('el par que no existe sale con ✗ y el script acaba con codigo 1', r.salida.some(l => /AUDUSD 2026: ✗ no existe/.test(l)) && r.codigo === 1)
 ver('solo lectura: cero subidas o borrados en el bucket y cero llamadas al proveedor', !db.log.some(l => l.op === 'upload' || l.op === 'remove') && proveedor.llamadas.length === 0)
+ver('dice el tamaño en bytes de la copia', r.salida.some(l => l.includes(`${Buffer.byteLength(TEXTO)} bytes`)), Buffer.byteLength(TEXTO))
 ver('y deja un resumen.txt', fs.existsSync(path.join(dir, 'resumen.txt')))
 fs.rmSync(dir, { recursive: true, force: true })
 fin()
