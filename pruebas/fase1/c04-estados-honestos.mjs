@@ -1,0 +1,127 @@
+/**
+ * C04 · UNA AVERIA PARECE CERO ACTIVIDAD, AUSENCIA DE SESIONES O CARGA INFINITA
+ *
+ * Astra (4-oct): con sesiones/trades en error, el admin responde 200 con ceros
+ * (pages/api/admin/list-alumnos-sim.js:36); Analytics convierte errores en
+ * listas vacias (pages/analytics.js:64); el dashboard deja de cargar antes de
+ * tener sus datos (pages/dashboard.js:82); una sesion inexistente deja el
+ * cargador para siempre (components/_SessionInner.js:701); un fallo transitorio
+ * del primer SELECT de perfil cierra la sesion (lib/useAuth.js:47-50). Y las
+ * lecturas completas de trades no paginan: por encima del maximo de filas del
+ * servidor se evalua una fraccion sin aviso (status.js:85, advance.js:122,
+ * alumno-sim/[id].js:41).
+ * Decision del CTO (4-oct, bloque B): estados de carga, error y vacio
+ * honestos; sin signOut por un fallo transitorio; consultas paginadas con
+ * comprobacion de total.
+ *
+ * Se ejecuta: useAuth, las paginas (dashboard, Analytics, sesion) y las APIs
+ * REALES sobre la base falsa, con fallos y un tope de filas por respuesta
+ * (db.maxFilas, el max-rows de PostgREST).
+ *
+ * ORACULOS:
+ *   1. perfil ilegible un momento (no «no existe»): no se cierra la sesion
+ *   2. dashboard: mientras carga no dice «No sessions yet»; con las sesiones
+ *      en error, lo dice (error), no «No sessions yet»
+ *   3. Analytics con los trades en error: lo dice, no «0 trades»
+ *   4. lista de alumnos del admin con los trades en error: no 200 con ceros
+ *   5. sesion inexistente: lo dice; sesion sin velas validas (D03): lo dice
+ *   6. paginacion, tope 2 filas: status evalua las 3 operaciones (P&L 300);
+ *      el detalle del admin devuelve 3; Analytics y el dashboard cuentan 3
+ *   7. el total cambia a mitad de la lectura: error, no un resultado parcial
+ */
+import { titulo, ver, oraculo, fin, escenario, importa, sonda, monta, router, db, A, ADM, tok, perfil, sesionSim, tradeSim, asienta, puerta, vela } from '../lib.mjs'
+import { llama } from '../supabase-falso.mjs'
+import { velasEnStorage } from '../banco-motor.mjs'
+const { useAuth } = await importa('lib/useAuth.js')
+const Dashboard = (await importa('pages/dashboard.js')).default
+const Analytics = (await importa('pages/analytics.js')).default
+const Sesion = (await importa('components/_SessionInner.js')).default
+const status = (await importa('pages/api/challenge/status.js')).default
+const listaAlumnos = (await importa('pages/api/admin/list-alumnos-sim.js')).default
+const detalleAlumno = (await importa('pages/api/admin/alumno-sim/[id].js')).default
+const signOuts = () => db.auth.filter(x => x.op === 'signOut').length
+const valorDe = (p, etiqueta) => { const n = p.busca(x => x.tipo && p.texto(x) === etiqueta); return n ? p.texto(n.padre).replace(etiqueta, '').trim() : null }
+const avisaError = t => /no se ha podido|error|no se han podido/i.test(t)
+
+titulo('1 · useAuth: perfil ilegible un momento')
+escenario()
+let una = 1
+db.falla = c => c.tabla === 'profiles' && una-- > 0 ? { message: 'upstream timeout', code: '57014' } : null
+const c1 = sonda(() => useAuth('simulador_activo')); await asienta(60)
+ver('control: el fallo programado se consumio (la primera lectura del perfil fallo)', una <= 0, una)
+oraculo('C04', 'un fallo transitorio del perfil no cierra la sesion', signOuts() === 0 && db.sesion !== null, `${signOuts()} signOut`)
+oraculo('C04', 'y lo dice (error), sin fingir «sin acceso» ni dejar el cargador', !!c1.valor.error && c1.valor.loading === false, JSON.stringify({ error: c1.valor.error ?? null, loading: c1.valor.loading }))
+c1.raiz.desmonta()
+escenario({ perfiles: [perfil(ADM, { rol_global: 'admin' })], sesion: A })   // A tiene sesion pero NO perfil
+const c1b = sonda(() => useAuth('simulador_activo')); await asienta(60)
+ver('control: sin perfil de verdad (no existe), si se cierra la sesion', signOuts() === 1, signOuts())
+c1b.raiz.desmonta()
+
+titulo('2 · dashboard')
+escenario({ sim_sessions: [sesionSim({ name: 'Sesion-uno' })] })
+const suelta = puerta()
+db.pausa = async c => { if (c.tabla === 'sim_sessions' && c.op === 'select') await suelta.p }
+let d = monta(Dashboard, {}); await asienta(60)
+oraculo('C04', 'dashboard cargando: no dice «No sessions yet»', !/No sessions yet/.test(d.texto()), /No sessions yet/.test(d.texto()) ? 'dice «No sessions yet» con la lectura en curso' : '')
+suelta.abrir(); db.pausa = null; await d.asienta(60)
+ver('control: al llegar, la sesion aparece', d.texto().includes('Sesion-uno'))
+d.desmonta()
+escenario({ sim_sessions: [sesionSim({ name: 'Sesion-uno' })] })
+db.falla = c => c.tabla === 'sim_sessions' && c.op === 'select' ? { message: 'upstream timeout', code: '57014' } : null
+d = monta(Dashboard, {}); await d.asienta(60)
+oraculo('C04', 'dashboard con las sesiones en error: lo dice, no «No sessions yet»', avisaError(d.texto()) && !/No sessions yet/.test(d.texto()), /No sessions yet/.test(d.texto()) ? 'dice «No sessions yet»' : avisaError(d.texto()) ? '' : 'sin aviso')
+d.desmonta()
+
+titulo('3 · Analytics con los trades en error')
+escenario({ sim_sessions: [sesionSim({ name: 'Sesion-uno' })], sim_trades: [tradeSim({})] })
+db.falla = c => c.tabla === 'sim_trades' && c.op === 'select' ? { message: 'upstream timeout', code: '57014' } : null
+const an = monta(Analytics, {}); await an.asienta(80)
+oraculo('C04', 'Analytics: lo dice, no enseña 0 trades', avisaError(an.texto()) && valorDe(an, 'TOTAL TRADES') !== '0', `TOTAL TRADES ${valorDe(an, 'TOTAL TRADES')}; aviso ${avisaError(an.texto())}`)
+an.desmonta()
+
+titulo('4 · lista de alumnos del admin con los trades en error')
+escenario({ sesion: ADM, sim_sessions: [sesionSim({})], sim_trades: [tradeSim({})] })
+db.falla = c => c.tabla === 'sim_trades' && c.op === 'select' ? { message: 'upstream timeout', code: '57014' } : null
+const la = await llama(listaAlumnos, { method: 'GET', token: tok(ADM) })
+oraculo('C04', 'no responde 200 con ceros', la.estado !== 200, `estado ${la.estado}; trades de A: ${la.cuerpo?.usuarios?.find(u => u.id === A)?.metrics?.trades}`)
+
+titulo('5 · la pagina de sesion')
+escenario({ sim_sessions: [] })
+router.query = { id: 'no-existe' }
+let ps = monta(Sesion, {}); await ps.asienta(200)
+oraculo('C04', 'sesion inexistente: lo dice', /no existe|no encontrada|no se ha encontrado/i.test(ps.texto()), ps.texto().replace(/\s+/g, ' ').slice(0, 80))
+ps.desmonta()
+const sv = sesionSim({ id: 'sin-velas', date_from: '2025-03-03', date_to: '2025-03-07' })
+escenario({ sim_sessions: [sv] })
+velasEnStorage('EUR/USD', [vela(Date.parse('2025-03-03T10:00:00Z') / 1000, 1.1, 1.1, 1.1, 1.1), vela(Date.parse('2025-03-06T10:00:00Z') / 1000, 1.1, 1.1, 1.1, 1.1)], [2024])
+router.query = { id: 'sin-velas' }
+ps = monta(Sesion, {}); await ps.asienta(250)
+oraculo('C04', 'sesion sin velas validas (D03): lo dice', /incompleto|no estan disponibles|invalido/i.test(ps.texto()), ps.texto().replace(/\s+/g, ' ').slice(0, 80))
+ps.desmonta()
+
+titulo('6 · paginacion con un tope de 2 filas por respuesta')
+const reto = sesionSim({ id: 'reto-pag', challenge_type: '2F', challenge_phase: 1, capital: 100000, balance: 100300 })
+const TRES = [1, 2, 3].map(i => tradeSim({ session_id: 'reto-pag', pnl: 100, result: 'WIN', closed_at: `2025-03-0${i + 2}T12:00:00Z`, opened_at: `2025-03-0${i + 2}T11:00:00Z` }))
+escenario({ sim_sessions: [reto], sim_trades: TRES })
+db.maxFilas = 2
+const st = await llama(status, { method: 'GET', token: tok(A), query: { session_id: 'reto-pag' } })
+ver('control: el tope de filas actua (una lectura directa devuelve 2 de 3)', (await (await importa('lib/supabase.js')).supabase.from('sim_trades').select('*')).data.length === 2)
+oraculo('C04', 'status evalua las 3 operaciones: P&L 300', st.cuerpo?.evaluation?.pnlTotal === 300 && st.cuerpo?.trades_count === 3, `estado ${st.estado}; pnlTotal ${st.cuerpo?.evaluation?.pnlTotal}; trades ${st.cuerpo?.trades_count}`)
+db.sesion = { user: { id: ADM, email: 'd@ejemplo.test' }, access_token: tok(ADM) }
+const det = await llama(detalleAlumno, { method: 'GET', token: tok(ADM), query: { id: A } })
+oraculo('C04', 'el detalle del admin devuelve las 3', det.cuerpo?.trades?.length === 3, `estado ${det.estado}; ${det.cuerpo?.trades?.length} trades`)
+escenario({ sim_sessions: [reto], sim_trades: TRES }); db.maxFilas = 2
+const an2 = monta(Analytics, {}); await an2.asienta(80)
+oraculo('C04', 'Analytics cuenta 3', valorDe(an2, 'TOTAL TRADES') === '3', valorDe(an2, 'TOTAL TRADES'))
+an2.desmonta()
+const d2 = monta(Dashboard, {}); await d2.asienta(80)
+oraculo('C04', 'el dashboard cuenta 3', /(^|\D)3TRADES TAKEN/.test(d2.texto()), /(\d+)TRADES TAKEN/.exec(d2.texto())?.[1])
+d2.desmonta()
+
+titulo('7 · el total cambia a mitad de la lectura')
+escenario({ sim_sessions: [reto], sim_trades: TRES }); db.maxFilas = 2
+let leidas = 0
+db.pausa = async c => { if (c.tabla === 'sim_trades' && c.op === 'select' && ++leidas === 2) db.tablas.sim_trades.push(tradeSim({ session_id: 'reto-pag', pnl: -5000, result: 'LOSS', closed_at: '2025-03-06T12:00:00Z' })) }
+const st2 = await llama(status, { method: 'GET', token: tok(A), query: { session_id: 'reto-pag' } })
+oraculo('C04', 'status no evalua un conjunto a medias: error', st2.estado >= 500, `estado ${st2.estado}; trades ${st2.cuerpo?.trades_count}`)
+fin()

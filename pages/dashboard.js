@@ -7,6 +7,8 @@ import AppSidebar from '../components/AppSidebar'
 import Estrellas from '../components/Estrellas'
 import { metricas } from '../lib/metricas'
 import NoAccess from '../components/NoAccess'
+import ErrorCarga from '../components/ErrorCarga'
+import { leerTodo } from '../lib/paginado'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -69,6 +71,7 @@ export default function Dashboard() {
   const [form, setForm] = useState({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
   const [profile, setProfile] = useState(null)
   const [acceso, setAcceso] = useState(null)   // null comprobando · 'si' · 'no' · 'error'
+  const [errorDatos, setErrorDatos] = useState('')
   const [borrando, setBorrando] = useState(null)        // id de la sesion que se esta borrando
   const [errorBorrado, setErrorBorrado] = useState('')
   const [showChallenge, setShowChallenge] = useState(false)
@@ -90,21 +93,29 @@ export default function Dashboard() {
       if (prof) setProfile(prof)
       if (!prof || !(prof.rol_global === 'admin' || prof.simulador_activo === true)) { setAcceso('no'); setLoading(false); return }
       setAcceso('si')
-      loadSessions(session.user.id)
-      loadTrades(session.user.id)
+      // C04 (4-oct-2026): el cargador no se quita hasta tener los datos, y un
+      // fallo se dice (antes: «No sessions yet» mientras cargaba o si fallaba)
+      const [rs, rt] = await Promise.all([loadSessions(session.user.id), loadTrades(session.user.id)])
+      if (rs.error || rt.error) setErrorDatos('No se han podido cargar tus sesiones u operaciones. Comprueba tu conexión y vuelve a intentarlo.')
       setLoading(false)
     })
   }, [])
 
 
+  // Lecturas completas, paginadas y con el total comprobado (C04). Devuelven
+  // { error } para que quien llama lo diga.
   async function loadSessions(userId) {
-    const { data } = await supabase.from('sim_sessions').select('*').eq('user_id', userId).order('created_at', { ascending: false })
-    if (data) setSessions(data)
+    const r = await leerTodo((desde, hasta) => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId)
+      .order('created_at', { ascending: false }).order('id').range(desde, hasta))
+    if (!r.error) setSessions(r.data)
+    return r
   }
 
   async function loadTrades(userId) {
-    const { data } = await supabase.from('sim_trades').select('*').eq('user_id', userId).order('opened_at', { ascending: true })
-    if (data) setTrades(data)
+    const r = await leerTodo((desde, hasta) => supabase.from('sim_trades').select('*', { count: 'exact' }).eq('user_id', userId)
+      .order('opened_at', { ascending: true }).order('id').range(desde, hasta))
+    if (!r.error) setTrades(r.data)
+    return r
   }
 
   // Borrar una sesion (auditoria D06, 4-oct-2026). Antes: cuatro deletes en
@@ -217,6 +228,7 @@ export default function Dashboard() {
   )
 
   if (acceso === 'no') return <NoAccess profile={profile} producto="Simulador" />
+  if (errorDatos) return <ErrorCarga mensaje={errorDatos} />
   if (acceso === 'error') return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#000',color:'#fff',fontFamily:'Montserrat,sans-serif',padding:24,textAlign:'center'}}>
       No se ha podido comprobar tu acceso al simulador. Recarga la página en unos segundos.

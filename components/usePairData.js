@@ -18,7 +18,7 @@ import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
 import { computePhantomsNeeded } from '../lib/sessionUi'
 
-export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools }){
+export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools, setErrorDatos }){
   const saveProgress=useCallback(async(ts)=>{
     if(!id||!ts) return
     try{ await supabase.from('sim_sessions').update({last_timestamp:ts,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id) }catch(e){}
@@ -34,7 +34,7 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       })
       if (!result) return
       // D03: sin velas validas no se crea el motor (no hay sesion «valida»)
-      if (result.error) { console.error('[loadPair]', pair, result.error); return }
+      if (result.error) { console.error('[loadPair]', pair, result.error); setErrorDatos?.(result.error); return }
       const { candles: ordinalCandles, replayTs, toTs } = result
 
       const engine=new ReplayEngine()

@@ -3,13 +3,14 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
+import ErrorCarga from '../components/ErrorCarga'
 import EquityCurve from '../components/EquityCurve'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 import Estrellas from '../components/Estrellas'
 
 export default function Admin() {
-  const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
+  const { user, profile, loading: authLoading, hasAccess, error: authError } = useAuth('simulador_activo')
   const bgCanvasRef = useRef(null)
 
   const [usuarios, setUsuarios] = useState([])
@@ -290,6 +291,8 @@ export default function Admin() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   }
+  // C04: un fallo al leer el perfil no es «sin acceso»
+  if (authError) return <ErrorCarga mensaje={authError} />
   if (!hasAccess) return <NoAccess profile={profile} producto="Simulador" />
   if (!isAdmin) return <NoAccess profile={profile} producto="Admin del Simulador" />
 

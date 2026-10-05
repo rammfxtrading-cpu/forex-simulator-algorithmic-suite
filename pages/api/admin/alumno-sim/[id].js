@@ -1,3 +1,4 @@
+import { leerTodo } from '../../../../lib/paginado'
 import { requireAdmin } from '../../../../lib/authApi'
 
 /**
@@ -32,16 +33,21 @@ export default async function handler(req, res) {
       .select('id, email, nombre, rol_global, journal_activo, simulador_activo, created_at')
       .eq('id', id)
       .single(),
-    supabaseAdmin
+    // paginadas y con el total comprobado (C04)
+    leerTodo((desde, hasta) => supabaseAdmin
       .from('sim_sessions')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('user_id', id)
-      .order('created_at', { ascending: false }),
-    supabaseAdmin
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(desde, hasta)),
+    leerTodo((desde, hasta) => supabaseAdmin
       .from('sim_trades')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('user_id', id)
       .order('opened_at', { ascending: true })
+      .order('id')
+      .range(desde, hasta))
   ])
 
   if (profErr || !profile) {

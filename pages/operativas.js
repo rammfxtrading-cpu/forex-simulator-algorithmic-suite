@@ -3,6 +3,7 @@ import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from '../components/NoAccess'
+import ErrorCarga from '../components/ErrorCarga'
 import NetworkBg from '../components/NetworkBg'
 import Estrellas from '../components/Estrellas'
 
@@ -231,7 +232,7 @@ const FINE_COMUN = 'Este modelo es un marco de referencia operativo. Cada trader
 
 export default function Operativas() {
   const router = useRouter()
-  const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
+  const { user, profile, loading: authLoading, hasAccess, error: authError } = useAuth('simulador_activo')
   const rutaRef = useRef(null)
   const [open, setOpen] = useState(null) // 'ldn' | 'ny' | 'sw' | null
   const [checks, setChecks] = useState({})
@@ -266,6 +267,8 @@ export default function Operativas() {
   }, [])
 
 
+  // C04: un fallo al leer el perfil no es «sin acceso»
+  if (!authLoading && authError) return <ErrorCarga mensaje={authError} />
   if (!authLoading && !hasAccess) {
     return <NoAccess profile={profile} producto="Simulador" />
   }

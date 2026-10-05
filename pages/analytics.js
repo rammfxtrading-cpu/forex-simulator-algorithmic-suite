@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
 import { metricas } from '../lib/metricas'
 import NoAccess from '../components/NoAccess'
+import ErrorCarga from '../components/ErrorCarga'
+import { leerTodo } from '../lib/paginado'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 import Estrellas from '../components/Estrellas'
@@ -12,12 +14,13 @@ const SESSIONS_LABEL = 'All Sessions'
 
 export default function Analytics() {
   const router = useRouter()
-  const { user, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
+  const { user, profile, loading: authLoading, hasAccess, error: authError } = useAuth('simulador_activo')
   const bgCanvasRef = useRef(null)
   const [sessions, setSessions] = useState([])
   const [trades, setTrades] = useState([])
   const [selectedSession, setSelectedSession] = useState(SESSIONS_LABEL)
   const [loading, setLoading] = useState(true)
+  const [errorDatos, setErrorDatos] = useState('')
   const [mcFields, setMcFields] = useState(null)
   const [mcResult, setMcResult] = useState(null)
 
@@ -57,17 +60,28 @@ export default function Analytics() {
   }, [authLoading, hasAccess, loading])
 
   // Si el usuario está autenticado pero no tiene acceso al simulador, mostrar pantalla de bloqueo.
+  // C04: un fallo al leer el perfil no es «sin acceso»
+  if (!authLoading && authError) return <ErrorCarga mensaje={authError} />
+  if (errorDatos) return <ErrorCarga mensaje={errorDatos} />
   if (!authLoading && !hasAccess) {
     return <NoAccess profile={profile} producto="Simulador" />
   }
 
+  // C04 (4-oct-2026): lecturas completas, paginadas y con el total
+  // comprobado; un fallo se dice, no se convierte en «0 trades».
   async function loadData(userId) {
-    const [{ data: sess }, { data: tr }] = await Promise.all([
-      supabase.from('sim_sessions').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-      supabase.from('sim_trades').select('*').eq('user_id', userId).order('opened_at', { ascending: true })
+    const [rs, rt] = await Promise.all([
+      leerTodo((desde, hasta) => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId)
+        .order('created_at', { ascending: false }).order('id').range(desde, hasta)),
+      leerTodo((desde, hasta) => supabase.from('sim_trades').select('*', { count: 'exact' }).eq('user_id', userId)
+        .order('opened_at', { ascending: true }).order('id').range(desde, hasta)),
     ])
-    setSessions(sess || [])
-    setTrades(tr || [])
+    if (rs.error || rt.error) {
+      setErrorDatos('No se han podido cargar tus sesiones u operaciones. Comprueba tu conexión y vuelve a intentarlo.')
+    } else {
+      setSessions(rs.data)
+      setTrades(rt.data)
+    }
     setLoading(false)
   }
 

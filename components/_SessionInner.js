@@ -26,6 +26,8 @@ import CustomDrawingsOverlay from './CustomDrawingsOverlay'
 import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from './NoAccess'
+import ErrorCarga from './ErrorCarga'
+import { leerTodo } from '../lib/paginado'
 import ChallengePassedPhaseModal from './ChallengePassedPhaseModal'
 import ChallengePassedAllModal from './ChallengePassedAllModal'
 import ChallengeFailedModal from './ChallengeFailedModal'
@@ -55,7 +57,7 @@ export default function SessionPage(){
   const {id}=router.query
 
   // Auth + check de acceso al Simulador
-  const { user: authUser, profile, loading: authLoading, hasAccess } = useAuth('simulador_activo')
+  const { user: authUser, profile, loading: authLoading, hasAccess, error: authError } = useAuth('simulador_activo')
 
   const bgCanvasRef   = useRef(null)
   const pairState     = useRef({})
@@ -83,6 +85,8 @@ export default function SessionPage(){
   const [currentTime, setCurrentTime] = useState(null)
   const [currentPrice,setCurrentPrice]= useState(null)
   const [dataReady,   setDataReady]   = useState(false)
+  const [errorSesion, setErrorSesion] = useState('')   // C04: la sesion no existe o no se pudo leer
+  const [errorDatos,  setErrorDatos]  = useState('')   // C04/D03: las velas no estan o no son validas
   const everReadyRef = useRef(false) // mini-corte H: true tras el primer dataReady; decide orbe vs mini-overlay
   const [balance,     setBalance]     = useState(10000)
   const [lots,        setLots]        = useState(0.01)
@@ -698,8 +702,11 @@ export default function SessionPage(){
     // nueva de challenge arranca el replay en la fecha donde quedó el challenge
     // anterior, porque resumeReal lo prioriza sobre date_from.
     clearCurrentTime()
-    supabase.from('sim_sessions').select('*').eq('id',id).maybeSingle().then(async ({data})=>{
-      if(!data){setLoading(false);return}
+    supabase.from('sim_sessions').select('*').eq('id',id).maybeSingle().then(async ({data, error})=>{
+      // C04 (4-oct-2026): antes, sin datos se quitaba el cargador y la pagina se
+      // quedaba esperando velas para siempre. Ahora se dice que pasa.
+      if(error){setErrorSesion('No se ha podido cargar la sesión. Comprueba tu conexión y vuelve a intentarlo.');setLoading(false);return}
+      if(!data){setErrorSesion('Esta sesión no existe o no es tuya.');setLoading(false);return}
       sessionRef.current=data
       setSession(data)
       // Use persisted balance (updated after each trade); fallback to capital or default
@@ -712,7 +719,10 @@ export default function SessionPage(){
       setActivePairs(_savedPairs); setActivePair(p)
       try{ const _tf={}; _savedPairs.forEach(pp=>{ _tf[pp]=(pp===p?tf:'H1') }); setPairTf(_tf); pairTfRef.current=_tf }catch{}
       // Load previous trades for this session to show in journal
-      const { data: prevTrades } = await supabase.from('sim_trades').select('*').eq('session_id',id).order('closed_at',{ascending:true})
+      // todas, paginadas y con el total comprobado (C04)
+      const { data: prevTrades, error: prevErr } = await leerTodo((desde, hasta) => supabase.from('sim_trades').select('*', { count: 'exact' })
+        .eq('session_id',id).order('closed_at',{ascending:true}).order('id').range(desde, hasta))
+      if(prevErr){setErrorSesion('No se han podido cargar las operaciones de esta sesión. Comprueba tu conexión y vuelve a intentarlo.');setLoading(false);return}
       if(prevTrades?.length){
         // Put them in pairState so allTrades shows them
         if(!pairState.current[p]) pairState.current[p]={engine:null,ready:false,positions:[],trades:[],orders:[]}
@@ -735,7 +745,7 @@ export default function SessionPage(){
     pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef,
     checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef,
     setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick,
-    exportTools,
+    exportTools, setErrorDatos,
   })
 
   // ── Mount chart ───────────────────────────────────────────────────────────────
@@ -1359,7 +1369,11 @@ export default function SessionPage(){
   const activeTf      = pairTf[activePair]||'H1'
 
   // Si el usuario está autenticado pero no tiene acceso al Simulador, bloqueamos.
+  // C04: un fallo al leer el perfil no es «sin acceso»
+  if(!authLoading && authError) return <ErrorCarga mensaje={authError} />
   if(!authLoading && !hasAccess) return <NoAccess profile={profile} producto="Simulador" />
+  if(errorSesion) return <ErrorCarga mensaje={errorSesion} enlace={{href:'/dashboard',texto:'Volver al dashboard'}} />
+  if(errorDatos) return <ErrorCarga mensaje={errorDatos} enlace={{href:'/dashboard',texto:'Volver al dashboard'}} />
 
   if(loading) return <AntimatterLoader/>
 

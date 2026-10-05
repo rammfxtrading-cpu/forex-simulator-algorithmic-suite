@@ -13,3 +13,4 @@ o01-anio-nuevo
 d06-borrado
 p02-barras-fantasma
 c02-metricas
+c04-estados-honestos
