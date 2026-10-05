@@ -115,21 +115,30 @@ const completo = (d, n) => { const u = C.UMBRAL_LABORABLE[new Date(d + 'T00:00:0
 
 // Compone lo publicado sobre `guardadas` (lo RELEIDO justo antes de subir):
 //   · un dia solo se sustituye si el bajado trae MAS velas;
-//   · la cola (dias posteriores a la ultima vela guardada) entra en orden y se
-//     corta tras el primer dia laborable a medias, que es el ultimo publicado.
+//   · la cola (dias posteriores a la ultima vela guardada) se recorre POR
+//     CALENDARIO, en orden: un dia laborable que no se pudo bajar (bloque F,
+//     punto 1) o que llega a medias corta la cola ahi (el a medias es el
+//     ultimo publicado; el que falta, ni eso). Asi nunca queda un hueco
+//     interior nuevo, se bajen los dias en el orden que se bajen.
 // → velas | null (nada mejora lo guardado)
 function componer(guardadas, bajados) {
   const porDia = {}
   for (const v of guardadas || []) (porDia[ymd(v.time * 1000)] ??= []).push(v)
   const ultima = guardadas?.length ? ymd(guardadas[guardadas.length - 1].time * 1000) : ''
-  let cambia = false, cortada = false
-  for (const d of Object.keys(bajados).sort()) {
-    const dv = bajados[d]
-    if (d > ultima) {                       // cola
-      if (cortada) continue
-      if (dv.length > (porDia[d] || []).length) { porDia[d] = dv; cambia = true }
-      if (!completo(d, (porDia[d] || []).length)) cortada = true
-    } else if (dv.length > (porDia[d] || []).length) { porDia[d] = dv; cambia = true }
+  let cambia = false
+  const dias = Object.keys(bajados).sort()
+  for (const d of dias.filter(d => d <= ultima)) {            // interior: solo mejora
+    if (bajados[d].length > (porDia[d] || []).length) { porDia[d] = bajados[d]; cambia = true }
+  }
+  const cola = dias.filter(d => d > ultima)
+  if (cola.length) {
+    const desde = ultima ? Date.parse(ultima + 'T00:00:00Z') + DIA_MS : Date.parse(cola[0].slice(0, 4) + '-01-01T00:00:00Z')
+    for (let t = desde; t <= Date.parse(cola.at(-1) + 'T00:00:00Z'); t += DIA_MS) {
+      const d = ymd(t), laborable = !!C.UMBRAL_LABORABLE[new Date(t).getUTCDay()]
+      if (!Object.hasOwn(bajados, d)) { if (laborable && !C.FESTIVOS_MMDD.has(d.slice(5))) break; continue }   // falta: corta
+      if (bajados[d].length > (porDia[d] || []).length) { porDia[d] = bajados[d]; cambia = true }
+      if (!completo(d, (porDia[d] || []).length)) break                                                    // a medias: ultimo
+    }
   }
   return cambia ? Object.keys(porDia).sort().flatMap(d => porDia[d]).sort((a, b) => a.time - b.time) : null
 }
@@ -144,14 +153,21 @@ async function reconciliaAnio(pair, year, ayerMs) {
   const pendientes = diasPendientes(velas, year, ayerMs)
   if (!pendientes.length) return { keyFile, estado: `✓ al dia (${keyFile})` }
 
-  const bajados = {}
+  // Bloque F, punto 1: el fallo de un dia NO tira el par. Se apunta y se sigue;
+  // componer corta la cola en el primer dia que falte.
+  const bajados = {}, fallidos = []
   for (const d of pendientes) {
     const [y, m, dd] = d.split('-').map(Number)
-    bajados[d] = (await bajarDia(pair, y, m - 1, dd)) || []
+    try { bajados[d] = (await bajarDia(pair, y, m - 1, dd)) || [] }
+    catch (e) { fallidos.push(`${d} (${e?.message || e})`) }
     await sleep(400)
   }
+  const nota = fallidos.length ? ` · sin descargar: ${fallidos.join(', ')}` : ''
   const previsto = componer(nuevoAnio ? null : velas, bajados)
-  if (!previsto) return { keyFile, estado: `✓ ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado` }
+  if (!previsto) {
+    if (fallidos.length) return { keyFile, estado: `✗ DESCARGA ${keyFile}: nada nuevo publicable${nota}` }
+    return { keyFile, estado: `✓ ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado` }
+  }
   const resumen = n => `${nuevoAnio ? 'año NUEVO, ' : ''}${n} velas (antes ${velas.length}); ultima ${ymd(previsto[previsto.length - 1].time * 1000)}`
   if (!SUBIR) {
     const v = C.validaParaPublicar(previsto, nuevoAnio ? null : velas, { anio: year })
@@ -159,7 +175,7 @@ async function reconciliaAnio(pair, year, ayerMs) {
   }
   const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(g, bajados), dueno: 'actualizar-diario' })
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
-  if (r.estado === 'publicado') return { keyFile, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}` }
+  if (r.estado === 'publicado') return { keyFile, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
   if (r.estado === 'sin-cambios') return { keyFile, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir` }
   return { keyFile, publicacion: true, estado: `✗ PUBLICACION ${r.estado} ${keyFile}: ${r.problemas.join(' · ')}${avisos}` }
 }
