@@ -23,26 +23,18 @@ const THRESHOLD_BY_WEEKDAY = {
   6: 0,     // Sabado
 }
 
-// Cache en memoria por par y año, CON CADUCIDAD (auditoria D05, 4-oct-2026):
-// antes no caducaba nunca y una instancia caliente seguia sirviendo el año
-// viejo despues de que el actualizador lo completara. El año en curso cambia
-// cada dia (cron 06:00 y 14:00 UTC): 5 minutos. Los años cerrados casi nunca:
-// 1 hora. (Por instancia: cada instancia caduca la suya.)
-const cacheVelas = new Map()   // 'PAR_AÑO' → { velas, caduca }
-const TTL_ANIO_EN_CURSO = 5 * 60 * 1000
-const TTL_ANIO_CERRADO = 60 * 60 * 1000
+// Cache en memoria por par y año, VALIDADA POR VERSION (decision del CTO,
+// 5-oct-2026). Antes de releer un año se consulta la version del objeto con una
+// llamada de metadatos (info: etag), sin descargarlo; solo se descarga si
+// cambio. Sin caducidad por tiempo: la de 5 minutos (D05) hacia bajar ~28 MB
+// cada 5 minutos por instancia y agotaba la transferencia. (Por instancia.)
+const cacheVelas = new Map()   // 'PAR_AÑO' → { velas, version }
 const cache = {
-  get(key) {
-    const e = cacheVelas.get(key)
-    if (!e) return null
-    if (Date.now() >= e.caduca) { cacheVelas.delete(key); return null }
-    return e.velas
-  },
-  set(key, velas) {
-    const anio = Number(key.split('_')[1])
-    const ttl = anio >= new Date(Date.now()).getUTCFullYear() ? TTL_ANIO_EN_CURSO : TTL_ANIO_CERRADO
-    cacheVelas.set(key, { velas, caduca: Date.now() + ttl })
-  },
+  get: key => cacheVelas.get(key) ?? null,
+  // version null = no se sabe (lo acaba de descargar el proveedor): la proxima
+  // consulta de version no coincidira y se releera una vez
+  set: (key, velas, version = null) => { cacheVelas.set(key, { velas, version }) },
+  quita: key => { cacheVelas.delete(key) },
 }
 
 // ── Lista cerrada (auditoria S03, 4-oct-2026) ───────────────────────────────
@@ -87,12 +79,26 @@ async function leerAnio(pair, year) {
   }
 }
 
+// La version del objeto (etag), sin descargarlo.
+// → { estado: 'ok', version } | { estado: 'no-existe' } | { estado: 'error', motivo }
+async function versionAnio(pair, year) {
+  const { data, error } = await supabaseAdmin.storage
+    .from('forex-data')
+    .info(`${pair}/M1/${year}.json`)
+  if (error) return noExiste(error) ? { estado: 'no-existe' } : { estado: 'error', motivo: error.message || String(error) }
+  return { estado: 'ok', version: data?.etag ?? data?.version ?? data?.lastModified ?? null }
+}
+
 async function loadFromSupabase(pair, year) {
   const key = `${pair}_${year}`
   const enCache = cache.get(key)
-  if (enCache) return { estado: 'ok', velas: enCache }
+  const v = await versionAnio(pair, year)
+  // si no se puede consultar la version: la ultima version verificada, o error
+  if (v.estado === 'error') return enCache ? { estado: 'ok', velas: enCache.velas } : { estado: 'error', motivo: v.motivo }
+  if (v.estado === 'no-existe') { cache.quita(key); return { estado: 'no-existe' } }
+  if (enCache && v.version != null && enCache.version === v.version) return { estado: 'ok', velas: enCache.velas }
   const r = await leerAnio(pair, year)
-  if (r.estado === 'ok') cache.set(key, r.velas)
+  if (r.estado === 'ok') cache.set(key, r.velas, v.version)
   return r
 }
 

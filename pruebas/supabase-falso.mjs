@@ -19,7 +19,7 @@
 //                       (se devuelve un error de transporte, como supabase-js ante
 //                       un fetch roto a la vuelta)
 //   db.log            cada operacion: { cliente, tabla, op, payload, filtros }
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
@@ -111,21 +111,35 @@ function bucket(nombre) {
     return (db.falla && await db.falla(ctx)) || null
   }
   const noExiste = { data: null, error: { message: 'Bucket not found', statusCode: '404' } }
+  const NO_ENCONTRADO = { name: 'StorageApiError', message: 'Object not found', status: 400, statusCode: '404' }
   return {
     async download(ruta) {
       const err = await op('download', ruta); if (err) return { data: null, error: err }
       if (!objetos()) return noExiste
       // como storage-js 2.102: la API responde 400 con cuerpo { statusCode: '404',
       // error: 'not_found', message: 'Object not found' } → StorageApiError
-      if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: { name: 'StorageApiError', message: 'Object not found', status: 400, statusCode: '404' } }
-      return { data: new Blob([objetos()[ruta]], { type: 'application/json' }), error: null }
+      if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: NO_ENCONTRADO }
+      return { data: new Blob([objetos()[ruta]], { type: 'application/octet-stream' }), error: null }
     },
+    // como storage-js 2.102 info(): metadatos SIN descargar el contenido. El etag
+    // sale del contenido (cambia si el fichero cambia, como el real).
+    async info(ruta) {
+      const err = await op('info', ruta); if (err) return { data: null, error: err }
+      if (!objetos()) return noExiste
+      if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: NO_ENCONTRADO }
+      const c = objetos()[ruta]
+      const etag = createHash('sha256').update(c).digest('hex').slice(0, 32)
+      return { data: { name: ruta, etag, version: etag, size: Buffer.byteLength(c), lastModified: null, contentType: null }, error: null }
+    },
+    // texto o binario (Blob, Buffer, Uint8Array), como el real
     async upload(ruta, cuerpo, o = {}) {
-      const texto = typeof cuerpo === 'string' ? cuerpo : await cuerpo.text()
-      const err = await op('upload', { ruta, bytes: texto.length, upsert: !!o.upsert }); if (err) return { data: null, error: err }
+      const contenido = typeof cuerpo === 'string' ? cuerpo
+        : (cuerpo instanceof Uint8Array) ? Buffer.from(cuerpo)
+        : Buffer.from(await cuerpo.arrayBuffer())
+      const err = await op('upload', { ruta, bytes: Buffer.byteLength(contenido), upsert: !!o.upsert, contentType: o.contentType ?? null }); if (err) return { data: null, error: err }
       if (!objetos()) return noExiste
       if (Object.hasOwn(objetos(), ruta) && !o.upsert) return { data: null, error: { message: 'The resource already exists', statusCode: '409' } }
-      objetos()[ruta] = texto
+      objetos()[ruta] = contenido
       return { data: { path: ruta }, error: null }
     },
     async list(prefijo = '', o = {}) {

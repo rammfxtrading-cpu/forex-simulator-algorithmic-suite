@@ -17,9 +17,11 @@
  *   · dia interior vacio: el jueves 1-oct el proveedor devuelve [] (fallo
  *     transitorio) y el viernes 2-oct si. En la pasada siguiente (martes 6-oct)
  *     el 1-oct se vuelve a pedir.
- *   · cache: tras añadir el 1-oct al fichero, la misma peticion devuelve las
- *     velas del 1-oct (en cuanto caduca la cache: el año en curso, 5 minutos;
- *     la prueba avanza el reloj 6).
+ *   · cache (decision del CTO, 5-oct): antes de releer se consulta la version
+ *     del objeto (info: etag) y solo se descarga si cambio; dos peticiones
+ *     seguidas sin cambio = cero descargas en la segunda; tras añadir el 1-oct,
+ *     la siguiente peticion lo sirve. Si la consulta falla: la version ya
+ *     verificada en cache, o 503 si no hay.
  * Decision del CTO (4-oct, bloque B): el actualizador reconcilia desde el
  * ultimo dia incompleto y arranca el año nuevo (eso lo mide o01-anio-nuevo);
  * cache de velas con version o caducidad.
@@ -65,18 +67,34 @@ await correScript('scripts/actualizar-diario.js', { ahora: '2026-10-02T06:00:00Z
 const f3 = JSON.parse(db.storage['forex-data']['EURUSD/M1/2026.json'])
 ver('control: el martes 29 (1.000 guardadas, el proveedor da 500) se queda con 1.000', enDia(f3, '2026-09-29') === 1000, `${enDia(f3, '2026-09-29')} velas; pidio ${pedidos().join(', ')}`)
 
-titulo('3 · la cache caliente de /api/candles')
+titulo('3 · la cache de /api/candles comprueba la version (decision del CTO, 5-oct)')
+// Antes de releer, una llamada de metadatos (info: etag); solo se descarga si
+// cambio. Sin caducidad corta: la de 5 minutos agotaba la transferencia.
 const candles = (await importa('pages/api/candles.js')).default
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'NZDUSD/M1/2026.json': JSON.stringify(velasDe('2026-09-30')) } } })
 const q = { pair: 'NZDUSD', timeframe: 'M1', from: String(Date.parse('2026-09-30T00:00:00Z') / 1000), to: String(Date.parse('2026-10-02T00:00:00Z') / 1000), year: '2026' }
+const cuenta = op => db.log.filter(l => l.op === op).length
 const a = await llama(candles, { method: 'GET', token: tok(A), query: q })
-ver('control: primera peticion, 1.440 velas del 30-sep', a.cuerpo?.count === 1440)
+ver('control: primera peticion, 1.440 velas del 30-sep y una descarga', a.cuerpo?.count === 1440 && cuenta('download') === 1, `${a.cuerpo?.count} velas, ${cuenta('download')} descargas`)
+const d0 = cuenta('download'), i0 = cuenta('info')
+const a2 = await llama(candles, { method: 'GET', token: tok(A), query: q })
+oraculo('D05', 'dos peticiones seguidas sin cambio: la segunda hace CERO descargas', a2.cuerpo?.count === 1440 && cuenta('download') === d0, `${cuenta('download') - d0} descargas`)
+oraculo('D05', 'y lo sabe consultando la version (una llamada info, sin descargar)', cuenta('info') === i0 + 1, `${cuenta('info') - i0} info`)
 db.storage['forex-data']['NZDUSD/M1/2026.json'] = JSON.stringify([...velasDe('2026-09-30'), ...velasDe('2026-10-01')])   // el cron añade el 1-oct
-const lecturas = db.log.filter(l => l.op === 'download').length
-const ahoraReal = Date.now
-Date.now = () => ahoraReal() + 6 * 60 * 1000          // pasan 6 minutos
+const d1 = cuenta('download')
 const b = await llama(candles, { method: 'GET', token: tok(A), query: q })
-Date.now = ahoraReal
-oraculo('D05', 'tras la actualizacion se sirve el 1-oct', b.cuerpo?.count === 2880, `sirve ${b.cuerpo?.count} velas; lecturas de Storage nuevas: ${db.log.filter(l => l.op === 'download').length - lecturas}`)
+oraculo('D05', 'el fichero cambia: la siguiente peticion lo descarga y sirve el 1-oct, sin esperar a ninguna caducidad', b.cuerpo?.count === 2880 && cuenta('download') === d1 + 1, `sirve ${b.cuerpo?.count} velas; ${cuenta('download') - d1} descargas`)
+
+titulo('3b · la consulta de version falla')
+db.falla = c => c.op === 'info' ? { name: 'StorageUnknownError', message: 'fetch failed' } : null
+const d2 = cuenta('download')
+const c3 = await llama(candles, { method: 'GET', token: tok(A), query: q })
+oraculo('D05', 'con una version ya verificada en cache: se sirve esa, sin descargar', c3.estado === 200 && c3.cuerpo?.count === 2880 && cuenta('download') === d2, `estado ${c3.estado}; ${c3.cuerpo?.count} velas; ${cuenta('download') - d2} descargas`)
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(velasDe('2026-09-30')) } } })
+db.falla = c => c.op === 'info' ? { name: 'StorageUnknownError', message: 'fetch failed' } : null
+const c4 = await llama(candles, { method: 'GET', token: tok(A), query: { ...q, pair: 'AUDUSD' } })
+oraculo('D05', 'sin version en cache: 503 (no se sabe que hay), no se va al proveedor', c4.estado === 503 && proveedor.llamadas.length === 0, `estado ${c4.estado}; ${proveedor.llamadas.length} descargas al proveedor`)
+db.falla = null
+
 ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))
 fin()
