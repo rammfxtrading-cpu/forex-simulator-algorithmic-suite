@@ -99,17 +99,16 @@ const masDia = dia => g => [...(g || []), ...velasDe(dia)].sort((a, b) => a.time
 let resA = null, resB = null
 if (mod?.publicarAnio) {
   const sb = createClient(ENV.NEXT_PUBLIC_SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY)
-  // El orden peligroso: A va a subir; ANTES de que su subida llegue, B relee
-  // (componer de B); despues A sube y B sube encima. La pausa de A espera a
-  // que B haya releido o, con cerrojo, a que B este esperandolo (ese es el
-  // efecto del cerrojo: B no relee hasta que A acaba).
+  // El orden peligroso: A va a subir; ANTES de que su subida llegue, arranca B.
+  // Sin exclusion, B releeria y subiria encima. Con el cerrojo (bloque E: sin
+  // espera ni caducidad), B no relee: termina «ocupado», visible, sin subir.
   let lanzadaB = null, releyoB = false, aSubio = false
   const ahoraMs = Date.parse('2026-02-04T06:00:00Z')
   const tic = () => new Promise(r => setImmediate(r))
   db.pausa = async c => {
     if (c.op !== 'upload' || c.payload.ruta !== 'USDJPY/M1/2026.json.gz') return
     if (!lanzadaB) {
-      lanzadaB = mod.publicarAnio(sb, { pair: 'USDJPY', year: 2026, dueno: 'B', ahoraMs, esperaMs: 1, intentosCerrojo: 100000,
+      lanzadaB = mod.publicarAnio(sb, { pair: 'USDJPY', year: 2026, dueno: 'B', ahoraMs,
         componer: g => { releyoB = true; return masDia('2026-02-02')(g) } }).then(r => { resB = r })
       for (let i = 0; i < 300 && !releyoB; i++) await tic()
       aSubio = true
@@ -117,10 +116,10 @@ if (mod?.publicarAnio) {
       for (let i = 0; i < 300 && !aSubio; i++) await tic()          // B no sube antes que A
     }
   }
-  resA = await mod.publicarAnio(sb, { pair: 'USDJPY', year: 2026, dueno: 'A', ahoraMs, esperaMs: 1, componer: masDia('2026-01-30') })
+  resA = await mod.publicarAnio(sb, { pair: 'USDJPY', year: 2026, dueno: 'A', ahoraMs, componer: masDia('2026-01-30') })
   await lanzadaB
   db.pausa = null
-  ver('control: B releyo (antes de subir A, o tras soltar A el cerrojo)', releyoB)
+  ver('control: B se lanzo mientras A subia', !!lanzadaB && resB != null)
 } else {
   // sin funcion comun: dos escritores que leen y suben por su cuenta
   const leido = JSON.parse(db.storage['forex-data']['USDJPY/M1/2026.json'])
@@ -128,7 +127,11 @@ if (mod?.publicarAnio) {
   publicaOtro('USDJPY/M1/2026.json', masDia('2026-02-02')(leido))
 }
 const g4 = guardado('USDJPY/M1/2026').velas
-oraculo('MP01', 'ninguna de las dos se pierde: quedan el 30-ene y el 2-feb', enDia(g4, '2026-01-30') === 1440 && enDia(g4, '2026-02-02') === 1440,
+// nada se pierde EN SILENCIO: o quedan las dos, o la que no publica lo dice
+// (ocupado, con dueño) y no ha pisado a la otra
+const ambas = enDia(g4, '2026-01-30') === 1440 && enDia(g4, '2026-02-02') === 1440
+const bVisible = resB?.estado === 'ocupado' && resB.problemas?.some(p => /A:/.test(p)) && enDia(g4, '2026-01-30') === 1440 && resA?.estado === 'publicado'
+oraculo('MP01', 'ninguna se pierde en silencio: quedan las dos, o B falla «ocupado» (dueño A) sin pisar el 30-ene de A', ambas || bVisible,
   `30-ene ${enDia(g4, '2026-01-30')}, 2-feb ${enDia(g4, '2026-02-02')}; A: ${resA?.estado ?? '-'}, B: ${resB?.estado ?? '-'}`)
 
 titulo('5 · verificacion despues de subir: lo que queda no es lo subido')
