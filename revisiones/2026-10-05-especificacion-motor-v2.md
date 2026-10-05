@@ -520,7 +520,7 @@ Son contratos por escribir como pruebas en `pruebas/aceptacion/` cuando se imple
 3. **Compresión (§ 7.4):** aprobada; el código de lectores y escritores está en la rama (`7342403`, `f85ce6f`). La migración de ficheros no empieza hasta que los lectores estén desplegados y el CTO lo diga. Hay que hacerla **antes del 6-nov** si el límite es 10⁹ y Pro llega en diciembre.
 4. **Caché de `/api/candles`:** resuelto (`e07b849`, `0f280a3`).
 5. **Timestamp de Dukascopy** = apertura del minuto: validar con un minuto conocido (§ 2.2).
-6. **Pares retrasados (verificado el 5-oct, § 7.1):** a las 12:27 del 4-oct, EURUSD, AUDUSD, AUDCAD y GBPJPY llevaban sin actualizarse desde el 26-27 de septiembre (`updated_at`); EURUSD, AUDCAD y GBPJPY se recuperaron después; **AUDUSD sigue con última vela 2026-09-25** y GBPUSD 2026-10-01. Además, **el 20-jul-2026 está cortado a las 14:59 UTC en los pares copiados**. Causa de los fallos del job: descargas del proveedor («Unknown error», «fetch failed»); el actualizador es de todo o nada por par (bloque F).
+6. **Pares retrasados (verificado el 5-oct, § 7.1):** a las 12:27 del 4-oct, EURUSD, AUDUSD, AUDCAD y GBPJPY llevaban sin actualizarse desde el 26-27 de septiembre (`updated_at`); EURUSD, AUDCAD y GBPJPY se recuperaron después; **AUDUSD sigue con última vela 2026-09-25** y GBPUSD 2026-10-01. Además, **el 20-jul-2026 está cortado en los 9 pares** (acaba a las 14:59, 15:59 o 16:59 UTC según el par: copia del 5-oct). Causa de los fallos del job: descargas del proveedor («Unknown error», «fetch failed»); el actualizador es de todo o nada por par (bloque F).
 7. **No pedidos, no diseñados:**
    - una rama de práctica desde un punto anterior (§ 3.8);
    - ajustes manuales de admin (§ 9).
