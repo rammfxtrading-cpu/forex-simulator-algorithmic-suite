@@ -1,7 +1,9 @@
 // Fixture de pruebas/scripts-falsos.mjs: intenta leer el fichero de RUTA_A_LEER
 // por la via de VIA_DE_LECTURA y dice que paso. No es un script del producto.
 const fs = require('fs')
-const ruta = process.env.RUTA_A_LEER
+// RUTA_URL=1 (BD-06): la ruta se pasa como objeto URL file: (relativa a la carpeta actual)
+const { pathToFileURL } = require('url')
+const ruta = process.env.RUTA_URL ? new URL(process.env.RUTA_A_LEER, pathToFileURL(process.cwd() + '/')) : process.env.RUTA_A_LEER
 const via = process.env.VIA_DE_LECTURA || 'readFileSync'
 // H05 (bloque D, punto 8): ENLACE_A = crea en la carpeta actual el enlace
 // simbolico ENLACE_EN → ENLACE_A antes de leer (un enlace dentro de la carpeta

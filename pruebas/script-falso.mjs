@@ -13,6 +13,7 @@ import Module, { createRequire } from 'node:module'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import * as proveedorFalso from './proveedor-falso.mjs'
 import * as supabaseFalso from './supabase-falso.mjs'
 import { REPO } from './lib.mjs'
@@ -56,12 +57,30 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
     // cualquier ruta con el prefijo de la carpeta temporal, sin resolver
     // enlaces: «temporal/enlace-a-ajena/.env.local» llegaba a un .env ajeno. Se
     // mira tambien el nombre del DESTINO real (un enlace «datos.txt» → .env).
+    // BD-06 (Astra, verificacion del bloque D; bloque E, punto 5): una URL file:
+    // se convierte con fileURLToPath ANTES de resolver (URL.pathname dejaba
+    // «%2eenv.local» sin decodificar y pasaba). Si la ruta no se puede comprobar
+    // (URL no file:, host remoto, error que no es «no existe»), se DENIEGA.
     const fixtureReal = fs.realpathSync(path.join(tmp, '.env.local'))
-    const canonica = r => { try { return fs.realpathSync(r) } catch { return r } }   // si no existe, la ruta tal cual
+    const aRuta = p => {
+      if (p instanceof URL) { if (p.protocol !== 'file:') throw new Error('URL que no es file:'); return fileURLToPath(p) }
+      return Buffer.isBuffer(p) ? p.toString('utf8') : String(p)
+    }
+    // ruta canonica; si no existe, la de su carpeta (resuelta) + el nombre
+    const canonica = r => {
+      try { return fs.realpathSync(r) } catch (e) {
+        if (e?.code !== 'ENOENT') throw e
+        const padre = path.dirname(r)
+        return padre === r ? r : path.join(canonica(padre), path.basename(r))
+      }
+    }
     const guarda = (p, via) => {
       if (typeof p !== 'string' && !(p instanceof URL) && !Buffer.isBuffer(p)) return     // un descriptor: ya abierto por otra via guardada
-      const ruta = path.resolve(p instanceof URL ? p.pathname : String(p))
-      const real = canonica(ruta)
+      let ruta, real
+      try { ruta = path.resolve(aRuta(p)); real = canonica(ruta) } catch (e) {
+        envLeidos.push(String(p))
+        throw new Error(`LECTURA DE .env DENEGADA (${via}): no se puede comprobar ${String(p)} (${e?.message ?? e})`)
+      }
       if (!/\.env/.test(path.basename(ruta)) && !/\.env/.test(path.basename(real))) return
       envTodos.push(ruta)
       if (real === fixtureReal) return

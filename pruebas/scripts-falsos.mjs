@@ -43,6 +43,25 @@ ver('control: el fixture por una ruta no canonica (sub/../.env.local) se lee: es
 const disf = await correScript('pruebas/fixtures/lee-env.cjs', { ahora: '2026-10-05T10:00:00Z', env: { ENLACE_A: px.join(fuera, '.env.local'), ENLACE_EN: 'datos.txt', RUTA_A_LEER: 'datos.txt' } })
 const lineaDisf = disf.salida.find(l => /^(LEIDO|ERROR)/.test(l)) ?? ''
 ver('un enlace con nombre inocente (datos.txt) que apunta a un .env ajeno: DENEGADO', /DENEGADA/.test(lineaDisf), lineaDisf)
+titulo('H05 · bloque E, punto 5: URLs codificadas (Astra BD-06)')
+// La guarda usaba URL.pathname sin decodificar: «%2eenv.local» no parecia un
+// .env y se leia. Ahora: fileURLToPath antes de resolver; si no se puede
+// comprobar (host remoto, URL no file:), se deniega.
+fsx.mkdirSync(px.join(fuera, 'con espacio'), { recursive: true })
+fsx.writeFileSync(px.join(fuera, 'con espacio', '.env.local'), 'AJENA_FALSA=1\n')
+const porUrl = async (url, extra = {}) => {
+  const r = await correScript('pruebas/fixtures/lee-env.cjs', { ahora: '2026-10-05T10:00:00Z', env: { RUTA_URL: '1', RUTA_A_LEER: url, ...extra } })
+  return r.salida.find(l => /^(LEIDO|ERROR)/.test(l)) ?? ''
+}
+const base = 'file://' + fsx.realpathSync(fuera)
+for (const [desc, url] of [['%2eenv.local', base + '/%2eenv.local'], ['%2E%65nv%2Elocal (todo codificado)', base + '/%2E%65nv%2Elocal'], ['con%20espacio/%2eenv.local (espacio codificado)', base + '/con%20espacio/%2eenv.local']]) {
+  const l = await porUrl(url)
+  ver(`URL ${desc} a un .env ajeno: DENEGADA`, /DENEGADA/.test(l), l)
+}
+const remota = await porUrl('file://remoto/ruta/.env.local')
+ver('URL file: con host remoto (no se puede comprobar): DENEGADA', /DENEGADA/.test(remota), remota)
+const propia = await porUrl('%2eenv.local')
+ver('control: el fixture por una URL relativa codificada (%2eenv.local) se lee', /^LEIDO: \d+ bytes/.test(propia), propia)
 fsx.rmSync(fuera, { recursive: true, force: true })
 
 titulo('H06 · como termina un script')
