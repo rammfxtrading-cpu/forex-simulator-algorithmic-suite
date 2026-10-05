@@ -75,4 +75,19 @@ for (const [pp, y] of raros) res.push(`${pp}/${y}:${(await pide(pp, y)).estado}`
 oraculo('S03', 'par no ofrecido o año fuera de 2024..año en curso → 400', res.every(x => x.endsWith(':400')), res.join(' · '))
 oraculo('S03', 'y sin tocar Storage ni el proveedor', proveedor.llamadas.length === 0 && !db.log.some(l => l.tabla === 'storage:forex-data'),
   `${proveedor.llamadas.length} descargas, ${db.log.filter(l => l.tabla === 'storage:forex-data').length} lecturas de Storage`)
+
+titulo('4 · marcos y rango (bloque D, punto 3; Astra, revision de cierres)')
+// Astra: timeframe=constructor, __proto__ o toString daban 200 con time:null
+// (TIMEFRAMES[timeframe] acepta propiedades heredadas).
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'USDCAD/M1/2025.json': SEMANA } } })
+const conMarco = tf => llama(candles, { method: 'GET', token: tok(A), query: { ...q, timeframe: tf } })
+const marcos = []
+for (const tf of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) marcos.push(`${tf}:${(await conMarco(tf)).estado}`)
+oraculo('S03', 'un marco que no es propio de la lista (constructor, __proto__, toString…) → 400', marcos.every(x => x.endsWith(':400')), marcos.join(' · '))
+const ok = await conMarco('H1')
+ver('control: un marco de la lista (H1) → 200 con tiempos numericos', ok.estado === 200 && ok.cuerpo.candles.every(c => Number.isFinite(c.time)), `estado ${ok.estado}`)
+const conRango = (from, to) => llama(candles, { method: 'GET', token: tok(A), query: { ...q, from, to } })
+const rangos = []
+for (const [f, t] of [['1736207999', '1736121600'], ['9'.repeat(400), undefined], ['1736121600', '9'.repeat(30)]]) rangos.push(`${f.slice(0, 12)}…/${String(t).slice(0, 12)}:${(await conRango(f, t)).estado}`)
+oraculo('S03', 'rango desordenado o no representable (from > to, numeros de 30 o 400 cifras) → 400', rangos.every(x => x.endsWith(':400')), rangos.join(' · '))
 fin()

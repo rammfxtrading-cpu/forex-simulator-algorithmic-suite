@@ -116,11 +116,15 @@ export default async function handler(req, res) {
   // Lista cerrada (S03): nada fuera de ella llega a Storage ni al proveedor.
   const cleanPair = String(pair).toUpperCase().replace('/', '')
   if (!PARES.has(cleanPair)) return res.status(400).json({ error: `Par no disponible: ${cleanPair}` })
-  if (!TIMEFRAMES[timeframe]) return res.status(400).json({ error: `Timeframe no valido: ${timeframe}` })
+  // Bloque D, punto 3 (Astra): solo marcos PROPIOS de la lista (TIMEFRAMES
+  // ['constructor'] existe por herencia y daba 200 con time:null)
+  if (!Object.hasOwn(TIMEFRAMES, String(timeframe))) return res.status(400).json({ error: `Timeframe no valido: ${timeframe}` })
   if (!/^\d+$/.test(String(from)) || (to != null && !/^\d+$/.test(String(to)))) return res.status(400).json({ error: 'from/to deben ser enteros (segundos)' })
   const tf = TIMEFRAMES[timeframe]
-  const fromTs = parseInt(from)
-  const toTs = to ? parseInt(to) : fromTs + 86400
+  const fromTs = Number(from)
+  const toTs = to != null ? Number(to) : fromTs + 86400
+  // rango finito (enteros exactos) y ordenado
+  if (!Number.isSafeInteger(fromTs) || !Number.isSafeInteger(toTs) || toTs < fromTs) return res.status(400).json({ error: 'Rango no valido: from y to enteros, from <= to' })
   const yr = year || new Date(fromTs * 1000).getUTCFullYear().toString()
   if (!anioValido(yr)) return res.status(400).json({ error: `Año no disponible: ${yr}` })
 
