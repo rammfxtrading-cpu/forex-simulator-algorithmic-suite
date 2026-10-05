@@ -3,6 +3,13 @@
 const fs = require('fs')
 const ruta = process.env.RUTA_A_LEER
 const via = process.env.VIA_DE_LECTURA || 'readFileSync'
+// H05 (bloque D, punto 8): ENLACE_A = crea en la carpeta actual el enlace
+// simbolico ENLACE_EN → ENLACE_A antes de leer (un enlace dentro de la carpeta
+// admitida que apunta fuera); CREA_OTRO = escribe un .env falso en esa ruta
+// relativa (dentro de la carpeta temporal, pero no es EL fixture)
+const path = require('path')
+if (process.env.ENLACE_A) { fs.mkdirSync(path.dirname(process.env.ENLACE_EN), { recursive: true }); fs.symlinkSync(process.env.ENLACE_A, process.env.ENLACE_EN) }
+if (process.env.CREA_OTRO) { fs.mkdirSync(path.dirname(process.env.CREA_OTRO), { recursive: true }); fs.writeFileSync(process.env.CREA_OTRO, 'FALSO=1\n') }
 const intenta = async () => {
   if (via === 'readFileSync') return fs.readFileSync(ruta, 'utf8')
   if (via === 'openSync') return String(fs.openSync(ruta, 'r'))

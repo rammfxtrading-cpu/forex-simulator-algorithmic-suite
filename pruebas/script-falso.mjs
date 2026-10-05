@@ -51,15 +51,22 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
     // H05 (revision de Astra, 4-oct): cualquier .env que NO sea el sintetico de
     // la carpeta temporal se DENIEGA ANTES DE ABRIRLO (antes solo se anotaba, y
     // despues se leia igual). Se cubren las vias de lectura de fs.
-    const tmpReal = fs.realpathSync(tmp)
+    // H05 (bloque D, punto 8; Astra, cierres 5-oct): se admite SOLO el fixture
+    // exacto, comparando RUTAS CANONICAS (enlaces resueltos). Antes valia
+    // cualquier ruta con el prefijo de la carpeta temporal, sin resolver
+    // enlaces: «temporal/enlace-a-ajena/.env.local» llegaba a un .env ajeno. Se
+    // mira tambien el nombre del DESTINO real (un enlace «datos.txt» → .env).
+    const fixtureReal = fs.realpathSync(path.join(tmp, '.env.local'))
+    const canonica = r => { try { return fs.realpathSync(r) } catch { return r } }   // si no existe, la ruta tal cual
     const guarda = (p, via) => {
       if (typeof p !== 'string' && !(p instanceof URL) && !Buffer.isBuffer(p)) return     // un descriptor: ya abierto por otra via guardada
       const ruta = path.resolve(p instanceof URL ? p.pathname : String(p))
-      if (!/\.env/.test(path.basename(ruta))) return
+      const real = canonica(ruta)
+      if (!/\.env/.test(path.basename(ruta)) && !/\.env/.test(path.basename(real))) return
       envTodos.push(ruta)
-      if (ruta.startsWith(tmpReal + path.sep) || ruta.startsWith(tmp + path.sep)) return
+      if (real === fixtureReal) return
       envLeidos.push(ruta)
-      throw new Error(`LECTURA DE .env DENEGADA (${via}): ${ruta}`)
+      throw new Error(`LECTURA DE .env DENEGADA (${via}): ${ruta}${real !== ruta ? ' → ' + real : ''}`)
     }
     for (const via of ['readFileSync', 'openSync', 'createReadStream']) fs[via] = function (p, ...resto) { guarda(p, via); return orig.fs[via].call(this, p, ...resto) }
     for (const via of ['readFile', 'open']) fs[via] = function (p, ...resto) { guarda(p, via); return orig.fs[via].call(this, p, ...resto) }

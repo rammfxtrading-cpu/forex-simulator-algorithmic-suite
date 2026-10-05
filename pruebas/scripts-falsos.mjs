@@ -25,6 +25,26 @@ titulo('H05 · control: el .env.local sintetico de la carpeta temporal si se lee
 const r = await correScript('pruebas/fixtures/lee-env.cjs', { ahora: '2026-10-05T10:00:00Z', env: { RUTA_A_LEER: '.env.local' } })
 ver('se lee (el falso, con claves falsas) y no se apunta como ajeno', r.salida.some(l => /^LEIDO: \d+ bytes/.test(l)) && r.envLeidos.length === 0 && r.envTodos.length === 1, r.salida.find(l => /^(LEIDO|ERROR)/.test(l)))
 
+titulo('H05 · bloque D, punto 8: solo el fixture exacto, por su ruta canonica')
+// Astra (cierres, 5-oct): el guard usaba path.resolve y un prefijo del
+// directorio temporal, sin resolver enlaces: «temporal/enlace-a-ajena/.env.local»
+// pasaba. El destino del enlace es un .env FALSO creado aqui (no un secreto).
+const fsx = await import('node:fs'), osx = await import('node:os'), px = await import('node:path')
+const fuera = fsx.mkdtempSync(px.join(osx.tmpdir(), 'ajena-'))
+fsx.writeFileSync(px.join(fuera, '.env.local'), 'AJENA_FALSA=1\n')
+const en = await correScript('pruebas/fixtures/lee-env.cjs', { ahora: '2026-10-05T10:00:00Z', env: { ENLACE_A: fuera, ENLACE_EN: 'enlace-a-ajena', RUTA_A_LEER: 'enlace-a-ajena/.env.local' } })
+const lineaEn = en.salida.find(l => /^(LEIDO|ERROR)/.test(l)) ?? ''
+ver('un enlace DENTRO de la carpeta temporal que apunta a un .env ajeno: DENEGADO', /DENEGADA/.test(lineaEn), lineaEn)
+const otro = await correScript('pruebas/fixtures/lee-env.cjs', { ahora: '2026-10-05T10:00:00Z', env: { CREA_OTRO: 'sub/.env.local', RUTA_A_LEER: 'sub/.env.local' } })
+const lineaOtro = otro.salida.find(l => /^(LEIDO|ERROR)/.test(l)) ?? ''
+ver('otro .env dentro de la carpeta temporal (no es EL fixture): DENEGADO', /DENEGADA/.test(lineaOtro), lineaOtro)
+const rodeo = await correScript('pruebas/fixtures/lee-env.cjs', { ahora: '2026-10-05T10:00:00Z', env: { CREA_OTRO: 'sub/x', RUTA_A_LEER: 'sub/../.env.local' } })
+ver('control: el fixture por una ruta no canonica (sub/../.env.local) se lee: es el mismo fichero', rodeo.salida.some(l => /^LEIDO: \d+ bytes/.test(l)), rodeo.salida.find(l => /^(LEIDO|ERROR)/.test(l)))
+const disf = await correScript('pruebas/fixtures/lee-env.cjs', { ahora: '2026-10-05T10:00:00Z', env: { ENLACE_A: px.join(fuera, '.env.local'), ENLACE_EN: 'datos.txt', RUTA_A_LEER: 'datos.txt' } })
+const lineaDisf = disf.salida.find(l => /^(LEIDO|ERROR)/.test(l)) ?? ''
+ver('un enlace con nombre inocente (datos.txt) que apunta a un .env ajeno: DENEGADO', /DENEGADA/.test(lineaDisf), lineaDisf)
+fsx.rmSync(fuera, { recursive: true, force: true })
+
 titulo('H06 · como termina un script')
 const corre = (modo, extra = {}) => correScript('pruebas/fixtures/salidas.cjs', { ahora: '2026-10-05T10:00:00Z', env: { MODO: modo }, ...extra })
 const ex = await corre('exit')
