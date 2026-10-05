@@ -61,6 +61,12 @@ for f in pruebas/aceptacion/*.mjs; do
   corre "aceptacion/$(basename "$f" .mjs)" $NODO "$f"
 done
 
+echo "pruebas/motor/"
+for f in pruebas/motor/*.mjs; do
+  [ -f "$f" ] || continue
+  corre "motor/$(basename "$f" .mjs)" $NODO "$f"
+done
+
 echo "contraste historico (obligatorio):"
 n=$((n + 1))
 printf '\n######## historicas\n' >> "$LOG"

@@ -56,10 +56,10 @@ export const fin = () => {
   const fichero = process.argv[1] ? path.resolve(process.argv[1]) : ''
   const carpeta = path.basename(path.dirname(fichero))
   let invalida = ''
-  if (['aceptacion', 'fase1', 'historicas'].includes(carpeta)) {
+  if (['aceptacion', 'fase1', 'historicas', 'motor'].includes(carpeta)) {
     const n = rojos + verdes
     if (n === 0) invalida = 'ningun oraculo: una prueba vacia no aprueba'
-    else if (carpeta === 'aceptacion' && !fichero.includes(`${path.sep}.pruebas${path.sep}`)) {
+    else if ((carpeta === 'aceptacion' || carpeta === 'motor') && !fichero.includes(`${path.sep}.pruebas${path.sep}`)) {
       let minimos = null
       try { minimos = JSON.parse(readFileSync(path.join(path.dirname(fichero), 'minimos.json'), 'utf8')) } catch { minimos = null }
       const min = minimos?.[path.basename(fichero, '.mjs')]
