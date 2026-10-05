@@ -6,6 +6,7 @@ import { metricas } from '../lib/metricas'
 import NoAccess from '../components/NoAccess'
 import ErrorCarga from '../components/ErrorCarga'
 import { leerTodo, porColumnas } from '../lib/paginado'
+import { tradesDeUsuario } from '../lib/tradesEstables'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 import Estrellas from '../components/Estrellas'
@@ -74,8 +75,8 @@ export default function Analytics() {
       // bloque D, punto 5: por clave (created_at, id); el orden de siempre, despues
       leerTodo(() => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId),
         { ordena: porColumnas([['created_at', 'desc'], ['id', 'asc']]) }),
-      leerTodo(() => supabase.from('sim_trades').select('*', { count: 'exact' }).eq('user_id', userId),
-        { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) }),
+      // bloque E, punto 3: los trades en UNA sentencia (sql/sim-002)
+      tradesDeUsuario(supabase, userId, { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) }),
     ])
     if (rs.error || rt.error) {
       setErrorDatos('No se han podido cargar tus sesiones u operaciones. Comprueba tu conexión y vuelve a intentarlo.')

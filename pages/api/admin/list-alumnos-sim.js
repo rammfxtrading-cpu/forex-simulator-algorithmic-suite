@@ -1,6 +1,7 @@
 import { metricas, ultimaActividad, activoEnLosUltimos } from '../../../lib/metricas'
 import { requireAdmin } from '../../../lib/authApi'
 import { leerTodo, porColumnas } from '../../../lib/paginado'
+import { tradesDeUsuario } from '../../../lib/tradesEstables'
 
 /**
  * GET /api/admin/list-alumnos-sim
@@ -38,12 +39,14 @@ export default async function handler(req, res) {
   let tradesByUser = {}
 
   if (activeIds.length > 0) {
-    const [{ data: sessions, error: sErr }, { data: trades, error: tErr }] = await Promise.all([
+    // bloque E, punto 3: los trades de cada alumno en UNA sentencia (sql/sim-002)
+    const [{ data: sessions, error: sErr }, porAlumno] = await Promise.all([
       leerTodo(() => supabaseAdmin.from('sim_sessions').select('id, user_id, capital, created_at', { count: 'exact' })
         .in('user_id', activeIds), { ordena: porColumnas([['id', 'asc']]) }),
-      leerTodo(() => supabaseAdmin.from('sim_trades').select('id, user_id, result, pnl, rr, closed_at, opened_at, created_at', { count: 'exact' })
-        .in('user_id', activeIds), { ordena: porColumnas([['id', 'asc']]) }),
+      Promise.all(activeIds.map(uid => tradesDeUsuario(supabaseAdmin, uid, { ordena: porColumnas([['id', 'asc']]) }))),
     ])
+    const tErr = porAlumno.find(r => r.error)?.error ?? null
+    const trades = tErr ? null : porAlumno.flatMap(r => r.data)
     if (sErr || tErr) {
       return res.status(503).json({ error: 'No se han podido leer las sesiones u operaciones. Prueba de nuevo.', detail: (sErr || tErr).message })
     }

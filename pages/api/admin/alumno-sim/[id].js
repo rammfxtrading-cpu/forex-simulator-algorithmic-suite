@@ -1,4 +1,5 @@
 import { leerTodo, porColumnas } from '../../../../lib/paginado'
+import { tradesDeUsuario } from '../../../../lib/tradesEstables'
 import { requireAdmin } from '../../../../lib/authApi'
 
 /**
@@ -39,10 +40,8 @@ export default async function handler(req, res) {
       .from('sim_sessions')
       .select('*', { count: 'exact' })
       .eq('user_id', id), { ordena: porColumnas([['created_at', 'desc'], ['id', 'asc']]) }),
-    leerTodo(() => supabaseAdmin
-      .from('sim_trades')
-      .select('*', { count: 'exact' })
-      .eq('user_id', id), { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) })
+    // bloque E, punto 3: los trades en UNA sentencia (sql/sim-002)
+    tradesDeUsuario(supabaseAdmin, id, { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) })
   ])
 
   if (profErr || !profile) {

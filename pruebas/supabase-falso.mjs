@@ -251,8 +251,27 @@ export function emiteAuth(evento, sesion) {
   for (const cb of [...db.oyentesAuth]) cb(evento, copia(sesion))
 }
 
+// RPC de sql/sim-002 (bloque E, punto 3): UNA sentencia → una copia de la
+// tabla en ESE instante, como la instantanea de PostgreSQL. ⚠️ Sin RLS (H07):
+// SECURITY INVOKER y la RLS se prueban en PostgreSQL (pruebas/sim-002.mjs).
+const RPCS = {
+  sim_trades_de_sesion: a => (db.tablas.sim_trades || []).filter(t => t.session_id === a?.p_session_id),
+  sim_trades_de_usuario: a => (db.tablas.sim_trades || []).filter(t => t.user_id === a?.p_user_id),
+}
+async function rpc(nombre, args = {}) {
+  await tick()
+  const ctx = { cliente: quien, tabla: 'rpc:' + nombre, op: 'rpc', payload: args, filtros: [] }
+  db.log.push(ctx)
+  if (db.pausa) await db.pausa(ctx)
+  const err = db.falla && await db.falla(ctx)
+  if (err) return { data: null, error: err }
+  if (!Object.hasOwn(RPCS, nombre)) return { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.' + nombre } }
+  const res = copia(RPCS[nombre](args).slice().sort((x, y) => String(x.id).localeCompare(String(y.id))))
+  if (db.pierde && await db.pierde(ctx)) return { data: null, error: { message: 'TypeError: Failed to fetch', code: '', details: null, hint: null } }
+  return { data: res, error: null }
+}
 export function createClient() {
-  return { from: t => new Q(t), storage: { from: bucket }, auth, rpc: async n => ({ data: null, error: { code: 'PGRST202', message: 'rpc desconocida ' + n } }) }
+  return { from: t => new Q(t), storage: { from: bucket }, auth, rpc }
 }
 
 // Llama a un handler de pages/api como lo haria Next (pages router).

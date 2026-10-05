@@ -3,7 +3,7 @@
   "bd03-cache-concurrente": 3,
   "c02-metricas": 7,
   "c03-sesiones-mismo-nombre": 3,
-  "c04-estados-honestos": 22,
+  "c04-estados-honestos": 25,
   "d03-historico-parcial": 16,
   "d04-antidegradacion": 12,
   "d05-actualizador-y-cache": 8,

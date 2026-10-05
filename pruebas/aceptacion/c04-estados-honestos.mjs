@@ -75,14 +75,14 @@ d.desmonta()
 
 titulo('3 · Analytics con los trades en error')
 escenario({ sim_sessions: [sesionSim({ name: 'Sesion-uno' })], sim_trades: [tradeSim({})] })
-db.falla = c => c.tabla === 'sim_trades' && c.op === 'select' ? { message: 'upstream timeout', code: '57014' } : null
+db.falla = c => (c.tabla === 'sim_trades' && c.op === 'select') || String(c.tabla).startsWith('rpc:sim_trades') ? { message: 'upstream timeout', code: '57014' } : null   // bloque E: tambien por la rpc
 const an = monta(Analytics, {}); await an.asienta(80)
 oraculo('C04', 'Analytics: lo dice, no enseña 0 trades', avisaError(an.texto()) && valorDe(an, 'TOTAL TRADES') !== '0', `TOTAL TRADES ${valorDe(an, 'TOTAL TRADES')}; aviso ${avisaError(an.texto())}`)
 an.desmonta()
 
 titulo('4 · lista de alumnos del admin con los trades en error')
 escenario({ sesion: ADM, sim_sessions: [sesionSim({})], sim_trades: [tradeSim({})] })
-db.falla = c => c.tabla === 'sim_trades' && c.op === 'select' ? { message: 'upstream timeout', code: '57014' } : null
+db.falla = c => (c.tabla === 'sim_trades' && c.op === 'select') || String(c.tabla).startsWith('rpc:sim_trades') ? { message: 'upstream timeout', code: '57014' } : null   // bloque E: tambien por la rpc
 const la = await llama(listaAlumnos, { method: 'GET', token: tok(ADM) })
 oraculo('C04', 'no responde 200 con ceros', la.estado !== 200, `estado ${la.estado}; trades de A: ${la.cuerpo?.usuarios?.find(u => u.id === A)?.metrics?.trades}`)
 
@@ -122,11 +122,12 @@ d2.desmonta()
 titulo('7 · el total cambia a mitad de la lectura')
 escenario({ sim_sessions: [reto], sim_trades: TRES }); db.maxFilas = 2
 let leidas = 0
-db.pausa = async c => { if (c.tabla === 'sim_trades' && c.op === 'select' && ++leidas === 2) db.tablas.sim_trades.push(tradeSim({ session_id: 'reto-pag', pnl: -5000, result: 'LOSS', closed_at: '2025-03-06T12:00:00Z' })) }
+db.pausa = async c => { if (((c.tabla === 'sim_trades' && c.op === 'select') || c.op === 'rpc') && ++leidas === 2) db.tablas.sim_trades.push(tradeSim({ session_id: 'reto-pag', pnl: -5000, result: 'LOSS', closed_at: '2025-03-06T12:00:00Z' })) }
 const st2 = await llama(status, { method: 'GET', token: tok(A), query: { session_id: 'reto-pag' } })
 // bloque D, punto 5: con reintento, tambien vale evaluar el conjunto NUEVO
 // entero (4 trades, 300 − 5.000); nunca uno a medias
-oraculo('C04', 'status no evalua un conjunto a medias: error o el conjunto vigente entero', st2.estado >= 500 || (st2.cuerpo?.trades_count === 4 && st2.cuerpo?.evaluation?.pnlTotal === -4700), `estado ${st2.estado}; trades ${st2.cuerpo?.trades_count}; pnl ${st2.cuerpo?.evaluation?.pnlTotal}`)
+// bloque E: con UNA sentencia la lectura ve el conjunto de un instante: el de antes (3, +300) o el de despues (4, −4.700)
+oraculo('C04', 'status no evalua un conjunto a medias: error o un conjunto que existio entero', st2.estado >= 500 || (st2.cuerpo?.trades_count === 4 && st2.cuerpo?.evaluation?.pnlTotal === -4700) || (st2.cuerpo?.trades_count === 3 && st2.cuerpo?.evaluation?.pnlTotal === 300), `estado ${st2.estado}; trades ${st2.cuerpo?.trades_count}; pnl ${st2.cuerpo?.evaluation?.pnlTotal}`)
 
 titulo('8 · bloque D, punto 5: el conjunto cambia entre paginas sin cambiar el total (Astra)')
 // Astra (cierres, 5-oct): pagina 1 de 2 sobre 4 = [b:+100, c:+200]; quedan d:+300
@@ -144,16 +145,47 @@ db.pausa = async c => {
 }
 const st8 = await llama(status, { method: 'GET', token: tok(A), query: { session_id: 'reto-pag' } })
 db.pausa = null
-oraculo('C04', 'lee por paginas (el tope de 2 filas obliga a una segunda lectura)', leidas8 >= 2, leidas8)
-oraculo('C04', 'nunca evalua un conjunto mezclado: error o el vigente (−400, 4 trades)', st8.estado >= 500 || (st8.cuerpo?.evaluation?.pnlTotal === -400 && st8.cuerpo?.trades_count === 4), `estado ${st8.estado}; pnl ${st8.cuerpo?.evaluation?.pnlTotal}; trades ${st8.cuerpo?.trades_count}`)
+// bloque E, punto 3: status ya no pagina: lee en UNA sentencia (rpc de sql/sim-002)
+oraculo('C04', 'status lee los trades en una sola sentencia (rpc), no por paginas', leidas8 === 0 && db.log.some(l => l.op === 'rpc' && l.tabla === 'rpc:sim_trades_de_sesion'), `${leidas8} lecturas por paginas`)
+oraculo('C04', 'nunca evalua un conjunto mezclado: error, el de antes (+1.000) o el de despues (−400)', st8.estado >= 500 || (st8.cuerpo?.trades_count === 4 && [1000, -400].includes(st8.cuerpo?.evaluation?.pnlTotal)), `estado ${st8.estado}; pnl ${st8.cuerpo?.evaluation?.pnlTotal}; trades ${st8.cuerpo?.trades_count}`)
 
 titulo('9 · el conjunto no para de cambiar: no converge → error')
 escenario({ sim_sessions: [reto], sim_trades: [t8('b', 100, '04'), t8('c', 200, '05'), t8('d', 300, '06'), t8('e', 400, '07')] }); db.maxFilas = 2
 let k9 = 0
-db.pausa = async c => { if (c.tabla === 'sim_trades' && c.op === 'select') db.tablas.sim_trades.push(tradeSim({ id: 't9-' + (++k9), session_id: 'reto-pag', pnl: 1, result: 'WIN', closed_at: '2025-03-01T12:00:00Z', created_at: `2025-03-01T00:00:${String(k9).padStart(2, '0')}Z` })) }
+db.pausa = async c => { if ((c.tabla === 'sim_trades' && c.op === 'select') || c.op === 'rpc') db.tablas.sim_trades.push(tradeSim({ id: 't9-' + (++k9), session_id: 'reto-pag', pnl: 1, result: 'WIN', closed_at: '2025-03-01T12:00:00Z', created_at: `2025-03-01T00:00:${String(k9).padStart(2, '0')}Z` })) }
 const st9 = await llama(status, { method: 'GET', token: tok(A), query: { session_id: 'reto-pag' } })
 db.pausa = null
-oraculo('C04', 'si cada lectura ve otro conjunto: error, no un conjunto cualquiera', st9.estado >= 500, `estado ${st9.estado}; trades ${st9.cuerpo?.trades_count}`)
+// bloque E: una sentencia ve el conjunto de SU instante (4 + 1 = 5 trades, +1.001): existio entero
+oraculo('C04', 'si cada lectura ve otro conjunto: error, o el conjunto entero del instante de la lectura', st9.estado >= 500 || (st9.cuerpo?.trades_count === 5 && st9.cuerpo?.evaluation?.pnlTotal === 1001), `estado ${st9.estado}; trades ${st9.cuerpo?.trades_count}`)
+
+titulo('11 · bloque E, punto 3: UPDATE alterno entre paginas (Astra BD-04)')
+// Cuatro trades con los mismos ids. Antes de cada PRIMERA pagina el estado es
+// [100, 200, −300, −400]; antes de cada SEGUNDA, [−1100, 200, 300, 200]: los dos
+// suman −400. Dos recorridos identicos reunian [100, 200, 300, 200] = +800. Una
+// lectura de UNA sentencia (rpc de sql/sim-002) ve un estado entero: −400.
+const E1 = [100, 200, -300, -400], E2 = [-1100, 200, 300, 200]
+const T11 = ['b', 'c', 'd', 'e'].map((l, i) => tradeSim({ id: 't11-' + l, session_id: 'reto-pag', pnl: E1[i], result: E1[i] > 0 ? 'WIN' : 'LOSS', closed_at: `2025-03-0${i + 3}T12:00:00Z`, opened_at: `2025-03-0${i + 3}T11:00:00Z`, created_at: `2025-03-0${i + 3}T12:00:01Z` }))
+const alterna = () => {
+  let lecturas = 0
+  db.pausa = async c => {
+    if (c.tabla === 'sim_trades' && c.op === 'select') { const e = ++lecturas % 2 ? E1 : E2; db.tablas.sim_trades.forEach((t, i) => { t.pnl = e[i] }) }
+    if (c.op === 'rpc') { const e = ++lecturas % 2 ? E1 : E2; db.tablas.sim_trades.forEach((t, i) => { t.pnl = e[i] }) }
+  }
+}
+escenario({ sim_sessions: [reto], sim_trades: T11 }); db.maxFilas = 2; alterna()
+const st11 = await llama(status, { method: 'GET', token: tok(A), query: { session_id: 'reto-pag' } })
+oraculo('C04', 'status: −400 (un estado entero) o error; nunca +800', st11.estado >= 500 || st11.cuerpo?.evaluation?.pnlTotal === -400, `estado ${st11.estado}; pnl ${st11.cuerpo?.evaluation?.pnlTotal}`)
+escenario({ sim_sessions: [reto], sim_trades: T11 }); db.maxFilas = 2; alterna()
+db.sesion = { user: { id: ADM, email: 'd@ejemplo.test' }, access_token: tok(ADM) }
+const det11 = await llama(detalleAlumno, { method: 'GET', token: tok(ADM), query: { id: A } })
+const sumaDet = (det11.cuerpo?.trades || []).reduce((x, t) => x + Number(t.pnl), 0)
+oraculo('C04', 'detalle del admin: suma −400 o error; nunca +800', det11.estado >= 500 || sumaDet === -400, `estado ${det11.estado}; suma ${sumaDet}`)
+escenario({ sim_sessions: [reto], sim_trades: T11 }); db.maxFilas = 2; alterna()
+const an11 = monta(Analytics, {}); await an11.asienta(80)
+const pnlAn = valorDe(an11, 'TOTAL P&L')
+oraculo('C04', 'Analytics: TOTAL P&L $-400.00 (o error); nunca +$800.00', avisaError(an11.texto()) || pnlAn === '$-400.00', `TOTAL P&L «${pnlAn}»`)
+an11.desmonta()
+db.pausa = null; db.maxFilas = null
 
 titulo('10 · bloque D, punto 5: un par que falla no tapa la sesion ni deja un motor sin controles')
 // Astra (cierres, 5-oct): EURUSD con posicion y reproduccion activa; se añade
