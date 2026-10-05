@@ -119,29 +119,25 @@ export default function Dashboard() {
     return r
   }
 
-  // Borrar una sesion (auditoria D06, 4-oct-2026). Antes: cuatro deletes en
-  // paralelo sin mirar ningun { error } y la tarjeta se quitaba siempre; las
-  // metricas seguian contando los trades borrados. Ahora: en orden, parando en
-  // el primer error; la pantalla solo cambia cuando la base lo ha confirmado,
-  // y si algo falla se dice y se recarga lo que hay de verdad.
+  // Borrar una sesion (auditoria D06, 4-oct-2026; bloque D, punto 6, 5-oct-2026).
+  // UN SOLO DELETE de sim_sessions: es una sentencia, o se borra todo o nada.
+  // Los hijos caen por las FKs ON DELETE CASCADE: sim_trades y session_drawings
+  // (las que el CTO leyo en produccion, sql/APLICADOS.md) y session_chart_config
+  // (la FK de sim-001b). Antes, cuatro deletes en orden: borrar los trades y
+  // fallar en los dibujos dejaba una sesion operable sin su libro (Astra).
+  // La pantalla solo cambia cuando la base confirma UNA fila borrada.
   async function borrarSesion(session) {
     if (!confirm('¿Eliminar sesión y todos sus datos?')) return
     const sid = session.id
     setBorrando(sid); setErrorBorrado('')
-    const pasos = [
-      ['operaciones', () => supabase.from('sim_trades').delete().eq('session_id', sid)],
-      ['dibujos', () => supabase.from('session_drawings').delete().eq('session_id', sid)],
-      ['configuración del gráfico', () => supabase.from('session_chart_config').delete().eq('session_id', sid)],
-      ['sesión', () => supabase.from('sim_sessions').delete().eq('id', sid)],
-    ]
-    for (const [que, borra] of pasos) {
-      const { error } = await borra()
-      if (error) {
-        setErrorBorrado(`No se ha podido borrar «${session.name}» (falló al borrar ${que}). Puede haber quedado a medias: vuelve a intentarlo.`)
-        setBorrando(null)
-        if (user) { loadSessions(user.id); loadTrades(user.id) }
-        return
-      }
+    const { error, count } = await supabase.from('sim_sessions').delete({ count: 'exact' }).eq('id', sid)
+    if (error || count !== 1) {
+      setErrorBorrado(error
+        ? `No se ha podido borrar «${session.name}»: no se ha borrado nada. Vuelve a intentarlo.`
+        : `No se ha podido borrar «${session.name}»: la base no la ha encontrado o no te deja borrarla. Recarga la página.`)
+      setBorrando(null)
+      if (user) { loadSessions(user.id); loadTrades(user.id) }
+      return
     }
     setSessions(p => p.filter(s => s.id !== sid))
     setTrades(p => p.filter(t => t.session_id !== sid))

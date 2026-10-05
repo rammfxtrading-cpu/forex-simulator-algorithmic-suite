@@ -23,7 +23,7 @@ import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, pierde: null, log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, pierde: null, cascadas: null, log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -112,7 +112,16 @@ class Q {
     } else {
       let sel = filas.filter(f => this.filtros.every(g => g(f)))
       if (this.op === 'update') for (const f of sel) Object.assign(f, copia(this.payload))
-      else if (this.op === 'delete') db.tablas[this.tabla] = filas.filter(f => !sel.includes(f))
+      else if (this.op === 'delete') {
+        db.tablas[this.tabla] = filas.filter(f => !sel.includes(f))
+        // db.cascadas (OPCIONAL, lo declara la prueba): { padre: [[hija, columna], ...] }
+        // emula ON DELETE CASCADE de FKs que constan en produccion. Sin declararlas,
+        // el doble NO tiene cascadas (pruebas/LEEME.md, H07).
+        for (const [hija, col] of db.cascadas?.[this.tabla] ?? []) {
+          const ids = new Set(sel.map(f => f.id))
+          db.tablas[hija] = (db.tablas[hija] || []).filter(h => !ids.has(h[col]))
+        }
+      }
       // orden estable por las columnas pedidas y nada mas: los empates quedan en
       // el orden de insercion (Postgres no promete ni eso).
       for (const [c, asc, nf] of [...this.orden].reverse()) sel = [...sel].sort((a, b) => {

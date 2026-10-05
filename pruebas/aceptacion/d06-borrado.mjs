@@ -43,12 +43,42 @@ p.desmonta()
 
 titulo('A2 · el mismo borrado, esta vez con exito')
 escenario({ sim_sessions: [ses], sim_trades: [tradeSim({ session_id: ses.id, pnl: 250 }), tradeSim({ session_id: ses.id, pnl: 150 })] })
+// las FKs ON DELETE CASCADE de produccion (ver A3); el doble las emula al declararlas
+db.cascadas = { sim_sessions: [['sim_trades', 'session_id'], ['session_drawings', 'session_id'], ['session_chart_config', 'session_id']] }
 const p2 = monta(Dashboard, {}); await p2.asienta()
 p2.pulsa(p2.busca(x => x.tipo === 'button' && p2.texto(x) === '✕')); await p2.asienta()
 const m2 = { trades: /(\d+)TRADES TAKEN/.exec(p2.texto())?.[1], pnl: /([+-]\$[\d.,]+)TOTAL P&L/.exec(p2.texto())?.[1] }
 ver('control: la base quedo sin la sesion ni sus trades, y la tarjeta se fue', db.tablas.sim_sessions.length === 0 && db.tablas.sim_trades.length === 0 && !p2.texto().includes('Sesion-A-uno'))
 oraculo('D06', 'A2: tras borrar, las metricas ya no cuentan esos trades (0 y +$0.00)', m2.trades === '0' && m2.pnl === '+$0.00', `siguen: ${m2.trades} trades, ${m2.pnl}`)
 p2.desmonta()
+
+titulo('A3 · bloque D, punto 6: un unico DELETE; nunca una sesion operable sin su libro')
+// Decision del CTO (5-oct): borrar = UN DELETE de sim_sessions; las cascadas
+// borran trades y dibujos (FKs ON DELETE CASCADE que el CTO leyo en produccion,
+// sql/APLICADOS.md) y la configuracion (FK de sim-001b). El doble las emula
+// porque esta prueba las declara (db.cascadas).
+// Astra (cierres, 5-oct): borrar trades bien, fallar al borrar dibujos → queda
+// la sesion con balance 10.250, cero trades y «Continuar».
+const CASCADAS = { sim_sessions: [['sim_trades', 'session_id'], ['session_drawings', 'session_id'], ['session_chart_config', 'session_id']] }
+const ses3 = sesionSim({ name: 'Sesion-A-tres', capital: 10000, balance: 10250 })
+escenario({ sim_sessions: [ses3], sim_trades: [tradeSim({ session_id: ses3.id, pnl: 250 })], otras: { session_drawings: [{ id: 'dib-1', session_id: ses3.id }], session_chart_config: [{ id: 'cfg-1', session_id: ses3.id }] } })
+db.cascadas = CASCADAS
+db.falla = c => c.op === 'delete' && c.tabla === 'session_drawings' ? { message: 'permission denied for table session_drawings', code: '42501' } : null
+const p3 = monta(Dashboard, {}); await p3.asienta()
+p3.pulsa(p3.busca(x => x.tipo === 'button' && p3.texto(x) === '✕')); await p3.asienta()
+const borrados = db.log.filter(l => l.op === 'delete').map(l => l.tabla)
+oraculo('D06', 'A3: el cliente hace UN solo DELETE, de sim_sessions (los hijos, por cascada)', borrados.length === 1 && borrados[0] === 'sim_sessions', borrados.join(', ') || 'ninguno')
+const quedaSesion = db.tablas.sim_sessions.some(x => x.id === ses3.id), quedanTrades = db.tablas.sim_trades.filter(t => t.session_id === ses3.id).length
+oraculo('D06', 'A3: no queda una sesion operable sin su libro (o se fue entera, o sigue con su trade)', !quedaSesion || quedanTrades === 1, `sesion ${quedaSesion ? 'sigue' : 'borrada'}, ${quedanTrades} trades`)
+p3.desmonta()
+db.falla = null
+escenario({ sim_sessions: [ses3], sim_trades: [tradeSim({ session_id: ses3.id, pnl: 250 })] }); db.cascadas = CASCADAS
+db.falla = c => c.op === 'delete' ? { message: 'canceling statement due to statement timeout', code: '57014' } : null
+const p4 = monta(Dashboard, {}); await p4.asienta()
+p4.pulsa(p4.busca(x => x.tipo === 'button' && p4.texto(x) === '✕')); await p4.asienta()
+oraculo('D06', 'A3: si ese DELETE falla, no se borra nada y se dice', db.tablas.sim_sessions.length === 1 && db.tablas.sim_trades.length === 1 && p4.texto().includes('Sesion-A-tres') && /no se ha podido/i.test(p4.texto()), `${db.tablas.sim_sessions.length} sesiones, ${db.tablas.sim_trades.length} trades`)
+p4.desmonta()
+db.falla = null
 
 titulo('B · wipe que falla al borrar los dibujos')
 const sA = sesionSim({ id: 'sA' })
