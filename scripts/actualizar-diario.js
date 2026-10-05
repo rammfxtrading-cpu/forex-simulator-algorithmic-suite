@@ -51,7 +51,10 @@ async function bajarDia(pair, y, m, d) {
     try {
       const data = await getHistoricalRates({
         instrument: pair, dates:{from,to}, timeframe:'m1', format:'json', volumes:true,
-        retryCount: 4, retryOnEmpty: true, pauseBetweenRetriesMs: 2000,
+        // bloque F, punto 3: sin retryOnEmpty. Con el, un dia legitimamente vacio
+        // (domingo antes de abrir, festivo) agotaba los reintentos y la libreria
+        // lanzaba «Unknown error» (dukascopy-node 1.46.4, dist/index.js:16666).
+        retryCount: 4, retryOnEmpty: false, pauseBetweenRetriesMs: 2000,
       })
       return data.map(c=>({time:Math.floor(c.timestamp/1000),open:c.open,high:c.high,low:c.low,close:c.close,volume:c.volume}))
     } catch(e) { if (i<5) await sleep(10000); else throw e }
@@ -102,7 +105,7 @@ function diasPendientes(velas, year, ayerMs) {
   const cola = [], cortos = []
   for (let t = inicio; t <= fin; t += DIA_MS) {
     const d = ymd(t)
-    if (t > ultDiaMs) { cola.push(d); continue }          // cola: todos los dias
+    if (t > ultDiaMs) { if (C.diaConMercado(d)) cola.push(d); continue }   // cola: los dias con mercado (F3: el sabado no)
     const umbral = C.UMBRAL_LABORABLE[new Date(t).getUTCDay()]
     if (umbral && !C.FESTIVOS_MMDD.has(d.slice(5)) && (porDia[d] || 0) < umbral) cortos.push(d)
   }

@@ -66,5 +66,17 @@ proveedor.responde = a => (a.instrument === 'audusd' && diaDe(a) === '2026-01-27
 await corre()
 const tras = proveedor.llamadas.filter(l => l.instrumento === 'audusd' && l.desde.slice(0, 10) > '2026-01-27').length
 oraculo('FD01', 'cortada la cola en el 27 (fallo), no se piden los dias de despues (no se publicarian)', tras === 0, `${tras} peticiones despues del 27`)
+
+titulo('3 · no se piden dias de mercado cerrado; un vacio legitimo no es un fallo')
+// Horario v2.1 (CTO): abre el domingo 17:00 y cierra el viernes 17:00 de Nueva
+// York. El sabado UTC entero esta cerrado; el domingo UTC abre a las 22:00 (en
+// invierno). Un domingo vacio (sin velas todavia) es legitimo.
+escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
+proveedor.vacioComoSDK = true          // el vacio, como lo trata la libreria real con retryOnEmpty
+proveedor.responde = a => { const d = diaDe(a); return new Date(d + 'T00:00:00Z').getUTCDay() === 0 ? [] : diaM1(d) }
+const r3 = await corre()
+const pedidos3 = proveedor.llamadas.filter(l => l.instrumento === 'audusd').map(l => l.desde.slice(0, 10))
+oraculo('FD01', 'no se piden los sabados (24 y 31-ene)', !pedidos3.includes('2026-01-24') && !pedidos3.includes('2026-01-31'), pedidos3.join(' '))
+oraculo('FD01', 'un domingo vacio no es un fallo: nada «sin descargar» y la cola sigue hasta el viernes 30', !/sin descargar/.test(linea(r3, 'AUDUSD')) && enDia(guardado('AUDUSD/M1/2026').velas, '2026-01-30') === 1440, linea(r3, 'AUDUSD'))
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(e => e.terminoPor !== 'timeout'))
 fin()
