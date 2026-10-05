@@ -26,7 +26,7 @@
  *      la nueva es peor)
  *   3. un upload con error no se registra como guardado
  */
-import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db, guardado } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 const candles = (await importa('pages/api/candles.js')).default
@@ -40,7 +40,8 @@ const log0 = console.log, err0 = console.error, warn0 = console.warn
 console.log = (...a) => { logs.push(a.join(' ')); log0(...a) }
 console.error = (...a) => { logs.push(a.join(' ')); err0(...a) }
 console.warn = (...a) => { logs.push(a.join(' ')); warn0(...a) }
-const velasEn = ruta => JSON.parse(db.storage['forex-data'][ruta] ?? '[]').length
+// lo vigente, como lo leen los lectores: el .json.gz si esta; si no, el .json
+const velasEn = ruta => guardado(ruta.replace(/\.json$/, '')).velas?.length ?? 0
 // programa los resultados de las sucesivas descargas: un error, o null = la de verdad
 const descargas = (...errores) => { let i = 0; db.falla = c => c.op === 'download' ? (errores[i++] ?? null) : null; return () => i }
 
@@ -92,7 +93,7 @@ db.falla = c => c.op === 'upload' ? { name: 'StorageApiError', message: 'Payload
 proveedor.responde = () => anioValido
 logs.length = 0
 await llama(candles, { method: 'GET', token: tok(A), query: { pair: 'AUDCAD', timeframe: 'M1', from: String(Date.UTC(ANIO, 0, 1) / 1000), to: String(Date.UTC(ANIO, 0, 31) / 1000), year: String(ANIO) } })
-ver('control: el upload se intento y fallo (no hay fichero)', db.log.some(l => l.op === 'upload') && !db.storage['forex-data'][`AUDCAD/M1/${ANIO}.json`])
+ver('control: el upload se intento y fallo (no hay fichero)', db.log.some(l => l.op === 'upload') && !guardado(`AUDCAD/M1/${ANIO}`).velas)
 const delHandler = () => logs.filter(l => l.startsWith('[candles]'))
 const dice = delHandler().find(l => /Saved/.test(l))
 oraculo('D04', 'un upload fallido no se registra como «Saved»', !dice, dice ?? '')

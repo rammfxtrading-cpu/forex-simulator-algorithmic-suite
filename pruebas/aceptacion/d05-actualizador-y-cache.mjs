@@ -28,7 +28,7 @@
  * Control añadido: volver a bajar un dia corto nunca lo EMPEORA (si el
  * proveedor da menos velas que las guardadas, se quedan las guardadas).
  */
-import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db, guardado } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { correScript, ejecucionesScripts } from '../script-falso.mjs'
@@ -46,7 +46,7 @@ proveedor.responde = ({ dates }) => diaM1(dates.from.toISOString().slice(0, 10))
 const r1 = await correScript('scripts/actualizar-diario.js', { ahora: '2026-10-02T06:00:00Z', argv: ['--subir'], env: ENV })
 ver('control: el script no abrio ningun .env real', r1.envLeidos.length === 0, r1.envLeidos.length)
 ver('control: el script corrio y subio EURUSD', r1.salida.some(l => /SUBIDO/.test(l)), r1.salida.find(l => /EURUSD/.test(l)) ?? r1.salida.slice(0, 3).join(' | '))
-const f1 = JSON.parse(db.storage['forex-data']['EURUSD/M1/2026.json'])
+const f1 = guardado('EURUSD/M1/2026').velas
 oraculo('D05', 'el 30-sep a medias se vuelve a pedir y queda completo (1.440)', enDia(f1, '2026-09-30') === 1440, `pidio ${pedidos().join(', ')}; el 30-sep queda con ${enDia(f1, '2026-09-30')} velas`)
 
 titulo('2 · un dia interior vacio')
@@ -57,14 +57,14 @@ ver('control: primera pasada pidio el 1-oct (vacio) y el 2-oct', [...pedidos()].
 proveedor.llamadas.length = 0
 proveedor.responde = ({ dates }) => diaM1(dates.from.toISOString().slice(0, 10))
 await correScript('scripts/actualizar-diario.js', { ahora: '2026-10-06T06:00:00Z', argv: ['--subir'], env: ENV })
-const f2 = JSON.parse(db.storage['forex-data']['EURUSD/M1/2026.json'])
+const f2 = guardado('EURUSD/M1/2026').velas
 oraculo('D05', 'la pasada siguiente vuelve a pedir el 1-oct', pedidos().includes('2026-10-01') && enDia(f2, '2026-10-01') === 1440, `pidio ${pedidos().join(', ')}; el 1-oct tiene ${enDia(f2, '2026-10-01')} velas`)
 
 titulo('2b · control: volver a bajar un dia corto no lo empeora')
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': JSON.stringify([...historial('2026-09-29'), ...velasDe('2026-09-29', 1000), ...velasDe('2026-09-30')]) } } })
 proveedor.responde = ({ dates }) => { const d = dates.from.toISOString().slice(0, 10); return d === '2026-09-29' ? diaM1(d, 500) : diaM1(d) }
 await correScript('scripts/actualizar-diario.js', { ahora: '2026-10-02T06:00:00Z', argv: ['--subir'], env: ENV })
-const f3 = JSON.parse(db.storage['forex-data']['EURUSD/M1/2026.json'])
+const f3 = guardado('EURUSD/M1/2026').velas
 ver('control: el martes 29 (1.000 guardadas, el proveedor da 500) se queda con 1.000', enDia(f3, '2026-09-29') === 1000, `${enDia(f3, '2026-09-29')} velas; pidio ${pedidos().join(', ')}`)
 
 titulo('3 · la cache de /api/candles comprueba la version (decision del CTO, 5-oct)')
@@ -79,7 +79,9 @@ ver('control: primera peticion, 1.440 velas del 30-sep y una descarga', a.cuerpo
 const d0 = cuenta('download'), i0 = cuenta('info')
 const a2 = await llama(candles, { method: 'GET', token: tok(A), query: q })
 oraculo('D05', 'dos peticiones seguidas sin cambio: la segunda hace CERO descargas', a2.cuerpo?.count === 1440 && cuenta('download') === d0, `${cuenta('download') - d0} descargas`)
-oraculo('D05', 'y lo sabe consultando la version (una llamada info, sin descargar)', cuenta('info') === i0 + 1, `${cuenta('info') - i0} info`)
+// con gzip (5-oct) se consulta primero el .json.gz y, si no esta, el .json: aqui
+// solo hay .json, asi que son 2 llamadas info (el caso solo-.json.gz, 1: ver gz01)
+oraculo('D05', 'y lo sabe consultando la version (llamadas info, sin descargar)', cuenta('info') === i0 + 2, `${cuenta('info') - i0} info`)
 db.storage['forex-data']['NZDUSD/M1/2026.json'] = JSON.stringify([...velasDe('2026-09-30'), ...velasDe('2026-10-01')])   // el cron añade el 1-oct
 const d1 = cuenta('download')
 const b = await llama(candles, { method: 'GET', token: tok(A), query: q })

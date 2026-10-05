@@ -21,7 +21,8 @@ async function main() {
     const { data: tfs } = await sb.storage.from(BUCKET).list(p.name, { limit: 100 })
     for(const tf of (tfs || []).filter(x=>!x.id)) {
       const { data: files } = await sb.storage.from(BUCKET).list(`${p.name}/${tf.name}`, { limit: 100 })
-      const years = (files || []).filter(f=>f.id).map(f=>f.name.replace('.json','')).sort()
+      // compresion (5-oct-2026): un año puede estar como .json, .json.gz o los dos
+      const years = (files || []).filter(f=>f.id).map(f => f.name.endsWith('.json.gz') ? f.name.replace('.json.gz', ' (gz)') : f.name.replace('.json', '')).sort()
       console.log(`  ${p.name}/${tf.name}: ${years.join(', ')}`)
     }
   }

@@ -15,9 +15,12 @@
 //     puede leer, no se sube (no se sabe si lo nuevo es peor).
 //   · Se comprueba el { error } del upload.
 //   · Si algun par falla, acaba con codigo 1.
+// Compresion (5-oct-2026): lee el .json.gz o, si no hay, el .json; sube .json.gz
+// (scripts/ficheros-velas.js). No borra el .json.
 const fs = require('fs')
 const { getHistoricalRates } = require('dukascopy-node')
 const { createClient } = require('@supabase/supabase-js')
+const { leerVelas, subirVelas, empaqueta } = require('./ficheros-velas')
 
 const SUBIR = process.argv.includes('--subir')
 
@@ -81,17 +84,14 @@ function diasCortos(candles) {
 
 // Lo guardado: { estado: 'ok', velas } | { estado: 'no-existe' } | { estado: 'error', motivo }
 // «No existe» = el 404 de storage-js (statusCode '404'); cualquier otro error, no se pudo leer.
-async function leerGuardado(path) {
-  const { data, error } = await sb.storage.from('forex-data').download(path)
-  if (error) return (String(error.statusCode) === '404' || error.status === 404) ? { estado: 'no-existe' } : { estado: 'error', motivo: error.message || String(error) }
-  try { return { estado: 'ok', velas: JSON.parse(await data.text()) } } catch (e) { return { estado: 'error', motivo: 'JSON ilegible' } }
-}
+// El .json.gz si existe; si no, el .json (scripts/ficheros-velas.js).
+const leerGuardado = pair => leerVelas(sb, 'forex-data', pair, YEAR)
 
 async function main() {
   console.log(`Restaurando ${YEAR} (${SUBIR ? '⚠️ REAL: sube' : '🔍 SECO: no escribe nada; para subir, --subir'})...\n`)
   const fallos = []
   for(const pair of PAIRS) {
-    const path = `${pair.toUpperCase()}/M1/${YEAR}.json`
+    const path = `${pair.toUpperCase()}/M1/${YEAR}.json.gz`
     try {
       console.log(`↓ ${pair.toUpperCase()}...`)
       const data = await downloadWithRetry(pair)
@@ -105,17 +105,15 @@ async function main() {
       if (cortos.length > toleranciaDias(laborables)) {
         throw new Error(`PARCIAL: ${cortos.length} de ${laborables} dias laborables por debajo del umbral (tolerancia ${toleranciaDias(laborables)}): ${cortos.slice(0, 5).join(', ')}${cortos.length > 5 ? '…' : ''}`)
       }
-      const guardado = await leerGuardado(path)
+      const guardado = await leerGuardado(pair)
       if (guardado.estado === 'error') throw new Error(`no se pudo leer lo guardado (${guardado.motivo}): no se sabe si lo nuevo es peor`)
       if (guardado.estado === 'ok' && candles.length < guardado.velas.length) {
         throw new Error(`lo nuevo tiene ${candles.length} velas y lo guardado ${guardado.velas.length}: no se empeora`)
       }
-      const body = JSON.stringify(candles)
-      if (!SUBIR) { console.log(`  [SECO] subiria ${candles.length} velas (${(body.length/1024/1024).toFixed(1)}MB; ${cortos.length} dias cortos tolerados)`); continue }
-      const { error } = await sb.storage.from('forex-data')
-        .upload(path, body, { contentType: 'application/json', upsert: true })
-      if(error) throw new Error(`fallo al subir: ${error.message || error}`)
-      console.log(`  ✓ ${candles.length} candles, ${(body.length/1024/1024).toFixed(1)}MB`)
+      if (!SUBIR) { console.log(`  [SECO] subiria ${path}: ${candles.length} velas (${(empaqueta(candles).length/1024/1024).toFixed(1)}MB comprimido; ${cortos.length} dias cortos tolerados)`); continue }
+      const up = await subirVelas(sb, 'forex-data', pair, YEAR, candles)
+      if(up.error) throw new Error(`fallo al subir: ${up.error.message || up.error}`)
+      console.log(`  ✓ ${up.ruta}: ${candles.length} candles, ${(up.bytes/1024/1024).toFixed(1)}MB comprimido`)
     } catch(e) {
       console.log(`  ✗ ${pair.toUpperCase()}: ${e.message}`)
       fallos.push(pair.toUpperCase())

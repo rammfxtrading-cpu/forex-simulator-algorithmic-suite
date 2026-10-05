@@ -13,6 +13,7 @@
 import { readFileSync, mkdirSync, appendFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { db, reset } from './supabase-falso.mjs'
 import { router } from './next-falso.mjs'
 import { api, nav, retenApi } from './entorno.mjs'
@@ -85,6 +86,16 @@ export const tradeSim = (extra = {}) => ({ id: 't' + String(++n).padStart(4, '0'
 
 // Vela M1 (segundos, como las del simulador)
 export const vela = (time, open, high, low, close) => ({ time, open, high, low, close, volume: 1 })
+
+// Lo guardado en forex-data para un año (`base` = 'EURUSD/M1/2026', sin extension),
+// como lo leen los lectores (compresion, 5-oct-2026): el .json.gz si esta y, si no,
+// el .json. → { formato: 'gz' | 'json' | null, velas: lista | null }
+export function guardado(base, bucket = 'forex-data') {
+  const b = db.storage[bucket] || {}
+  if (Object.hasOwn(b, base + '.json.gz')) return { formato: 'gz', velas: JSON.parse(gunzipSync(Buffer.from(b[base + '.json.gz'])).toString('utf8')) }
+  if (Object.hasOwn(b, base + '.json')) return { formato: 'json', velas: JSON.parse(String(b[base + '.json'])) }
+  return { formato: null, velas: null }
+}
 
 // ── Una SONDA para hooks: monta un componente que solo llama al hook y
 // expone lo que devuelve en sonda.valor (siempre el del ultimo pintado).

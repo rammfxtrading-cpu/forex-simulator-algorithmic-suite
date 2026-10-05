@@ -23,7 +23,7 @@
  *   D. --subir, los 11 dias completos: sube los 6 pares (control) y NO borra
  *      los 2023; codigo 0
  */
-import { titulo, ver, oraculo, fin, escenario, proveedor, db } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, proveedor, db, guardado } from '../lib.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { correScript, ejecucionesScripts } from '../script-falso.mjs'
 const AHORA = '2026-01-16T12:00:00Z'
@@ -54,8 +54,8 @@ oraculo('O01', 'A: y acaba bien (codigo 0)', (a.exitCode ?? 0) === 0, `codigo ${
 titulo('B · --subir con el proveedor vacio')
 escenario({ storage: BUCKET() }); proveedor.responde = () => []
 const b = await corre(['--subir'])
-oraculo('O01', 'B: con el proveedor vacio, el 2026 guardado no se sustituye', JSON.parse(db.storage['forex-data']['EURUSD/M1/2026.json']).length === 100,
-  `EURUSD 2026 pasa de 100 a ${JSON.parse(db.storage['forex-data']['EURUSD/M1/2026.json']).length} velas`)
+oraculo('O01', 'B: con el proveedor vacio, el 2026 guardado no se sustituye', guardado('EURUSD/M1/2026').velas.length === 100,
+  `EURUSD 2026 pasa de 100 a ${guardado('EURUSD/M1/2026').velas.length} velas`)
 oraculo('O01', 'B: no borra los 2023', quedan2023() === 2, `quedan ${quedan2023()} de 2`)
 oraculo('O01', 'B: falla con codigo distinto de cero', (b.exitCode ?? 0) !== 0, `codigo ${b.exitCode ?? 0}; ultima linea: ${b.salida.at(-1)}`)
 
@@ -69,7 +69,7 @@ titulo('D · --subir con los 11 dias completos')
 escenario({ storage: BUCKET() }); proveedor.responde = completo
 const d = await corre(['--subir'])
 const subidos = db.log.filter(l => l.op === 'upload').map(l => l.payload.ruta)
-ver('control: subio los 6 pares de 2026', subidos.length === 6 && subidos.every(r => r.endsWith('/M1/2026.json')), subidos.join(' '))
+ver('control: subio los 6 pares de 2026', subidos.length === 6 && subidos.every(r => /\/M1\/2026\.json(\.gz)?$/.test(r)), subidos.join(' '))
 oraculo('O01', 'D: no borra nada (los dos 2023 siguen)', quedan2023() === 2 && !db.log.some(l => l.op === 'remove'), `quedan ${quedan2023()} de 2`)
 oraculo('O01', 'D: acaba bien (codigo 0)', (d.exitCode ?? 0) === 0, `codigo ${d.exitCode ?? 0}`)
 ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))

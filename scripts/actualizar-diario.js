@@ -1,4 +1,6 @@
-// ACTUALIZACIÓN INCREMENTAL DIARIA. Para cada par: lee el {año}.json de Supabase,
+// ACTUALIZACIÓN INCREMENTAL DIARIA. Para cada par: lee el año de Supabase ({año}.json.gz
+// o, si no hay, {año}.json; se sube SIEMPRE .json.gz y no se borra el .json:
+// scripts/ficheros-velas.js, compresion del 5-oct-2026),
 // baja DÍA A DÍA desde su última vela hasta AYER, añade sin duplicar, valida y resube.
 // NUNCA borra el bucket. Pensado para correr en GitHub Actions cada noche.
 // Uso:
@@ -7,6 +9,7 @@
 const { getHistoricalRates } = require('dukascopy-node')
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
+const { leerVelas, subirVelas, rutasAnio } = require('./ficheros-velas')
 
 const SUBIR = process.argv.includes('--subir')
 
@@ -76,14 +79,10 @@ const MAX_DIAS_POR_PASADA = 40
 const DIA_MS = 86400000
 const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 
-// → { estado: 'ok', velas } | { estado: 'no-existe' } | { estado: 'error', motivo }
-// «No existe» = el 404 de storage-js (statusCode '404'); cualquier otro error, no se pudo leer.
-async function leerAnio(keyFile) {
-  const { data, error } = await sb.storage.from(BUCKET).download(keyFile)
-  if (error) return (String(error.statusCode) === '404' || error.status === 404) ? { estado: 'no-existe' } : { estado: 'error', motivo: error.message || String(error) }
-  try { const v = JSON.parse(await data.text()); return Array.isArray(v) ? { estado: 'ok', velas: v } : { estado: 'error', motivo: 'no es una lista' } }
-  catch (e) { return { estado: 'error', motivo: 'JSON ilegible' } }
-}
+// → { estado: 'ok', velas, ruta } | { estado: 'no-existe' } | { estado: 'error', ruta, motivo }
+// «No existe» = el 404 de storage-js en los dos formatos; cualquier otro error, no
+// se pudo leer (scripts/ficheros-velas.js).
+const leerAnio = (pair, year) => leerVelas(sb, BUCKET, pair, year)
 
 // Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los laborables cortos.
 function diasPendientes(velas, year, ayerMs) {
@@ -105,9 +104,9 @@ function diasPendientes(velas, year, ayerMs) {
 
 // Baja los dias pendientes y los fusiona: un dia solo se sustituye si trae mas velas.
 async function reconciliaAnio(pair, year, ayerMs) {
-  const keyFile = `${pair.toUpperCase()}/M1/${year}.json`
-  const leido = await leerAnio(keyFile)
-  if (leido.estado === 'error') return { keyFile, estado: `✗ no se pudo leer ${keyFile}: ${leido.motivo}` }
+  const keyFile = rutasAnio(pair, year).gz
+  const leido = await leerAnio(pair, year)
+  if (leido.estado === 'error') return { keyFile, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
   const nuevoAnio = leido.estado === 'no-existe'
   const velas = nuevoAnio ? [] : leido.velas
   const pendientes = diasPendientes(velas, year, ayerMs)
@@ -128,7 +127,7 @@ async function reconciliaAnio(pair, year, ayerMs) {
   const combinado = Object.keys(porDia).sort().flatMap(d => porDia[d]).sort((a, b) => a.time - b.time)
   const resumen = `${nuevoAnio ? 'año NUEVO, ' : ''}+${añadidas} velas en ${mejorados} dia(s) (${sinMejora} sin mejora); ultima ${ymd(combinado[combinado.length - 1].time * 1000)}`
   if (!SUBIR) return { keyFile, estado: `[SECO] ${keyFile}: ${resumen}` }
-  const up = await sb.storage.from(BUCKET).upload(keyFile, JSON.stringify(combinado), { contentType: 'application/json', upsert: true })
+  const up = await subirVelas(sb, BUCKET, pair, year, combinado)
   if (up.error) return { keyFile, estado: `✗ fallo subida ${keyFile}: ${up.error.message}` }
   return { keyFile, estado: `✓ SUBIDO ${keyFile}: ${resumen}` }
 }
@@ -191,8 +190,8 @@ async function main() {
   for (const pair of PAIRS) {
     try {
       // el año en curso; si aun no tiene fichero (1-ene festivo sin datos), el anterior
-      let leido = await leerAnio(`${pair.toUpperCase()}/M1/${year}.json`)
-      if (leido.estado === 'no-existe') leido = await leerAnio(`${pair.toUpperCase()}/M1/${year - 1}.json`)
+      let leido = await leerAnio(pair, year)
+      if (leido.estado === 'no-existe') leido = await leerAnio(pair, year - 1)
       if (leido.estado !== 'ok' || !leido.velas.length) { console.log(`  ${pair.toUpperCase().padEnd(8)} ✗ no legible`); descolgados.push(`${pair}: archivo no legible`); continue }
       const arr = leido.velas
       const ult = new Date(arr[arr.length-1].time*1000)

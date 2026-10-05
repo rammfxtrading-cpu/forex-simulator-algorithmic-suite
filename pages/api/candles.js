@@ -1,6 +1,7 @@
 import { requireSimulador, supabaseAdmin } from '../../lib/authApi'
 import { validaAnioParaPublicar } from '../../lib/mercado/calidad'
 import { getHistoricalRates } from 'dukascopy-node'
+import { gzipSync, gunzipSync } from 'zlib'
 
 const TIMEFRAMES = {
   M1: 1, M3: 3, M5: 5, M15: 15, M30: 30,
@@ -65,28 +66,51 @@ function unaVez(clave, trabajo) {
 // Cualquier otro error (red, 5xx, JSON ilegible) es «no se pudo leer».
 const noExiste = e => String(e?.statusCode) === '404' || e?.status === 404
 
+// Compresion (CTO, 5-oct-2026): un año puede estar como {PAR}/M1/{AÑO}.json.gz
+// (gzip, el formato nuevo) o {PAR}/M1/{AÑO}.json (el de siempre). Se lee el
+// .json.gz si existe y, si no existe (404 real), el .json; un error que no es 404
+// en el .json.gz es «no se pudo leer» (el .json puede ser una version vieja). Se
+// escribe solo .json.gz y aqui no se borra nunca el .json (eso es la migracion).
+// Se descomprime por los bytes magicos de gzip, no por la extension. La misma
+// regla, para los scripts CommonJS: scripts/ficheros-velas.js.
+const rutasAnio = (pair, year) => [`${pair}/M1/${year}.json.gz`, `${pair}/M1/${year}.json`]
+const esGzip = b => b.length >= 2 && b[0] === 0x1f && b[1] === 0x8b
+
 // → { estado: 'ok', velas } | { estado: 'no-existe' } | { estado: 'error', motivo }
-async function leerAnio(pair, year) {
-  const { data, error } = await supabaseAdmin.storage
-    .from('forex-data')
-    .download(`${pair}/M1/${year}.json`)
+async function leerRuta(ruta) {
+  const { data, error } = await supabaseAdmin.storage.from('forex-data').download(ruta)
   if (error) return noExiste(error) ? { estado: 'no-existe' } : { estado: 'error', motivo: error.message || String(error) }
   try {
-    const velas = JSON.parse(await data.text())
+    let b = Buffer.from(await data.arrayBuffer())
+    if (esGzip(b)) b = gunzipSync(b)
+    const velas = JSON.parse(b.toString('utf8'))
     return Array.isArray(velas) ? { estado: 'ok', velas } : { estado: 'error', motivo: 'el fichero no es una lista de velas' }
   } catch (e) {
-    return { estado: 'error', motivo: 'JSON ilegible: ' + e.message }
+    return { estado: 'error', motivo: 'fichero ilegible: ' + e.message }
   }
 }
 
-// La version del objeto (etag), sin descargarlo.
-// → { estado: 'ok', version } | { estado: 'no-existe' } | { estado: 'error', motivo }
+// El fichero vigente del año: el .json.gz o, si no existe, el .json.
+async function leerAnio(pair, year) {
+  for (const ruta of rutasAnio(pair, year)) {
+    const r = await leerRuta(ruta)
+    if (r.estado !== 'no-existe') return r
+  }
+  return { estado: 'no-existe' }
+}
+
+// La version (etag) del fichero vigente, sin descargarlo.
+// → { estado: 'ok', ruta, version } | { estado: 'no-existe' } | { estado: 'error', motivo }
 async function versionAnio(pair, year) {
-  const { data, error } = await supabaseAdmin.storage
-    .from('forex-data')
-    .info(`${pair}/M1/${year}.json`)
-  if (error) return noExiste(error) ? { estado: 'no-existe' } : { estado: 'error', motivo: error.message || String(error) }
-  return { estado: 'ok', version: data?.etag ?? data?.version ?? data?.lastModified ?? null }
+  for (const ruta of rutasAnio(pair, year)) {
+    const { data, error } = await supabaseAdmin.storage.from('forex-data').info(ruta)
+    if (error) {
+      if (noExiste(error)) continue
+      return { estado: 'error', motivo: error.message || String(error) }
+    }
+    return { estado: 'ok', ruta, version: data?.etag ?? data?.version ?? data?.lastModified ?? null }
+  }
+  return { estado: 'no-existe' }
 }
 
 async function loadFromSupabase(pair, year) {
@@ -96,9 +120,11 @@ async function loadFromSupabase(pair, year) {
   // si no se puede consultar la version: la ultima version verificada, o error
   if (v.estado === 'error') return enCache ? { estado: 'ok', velas: enCache.velas } : { estado: 'error', motivo: v.motivo }
   if (v.estado === 'no-existe') { cache.quita(key); return { estado: 'no-existe' } }
-  if (enCache && v.version != null && enCache.version === v.version) return { estado: 'ok', velas: enCache.velas }
-  const r = await leerAnio(pair, year)
-  if (r.estado === 'ok') cache.set(key, r.velas, v.version)
+  // la version identifica fichero Y contenido: pasar de .json a .json.gz tambien relee
+  const version = v.version == null ? null : `${v.ruta}#${v.version}`
+  if (enCache && version != null && enCache.version === version) return { estado: 'ok', velas: enCache.velas }
+  const r = await leerRuta(v.ruta)
+  if (r.estado === 'ok') cache.set(key, r.velas, version)
   return r
 }
 
@@ -238,7 +264,7 @@ async function fetchFromDukascopy(pair, year) {
     volume: c.volume ?? 0,
   }))
   const key = `${pair}_${year}`
-  const path = `${pair}/M1/${year}.json`
+  const path = `${pair}/M1/${year}.json.gz`   // se escribe solo gzip (compresion, 5-oct-2026)
 
   // Proteccion anti-degradacion (D04): nunca se sirve, cachea ni sube una
   // version con MENOS velas que la guardada; y si lo guardado no se puede
@@ -268,10 +294,10 @@ async function fetchFromDukascopy(pair, year) {
 
   let up
   try {
-    const blob = new Blob([JSON.stringify(allCandles)], { type: 'application/json' })
+    const cuerpo = gzipSync(Buffer.from(JSON.stringify(allCandles), 'utf8'))
     up = await supabaseAdmin.storage
       .from('forex-data')
-      .upload(path, blob, { upsert: true, contentType: 'application/json' })
+      .upload(path, cuerpo, { upsert: true, contentType: 'application/gzip' })
   } catch (e) {
     up = { error: e }
   }

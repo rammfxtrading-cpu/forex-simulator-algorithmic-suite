@@ -1,11 +1,13 @@
 // SUBIDA SEGURA desde archivos locales a Supabase. NUNCA borra el bucket.
-// Sube cada {PAR}_{año}.json local a {PAR}/M1/{año}.json con upsert (sobrescribe solo ese archivo).
+// Sube cada {PAR}_{año}.json local a {PAR}/M1/{año}.json.gz (gzip, compresion del
+// 5-oct-2026; scripts/ficheros-velas.js) con upsert. No borra el {año}.json que hubiera.
 // Uso:
 //   node scripts/subir-a-supabase.js           -> SECO (lista qué subiría, NO sube)
 //   node scripts/subir-a-supabase.js --subir    -> SUBE de verdad
 const fs = require('fs')
 const path = require('path')
 const { createClient } = require('@supabase/supabase-js')
+const { rutasAnio, subirVelas } = require('./ficheros-velas')
 
 const SUBIR = process.argv.includes('--subir')
 const OUT_DIR = path.join(__dirname, '..', 'descarga-2026')
@@ -27,7 +29,7 @@ async function main() {
   for (const pair of PAIRS) {
     for (const year of YEARS) {
       const local = path.join(OUT_DIR, `${pair.toUpperCase()}_${year}.json`)
-      const key = `${pair.toUpperCase()}/M1/${year}.json`
+      const key = rutasAnio(pair, year).gz
       if (!fs.existsSync(local)) { console.log(`  ${key} — ✗ FALTA archivo local`); failList.push(key); continue }
 
       let candles
@@ -38,10 +40,9 @@ async function main() {
       if (!SUBIR) { console.log(`  ${key} — listo (${candles.length} velas, ${mb}MB)`); okList.push(key); continue }
 
       try {
-        const body = JSON.stringify(candles)
-        const { error } = await sb.storage.from(BUCKET).upload(key, body, { contentType:'application/json', upsert:true })
+        const { error, bytes } = await subirVelas(sb, BUCKET, pair, year, candles)
         if (error) throw error
-        console.log(`  ${key} — ✓ SUBIDO (${candles.length} velas, ${mb}MB)`)
+        console.log(`  ${key} — ✓ SUBIDO (${candles.length} velas, ${mb}MB → ${(bytes/1024/1024).toFixed(1)}MB comprimido)`)
         okList.push(key)
       } catch(e) { console.log(`  ${key} — ✗ FALLO subida: ${e.message}`); failList.push(key) }
     }

@@ -28,7 +28,7 @@
  *   sesion completa SI opera; un año de CONTEXTO caido no invalida la sesion;
  *   datos que acaban antes del final de la sesion no son un hueco.
  */
-import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db, retenApi, api } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db, retenApi, api, guardado } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { respuesta } from '../entorno.mjs'
@@ -51,8 +51,8 @@ escenario({ perfiles: [perfil(A)] })
 proveedor.responde = () => diaM1('2025-01-06')
 const r = await pideAnio('NZDUSD', 2025)
 ver('control: el proveedor fue llamado para 2025', proveedor.llamadas.length >= 1 && proveedor.llamadas[0].desde.startsWith('2025-01-01'), JSON.stringify(proveedor.llamadas[0]))
-const subido = db.storage['forex-data']['NZDUSD/M1/2025.json']
-oraculo('D03', 'un año de un solo dia no se sube al bucket como 2025', !subido, subido ? `subido con ${JSON.parse(subido).length} velas` : '')
+const subido = guardado('NZDUSD/M1/2025').velas   // .json.gz o .json (compresion, 5-oct)
+oraculo('D03', 'un año de un solo dia no se sube al bucket como 2025', !subido, subido ? `subido con ${subido.length} velas` : '')
 oraculo('D03', 'ni se sirve como el año completo', r.estado !== 200, `estado ${r.estado}, ${r.cuerpo?.count} velas, source=${r.cuerpo?.source}`)
 
 titulo(`2 · control: ${ANIO} completo hasta ayer SI se publica`)
@@ -60,21 +60,21 @@ escenario({ perfiles: [perfil(A)] })
 const completo = anioProveedor(Date.UTC(ANIO, 0, 1), hoy0)
 proveedor.responde = () => completo
 const r2 = await pideAnio('AUDUSD', ANIO)
-ver(`control: un año completo (${completo.length} velas) se publica y se sirve`, r2.estado === 200 && !!db.storage['forex-data'][`AUDUSD/M1/${ANIO}.json`], `estado ${r2.estado}`)
+ver(`control: un año completo (${completo.length} velas) se publica y se sirve`, r2.estado === 200 && !!guardado(`AUDUSD/M1/${ANIO}`).velas, `estado ${r2.estado}`)
 
 titulo('3 · completo, pero con una vela de high < low')
 escenario({ perfiles: [perfil(A)] })
 const malo = completo.map((c, i) => i === 5000 ? { ...c, high: 1.0, low: 1.2 } : c)
 proveedor.responde = () => malo
 const r3 = await pideAnio('USDCAD', ANIO)
-oraculo('D03', 'un año con OHLC incoherente no se publica', !db.storage['forex-data'][`USDCAD/M1/${ANIO}.json`], `estado ${r3.estado}`)
+oraculo('D03', 'un año con OHLC incoherente no se publica', !guardado(`USDCAD/M1/${ANIO}`).velas, `estado ${r3.estado}`)
 
 titulo('4 · completo, pero con un minuto repetido con otro precio')
 escenario({ perfiles: [perfil(A)] })
 const dup = [...completo.slice(0, 5001), { ...completo[5000], close: 1.3, high: 1.3 }, ...completo.slice(5001)]
 proveedor.responde = () => dup
 const r4 = await pideAnio('GBPUSD', ANIO)
-oraculo('D03', 'un año con un minuto repetido no se publica', !db.storage['forex-data'][`GBPUSD/M1/${ANIO}.json`], `estado ${r4.estado}`)
+oraculo('D03', 'un año con un minuto repetido no se publica', !guardado(`GBPUSD/M1/${ANIO}`).velas, `estado ${r4.estado}`)
 
 // ── el cliente ──────────────────────────────────────────────────────────────
 const semana = (par, quitar = [], hastaDia = 7) => {
