@@ -368,7 +368,7 @@ Fuente: listado de metadatos de Storage de la copia `2026-10-04_122719` (4-oct 1
 
 - **Cuál de los dos aplica:** Supabase no lo dice en su página de precios. El «95 %» que citó el CTO encaja con 10⁹. **PENDIENTE:** confirmarlo en el panel del proyecto.
 - **El cambio a Pro llega tarde para la primera fecha:** está anunciado para dentro de unos dos meses (≈ principios de diciembre) y el límite de 10⁹ bytes cae hacia el 6 de noviembre. Lo resuelve la compresión de § 7.4.
-- **Observación del mismo listado (por confirmar):** EURUSD, AUDUSD, AUDCAD y GBPJPY 2026 se subieron por última vez el 26-27 de septiembre; los otros cinco, el 2-3 de octubre. O el actualizador no sube esos cuatro desde hace una semana, o no tenía nada que subir. Se confirma con el log de GitHub Actions o con un listado nuevo.
+- ~~Observación del mismo listado: EURUSD, AUDUSD, AUDCAD y GBPJPY 2026 se subieron por última vez el 26-27 de septiembre.~~ **Corregido (5-oct, log del run `37320885421` leído por Ramón):** la hipótesis «cuatro pares sin subir desde el 26-27 de septiembre» **no vale: la fecha del listado no es la última vela**. Según el propio job, todos los pares tienen última vela del 2026-10-02 salvo GBPUSD (2026-10-01, retraso 1) y **AUDUSD (2026-09-25, retraso 5, el único descolgado)**; NZDUSD subió +166 velas hasta el 2026-10-04. Un fichero con velas del 2 de octubre no puede tener su última modificación el 27 de septiembre: el campo que leí del listado probablemente era `created_at` (un upsert lo conserva), no `updated_at`. No verificado: se comprobaría con un listado nuevo. La última vela real la da `scripts/copia-mercado.js`.
 
 ### 7.2 Compresión medida
 
@@ -520,7 +520,7 @@ Son contratos por escribir como pruebas en `pruebas/aceptacion/` cuando se imple
 3. **Compresión (§ 7.4):** aprobada; el código de lectores y escritores está en la rama (`7342403`, `f85ce6f`). La migración de ficheros no empieza hasta que los lectores estén desplegados y el CTO lo diga. Hay que hacerla **antes del 6-nov** si el límite es 10⁹ y Pro llega en diciembre.
 4. **Caché de `/api/candles`:** resuelto (`e07b849`, `0f280a3`).
 5. **Timestamp de Dukascopy** = apertura del minuto: validar con un minuto conocido (§ 2.2).
-6. **Los 4 pares que no se suben desde el 26-27 de septiembre:** confirmar con el log del actualizador (§ 7.1).
+6. ~~Los 4 pares que no se suben desde el 26-27 de septiembre~~ **Corregido (§ 7.1):** el descolgado es **AUDUSD** (última vela 2026-09-25 según el job del 5-oct); el resto, al 2026-10-02 (GBPUSD, 2026-10-01). Causa del fallo del job: descargas del proveedor fallidas en 8 de 9 pares.
 7. **No pedidos, no diseñados:**
    - una rama de práctica desde un punto anterior (§ 3.8);
    - ajustes manuales de admin (§ 9).
