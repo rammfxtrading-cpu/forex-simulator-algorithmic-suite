@@ -37,7 +37,7 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
   const salida = [], envLeidos = [], envTodos = []
   const orig = { load: Module._load, read: fs.readFileSync,
     fs: { readFileSync: fs.readFileSync, openSync: fs.openSync, createReadStream: fs.createReadStream, readFile: fs.readFile, open: fs.open,
-      promisesReadFile: fs.promises.readFile, promisesOpen: fs.promises.open }, st: globalThis.setTimeout, Date: globalThis.Date, log: console.log, err: console.error,
+      promisesReadFile: fs.promises.readFile, promisesOpen: fs.promises.open }, st: globalThis.setTimeout, fetch: globalThis.fetch, Date: globalThis.Date, log: console.log, err: console.error,
     write: process.stdout.write, cwd: process.cwd(), argv: process.argv, env: { ...process.env }, exitCode: process.exitCode, exit: process.exit }
   const fijo = new orig.Date(ahora).getTime()
   class FechaFija extends orig.Date { constructor(...a) { a.length ? super(...a) : super(fijo) } static now() { return fijo } }
@@ -92,6 +92,8 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
     fs.promises.readFile = function (p, ...resto) { guarda(p, 'promises.readFile'); return orig.fs.promisesReadFile.call(this, p, ...resto) }
     fs.promises.open = function (p, ...resto) { guarda(p, 'promises.open'); return orig.fs.promisesOpen.call(this, p, ...resto) }
     globalThis.setTimeout = (f, ms, ...a) => orig.st(f, 0, ...a)
+    // bloque F, punto 4: el fetch del script es el del proveedor falso (fuera, bloqueado)
+    globalThis.fetch = proveedorFalso.fetchFalso
     globalThis.Date = FechaFija
     const apunta = (...a) => { if (terminoPor === 'exit') return; const l = a.join(' '); salida.push(l); if (!terminoPor && FINAL.test(l.trim())) { terminoPor = 'final'; orig.st(terminado, 30) } }
     console.log = apunta; console.error = apunta
@@ -115,7 +117,7 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
   } finally {
     Module._load = orig.load
     for (const via of ['readFileSync', 'openSync', 'createReadStream', 'readFile', 'open']) fs[via] = orig.fs[via]
-    fs.promises.readFile = orig.fs.promisesReadFile; fs.promises.open = orig.fs.promisesOpen; globalThis.setTimeout = orig.st; globalThis.Date = orig.Date
+    fs.promises.readFile = orig.fs.promisesReadFile; fs.promises.open = orig.fs.promisesOpen; globalThis.setTimeout = orig.st; globalThis.Date = orig.Date; globalThis.fetch = orig.fetch
     console.log = orig.log; console.error = orig.err; process.stdout.write = orig.write; process.exit = orig.exit
     process.chdir(orig.cwd); process.argv = orig.argv
     for (const k of Object.keys(process.env)) if (!(k in orig.env)) delete process.env[k]

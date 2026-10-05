@@ -6,7 +6,6 @@
 // Uso:
 //   node scripts/actualizar-diario.js          -> SECO (no sube, dice qué haría)
 //   node scripts/actualizar-diario.js --subir   -> SUBE de verdad
-const { getHistoricalRates } = require('dukascopy-node')
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
 
@@ -43,22 +42,16 @@ const PAIRS = ['audcad','audusd','eurusd','gbpjpy','gbpusd','nzdusd','usdcad','u
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-// Baja UN día (petición pequeña = fiable) con reintentos
+// Baja UN dia por la DESCARGA PROPIA (bloque F, punto 4: lib/mercado/descarga.mjs):
+// estado HTTP, bytes e intento de cada peticion en el log; esperas crecientes
+// con azar y Retry-After; «sin datos» (no se reintenta) frente a «servidor» y
+// «red». Lanza ErrorDescarga si no se pudo. → velas del dia ([] si no hay datos)
+const dukascopy = require('dukascopy-node')
+let DESC   // lib/mercado/descarga.mjs (ESM, se carga en main)
 async function bajarDia(pair, y, m, d) {
-  const from = new Date(Date.UTC(y, m, d))
-  const to = new Date(Date.UTC(y, m, d+1))
-  for (let i=1;i<=5;i++) {
-    try {
-      const data = await getHistoricalRates({
-        instrument: pair, dates:{from,to}, timeframe:'m1', format:'json', volumes:true,
-        // bloque F, punto 3: sin retryOnEmpty. Con el, un dia legitimamente vacio
-        // (domingo antes de abrir, festivo) agotaba los reintentos y la libreria
-        // lanzaba «Unknown error» (dukascopy-node 1.46.4, dist/index.js:16666).
-        retryCount: 4, retryOnEmpty: false, pauseBetweenRetriesMs: 2000,
-      })
-      return data.map(c=>({time:Math.floor(c.timestamp/1000),open:c.open,high:c.high,low:c.low,close:c.close,volume:c.volume}))
-    } catch(e) { if (i<5) await sleep(10000); else throw e }
-  }
+  const dia = new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10)
+  const r = await DESC.bajaDia({ sdk: dukascopy, fetch: (...a) => globalThis.fetch(...a), espera: sleep, log: l => console.log('    ' + l), par: pair, dia })
+  return r.velas
 }
 
 // ── Reconciliacion (auditoria D05, 4-oct-2026) ─────────────────────────────
@@ -206,6 +199,7 @@ async function procesarPar(pair) {
 
 async function main() {
   F = await import('../lib/mercado/ficheros.mjs')
+  DESC = await import('../lib/mercado/descarga.mjs')
   C = await import('../lib/mercado/calidad.mjs')
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()} ===\n`)
   const resultados = []

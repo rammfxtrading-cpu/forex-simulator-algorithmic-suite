@@ -78,5 +78,29 @@ const r3 = await corre()
 const pedidos3 = proveedor.llamadas.filter(l => l.instrumento === 'audusd').map(l => l.desde.slice(0, 10))
 oraculo('FD01', 'no se piden los sabados (24 y 31-ene)', !pedidos3.includes('2026-01-24') && !pedidos3.includes('2026-01-31'), pedidos3.join(' '))
 oraculo('FD01', 'un domingo vacio no es un fallo: nada «sin descargar» y la cola sigue hasta el viernes 30', !/sin descargar/.test(linea(r3, 'AUDUSD')) && enDia(guardado('AUDUSD/M1/2026').velas, '2026-01-30') === 1440, linea(r3, 'AUDUSD'))
+
+titulo('4 · descarga propia: estado HTTP, bytes e intento en el log; esperas; tres clases de fallo')
+const filas = d => JSON.stringify(diaM1(d))
+escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
+proveedor.responde = a => diaM1(diaDe(a))
+proveedor.http = (url, n, { instrumento, dia }) => {
+  if (instrumento !== 'audusd') return { status: 200, body: filas(dia) }
+  if (dia === '2026-01-26') return n <= 2 ? { status: 503, body: '' } : { status: 200, body: filas(dia) }                        // servidor, se recupera
+  if (dia === '2026-01-27') return n === 1 ? { status: 429, headers: { 'Retry-After': '7' }, body: '' } : { status: 200, body: filas(dia) }
+  if (dia === '2026-01-28') { throw new TypeError('fetch failed') }                                                            // red, siempre
+  return { status: 200, body: filas(dia) }
+}
+const r4 = await corre()
+const log4 = r4.salida.filter(l => /AUDUSD 2026-01-2[678]/.test(l))
+oraculo('FD01', 'el 26-ene: dos 503 y un 200, cada intento con estado, bytes y su numero', /AUDUSD 2026-01-26 · intento 1\/5 · HTTP 503 · 0 bytes · servidor · espera \d/.test(log4.join('\n')) && /AUDUSD 2026-01-26 · intento 3\/5 · HTTP 200 · \d+ bytes/.test(log4.join('\n')), log4.filter(l => l.includes('01-26')).join(' | '))
+oraculo('FD01', 'el 27-ene: un 429 con Retry-After 7 → espera al menos 7 s', /AUDUSD 2026-01-27 · intento 1\/5 · HTTP 429 · 0 bytes · servidor · espera ([7-9]|\d\d)[,.]\d s/.test(log4.join('\n')), log4.filter(l => l.includes('01-27')).join(' | '))
+oraculo('FD01', 'el 28-ene: red en los 5 intentos → «sin descargar: 2026-01-28 (red…)» y se corta ahi', log4.filter(l => /01-28 · intento \d\/5 · red/.test(l)).length === 5 && /sin descargar: 2026-01-28 \(red/.test(linea(r4, 'AUDUSD')) && enDia(guardado('AUDUSD/M1/2026').velas, '2026-01-27') === 1440, linea(r4, 'AUDUSD'))
+oraculo('FD01', 'ninguna URL ni clave en el log', !r4.salida.some(l => /https?:|datafeed|\.bi5|falsa/.test(l)))
+escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
+proveedor.http = (url, n, { instrumento, dia }) => (instrumento === 'audusd' && dia === '2026-01-26') ? { status: 404, body: '' } : { status: 200, body: filas(dia) }
+const r5 = await corre()
+const l5 = r5.salida.filter(l => /AUDUSD 2026-01-26/.test(l))
+oraculo('FD01', 'un 404 es «sin datos»: un solo intento, sin reintentar, y no cuenta como fallo de descarga', l5.length === 1 && /HTTP 404 · 0 bytes · sin datos/.test(l5[0]) && !/sin descargar/.test(linea(r5, 'AUDUSD')), l5.join(' | ') + ' · ' + linea(r5, 'AUDUSD'))
+proveedor.http = null
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(e => e.terminoPor !== 'timeout'))
 fin()

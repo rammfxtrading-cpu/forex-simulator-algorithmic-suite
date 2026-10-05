@@ -6,7 +6,7 @@
 //   proveedor.pausa(args)    → una promesa que retiene esa descarga (carreras)
 //   proveedor.llamadas       → cada llamada: { instrumento, desde, hasta }
 export const proveedor = globalThis.__proveedor ??= { responde: null, pausa: null, llamadas: [] }
-export function resetProveedor() { proveedor.responde = null; proveedor.pausa = null; proveedor.vacioComoSDK = false; proveedor.llamadas.length = 0 }
+export function resetProveedor() { proveedor.responde = null; proveedor.pausa = null; proveedor.vacioComoSDK = false; proveedor.http = null; proveedor.llamadas.length = 0; intentosPorUrl.clear() }
 export async function getHistoricalRates(args) {
   proveedor.llamadas.push({ instrumento: args.instrument, desde: args.dates?.from?.toISOString?.(), hasta: args.dates?.to?.toISOString?.() })
   await new Promise(r => setImmediate(r))
@@ -21,6 +21,55 @@ export async function getHistoricalRates(args) {
   return r
 }
 export default { getHistoricalRates }
+
+// ── Las piezas de la libreria para la DESCARGA PROPIA (bloque F, punto 4) ────
+// Mismas firmas que dukascopy-node 1.46.4 (normaliseDates, generateUrls,
+// processData, formatOutput); una URL por dia, con el formato de la real (mes
+// 0-based). El cuerpo «.bi5» del doble es JSON de las filas, no LZMA.
+const intentosPorUrl = globalThis.__intentosPorUrl ??= new Map()
+export function normaliseDates({ startDate, endDate }) { return [startDate, endDate] }
+export function generateUrls({ instrument, startDate, endDate }) {
+  const urls = []
+  for (let t = startDate.getTime(); t < endDate.getTime(); t += 86400000) {
+    const d = new Date(t)
+    urls.push(`https://datafeed.dukascopy.com/datafeed/${instrument.toUpperCase()}/${d.getUTCFullYear()}/${String(d.getUTCMonth()).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}/BID_candles_min_1.bi5`)
+  }
+  return urls
+}
+export function processData({ bufferObjects }) {
+  return bufferObjects.flatMap(({ buffer }) => buffer.length ? JSON.parse(buffer.toString('utf8')).map(c => [c.timestamp, c.open, c.high, c.low, c.close, c.volume]) : [])
+}
+export function formatOutput({ processedData }) {
+  return processedData.map(([timestamp, open, high, low, close, volume]) => ({ timestamp, open, high, low, close, volume }))
+}
+// El fetch del doble (el ejecutor de scripts lo pone en globalThis.fetch mientras
+// corre el script; fuera, la red sigue bloqueada). Cada peticion se apunta en
+// proveedor.llamadas como antes. Respuesta:
+//   proveedor.http(url, intento, { instrumento, dia }) → { status, headers, body }
+//     o lanza (error de red) — OPCIONAL, para programar estados HTTP;
+//   si no, proveedor.responde({ instrument, dates }) → filas (200; [] = cuerpo
+//     vacio) o lanza (error de red).
+export async function fetchFalso(url) {
+  const m = /datafeed\/([A-Z]+)\/(\d{4})\/(\d{2})\/(\d{2})\//.exec(String(url))
+  if (!m) throw new TypeError('fetch failed: URL no reconocida por el doble')
+  const desde = new Date(Date.UTC(+m[2], +m[3], +m[4])), hasta = new Date(desde.getTime() + 86400000)
+  const instrumento = m[1].toLowerCase(), dia = desde.toISOString().slice(0, 10)
+  proveedor.llamadas.push({ instrumento, desde: desde.toISOString(), hasta: hasta.toISOString() })
+  const intento = (intentosPorUrl.get(url) || 0) + 1
+  intentosPorUrl.set(url, intento)
+  await new Promise(r => setImmediate(r))
+  if (proveedor.pausa) await proveedor.pausa({ instrument: instrumento, dates: { from: desde, to: hasta } })
+  let r
+  if (proveedor.http) r = await proveedor.http(url, intento, { instrumento, dia })
+  else {
+    if (!proveedor.responde) throw new Error('proveedor-falso: ninguna respuesta programada')
+    const filas = await proveedor.responde({ instrument: instrumento, dates: { from: desde, to: hasta } })
+    r = { status: 200, body: filas.length ? JSON.stringify(filas) : '' }
+  }
+  const cab = Object.fromEntries(Object.entries(r.headers || {}).map(([k, v]) => [k.toLowerCase(), String(v)]))
+  const cuerpo = Buffer.from(r.body ?? '')
+  return { status: r.status, ok: r.status >= 200 && r.status < 300, headers: { get: k => cab[String(k).toLowerCase()] ?? null }, arrayBuffer: async () => cuerpo.buffer.slice(cuerpo.byteOffset, cuerpo.byteOffset + cuerpo.length) }
+}
 
 // Velas M1 de un dia UTC (para programar respuestas): `n` velas desde las 00:00
 // de `dia` ('AAAA-MM-DD'), precio plano `px`, timestamp en ms como dukascopy-node.
