@@ -19,6 +19,7 @@
 # se reproduce y que no.
 # ============================================================================
 cd "$(dirname "$0")/.." || exit 2
+. pruebas/aislar.sh
 mkdir -p .pruebas
 LOG=.pruebas/fase1.log
 : > "$LOG"; : > .pruebas/fase1.jsonl
@@ -31,7 +32,7 @@ for f in pruebas/arnes.mjs pruebas/fase1/*.mjs; do
     [ -z "$quiere" ] && continue
   fi
   printf '\n######## %s\n' "$base" >> "$LOG"
-  env -i PATH="$PATH" HOME="$HOME" TZ="Europe/Madrid" perl -e 'alarm shift; exec @ARGV' 300 $NODO "$f" >> "$LOG" 2>&1
+  env -i PATH="$PATH" HOME="$HOME" TZ="Europe/Madrid" NODE_OPTIONS="$NODE_OPTS_RED" PRUEBAS_AISLADO="$AISLA_MODO" perl -e 'alarm shift; exec @ARGV' 300 $AISLA $NODO "$f" < /dev/null >> "$LOG" 2>&1
   c=$?
   if [ "$base" = arnes ]; then
     if [ $c -eq 0 ]; then echo "  ✓ arnes"; else echo "  ✗ ARNES ROTO (ver $LOG)"; exit 2; fi

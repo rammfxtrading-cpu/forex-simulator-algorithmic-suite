@@ -2,6 +2,8 @@
  * EL ARNES SE COMPRUEBA ANTES QUE NADA: si el arnes miente, todo lo demas tambien.
  *
  *   1. la red esta cortada (fetch, https, net, dns) y no hay secretos en el entorno
+ *   1b. H01: tambien en el hilo del cargador, en workers, en hijos node y, a
+ *       nivel de sistema, en cualquier subproceso (sandbox-exec / unshare)
  *   2. lo que el repo importa como Supabase es el doble (navegador y servidor),
  *      y el proveedor de velas que importa /api/candles es el falso
  *   3. el doble de Supabase es PEREZOSO como PostgREST: un builder sin then no
@@ -10,6 +12,9 @@
  */
 import https from 'node:https'
 import net from 'node:net'
+import tls from 'node:tls'
+import { Worker } from 'node:worker_threads'
+import { spawnSync } from 'node:child_process'
 import { titulo, ver, fin, importa, escenario, db, proveedor, A, tok } from './lib.mjs'
 import { llama } from './supabase-falso.mjs'
 import { diaM1 } from './proveedor-falso.mjs'
@@ -23,6 +28,36 @@ ver('https.request bloqueado', /RED BLOQUEADA/.test(h))
 let nn = ''; try { net.connect(443, 'example.com') } catch (e) { nn = e.message }
 ver('net.connect bloqueado', /RED BLOQUEADA/.test(nn))
 ver('ninguna variable de Supabase en el entorno', !Object.keys(process.env).some(k => /SUPABASE|DIAG_CREDS/.test(k)), Object.keys(process.env).join(','))
+
+let t = ''; try { tls.connect(443, 'example.com') } catch (e) { t = e.message }
+ver('tls.connect bloqueado', /RED BLOQUEADA/.test(t))
+let sk = ''; try { new net.Socket().connect(443, '93.184.215.14') } catch (e) { sk = e.message }
+ver('un net.Socket construido a mano no conecta', /RED BLOQUEADA/.test(sk))
+
+titulo('1b · H01: cargador, workers, hijos y sistema')
+const sonda = (await import('falso:sonda-red')).default
+ver('el hilo del cargador tiene la red cortada (net y fetch)', sonda.sinRed && /RED BLOQUEADA/.test(sonda.net) && /RED BLOQUEADA/.test(sonda.fetch), JSON.stringify(sonda))
+const enWorker = await new Promise(ok => {
+  const w = new Worker(`const { parentPort } = require('node:worker_threads');
+    fetch('https://example.com').then(() => parentPort.postMessage('RESPONDE')).catch(e => parentPort.postMessage(e.message))`, { eval: true })
+  w.once('message', m => { ok(m); w.terminate() }); w.once('error', e => ok('error: ' + e.message))
+})
+ver('un worker hereda el corte', /RED BLOQUEADA/.test(enWorker), enWorker)
+const { connect: connectConNombre } = await import('node:net')
+let cn = ''; try { connectConNombre(443, '93.184.215.14') } catch (e) { cn = e.message }
+ver('control: `import { connect } from node:net` tambien esta cortado', /RED BLOQUEADA/.test(cn), cn)
+const hijo = spawnSync(process.execPath, ['-e', "fetch('https://example.com').then(()=>console.log('RESPONDE')).catch(e=>console.log(e.message))"], { encoding: 'utf8', timeout: 20000 })
+ver('un hijo node hereda el corte (NODE_OPTIONS)', /RED BLOQUEADA/.test(hijo.stdout), (hijo.stdout || hijo.stderr).trim().slice(0, 80))
+const modo = process.env.PRUEBAS_AISLADO
+ver('el guion aislo la prueba a nivel de sistema', modo === 'sandbox-exec' || modo === 'unshare', modo ?? '(sin guion)')
+if (modo === 'sandbox-exec' || modo === 'unshare') {
+  // curl no es node: solo lo para el sistema. Con sandbox-exec la resolucion de
+  // nombres funciona y la CONEXION se deniega (curl 7): eso distingue «el
+  // sandbox la corta» de «no hay internet» (curl 6, no resuelve).
+  const c = spawnSync('/usr/bin/curl', ['-sS', '--max-time', '8', 'https://example.com', '-o', '/dev/null'], { encoding: 'utf8', timeout: 20000 })
+  ver('un subproceso que no es node (curl) no sale a la red', c.status !== 0, `curl ${c.status}: ${(c.stderr || '').trim().slice(0, 70)}`)
+  if (modo === 'sandbox-exec') ver('control: curl resolvio el nombre y el sistema le nego la conexion (codigo 7)', c.status === 7, c.status)
+}
 
 titulo('2 · los dobles son los que se cargan')
 escenario()

@@ -21,6 +21,7 @@
 # salida, nunca por lo que diga una tuberia.
 # ============================================================================
 cd "$(dirname "$0")/.." || exit 2
+. pruebas/aislar.sh
 mkdir -p .pruebas
 LOG=.pruebas/tanda.log
 : > "$LOG"
@@ -32,8 +33,8 @@ corre() {  # corre ETIQUETA COMANDO...
   n=$((n + 1))
   printf '\n######## %s\n' "$etiqueta" >> "$LOG"
   # perl alarm: macOS no trae `timeout`
-  if env -i PATH="$PATH" HOME="$HOME" TZ="Europe/Madrid" \
-       perl -e 'alarm shift; exec @ARGV' 300 "$@" < /dev/null >> "$LOG" 2>&1; then
+  if env -i PATH="$PATH" HOME="$HOME" TZ="Europe/Madrid" NODE_OPTIONS="$NODE_OPTS_RED" PRUEBAS_AISLADO="$AISLA_MODO" \
+       perl -e 'alarm shift; exec @ARGV' 300 $AISLA "$@" < /dev/null >> "$LOG" 2>&1; then
     echo "  ✓ $etiqueta"
   else
     echo "  ✗ $etiqueta   (ver $LOG)"

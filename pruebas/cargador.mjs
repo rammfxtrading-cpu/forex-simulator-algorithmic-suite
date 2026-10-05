@@ -9,6 +9,10 @@
 // Los .js del repo se compilan con el SWC de Next.
 // ⛔ Los scripts CommonJS de scripts/ NO pasan por aqui: los carga
 //    pruebas/script-falso.mjs, que intercepta su require.
+// H01: este fichero corre en el hilo de module.register, que NO hereda lo que
+// sin-red.mjs corto en el hilo principal: se corta aqui tambien.
+import './sin-red.mjs'
+import net from 'node:net'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -22,6 +26,7 @@ const NEXT = { 'next/router': 'router', 'next/link': 'link', 'next/head': 'head'
 const DECORADO = ['components/Estrellas.js', 'components/NetworkBg.js', 'components/Fps.js', 'components/AntimatterLoader.js'].map(f => REPO + f)
 
 export async function resolve(spec, ctx, next) {
+  if (spec === 'falso:sonda-red') return { url: spec, shortCircuit: true }
   if (delRepo(ctx.parentURL)) {
     if (spec === '@supabase/supabase-js') {
       const quien = fileURLToPath(ctx.parentURL) === REPO + 'lib/authApi.js' ? 'servidor' : 'navegador'
@@ -48,6 +53,13 @@ const EXPORTA = {
 }
 let swc = null
 export async function load(u, ctx, next) {
+  // Sonda del arnes: intenta salir a la red DESDE ESTE HILO y devuelve que paso.
+  if (u === 'falso:sonda-red') {
+    const intentos = {}
+    try { net.connect(443, '93.184.215.14'); intentos.net = 'CONECTA' } catch (e) { intentos.net = e.message }
+    try { await fetch('https://example.com/'); intentos.fetch = 'RESPONDE' } catch (e) { intentos.fetch = e.message }
+    return { format: 'module', source: `export default ${JSON.stringify({ sinRed: globalThis.__sinRed === true, ...intentos })}`, shortCircuit: true }
+  }
   if (u.startsWith('falso:')) {
     return { format: 'module', source: `${EXPORTA[u.slice(6)]} ${JSON.stringify(url('next-falso.mjs'))}`, shortCircuit: true }
   }

@@ -1,0 +1,8 @@
+(version 1)
+; Perfil de sandbox-exec para las pruebas del simulador (H01, auditoria del
+; arnes 4-oct-2026): todo permitido salvo la red. Los sockets Unix siguen
+; abiertos (el PostgreSQL de ensayo escucha solo en un socket Unix).
+(allow default)
+(deny network*)
+(allow network* (local unix))
+(allow network* (remote unix))
