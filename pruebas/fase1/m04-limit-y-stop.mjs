@@ -8,6 +8,7 @@
  *
  * Se ejecuta con el banco del motor (cableado REAL, pruebas/banco-motor.mjs).
  *
+ * H03 (revision de Astra): todo se mira tras UN paso; el segundo, sin duplicar.
  * ORACULO, a mano: BUY LIMIT 1,1000 con SL 1,0990; la vela abre en 1,1010 y
  * baja a 1,0980. Para llegar de 1,1010 a 1,0980 el precio pasa por 1,1000 (se
  * llena) y despues por 1,0990 (SL): no hay ambiguedad. Resultado:
@@ -26,26 +27,36 @@ const VELAS = [
 ]
 ver('control: las lineas copiadas de _SessionInner siguen ahi', Object.values(copiasVigentes()).every(Boolean), JSON.stringify(copiasVigentes()))
 
+// H03 (revision de Astra): se mira TRAS UN SOLO PASO. Antes se avanzaban dos
+// velas y un cierre tardio (en la vela siguiente) aprobaba el «control».
 async function caso(conOtra) {
   escenario({ sim_sessions: [ses] })
   velasEnStorage('EUR/USD', VELAS, [2024])
   const b = await banco({ sesion: ses })
   if (conOtra) b.abreMercado({ side: 'BUY', entry: 1.1020, sl: 1.0900, tp: 1.1200, lots: 1 })
   const orden = await b.pendiente({ side: 'BUY_LIMIT', entry: 1.1000, sl: 1.0990, tp: 1.1030, lots: 1 })
-  await b.paso(2)
-  return { b, orden, cerradas: b.ps().trades.filter(t => t.entry === 1.1), abiertas: b.ps().positions.filter(p => p.entry === 1.1) }
+  const delLimit = () => ({ cerradas: b.ps().trades.filter(t => t.entry === 1.1), abiertas: b.ps().positions.filter(p => p.entry === 1.1) })
+  await b.paso(1)
+  const unPaso = delLimit()
+  await b.paso(1)
+  const dosPasos = delLimit()
+  return { b, orden, unPaso, dosPasos }
 }
+const enSuVela = c => c.unPaso.cerradas.length === 1 && c.unPaso.cerradas[0].reason === 'SL' && Math.abs(c.unPaso.cerradas[0].pnl + 100) < 1e-6
+const describe = r => r.abiertas.length ? `sigue ABIERTA (entrada ${r.abiertas[0].entry}, SL ${r.abiertas[0].sl})` : JSON.stringify(r.cerradas.map(t => [t.reason, +t.pnl.toFixed(2)]))
+const unSoloCierre = c => c.dosPasos.cerradas.length === 1 && c.dosPasos.abiertas.length === 0 && Math.abs(c.dosPasos.cerradas[0].pnl + 100) < 1e-6
 
-titulo('1 · control: sin otra posicion, la limit y su SL en la misma vela')
+titulo('1 · sin otra posicion: la limit y su SL en la misma vela')
 const sin = await caso(false)
 ver('control: la orden existia y se lleno', !!sin.orden && sin.b.ps().orders.length === 0)
-ver('control: sin otra posicion, el SL se aplica: −100', sin.cerradas.length === 1 && sin.cerradas[0].reason === 'SL' && Math.abs(sin.cerradas[0].pnl + 100) < 1e-6, JSON.stringify(sin.cerradas.map(t => [t.reason, t.pnl])))
+oraculo('M04', 'sin otra posicion: tras UN paso, cerrada en su SL (−100)', enSuVela(sin), `tras un paso: ${describe(sin.unPaso)}`)
+oraculo('M04', 'sin otra posicion: tras el segundo paso, un solo cierre (sin duplicar)', unSoloCierre(sin), `tras dos pasos: ${describe(sin.dosPasos)}`)
 
 titulo('2 · con otra posicion abierta')
 const con = await caso(true)
-ver('control: la orden se lleno', con.b.ps().orders.length === 0 && con.cerradas.length + con.abiertas.length === 1)
-oraculo('M04', 'con otra posicion abierta, la limit tambien cierra en su SL: −100', con.cerradas.length === 1 && Math.abs(con.cerradas[0].pnl + 100) < 1e-6,
-  con.abiertas.length ? `sigue ABIERTA (entrada ${con.abiertas[0].entry}, SL ${con.abiertas[0].sl})` : JSON.stringify(con.cerradas.map(t => [t.reason, t.pnl])))
+ver('control: la orden se lleno', con.b.ps().orders.length === 0 && con.unPaso.cerradas.length + con.unPaso.abiertas.length === 1)
+oraculo('M04', 'con otra posicion: tras UN paso, cerrada en su SL (−100)', enSuVela(con), `tras un paso: ${describe(con.unPaso)}`)
+oraculo('M04', 'con otra posicion: tras el segundo paso, un solo cierre (sin duplicar)', unSoloCierre(con), `tras dos pasos: ${describe(con.dosPasos)}`)
 
 titulo('3 · Go to NY AM: fill 11:58, stop 11:59, destino 12:00 UTC')
 // NY AM abre a las 07:00 de Nueva York = 12:00 UTC en enero (EST, UTC−5; enero
