@@ -80,6 +80,28 @@ oraculo('D06', 'A3: si ese DELETE falla, no se borra nada y se dice', db.tablas.
 p4.desmonta()
 db.falla = null
 
+titulo('A4 · bloque E, punto 4: la respuesta del DELETE se pierde (Astra BD-05)')
+// El DELETE y sus cascadas se aplican; se pierde SOLO la respuesta (el cliente
+// ve «Failed to fetch»). Antes la pantalla decia «no se ha borrado nada».
+const ses4 = sesionSim({ name: 'Sesion-A-cuatro' })
+escenario({ sim_sessions: [ses4], sim_trades: [tradeSim({ session_id: ses4.id, pnl: 250 })] }); db.cascadas = CASCADAS
+db.pierde = c => c.op === 'delete' && c.tabla === 'sim_sessions'
+const p5 = monta(Dashboard, {}); await p5.asienta()
+p5.pulsa(p5.busca(x => x.tipo === 'button' && p5.texto(x) === '✕')); await p5.asienta()
+db.pierde = null
+ver('control: la base SI la borro (sesion y trade fuera)', db.tablas.sim_sessions.length === 0 && db.tablas.sim_trades.length === 0)
+oraculo('D06', 'A4: no afirma «no se ha borrado nada» sin comprobarlo', !/no se ha borrado nada/i.test(p5.texto()), p5.texto().replace(/\s+/g, ' ').match(/[^.]*borr[^.]*\./i)?.[0] ?? '')
+// la tarjeta se comprueba por su ✕ (el mensaje correcto si nombra la sesion)
+oraculo('D06', 'A4: reconcilia por id y dice lo que paso: borrada; la tarjeta se va', /se ha borrado/i.test(p5.texto()) && !p5.busca(x => x.tipo === 'button' && p5.texto(x) === '✕'), p5.texto().replace(/\s+/g, ' ').match(/[^.]*borr[^.]*\./i)?.[0] ?? '')
+p5.desmonta()
+escenario({ sim_sessions: [ses4], sim_trades: [tradeSim({ session_id: ses4.id, pnl: 250 })] }); db.cascadas = CASCADAS
+const p6 = monta(Dashboard, {}); await p6.asienta()
+db.pierde = c => c.tabla === 'sim_sessions' && (c.op === 'delete' || c.op === 'select')     // tras cargar: se pierden el DELETE y la comprobacion
+p6.pulsa(p6.busca(x => x.tipo === 'button' && p6.texto(x) === '✕')); await p6.asienta()
+db.pierde = null
+oraculo('D06', 'A4: si tampoco se puede comprobar, dice que no se sabe (nunca «no se ha borrado nada»)', /no se sabe|no se ha podido comprobar/i.test(p6.texto()) && !/no se ha borrado nada/i.test(p6.texto()), p6.texto().replace(/\s+/g, ' ').match(/[^.]*(borr|sabe|comprob)[^.]*\./i)?.[0] ?? '')
+p6.desmonta()
+
 titulo('B · wipe que falla al borrar los dibujos')
 const sA = sesionSim({ id: 'sA' })
 const montaWipe = () => escenario({ sesion: ADM, perfiles: [perfil(A), perfil(B), perfil(ADM, { rol_global: 'admin' })], sim_sessions: [sA],

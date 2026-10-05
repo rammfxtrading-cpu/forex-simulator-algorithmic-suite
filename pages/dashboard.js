@@ -132,16 +132,28 @@ export default function Dashboard() {
     setBorrando(sid); setErrorBorrado('')
     const { error, count } = await supabase.from('sim_sessions').delete({ count: 'exact' }).eq('id', sid)
     if (error || count !== 1) {
-      setErrorBorrado(error
-        ? `No se ha podido borrar «${session.name}»: no se ha borrado nada. Vuelve a intentarlo.`
-        : `No se ha podido borrar «${session.name}»: la base no la ha encontrado o no te deja borrarla. Recarga la página.`)
+      // Bloque E, punto 4 (Astra BD-05): un error puede ser la RESPUESTA perdida
+      // de un DELETE que si se aplico. Nunca se dice «no se ha borrado» sin
+      // comprobarlo: se reconcilia por id y se dice lo que de verdad paso.
+      const r = await supabase.from('sim_sessions').select('id').eq('id', sid)
+      if (!r.error && Array.isArray(r.data) && r.data.length === 0) {
+        quitaDeLaPantalla(sid)
+        setErrorBorrado(`«${session.name}» se ha borrado (la confirmación se perdió por el camino; comprobado después).`)
+      } else if (!r.error && Array.isArray(r.data) && r.data.length === 1) {
+        setErrorBorrado(`No se ha podido borrar «${session.name}»: comprobado, la sesión sigue entera. Vuelve a intentarlo.`)
+      } else {
+        setErrorBorrado(`No se sabe si «${session.name}» se ha borrado: no se ha podido comprobar. Recarga la página para verlo.`)
+      }
       setBorrando(null)
       if (user) { loadSessions(user.id); loadTrades(user.id) }
       return
     }
+    quitaDeLaPantalla(sid)
+    setBorrando(null)
+  }
+  function quitaDeLaPantalla(sid) {
     setSessions(p => p.filter(s => s.id !== sid))
     setTrades(p => p.filter(t => t.session_id !== sid))
-    setBorrando(null)
   }
 
   async function createSession() {
