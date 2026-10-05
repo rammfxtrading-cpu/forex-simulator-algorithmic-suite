@@ -43,7 +43,8 @@ export default function SessionBottomBar({lastTrade,challengeLocked,setOrderModa
         <div style={s.balanceRow}>
           <span style={s.balLbl}>Balance: <span style={s.balVal}>${balance.toFixed(2)}</span></span>
           <span style={s.balLbl}>PnL: <span style={{...s.balVal,color:pnlColor(realized)}}>{fmtPnl(realized)}</span></span>
-          <span style={s.balLbl}>Float: <span style={{...s.balVal,color:pnlColor(unrealized)}}>{fmtPnl(unrealized)}</span></span>
+          {/* Bloque D, punto 7 (C02): solo las posiciones del par activo, no la cartera; hasta el motor nuevo, la etiqueta lo dice */}
+          <span style={s.balLbl} title="Flotante de las posiciones del par activo. No incluye los otros pares abiertos.">Float par activo ({activePair}): <span style={{...s.balVal,color:pnlColor(unrealized)}}>{fmtPnl(unrealized)}</span></span>
           {allTrades.length>0&&(()=>{
             const wins=allTrades.filter(t=>t.result==='WIN').length
             const losses=allTrades.filter(t=>t.result==='LOSS').length

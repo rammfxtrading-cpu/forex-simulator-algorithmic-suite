@@ -34,7 +34,8 @@ const paso = async () => { for (const f of [...(nav.oyentes.keydown || [])]) f({
 // un Field del OrderModal: div > [div etiqueta, div > input]
 const campo = etiqueta => p.busca(x => x.tipo === 'div' && x.hijos?.length === 2 && p.texto(x.hijos[0]) === etiqueta && x.hijos[1].hijos?.[0]?.tipo === 'input')?.hijos[1].hijos[0].props.value
 const entradaModal = () => campo('ENTRADA')
-const flotante = () => /Float: ([+-]\d+\.\d{2})/.exec(p.texto())?.[1]
+// bloque D, punto 7: la etiqueta es «Float par activo (PAR):»
+const flotante = () => /Float[^:]*: ([+-]\d+\.\d{2})/.exec(p.texto())?.[1]
 const lotes = () => campo('LOTS')
 
 titulo('1 · abrir el modal y dejar que el replay avance')

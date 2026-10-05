@@ -103,4 +103,19 @@ const lista = await llama((await importa('pages/api/admin/list-alumnos-sim.js'))
 ver('control: la lista respondio con el alumno A', lista.estado === 200 && lista.cuerpo.usuarios.some(u => u.id === A), lista.estado)
 oraculo('C02', 'un trade registrado ayer (de mercado 2025) cuenta como actividad de los ultimos 7 dias', lista.cuerpo.aggregates?.activos_7d === 1,
   `activos_7d ${lista.cuerpo.aggregates?.activos_7d}; ultima actividad ${lista.cuerpo.usuarios.find(u => u.id === A)?.metrics?.last_activity}`)
+
+titulo('bloque D, punto 7: el flotante dice que es solo del par activo')
+// Astra (cierres, 5-oct): la barra reduce solo activePs.positions (EURUSD +300,
+// GBPUSD −500: enseña +300 o −500 segun el par activo; la cartera es −200).
+// Hasta el motor nuevo (valoracion de toda la cartera), la etiqueta lo dice.
+const Barra = (await importa('components/SessionBottomBar.js')).default
+const nada = () => {}
+const pb = monta(Barra, { lastTrade: null, challengeLocked: false, setOrderModal: nada, currentPrice: 1.1, activePair: 'EUR/USD', dataReady: true,
+  balance: 10000, realized: 0, unrealized: 300, allTrades: [], challengeStatus: null, openPositions: [], pendingOrders: [],
+  showPos: false, setShowPos: nada, showOrders: false, setShowOrders: nada, showTrades: false, setShowTrades: nada })
+await pb.asienta()
+const txt = pb.texto().replace(/\s+/g, ' ')
+ver('control: la barra pinta el flotante (+300)', /\+300\.00/.test(txt), txt.slice(0, 160))
+oraculo('C02', 'la etiqueta del flotante dice «par activo» y que par es', /Float par activo \(EUR\/USD\): \+300\.00/.test(txt), (/Float[^$]*?[+-]\d+\.\d{2}/.exec(txt) ?? [''])[0])
+pb.desmonta()
 fin()
