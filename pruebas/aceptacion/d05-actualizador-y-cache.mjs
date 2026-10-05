@@ -87,15 +87,21 @@ const d1 = cuenta('download')
 const b = await llama(candles, { method: 'GET', token: tok(A), query: q })
 oraculo('D05', 'el fichero cambia: la siguiente peticion lo descarga y sirve el 1-oct, sin esperar a ninguna caducidad', b.cuerpo?.count === 2880 && cuenta('download') === d1 + 1, `sirve ${b.cuerpo?.count} velas; ${cuenta('download') - d1} descargas`)
 
-titulo('3b · la consulta de version falla')
+titulo('3b · la consulta de version falla (bloque D, punto 2: nunca menos velas que lo vigente)')
+// En cache esta la version de 2.880 velas. El cron publica 4.320 (añade el 2-oct)
+// y la consulta de version falla: la cache ya no es lo vigente y no se sabe.
+db.storage['forex-data']['NZDUSD/M1/2026.json'] = JSON.stringify([...velasDe('2026-09-30'), ...velasDe('2026-10-01'), ...velasDe('2026-10-02')])
 db.falla = c => c.op === 'info' ? { name: 'StorageUnknownError', message: 'fetch failed' } : null
-const d2 = cuenta('download')
-const c3 = await llama(candles, { method: 'GET', token: tok(A), query: q })
-oraculo('D05', 'con una version ya verificada en cache: se sirve esa, sin descargar', c3.estado === 200 && c3.cuerpo?.count === 2880 && cuenta('download') === d2, `estado ${c3.estado}; ${c3.cuerpo?.count} velas; ${cuenta('download') - d2} descargas`)
+const c3 = await llama(candles, { method: 'GET', token: tok(A), query: { ...q, to: String(Date.parse('2026-10-03T00:00:00Z') / 1000) } })
+oraculo('D05', 'sin poder consultar la version, no sirve la cache vieja (2.880): lee lo vigente (4.320) o da 503', c3.estado === 503 || c3.cuerpo?.count === 4320, `estado ${c3.estado}; ${c3.cuerpo?.count ?? '-'} velas`)
+// y si la lectura tambien falla: 503, nunca la cache
+db.falla = c => (c.op === 'info' || c.op === 'download') ? { name: 'StorageUnknownError', message: 'fetch failed' } : null
+const c3b = await llama(candles, { method: 'GET', token: tok(A), query: q })
+oraculo('D05', 'si tampoco se puede leer: 503, no la cache', c3b.estado === 503, `estado ${c3b.estado}; ${c3b.cuerpo?.count ?? '-'} velas`)
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(velasDe('2026-09-30')) } } })
 db.falla = c => c.op === 'info' ? { name: 'StorageUnknownError', message: 'fetch failed' } : null
 const c4 = await llama(candles, { method: 'GET', token: tok(A), query: { ...q, pair: 'AUDUSD' } })
-oraculo('D05', 'sin version en cache: 503 (no se sabe que hay), no se va al proveedor', c4.estado === 503 && proveedor.llamadas.length === 0, `estado ${c4.estado}; ${proveedor.llamadas.length} descargas al proveedor`)
+oraculo('D05', 'sin cache y con la version caida, se lee lo vigente y no se va al proveedor', c4.estado === 200 && c4.cuerpo?.count === 1440 && proveedor.llamadas.length === 0, `estado ${c4.estado}; ${c4.cuerpo?.count ?? '-'} velas; ${proveedor.llamadas.length} al proveedor`)
 db.falla = null
 
 ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))

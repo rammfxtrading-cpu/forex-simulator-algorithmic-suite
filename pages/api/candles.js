@@ -1,5 +1,5 @@
 import { requireSimulador, supabaseAdmin } from '../../lib/authApi'
-import { leerRuta, versionVigente } from '../../lib/mercado/ficheros.mjs'
+import { leerRuta, leerVigente, versionVigente } from '../../lib/mercado/ficheros.mjs'
 
 const TIMEFRAMES = {
   M1: 1, M3: 3, M5: 5, M15: 15, M30: 30,
@@ -9,7 +9,7 @@ const TIMEFRAMES = {
 // Cache en memoria por par y año, VALIDADA POR VERSION (decision del CTO,
 // 5-oct-2026). Antes de releer un año se consulta la version del objeto con una
 // llamada de metadatos (info: etag), sin descargarlo; solo se descarga si
-// cambio. Sin caducidad por tiempo: la de 5 minutos (D05) hacia bajar ~28 MB
+// cambio. La cache solo se sirve si su version ES la vigente (bloque D, punto 2). Sin caducidad por tiempo: la de 5 minutos (D05) hacia bajar ~28 MB
 // cada 5 minutos por instancia y agotaba la transferencia. (Por instancia.)
 const cacheVelas = new Map()   // 'PAR_AÑO' → { velas, version }
 const cache = {
@@ -51,8 +51,15 @@ async function loadFromSupabase(pair, year) {
   const key = `${pair}_${year}`
   const enCache = cache.get(key)
   const v = await versionVigente(supabaseAdmin, pair, year)
-  // si no se puede consultar la version: la ultima version verificada, o error
-  if (v.estado === 'error') return enCache ? { estado: 'ok', velas: enCache.velas } : { estado: 'error', motivo: v.motivo }
+  // Bloque D, punto 2: NUNCA se sirve menos que lo vigente. Si no se puede
+  // consultar la version, la cache puede ser vieja: se lee lo vigente entero
+  // (una descarga) y, si tampoco se puede, 503. La cache nunca se sirve a ciegas.
+  if (v.estado === 'error') {
+    const r = await leerVigente(supabaseAdmin, pair, year)
+    if (r.estado === 'ok') cache.set(key, r.velas, null)
+    else if (r.estado === 'no-existe') cache.quita(key)
+    return r.estado === 'error' ? { estado: 'error', motivo: `${v.motivo}; ${r.motivo}` } : r
+  }
   if (v.estado === 'no-existe') { cache.quita(key); return { estado: 'no-existe' } }
   // la version identifica fichero Y contenido: pasar de .json a .json.gz tambien relee
   const version = v.version == null ? null : `${v.ruta}#${v.version}`
