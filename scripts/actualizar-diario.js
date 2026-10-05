@@ -136,7 +136,7 @@ function componer(guardadas, bajados) {
 
 // Baja los dias pendientes y los publica por la funcion comun.
 async function reconciliaAnio(pair, year, ayerMs) {
-  const keyFile = F.rutasAnio(pair, year).gz
+  const keyFile = F.rutaEscritura(pair, year)     // .json; .json.gz solo con MERCADO_GZIP=1
   const leido = await leerAnio(pair, year)
   if (leido.estado === 'error') return { keyFile, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
   const nuevoAnio = leido.estado === 'no-existe'

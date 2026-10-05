@@ -18,7 +18,7 @@
 // antes de subir, valida con lib/mercado/calidad.mjs, ningun dia con menos
 // velas que lo releido, verifica despues). Cobertura exigida: cada dia
 // laborable del 1-ene a AYER; las excepciones son por FECHA (festivos), ya no
-// una cantidad tolerada de dias. Sube .json.gz; no borra el .json.
+// una cantidad tolerada de dias. Sube .json (.json.gz solo con MERCADO_GZIP=1).
 const fs = require('fs')
 const { getHistoricalRates } = require('dukascopy-node')
 const { createClient } = require('@supabase/supabase-js')
@@ -68,7 +68,7 @@ async function main() {
   const ayerSeg = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1) / 1000
   const fallos = []
   for(const pair of PAIRS) {
-    const path = F.rutasAnio(pair, YEAR).gz
+    const path = F.rutaEscritura(pair, YEAR)     // .json; .json.gz solo con MERCADO_GZIP=1
     try {
       console.log(`↓ ${pair.toUpperCase()}...`)
       const data = await downloadWithRetry(pair)
@@ -84,7 +84,7 @@ async function main() {
         if (g.estado === 'error') throw new Error(`no se pudo leer lo guardado (${g.motivo}): no se sabe si lo nuevo es peor`)
         const v = C.validaParaPublicar(candles, g.estado === 'ok' ? g.velas : null, { anio: YEAR, exigeHasta: ayerSeg })
         if (!v.ok) throw new Error(`no se publicaria: ${v.problemas.join(' · ')}`)
-        console.log(`  [SECO] subiria ${path}: ${candles.length} velas (${(F.empaqueta(candles).length/1024/1024).toFixed(1)}MB comprimido)`)
+        console.log(`  [SECO] subiria ${path}: ${candles.length} velas`)
         continue
       }
       // se publica el año del proveedor; la funcion comun relee lo vigente justo
@@ -93,7 +93,7 @@ async function main() {
       for (const a of r.avisos || []) console.log(`  aviso: ${a}`)
       if (r.estado === 'sin-cambios') { console.log(`  ✓ ${path}: igual que lo guardado, nada que subir`); continue }
       if (r.estado !== 'publicado') throw new Error(`${r.estado}: ${r.problemas.join(' · ')}`)
-      console.log(`  ✓ ${path}: ${r.velas} candles, ${(r.bytes/1024/1024).toFixed(1)}MB comprimido (verificado)`)
+      console.log(`  ✓ ${path}: ${r.velas} candles, ${(r.bytes/1024/1024).toFixed(1)}MB (verificado)`)
     } catch(e) {
       console.log(`  ✗ ${pair.toUpperCase()}: ${e.message}`)
       fallos.push(pair.toUpperCase())

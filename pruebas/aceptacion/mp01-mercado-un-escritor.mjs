@@ -106,7 +106,7 @@ if (mod?.publicarAnio) {
   const ahoraMs = Date.parse('2026-02-04T06:00:00Z')
   const tic = () => new Promise(r => setImmediate(r))
   db.pausa = async c => {
-    if (c.op !== 'upload' || c.payload.ruta !== 'USDJPY/M1/2026.json.gz') return
+    if (c.op !== 'upload' || !/^USDJPY\/M1\/2026\.json(\.gz)?$/.test(c.payload.ruta)) return     // .json (por defecto) o .json.gz (MERCADO_GZIP=1)
     if (!lanzadaB) {
       lanzadaB = mod.publicarAnio(sb, { pair: 'USDJPY', year: 2026, dueno: 'B', ahoraMs,
         componer: g => { releyoB = true; return masDia('2026-02-02')(g) } }).then(r => { resB = r })
