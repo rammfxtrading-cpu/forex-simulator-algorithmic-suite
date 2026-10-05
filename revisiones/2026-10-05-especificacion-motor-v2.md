@@ -133,9 +133,9 @@ Práctica y reto usan **el mismo** protocolo: un reto es una sesión con un mód
 
 Los 9 pares tienen su par de conversión dentro de los 9.
 
-### 2.4 Spreads fijos por par: **PROPUESTA** a aprobar
+### 2.4 Spreads fijos por par: **`costes@1`, APROBADA** (Ramón, 5-oct-2026)
 
-Son spreads «moderados» de una cuenta con comisión (3 USD por lote), constantes por sesión y versionados (`costes@1`). **Son una propuesta mía, no un dato.**
+Spreads de una cuenta con comisión, constantes por sesión y versionados. Ramón los aprobó tal como se propusieron: son la **versión 1 de la tabla de costes** (`costes@1`), con comisión **3 USD por lote** y **swap 0**. Son configuración: una versión nueva no edita la 1.
 
 | Par | Spread (pips) | Coste del spread por lote |
 |---|---|---|
@@ -490,7 +490,7 @@ Son contratos por escribir como pruebas en `pruebas/aceptacion/` cuando se imple
 | A06 (v2.1) | Capital inicial 100.000; BUY 1 lote EURUSD **ejecutado** a 1,20000 (sin spread, aislado; bid = ask); comisión 3 ya debitada → saldo **99.997**; suelo diario 95.000; SL 1,10000, TP 1,25000; vela O 1,20000 H 1,26000 L 1,14000 C 1,20000. | Camino peor: el mínimo primero (B). Equity = 99.997 + (bid − 1,20000) × 100.000. En **1,15003**, 95.000 exacto: **no** incumple. Primer tick que incumple: **1,15002**, equity **94.999** → breach y liquidación ahí (saldo 94.999); TP nunca alcanzado; pendientes canceladas. Al mínimo 1,14000 se habría llegado a 93.997 (la v2 decía 94.000: omitía la comisión). |
 | A07 (v2.1) | Saldo ya neto 100.000, suelo 95.000; en el mismo minuto, AUDUSD −6.000 y EURUSD +4.000, los dos en el **primer extremo** (fase 2) de sus caminos. | Equity **98.000** en la valoración de la fase 2, sin breach; **intercambiar los nombres** (ganancia y pérdida) no cambia nada. Sin dato en horario de mercado, `no_valorable` con el cursor sin consumir. |
 | A08 | USDJPY BUY 1 lote a 150,000 (sin spread, aislado). | 150→151: **+662,251656** USD bruto. Umbral bruto −5.000 en **142,857142857**. Con 3 USD de comisión, umbral neto **142,861224606**: primer tick con neto < −5.000, **142,861** (neto −5.000,1651); 142,862 no incumple (−4.999,4301). Con pip fijo, 142,50 perdía 5.263,16. |
-| A09 | EURGBP: 100 GBP de P&L en un evento en la apertura de las 10:00; GBPUSD abre 1,25 y cierra 1,40. | **125 USD** (cotización disponible); nunca 140. Cotización inversa y dato obsoleto (> 5 min) → `no_valorable`. |
+| A09 (v2.1) | AUDCAD (decisión del CTO): 100 CAD de P&L en un evento de las fases 1–3 del minuto de las 10:00; USDCAD abre **1,25000** y cierra **1,40000**. | **80 USD** = 100 / 1,25 (apertura, conversión inversa ÷ USDCAD); nunca 71,43 (100 / 1,40, el cierre). En la fase 4 se usaría el cierre. Sin dato de USDCAD en horario de mercado → `no_valorable` con el cursor sin consumir. |
 | A10 (v2.1) | GBPJPY (universo admitido; conversión ÷ USDJPY). BUY a **ask 190,000**, SL **189,500** (0,5 JPY); presupuesto de riesgo **500 USD**; USDJPY **150,000** al dimensionar; comisión 3 USD/lote. Al cerrar: hueco, GBPJPY abre bid **189,300**; USDJPY **155,000**. | Riesgo por lote = 50.000 JPY / 150 + 3 = **336,333…** USD → volumen **1,48** (1,49 daría 501,14 > 500); riesgo estimado **497,77**. Liquidado: (190,000 − 189,300) × 148.000 = 103.600 JPY / 155 = **668,387097** USD + comisión 4,44 = **−672,827097**. La UI enseña estimado y liquidado por separado y el recibo explica hueco y cambio. |
 | A11 (v2.1) | **(a)** BUY 1 lote EURUSD a 1,10010 (ask), cierre a bid 1,10200: completo frente a 0,25 + 0,75. **(b)** Residuo con fracciones de µ: USDJPY BUY 1 lote a 150,000, cierre a 150,001, completo frente a 0,25 + 0,75. | (a) **190 bruto, 187 neto** en los dos casos (`sim_trades.pnl` es neto: 190 **no** se llama P&L neto); parciales 47,50 + 142,50 bruto; comisión total **3,00** cobrada al abrir, asignada 0,75 + 2,25; un reintento idéntico no cambia nada. (b) Exacto: 666.662,22 µ (0,25: 166.665,56 µ). Redondeando cada parcial por separado saldría 166.666 + 499.997 = **666.663 µ**; con el residuo por posición: **166.666 + 499.996 = 666.662 µ**, igual que el cierre completo. |
 | A12 | 0,01 lote. | Comisión **30.000 µUSD = 0,03**, no 0,04; remanente idéntico antes y después de serializar. |
@@ -515,7 +515,7 @@ Son contratos por escribir como pruebas en `pruebas/aceptacion/` cuando se imple
 
 ## 11. Pendiente
 
-1. **Spreads de § 2.4:** son una propuesta; los aprueba el CTO (Ramón los ve en pantalla).
+1. ~~Spreads de § 2.4~~ **Resuelto:** aprobados por Ramón como `costes@1` (5-oct).
 2. **Unidad del GB** que cuenta Supabase en este proyecto (10⁹ o 2³⁰): decide si el límite cae hacia el 6-nov-2026 o hacia el 22-ene-2027.
 3. **Compresión (§ 7.4):** aprobada; el código de lectores y escritores está en la rama (`7342403`, `f85ce6f`). La migración de ficheros no empieza hasta que los lectores estén desplegados y el CTO lo diga. Hay que hacerla **antes del 6-nov** si el límite es 10⁹ y Pro llega en diciembre.
 4. **Caché de `/api/candles`:** resuelto (`e07b849`, `0f280a3`).
@@ -525,9 +525,9 @@ Son contratos por escribir como pruebas en `pruebas/aceptacion/` cuando se imple
    - una rama de práctica desde un punto anterior (§ 3.8);
    - ajustes manuales de admin (§ 9).
 8. **Instante de medianoche entre velas:** se usa la cotización disponible a las 00:00, que es una decisión de esta especificación, no del texto de FTMO (§ 5).
-9. **(v2.1) Modo de redondeo al µ:** al µ más cercano. El desempate de las mitades exactas no está decidido; **propuesta: al par**. Los oráculos de esta versión no caen en una mitad exacta.
-10. **(v2.1) A09:** sigue usando EURGBP, retirado; se conserva solo como fixture unitario de conversión, o se sustituye por GBPJPY con USDJPY. No decidido.
-11. **(v2.1) Calendario de mercado por instrumento** (§ 3.5): falta la tabla concreta de horario por par (apertura del domingo, cierre del viernes, cierres diarios).
+9. ~~Modo de redondeo~~ **Resuelto (CTO, 5-oct):** al µ más cercano; **mitades exactas al par**.
+10. ~~A09~~ **Resuelto (CTO, 5-oct):** AUDCAD con conversión por USDCAD (§ 10).
+11. ~~Calendario~~ **Resuelto (CTO, 5-oct):** § 12.10.
 
 ---
 
@@ -579,6 +579,12 @@ Cada punto cita el hallazgo de Astra al que responde (`2026-10-05-astra-simulado
 - **A06:** con la comisión: igualdad en 1,15003, primer tick infractor **1,15002**, equity **94.999** (§ 10).
 - **A11:** **190 bruto, 187 neto**; más el caso de residuo (§ 10).
 - **A01, A03 y A10** completados con cifras (§ 10).
+
+### 12.10 Horario de mercado y redondeo (CTO, 5-oct-2026)
+- **Horario, igual para los 9 pares:** abre el **domingo a las 17:00** y cierra el **viernes a las 17:00**, hora de **America/New_York** (con su horario de verano).
+- **Festivos:** no hay tabla. Un día es «cierre esperado» **solo si el manifiesto del mercado publicado lo marca como cerrado**. Cualquier otra ausencia de dato en horario de mercado es `no_valorable`.
+- **Redondeo al µ:** al más cercano; **mitades exactas al par**.
+- **Costes:** `costes@1` = los spreads de § 2.4, 3 USD por lote, swap 0 (aprobados por Ramón).
 
 ### 12.9 Qué se puede programar ya (orden del CTO)
 En `lib/motor/` y sin tocar nada en uso: **1)** contratos puros (instrumentos, bid/ask, costes, P&L, redondeo, estado serializable, comparador); **2)** motor de un solo instrumento con **A01–A06, A08, A11, A12, A16 y A17** en verde. Nada de multipar, base ni interfaz todavía. Antes, la tabla de spreads en pantalla.
