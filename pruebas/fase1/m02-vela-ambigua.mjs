@@ -9,7 +9,7 @@
  * pruebas/banco-motor.mjs): la posicion se abre y se avanza UNA vela.
  *
  * ORACULO (politica pedida por el CTO: vela ambigua → stop primero, con marca
- * de ambiguedad). Con OHLC no se sabe que toco antes; lo conservador es el SL:
+ * de ambiguedad: `ambigua === true` y su causa, ver H02). Con OHLC no se sabe que toco antes; lo conservador es el SL:
  *   1 lote EURUSD, 10 pips × 10 USD = −100, y el cierre marcado como ambiguo.
  */
 import { titulo, ver, oraculo, fin, escenario, sesionSim, vela } from '../lib.mjs'
@@ -31,7 +31,15 @@ await b.paso(1)
 const t = b.ps().trades[0]
 ver('control: la posicion se cerro en esa vela', b.ps().positions.length === 0 && !!t, t?.reason)
 oraculo('M02', 'vela ambigua: cierra por el SL (−100)', t?.reason === 'SL' && Math.abs(t.pnl + 100) < 1e-6, `${t?.reason} ${t?.pnl?.toFixed(2)}`)
-oraculo('M02', 'y el cierre queda marcado como ambiguo', t?.ambigua === true || /ambig/i.test(JSON.stringify(t ?? {})), Object.keys(t ?? {}).join(','))
+// H02 (revision de Astra): la marca es `ambigua === true` CON su causa
+// (campo causa_ambiguedad, texto no vacio; el contrato lo fija la
+// especificacion v2). Antes valia cualquier JSON con «ambig», tambien
+// {ambigua:false}. El detector se prueba contra casos que NO deben pasar.
+const marcada = x => x?.ambigua === true && typeof x.causa_ambiguedad === 'string' && x.causa_ambiguedad.trim() !== ''
+ver('control negativo del detector: false, ausente, texto «true» y true sin causa no pasan',
+  [{ ambigua: false, causa_ambiguedad: 'x' }, {}, { ambigua: 'true', causa_ambiguedad: 'x' }, { ambigua: true }, { ambigua: true, causa_ambiguedad: ' ' }, { nota: 'sin ambiguedad' }].every(x => !marcada(x)))
+ver('control positivo del detector: true con causa pasa', marcada({ ambigua: true, causa_ambiguedad: 'la vela toca SL y TP' }))
+oraculo('M02', 'y el cierre queda marcado como ambiguo (ambigua === true, con causa)', marcada(t), JSON.stringify({ ambigua: t?.ambigua, causa_ambiguedad: t?.causa_ambiguedad }))
 
 titulo('2 · control: una vela que solo toca el TP')
 escenario({ sim_sessions: [ses] })
@@ -39,5 +47,5 @@ velasEnStorage('EUR/USD', [vela(T, 1.1, 1.1002, 1.0998, 1.1), vela(T + 60, 1.1, 
 const c = await banco({ sesion: ses })
 c.abreMercado({ side: 'BUY', entry: 1.1000, sl: 1.0990, tp: 1.1010, lots: 1 })
 await c.paso(1)
-ver('sin ambiguedad el TP da +100', c.ps().trades[0]?.reason === 'TP' && Math.abs(c.ps().trades[0].pnl - 100) < 1e-6)
+ver('sin ambiguedad el TP da +100 y NO sale marcada como ambigua', c.ps().trades[0]?.reason === 'TP' && Math.abs(c.ps().trades[0].pnl - 100) < 1e-6 && !marcada(c.ps().trades[0]))
 fin()
