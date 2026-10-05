@@ -7,7 +7,7 @@ Lo que se ha ejecutado de `sql/` en la base viva, con el informe del propio fich
 | `consultas/s04-esquema-simulador.sql` | **consulta de solo lectura** (catálogo, sin datos): el esquema real de las 9 tablas y de Storage | **sí** · **4/10/2026**, la ejecutó Ramón en el editor SQL de Supabase | `a639b0b` · `bb9aee948988519c39541be2a93817aa22d440964c5c4839ed67fb4ae783dee7` |
 | `sim-001-permisos-e-integridad.sql` | anon fuera de las 7 tablas; sin TRUNCATE/REFERENCES/TRIGGER para authenticated; FK con CASCADE en session_chart_config; 3 índices; NOT NULL donde no hay nulos | **ejecutado, NO aplicado** · 4/10/2026, Ramón en el editor SQL de Supabase: **falló con su precondición** y no aplicó nada (ver abajo) | `92f7c08` · `73782606f6002c7f05e2208dd7827cdfb67700dc4b3b0d67339199681ccc720f` |
 | `sim-001b-permisos-e-integridad.sql` | sim-001 + borrar antes, en el mismo DO, las filas huérfanas de session_chart_config (salvaguarda: más de 10, no hace nada) | **sí** · lo ejecutó Ramón; informe parcial literal (FK, huérfanas, FIN) pegado el 5-oct: ver abajo | `c95110b` · `a5cd4783dab3e0ed56628471410362f998cdd9e99ac27938b9d47155fab95fa0` (el fichero del commit; ver abajo) |
-| `sim-002-lectura-estable.sql` | funciones `sim_trades_de_sesion` y `sim_trades_de_usuario`: los trades en UNA sentencia como jsonb; SECURITY INVOKER, search_path vacío, EXECUTE solo authenticated y service_role (bloque E, punto 3) | **NO ejecutado** · pendiente. Hay que aplicarlo **antes** de desplegar el código que lee por ahí (status, advance, admin, Analytics) | commit del bloque E, punto 3 · `56d0f947b784c3ccb966f83b06a2d76c980414178067bd35bd75c4743950952b` |
+| `sim-002-lectura-estable.sql` | funciones `sim_trades_de_sesion` y `sim_trades_de_usuario`: los trades en UNA sentencia como jsonb; SECURITY INVOKER, search_path vacío, EXECUTE solo authenticated y service_role (bloque E, punto 3) | **sí** · 5/10/2026, la ejecutó Ramón; informe **transcrito por el CTO** (no las filas tal cual): ver abajo | `66758a3` · `56d0f947b784c3ccb966f83b06a2d76c980414178067bd35bd75c4743950952b` |
 
 ## s04 · resultado (4-oct-2026)
 
@@ -66,3 +66,11 @@ El CTO comunica que está **aplicado en producción**. Primero llegó sin inform
 Con esto constan la FK (con `ON DELETE CASCADE`, validada), las 2 huérfanas borradas (las que había encontrado sim-001) y el FIN. El texto ejecutado coincide con el commit `c95110b` (sha256 `a5cd4783dab3e0ed56628471410362f998cdd9e99ac27938b9d47155fab95fa0`, comprobado el 5-oct).
 
 **No venía en lo pegado** (no se da por sabido): los grants resultantes, los índices y qué NOT NULL se aplicaron. Si el informe completo los trae, se añaden aquí tal cual.
+
+## sim-002 · ejecución (5-oct-2026)
+
+Aplicada por Ramón en el editor SQL de Supabase. El CTO transmite el informe así (cita **textual de su mensaje**, que resume las filas; las filas tal cual no han llegado):
+
+> las dos funciones con security_definer=false, search_path vacío, EXECUTE true para authenticated y service_role, false para anon y PUBLIC, «FIN | sim-002 aplicada».
+
+Coincide con lo que el bloque DO exige antes de terminar (si cualquiera de esas condiciones fallase, revienta con «sim-002: …» y no crea nada). **No consta en lo transmitido:** `volatil=s` (STABLE) ni el tipo devuelto (`jsonb`); los comprueba el propio bloque. Fichero ejecutado: el del commit `66758a3` (sha256 arriba); el abierto en TextEdit el 5-oct tenía ese mismo sha256 antes y después de abrirlo.
