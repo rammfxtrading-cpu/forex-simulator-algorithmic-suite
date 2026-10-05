@@ -23,7 +23,7 @@ import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, pierde: null, cascadas: null, log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -166,7 +166,11 @@ function bucket(nombre) {
       // como storage-js 2.102: la API responde 400 con cuerpo { statusCode: '404',
       // error: 'not_found', message: 'Object not found' } → StorageApiError
       if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: NO_ENCONTRADO }
-      return { data: new Blob([objetos()[ruta]], { type: 'application/octet-stream' }), error: null }
+      const blob = new Blob([objetos()[ruta]], { type: 'application/octet-stream' })
+      // db.entrega(ctx): retiene la ENTREGA de un contenido ya leido (la lectura
+      // vio la version de ese instante; la respuesta llega despues)
+      if (db.entrega) await db.entrega({ cliente: quien, tabla: 'storage:' + nombre, op: 'download', payload: ruta })
+      return { data: blob, error: null }
     },
     // como storage-js 2.102 info(): metadatos SIN descargar el contenido. El etag
     // sale del contenido (cambia si el fichero cambia, como el real).

@@ -32,8 +32,8 @@ const PARES = new Set(['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD
 const PRIMER_ANIO = 2024
 const anioValido = y => /^\d{4}$/.test(String(y)) && Number(y) >= PRIMER_ANIO && Number(y) <= new Date().getUTCFullYear()
 
-// Una sola lectura en curso por par y año: las peticiones que llegan mientras
-// tanto esperan la misma promesa en vez de repetir el trabajo.
+// Una sola DESCARGA en curso por ruta + version (bloque E, punto 2): las
+// peticiones de esa misma version esperan la misma promesa.
 // (Por instancia del servidor: dos instancias pueden coincidir.)
 const enCurso = new Map()
 function unaVez(clave, trabajo) {
@@ -64,9 +64,25 @@ async function loadFromSupabase(pair, year) {
   // la version identifica fichero Y contenido: pasar de .json a .json.gz tambien relee
   const version = v.version == null ? null : `${v.ruta}#${v.version}`
   if (enCache && version != null && enCache.version === version) return { estado: 'ok', velas: enCache.velas }
-  const r = await leerRuta(supabaseAdmin, v.ruta)
-  if (r.estado === 'ok') cache.set(key, r.velas, version)
-  return r
+  // Bloque E, punto 2 (Astra BD-03): la version se comprueba POR PETICION (arriba,
+  // nunca compartida) y lo unico que se comparte es la DESCARGA de esa ruta en
+  // esa version. Una peticion que llega despues de publicarse v2 ve v2 y baja v2;
+  // no se une a una lectura de v1 en curso. Sin version (sin etag), no se comparte.
+  const r = version == null ? await leerRuta(supabaseAdmin, v.ruta) : await unaVez(`bajar:${version}`, () => descargaVersion(v.ruta, version))
+  if (r.estado === 'ok') cache.set(key, r.velas, r.confirmada === false ? null : version)
+  return r.estado === 'ok' ? { estado: 'ok', velas: r.velas } : r
+}
+
+// Descarga de una ruta en una version. La descarga empieza despues de leer la
+// version, asi que su contenido es esa version o una posterior (nunca anterior).
+// Revalidacion: si al terminar la version ya no es esa, se sirve igual pero no
+// se guarda en cache con la etiqueta vieja (la proxima peticion relee).
+async function descargaVersion(ruta, version) {
+  const r = await leerRuta(supabaseAdmin, ruta)
+  if (r.estado !== 'ok') return r
+  const { data, error } = await supabaseAdmin.storage.from('forex-data').info(ruta)
+  const ahora = error ? null : (data?.etag ?? data?.version ?? data?.lastModified ?? null)
+  return { ...r, confirmada: ahora != null && `${ruta}#${ahora}` === version }
 }
 
 // ── Aggregator (M1 → any TF) ──────────────────────────────────────────────────
@@ -129,7 +145,7 @@ export default async function handler(req, res) {
   if (!anioValido(yr)) return res.status(400).json({ error: `Año no disponible: ${yr}` })
 
   try {
-    const lectura = await unaVez(`leer:${cleanPair}_${yr}`, () => loadFromSupabase(cleanPair, yr))
+    const lectura = await loadFromSupabase(cleanPair, yr)    // bloque E: version por peticion
     // D04: si no se pudo leer, NO es «no hay fichero»: ni proveedor ni nada
     if (lectura.estado === 'error') {
       console.error(`[candles] No se pudo leer ${cleanPair}/${yr}: ${lectura.motivo}`)
