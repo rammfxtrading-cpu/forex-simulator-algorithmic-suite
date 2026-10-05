@@ -7,7 +7,8 @@
 //   node scripts/copia-mercado.js EURUSD AUDUSD AUDCAD GBPJPY
 //      → ~/copias-suite/AAAA-MM-DD-mercado/<PAR>_<AÑO>.json (+ .sha256) y resumen.txt
 //   COPIA_DIR=/otra/carpeta  cambia el destino (fuera de los repositorios y de iCloud)
-//   AÑO=2026                 el año (por defecto, el UTC en curso)
+//   ANIO=2025                el año (por defecto, el UTC en curso). ASCII: una
+//                            variable «AÑO» no llega al proceso (5-oct: se copio 2026 dos veces)
 // Lee lo vigente con las mismas reglas que /api/candles (lib/mercado/ficheros.mjs:
 // .json; .json.gz solo con MERCADO_GZIP=1). Transferencia: un fichero anual por
 // par (≈ 28 MB en JSON).
@@ -29,7 +30,9 @@ async function main() {
   const F = await import('../lib/mercado/ficheros.mjs')
   const C = await import('../lib/mercado/calidad.mjs')
   const hoy = new Date()
-  const anio = Number(process.env.AÑO || hoy.getUTCFullYear())
+  const anio = Number(process.env.ANIO || hoy.getUTCFullYear())
+  if (!Number.isInteger(anio) || anio < 2000 || anio > hoy.getUTCFullYear()) { console.log(`ANIO no valido: ${process.env.ANIO}`); console.log('\n=== ⚠️ ATENCION: nada copiado ==='); process.exitCode = 1; return }
+  console.log(`Año ${anio}${process.env.ANIO ? '' : ' (por defecto: el UTC en curso)'}`)
   const ayer = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1) / 1000
   const hasta = Math.min(ayer, Date.UTC(anio, 11, 31) / 1000)
   const dir = process.env.COPIA_DIR || path.join(os.homedir(), 'copias-suite', `${hoy.toISOString().slice(0, 10)}-mercado`)
@@ -57,7 +60,7 @@ async function main() {
     console.log(m); resumen.push(m)
     if (releida !== sha) fallos.push(par)
   }
-  fs.writeFileSync(path.join(dir, 'resumen.txt'), resumen.join('\n') + '\n')
+  fs.writeFileSync(path.join(dir, `resumen-${anio}.txt`), resumen.join('\n') + '\n')
   console.log(`\nCopia en ${dir}`)
   if (fallos.length) { console.log(`\n=== ⚠️ ATENCION: ${fallos.join(', ')} sin copia valida ===`); process.exitCode = 1 }
   else console.log(`\n=== ✓ TODO OK — ${pares.length} copia(s) verificada(s) ===`)
