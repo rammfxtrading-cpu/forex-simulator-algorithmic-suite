@@ -24,7 +24,10 @@ const AHORA = '2026-02-02T06:00:00Z'
 const velasDe = (dia, n = 1440) => diaM1(dia, n).map(c => ({ time: c.timestamp / 1000, open: c.open, high: c.high, low: c.low, close: c.close, volume: 1 }))
 const laborables = (desde, hasta) => { const d = []; for (let t = Date.parse(desde + 'T00:00:00Z'); t <= Date.parse(hasta + 'T00:00:00Z'); t += DIA) { const w = new Date(t).getUTCDay(); if (w >= 1 && w <= 5) d.push(new Date(t).toISOString().slice(0, 10)) } return d }
 const enDia = (arr, dia) => (arr || []).filter(v => new Date(v.time * 1000).toISOString().startsWith(dia)).length
-const historial = (hasta, corto = null) => laborables('2026-01-02', hasta).flatMap(d => velasDe(d, d === corto ? 900 : 1440))
+// bloque G, punto 7 (BF-01): un domingo sin velas esta PENDIENTE; el historial
+// lleva domingos reales: 120 velas de 22:00 a 23:59 UTC (como los medidos)
+const domingos = (desde, hasta) => { const d = []; for (let t = Date.parse(desde + 'T00:00:00Z'); t <= Date.parse(hasta + 'T00:00:00Z'); t += DIA) if (new Date(t).getUTCDay() === 0) d.push(new Date(t).toISOString().slice(0, 10)); return d }
+const historial = (hasta, corto = null) => [...laborables('2026-01-02', hasta).flatMap(d => velasDe(d, d === corto ? 900 : 1440)), ...domingos('2026-01-02', hasta).flatMap(d => velasDe(d).slice(22 * 60))].sort((a, b) => a.time - b.time)
 const diaDe = a => a.dates.from.toISOString().slice(0, 10)
 const RED = () => { throw new TypeError('fetch failed') }
 const linea = (r, par) => r.salida.find(l => l.includes(`${par}/M1`)) ?? ''
@@ -70,14 +73,16 @@ oraculo('FD01', 'cortada la cola en el 27 (fallo), no se piden los dias de despu
 titulo('3 · no se piden dias de mercado cerrado; un vacio legitimo no es un fallo')
 // Horario v2.1 (CTO): abre el domingo 17:00 y cierra el viernes 17:00 de Nueva
 // York. El sabado UTC entero esta cerrado; el domingo UTC abre a las 22:00 (en
-// invierno). Un domingo vacio (sin velas todavia) es legitimo.
+// invierno). Bloque G, punto 7 (BF-01, CTO 6-oct): un domingo vacio NO es un
+// cierre confirmado: no es un fallo de descarga, pero queda PENDIENTE y corta
+// la cola (antes: «legitimo», y la cola seguia detras de el).
 escenario({ storage: { 'forex-data': { 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
 proveedor.vacioComoSDK = true          // el vacio, como lo trata la libreria real con retryOnEmpty
 proveedor.responde = a => { const d = diaDe(a); return new Date(d + 'T00:00:00Z').getUTCDay() === 0 ? [] : diaM1(d) }
 const r3 = await corre()
 const pedidos3 = proveedor.llamadas.filter(l => l.instrumento === 'audusd').map(l => l.desde.slice(0, 10))
 oraculo('FD01', 'no se piden los sabados (24 y 31-ene)', !pedidos3.includes('2026-01-24') && !pedidos3.includes('2026-01-31'), pedidos3.join(' '))
-oraculo('FD01', 'un domingo vacio no es un fallo: nada «sin descargar» y la cola sigue hasta el viernes 30', !/sin descargar/.test(linea(r3, 'AUDUSD')) && enDia(guardado('AUDUSD/M1/2026').velas, '2026-01-30') === 1440, linea(r3, 'AUDUSD'))
+oraculo('FD01', 'un domingo vacio no es un fallo de descarga, pero queda pendiente y la cola no pasa de el (el lunes 26 no se publica)', !/sin descargar/.test(linea(r3, 'AUDUSD')) && /pendiente \(sin datos del proveedor\): 2026-01-25/.test(linea(r3, 'AUDUSD')) && enDia(guardado('AUDUSD/M1/2026').velas, '2026-01-26') === 0, linea(r3, 'AUDUSD'))
 
 titulo('4 · descarga propia: estado HTTP, bytes e intento en el log; esperas; tres clases de fallo')
 const filas = d => JSON.stringify(diaM1(d))

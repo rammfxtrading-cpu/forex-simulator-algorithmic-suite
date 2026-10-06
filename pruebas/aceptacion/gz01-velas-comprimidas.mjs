@@ -93,7 +93,9 @@ oraculo('GZ01', 'la siguiente peticion sirve el .json.gz (2.880), no la cache de
 // escribe; lo prueban mp01 y d04. La escritura .json.gz: secciones 8 y 10.)
 
 titulo('8 · ESCRITOR actualizar-diario: solo habia .json')
-const historial = antesDe => { const v = []; for (let t = Date.UTC(2026, 0, 1); t < Date.parse(antesDe + 'T00:00:00Z'); t += DIA) { const d = new Date(t).getUTCDay(); if (d >= 1 && d <= 5) v.push(...velasDe(new Date(t).toISOString().slice(0, 10))) } return v }
+// bloque G, punto 7 (BF-01): un domingo sin velas esta PENDIENTE; el historial
+// lleva domingos reales: 120 velas de 22:00 a 23:59 UTC (como los medidos)
+const historial = antesDe => { const v = []; for (let t = Date.UTC(2026, 0, 1); t < Date.parse(antesDe + 'T00:00:00Z'); t += DIA) { const d = new Date(t).getUTCDay(), dia = new Date(t).toISOString().slice(0, 10); if (d >= 1 && d <= 5) v.push(...velasDe(dia)); else if (d === 0) v.push(...velasDe(dia).slice(22 * 60)) } return v }
 const JSON8 = JSON.stringify([...historial('2026-09-29'), ...velasDe('2026-09-29')])
 bucket({ 'EURUSD/M1/2026.json': JSON8 })
 proveedor.responde = ({ dates }) => diaM1(dates.from.toISOString().slice(0, 10))

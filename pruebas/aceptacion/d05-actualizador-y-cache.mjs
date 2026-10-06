@@ -38,7 +38,9 @@ const enDia = (arr, dia) => arr.filter(v => new Date(v.time * 1000).toISOString(
 const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'https://falso.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'falsa' }
 const pedidos = () => proveedor.llamadas.filter(l => l.instrumento === 'eurusd').map(l => l.desde.slice(0, 10))
 // el historial previo del fichero: cada dia laborable completo desde el 1-ene hasta `antesDe` (excluido)
-const historial = antesDe => { const v = []; for (let t = Date.UTC(2026, 0, 1); t < Date.parse(antesDe + 'T00:00:00Z'); t += DIA * 1000) { const d = new Date(t).getUTCDay(); if (d >= 1 && d <= 5) v.push(...velasDe(new Date(t).toISOString().slice(0, 10))) } return v }
+// bloque G, punto 7 (BF-01): un domingo sin velas esta PENDIENTE; el historial
+// lleva domingos reales: 120 velas de 22:00 a 23:59 UTC (como los medidos)
+const historial = antesDe => { const v = []; for (let t = Date.UTC(2026, 0, 1); t < Date.parse(antesDe + 'T00:00:00Z'); t += DIA * 1000) { const d = new Date(t).getUTCDay(), dia = new Date(t).toISOString().slice(0, 10); if (d >= 1 && d <= 5) v.push(...velasDe(dia)); else if (d === 0) v.push(...velasDe(dia).slice(22 * 60)) } return v }
 
 titulo('1 · el ultimo dia guardado esta a medias')
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': JSON.stringify([...historial('2026-09-29'), ...velasDe('2026-09-29'), ...velasDe('2026-09-30', 720)]) } } })

@@ -96,10 +96,12 @@ const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 // se pudo leer (lib/mercado/ficheros.mjs).
 const leerAnio = (pair, year) => F.leerVigente(sb, pair, year)
 
-// Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los laborables cortos.
+// Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los dias del
+// interior PENDIENTES (bloque G, punto 7: laborables cortos y, desde BF-01,
+// tambien domingos vacios o cortados; C.estadoDia).
 function diasPendientes(velas, year, ayerMs) {
   const porDia = {}
-  for (const v of velas) { const d = ymd(v.time * 1000); porDia[d] = (porDia[d] || 0) + 1 }
+  for (const v of velas) (porDia[ymd(v.time * 1000)] ??= []).push(v)
   const inicio = Date.UTC(year, 0, 1)
   const fin = Math.min(Date.UTC(year, 11, 31), ayerMs)
   const ultDiaMs = velas.length ? Date.UTC(...ymd(velas[velas.length - 1].time * 1000).split('-').map((x, i) => i === 1 ? x - 1 : +x)) : inicio - DIA_MS
@@ -107,8 +109,7 @@ function diasPendientes(velas, year, ayerMs) {
   for (let t = inicio; t <= fin; t += DIA_MS) {
     const d = ymd(t)
     if (t > ultDiaMs) { if (C.diaConMercado(d)) cola.push(d); continue }   // cola: los dias con mercado (F3: el sabado no)
-    const umbral = C.UMBRAL_LABORABLE[new Date(t).getUTCDay()]
-    if (umbral && !C.FESTIVOS_MMDD.has(d.slice(5)) && (porDia[d] || 0) < umbral) cortos.push(d)
+    if (C.estadoDia(d, porDia[d]) === 'pendiente') cortos.push(d)
   }
   // el ultimo dia guardado, si esta a medias, entra en los cortos (es laborable) o en la cola.
   // Bloque F, punto 2: del MAS ANTIGUO al mas reciente, cortos del interior
@@ -116,8 +117,9 @@ function diasPendientes(velas, year, ayerMs) {
   return [...cortos, ...cola].sort().slice(0, MAX_DIAS_POR_PASADA)
 }
 
-// ¿Dia completo? (laborable con el umbral; fin de semana y festivos, siempre)
-const completo = (d, n) => { const u = C.UMBRAL_LABORABLE[new Date(d + 'T00:00:00Z').getUTCDay()]; return !u || C.FESTIVOS_MMDD.has(d.slice(5)) || n >= u }
+// ¿Dia completo? (bloque G, punto 7: C.estadoDia; un dia con mercado y sin
+// datos NUNCA lo es, tampoco el domingo)
+const completo = (d, velasDia) => C.estadoDia(d, velasDia) !== 'pendiente'
 
 // Compone lo publicado sobre `guardadas` (lo RELEIDO justo antes de subir):
 //   · un dia solo se sustituye si el bajado trae MAS velas;
@@ -140,10 +142,10 @@ function componer(guardadas, bajados) {
   if (cola.length) {
     const desde = ultima ? Date.parse(ultima + 'T00:00:00Z') + DIA_MS : Date.parse(cola[0].slice(0, 4) + '-01-01T00:00:00Z')
     for (let t = desde; t <= Date.parse(cola.at(-1) + 'T00:00:00Z'); t += DIA_MS) {
-      const d = ymd(t), laborable = !!C.UMBRAL_LABORABLE[new Date(t).getUTCDay()]
-      if (!Object.hasOwn(bajados, d)) { if (laborable && !C.FESTIVOS_MMDD.has(d.slice(5))) break; continue }   // falta: corta
+      const d = ymd(t)
+      if (!Object.hasOwn(bajados, d)) { if (!completo(d, [])) break; continue }   // falta un dia con mercado: corta
       if (bajados[d].length > (porDia[d] || []).length) { porDia[d] = bajados[d]; cambia = true }
-      if (!completo(d, (porDia[d] || []).length)) break                                                    // a medias: ultimo
+      if (!completo(d, porDia[d])) break                                          // vacio o a medias: ultimo (y si vacio, ni eso)
     }
   }
   return cambia ? Object.keys(porDia).sort().flatMap(d => porDia[d]).sort((a, b) => a.time - b.time) : null
@@ -161,7 +163,7 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity) {
 
   // Bloque F, punto 1: el fallo de un dia NO tira el par. Se apunta y se sigue;
   // componer corta la cola en el primer dia que falte.
-  const bajados = {}, fallidos = []
+  const bajados = {}, fallidos = [], vacios = []
   const ultimaGuardada = velas.length ? ymd(velas[velas.length - 1].time * 1000) : ''
   let colaCortada = false
   for (const d of pendientes) {
@@ -170,25 +172,27 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity) {
     const [y, m, dd] = d.split('-').map(Number)
     try { bajados[d] = (await bajarDia(pair, y, m - 1, dd, limite)) || [] }
     catch (e) { fallidos.push(`${d} (${e?.message || e})`); if (enCola) colaCortada = true }
-    if (enCola && bajados[d] && !completo(d, bajados[d].length)) colaCortada = true
+    // BF-01: un dia con mercado que llega vacio sigue PENDIENTE (y en la cola, la corta)
+    if (bajados[d] && !bajados[d].length && !completo(d, [])) vacios.push(d)
+    if (enCola && bajados[d] && !completo(d, bajados[d])) colaCortada = true
     await sleep(400)
   }
-  const nota = fallidos.length ? ` · sin descargar: ${fallidos.join(', ')}` : ''
+  const nota = (fallidos.length ? ` · sin descargar: ${fallidos.join(', ')}` : '') + (vacios.length ? ` · pendiente (sin datos del proveedor): ${vacios.join(', ')}` : '')
   const previsto = componer(nuevoAnio ? null : velas, bajados)
   if (!previsto) {
-    if (fallidos.length) return { keyFile, fallidos, estado: `✗ DESCARGA ${keyFile}: nada nuevo publicable${nota}` }
-    return { keyFile, estado: `✓ ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado` }
+    if (fallidos.length) return { keyFile, fallidos, vacios, estado: `✗ DESCARGA ${keyFile}: nada nuevo publicable${nota}` }
+    return { keyFile, vacios, estado: `${vacios.length ? '⚠️' : '✓'} ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado${nota}` }
   }
   const resumen = n => `${nuevoAnio ? 'año NUEVO, ' : ''}${n} velas (antes ${velas.length}); ultima ${ymd(previsto[previsto.length - 1].time * 1000)}`
   if (!SUBIR) {
     const v = C.validaParaPublicar(previsto, nuevoAnio ? null : velas, { anio: year })
-    return { keyFile, fallidos, estado: `[SECO] ${keyFile}: ${resumen(previsto.length)}${v.ok ? '' : ` — NO se publicaria: ${v.problemas.join(' · ')}`}` }
+    return { keyFile, fallidos, vacios, estado: `[SECO] ${keyFile}: ${resumen(previsto.length)}${v.ok ? '' : ` — NO se publicaria: ${v.problemas.join(' · ')}`}` }
   }
   const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(g, bajados), dueno: 'actualizar-diario' })
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
-  if (r.estado === 'publicado') return { keyFile, fallidos, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
-  if (r.estado === 'sin-cambios') return { keyFile, fallidos, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir${nota}` }
-  return { keyFile, fallidos, publicacion: true, estado: `✗ PUBLICACION ${r.estado} ${keyFile}: ${r.problemas.join(' · ')}${avisos}${nota}` }
+  if (r.estado === 'publicado') return { keyFile, fallidos, vacios, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
+  if (r.estado === 'sin-cambios') return { keyFile, fallidos, vacios, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir${nota}` }
+  return { keyFile, fallidos, vacios, publicacion: true, estado: `✗ PUBLICACION ${r.estado} ${keyFile}: ${r.problemas.join(' · ')}${avisos}${nota}` }
 }
 
 async function procesarPar(pair, finJob = Infinity) {
