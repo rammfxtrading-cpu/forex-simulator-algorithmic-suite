@@ -2,7 +2,9 @@
 // con sus dependencias FALSAS, sin red y sin secretos:
 //   require('dukascopy-node')        → proveedor-falso.mjs
 //   require('@supabase/supabase-js') → supabase-falso.mjs (la misma base en memoria)
-//   reloj                            → fijo en `ahora` (Date sin argumentos y Date.now)
+//   reloj                            → fijo en `ahora` (Date sin argumentos y Date.now);
+//                                      con `reloj: { ms }` (opcional, bloque G punto 9)
+//                                      marca reloj.ms, que la prueba puede adelantar
 //   setTimeout                       → inmediato (los sleep de 400 ms a 10 s)
 //   cwd                              → un directorio temporal con un .env.local FALSO
 //                                      (restore-2026.js lo lee de la carpeta actual)
@@ -31,7 +33,7 @@ const FINAL = /=== ✓ TODO OK|=== ⚠️ ATENCION|^Done\.$|^Fatal/
 // Cada ejecucion, para el control final de las pruebas: ninguna por timeout.
 export const ejecucionesScripts = []
 export class SalidaDeScript extends Error { constructor(c) { super(`process.exit(${c})`); this.salidaDeScript = true; this.codigo = c } }
-export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 20000 } = {}) {
+export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 20000, reloj = null } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'simscript-'))
   fs.writeFileSync(path.join(tmp, '.env.local'), 'NEXT_PUBLIC_SUPABASE_URL=https://falso.supabase.co\nSUPABASE_SERVICE_ROLE_KEY=falsa\n')
   const salida = [], envLeidos = [], envTodos = []
@@ -40,7 +42,9 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
       promisesReadFile: fs.promises.readFile, promisesOpen: fs.promises.open }, st: globalThis.setTimeout, fetch: globalThis.fetch, Date: globalThis.Date, log: console.log, err: console.error,
     write: process.stdout.write, cwd: process.cwd(), argv: process.argv, env: { ...process.env }, exitCode: process.exitCode, exit: process.exit }
   const fijo = new orig.Date(ahora).getTime()
-  class FechaFija extends orig.Date { constructor(...a) { a.length ? super(...a) : super(fijo) } static now() { return fijo } }
+  if (reloj && !Number.isFinite(reloj.ms)) reloj.ms = fijo
+  const marca = () => (reloj ? reloj.ms : fijo)
+  class FechaFija extends orig.Date { constructor(...a) { a.length ? super(...a) : super(marca()) } static now() { return marca() } }
   let terminado, final = new Promise(r => { terminado = r })
   let terminoPor = null, codigo = null
   try {

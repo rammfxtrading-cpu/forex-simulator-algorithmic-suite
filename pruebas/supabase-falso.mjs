@@ -16,6 +16,9 @@
 //   db.falla(ctx)     → un error {message,code} para esa operacion, o nada
 //   db.pausa(ctx)     → una promesa que retiene esa operacion (carreras)
 //   db.pierde(ctx)    → true: la operacion SE EJECUTA pero la respuesta no llega
+//   db.trasAplicar(ctx) → (storage upload) una promesa que retiene la RESPUESTA
+//                     de una subida YA APLICADA (bloque G, punto 9; opcional)
+//   db.clientes       → las opciones con que se creo cada cliente (createClient)
 //                       (se devuelve un error de transporte, como supabase-js ante
 //                       un fetch roto a la vuelta)
 //   db.log            cada operacion: { cliente, tabla, op, payload, filtros }
@@ -23,7 +26,7 @@ import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -191,6 +194,7 @@ function bucket(nombre) {
       if (!objetos()) return noExiste
       if (Object.hasOwn(objetos(), ruta) && !o.upsert) return { data: null, error: { message: 'The resource already exists', statusCode: '409' } }
       objetos()[ruta] = contenido
+      if (db.trasAplicar) await db.trasAplicar({ cliente: quien, tabla: 'storage:' + nombre, op: 'upload', payload: ruta })
       return { data: { path: ruta }, error: null }
     },
     async list(prefijo = '', o = {}) {
@@ -270,7 +274,8 @@ async function rpc(nombre, args = {}) {
   if (db.pierde && await db.pierde(ctx)) return { data: null, error: { message: 'TypeError: Failed to fetch', code: '', details: null, hint: null } }
   return { data: res, error: null }
 }
-export function createClient() {
+export function createClient(url, key, opciones) {
+  db.clientes.push(opciones ?? null)
   return { from: t => new Q(t), storage: { from: bucket }, auth, rpc }
 }
 

@@ -6,7 +6,7 @@
 //   proveedor.pausa(args)    → una promesa que retiene esa descarga (carreras)
 //   proveedor.llamadas       → cada llamada: { instrumento, desde, hasta }
 export const proveedor = globalThis.__proveedor ??= { responde: null, pausa: null, llamadas: [] }
-export function resetProveedor() { proveedor.responde = null; proveedor.pausa = null; proveedor.vacioComoSDK = false; proveedor.http = null; proveedor.llamadas.length = 0; intentosPorUrl.clear() }
+export function resetProveedor() { proveedor.responde = null; proveedor.pausa = null; proveedor.cuerpoPausa = null; proveedor.abortadas = 0; proveedor.vacioComoSDK = false; proveedor.http = null; proveedor.llamadas.length = 0; intentosPorUrl.clear() }
 export async function getHistoricalRates(args) {
   proveedor.llamadas.push({ instrumento: args.instrument, desde: args.dates?.from?.toISOString?.(), hasta: args.dates?.to?.toISOString?.() })
   await new Promise(r => setImmediate(r))
@@ -49,7 +49,19 @@ export function formatOutput({ processedData }) {
 //     o lanza (error de red) — OPCIONAL, para programar estados HTTP;
 //   si no, proveedor.responde({ instrument, dates }) → filas (200; [] = cuerpo
 //     vacio) o lanza (error de red).
-export async function fetchFalso(url) {
+// Bloque G, punto 9 (BF-03): respeta init.signal como el fetch real (undici):
+// abortar rechaza la peticion pendiente (tambien la retenida por pausa/http) y la
+// LECTURA DEL CUERPO (proveedor.cuerpoPausa la retiene). proveedor.abortadas cuenta.
+const abortable = (p, signal) => !signal ? p : new Promise((ok, mal) => {
+  const fuera = () => { proveedor.abortadas = (proveedor.abortadas || 0) + 1; mal(Object.assign(new Error('This operation was aborted'), { name: 'AbortError', code: 'ABORT_ERR' })) }
+  if (signal.aborted) return fuera()
+  signal.addEventListener('abort', fuera, { once: true })
+  Promise.resolve(p).then(ok, mal)
+})
+export async function fetchFalso(url, init = {}) {
+  return abortable(fetchFalsoSinSenal(url, init.signal), init.signal)
+}
+async function fetchFalsoSinSenal(url, signal) {
   const m = /datafeed\/([A-Z]+)\/(\d{4})\/(\d{2})\/(\d{2})\//.exec(String(url))
   if (!m) throw new TypeError('fetch failed: URL no reconocida por el doble')
   const desde = new Date(Date.UTC(+m[2], +m[3], +m[4])), hasta = new Date(desde.getTime() + 86400000)
@@ -68,7 +80,8 @@ export async function fetchFalso(url) {
   }
   const cab = Object.fromEntries(Object.entries(r.headers || {}).map(([k, v]) => [k.toLowerCase(), String(v)]))
   const cuerpo = Buffer.from(r.body ?? '')
-  return { status: r.status, ok: r.status >= 200 && r.status < 300, headers: { get: k => cab[String(k).toLowerCase()] ?? null }, arrayBuffer: async () => cuerpo.buffer.slice(cuerpo.byteOffset, cuerpo.byteOffset + cuerpo.length) }
+  const leer = async () => { if (proveedor.cuerpoPausa) await proveedor.cuerpoPausa({ instrumento, dia }); return cuerpo.buffer.slice(cuerpo.byteOffset, cuerpo.byteOffset + cuerpo.length) }
+  return { status: r.status, ok: r.status >= 200 && r.status < 300, headers: { get: k => cab[String(k).toLowerCase()] ?? null }, arrayBuffer: () => abortable(leer(), signal) }
 }
 
 // Velas M1 de un dia UTC (para programar respuestas): `n` velas desde las 00:00

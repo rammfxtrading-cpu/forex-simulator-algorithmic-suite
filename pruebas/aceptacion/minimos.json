@@ -3,6 +3,7 @@
   "bd03-cache-concurrente": 3,
   "bf01-dia-vacio-pendiente": 6,
   "bf02-log-saneado": 7,
+  "bf03-tiempo-maximo": 16,
   "c02-metricas": 7,
   "c03-sesiones-mismo-nombre": 3,
   "c04-estados-honestos": 29,

@@ -36,7 +36,8 @@ function getEnv() {
 }
 
 const { url, key } = getEnv()
-const sb = createClient(url, key)
+// el cliente se crea en main(), con el fetch con plazo de lib/mercado/limites.mjs (BF-03)
+let sb
 const BUCKET = 'forex-data'
 const PAIRS = ['audcad','audusd','eurusd','gbpjpy','gbpusd','nzdusd','usdcad','usdchf','usdjpy']
 
@@ -49,6 +50,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 const segs = (v, def) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : def }
 const PRESUPUESTO_JOB_MS = segs(process.env.PRESUPUESTO_JOB_S, 24 * 60) * 1000
 const PRESUPUESTO_PAR_MS = segs(process.env.PRESUPUESTO_PAR_S, 4 * 60) * 1000
+// Bloque G, punto 9 (BF-03): el presupuesto es un TIEMPO MAXIMO. Las descargas
+// se cancelan de verdad al llegar al limite (lib/mercado/descarga.mjs) y cada
+// operacion de Storage tiene su plazo (lib/mercado/ficheros.mjs). Antes de cada
+// par y antes de publicar se exige la RESERVA: el peor caso de publicar,
+// verificar y soltar el cerrojo (F.tiempoMaximoPublicar, 440 s con los plazos
+// por defecto; RESERVA_PUBLICAR_S la cambia). Las descargas de un par acaban
+// como tarde en fin del job − reserva. Con 24 min de job y 30 de workflow
+// (checkout y npm ci dentro) quedan ~6 min para el estado final.
+let RESERVA_MS
 
 // Baja UN dia por la DESCARGA PROPIA (bloque F, punto 4: lib/mercado/descarga.mjs):
 // estado HTTP, bytes e intento de cada peticion en el log; esperas crecientes
@@ -94,7 +104,7 @@ const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 // → { estado: 'ok', velas, ruta } | { estado: 'no-existe' } | { estado: 'error', ruta, motivo }
 // «No existe» = el 404 de storage-js en los dos formatos; cualquier otro error, no
 // se pudo leer (lib/mercado/ficheros.mjs).
-const leerAnio = (pair, year) => F.leerVigente(sb, pair, year)
+const leerAnio = (pair, year) => F.leerVigente(sb, pair, year, F.LIMITES)   // con plazo (BF-03)
 
 // Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los dias del
 // interior PENDIENTES (bloque G, punto 7: laborables cortos y, desde BF-01,
@@ -152,7 +162,7 @@ function componer(guardadas, bajados) {
 }
 
 // Baja los dias pendientes y los publica por la funcion comun.
-async function reconciliaAnio(pair, year, ayerMs, limite = Infinity) {
+async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = Infinity) {
   const keyFile = F.rutaEscritura(pair, year)     // .json; .json.gz solo con MERCADO_GZIP=1
   const leido = await leerAnio(pair, year)
   if (leido.estado === 'error') return { keyFile, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
@@ -188,6 +198,8 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity) {
     const v = C.validaParaPublicar(previsto, nuevoAnio ? null : velas, { anio: year })
     return { keyFile, fallidos, vacios, estado: `[SECO] ${keyFile}: ${resumen(previsto.length)}${v.ok ? '' : ` — NO se publicaria: ${v.problemas.join(' · ')}`}` }
   }
+  // BF-03: no se empieza a publicar sin la reserva para terminar (ni se toma el cerrojo)
+  if (Date.now() + RESERVA_MS > finJob) return { keyFile, fallidos, vacios, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
   const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(g, bajados), dueno: 'actualizar-diario' })
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
   if (r.estado === 'publicado') return { keyFile, fallidos, vacios, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
@@ -196,20 +208,21 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity) {
 }
 
 async function procesarPar(pair, finJob = Infinity) {
-  if (Date.now() >= finJob) return { pair, sinTiempo: true, estado: `✗ SIN TIEMPO: el presupuesto del job (${PRESUPUESTO_JOB_MS / 1000} s) se agoto antes de este par` }
-  const limite = Math.min(finJob, Date.now() + PRESUPUESTO_PAR_MS)
+  if (Date.now() + RESERVA_MS >= finJob) return { pair, sinTiempo: true, estado: `✗ SIN TIEMPO: no queda presupuesto del job (${PRESUPUESTO_JOB_MS / 1000} s) con la reserva para publicar (${RESERVA_MS / 1000} s) para este par` }
+  const limite = Math.min(finJob - RESERVA_MS, Date.now() + PRESUPUESTO_PAR_MS)
   const hoy = new Date()
   const ayerMs = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1)
   const year = hoy.getUTCFullYear()
   const anios = hoy.getUTCMonth() === 0 ? [year - 1, year] : [year]   // en enero, tambien el 31-dic anterior
   const partes = [], fallidos = []
+  let sinTiempoPublicar = false
   for (const y of anios) {
     if (Date.UTC(y, 0, 1) > ayerMs) continue           // el 1-ene aun no ha cerrado: nada que pedir de ese año
-    const r = await reconciliaAnio(pair, y, ayerMs, limite)
-    partes.push(r.estado); fallidos.push(...(r.fallidos || []))
+    const r = await reconciliaAnio(pair, y, ayerMs, limite, finJob)
+    partes.push(r.estado); fallidos.push(...(r.fallidos || [])); if (r.sinTiempo) sinTiempoPublicar = true
   }
   const fallo = partes.find(p => p.startsWith('✗'))
-  return { pair, fallidos, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
+  return { pair, fallidos, sinTiempo: sinTiempoPublicar, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
 }
 
 async function main() {
@@ -217,6 +230,11 @@ async function main() {
   DESC = await import('../lib/mercado/descarga.mjs')
   C = await import('../lib/mercado/calidad.mjs')
   E = await import('../lib/mercado/errores.mjs')
+  const L = await import('../lib/mercado/limites.mjs')
+  // BF-03: cada peticion HTTP a Storage se corta a su plazo (storage-js solo
+  // acepta señal en download; asi tambien upload, info y remove)
+  sb = createClient(url, key, { global: { fetch: L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs) } })
+  RESERVA_MS = segs(process.env.RESERVA_PUBLICAR_S, F.tiempoMaximoPublicar() / 1000) * 1000
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()} ===\n`)
   const resultados = []
   const finJob = Date.now() + PRESUPUESTO_JOB_MS
@@ -236,7 +254,7 @@ async function main() {
   const sinProveedor = resultados.filter(r => r.fallidos?.length || r.sinTiempo)
   if (sinProveedor.length) {
     console.log(`\n=== PROVEEDOR NO DISPONIBLE (hoy) — ${sinProveedor.length} par(es) ===`)
-    sinProveedor.forEach(r => console.log(`  ${r.pair.toUpperCase()}: ${r.sinTiempo ? 'sin tiempo (presupuesto del job agotado antes de empezar)' : r.fallidos.join(', ')}`))
+    sinProveedor.forEach(r => console.log(`  ${r.pair.toUpperCase()}: ${[r.sinTiempo ? 'sin tiempo (presupuesto del job, con su reserva para publicar)' : '', ...(r.fallidos || [])].filter(Boolean).join(', ')}`))
   }
 
   // ── VERDICTO por ESTADO REAL de los datos, no por fallos de descarga ──────
