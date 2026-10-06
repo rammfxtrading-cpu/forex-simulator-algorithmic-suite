@@ -94,3 +94,12 @@ Más las fichas del cerrojo y las llamadas `info()` (del orden de KB). Las subid
 
 **Sigue pendiente de autorización:** la recuperación.
 
+
+## 6. Recuperación por etapas (6-oct-2026, autorizada por el CTO)
+
+**Copia del 5-oct:** intacta antes de empezar (los 27 ficheros coinciden con su sha256).
+
+**Etapa 1** (`node scripts/actualizar-diario.js --subir --pares AUDUSD,GBPUSD`, desde `main` = `21ec65d`, workflow desactivado, sin `MERCADO_GZIP`; 22:47:18–22:52:00 CEST): **código 1**. Transferencia 58.315.700 bytes (2 descargas); Storage: lectura máx 8,7 s, subida 2,6 s, info 0,6 s, cerrojo 0,2 s. `_cerrojos/` vacío después.
+- **GBPUSD: recuperado hasta el 5-oct** (279.103 → 281.968 velas; 2-oct, 4-oct y 5-oct publicados y verificados por el job, sin descargar el año: verificación por metadatos). **El 20-jul sigue pendiente** (900 velas). Decisión del CTO: vale la verificación del job, no se descarga el año para compararlo con la copia.
+- **AUDUSD: sin cambios** (última vela el 25-sep; 20-jul en 900). El domingo 27-sep no se pudo bajar y cortó la cola.
+- Los 25 fallos: `UND_ERR_CONNECT_TIMEOUT` (la conexión con el proveedor no se establece). Siguiente paso: una sonda de solo lectura del proveedor antes de repetir.
