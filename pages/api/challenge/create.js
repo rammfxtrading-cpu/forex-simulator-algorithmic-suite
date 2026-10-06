@@ -1,5 +1,7 @@
 import { requireSimulador } from '../../../lib/authApi'
 import { getChallengeConfig } from '../../../lib/challengeRules'
+// CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
+import { registra } from '../../../lib/mercado/errores.mjs'
 
 /**
  * POST /api/challenge/create
@@ -114,7 +116,7 @@ export default async function handler(req, res) {
       const extraHint = isExtra ? '' : ' o pasa a Extra'
       return res.status(403).json({ error: `Tu plan ${planLabel} permite ${planMax} sesiones. Has alcanzado el limite. Borra una sesion${extraHint} para crear mas.` })
     }
-    return res.status(500).json({ error: 'Error creando challenge', detail: error.message })
+    return (registra('challenge/create', error), res.status(500).json({ error: 'Error creando challenge' }))
   }
 
   return res.status(200).json({ ok: true, session: data })

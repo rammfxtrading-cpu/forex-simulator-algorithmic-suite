@@ -90,5 +90,7 @@ Más las fichas del cerrojo y las llamadas `info()` (del orden de KB). Las subid
 
 **Lo que puede cambiar estas cifras:** son los tamaños del 5-oct. El cron de producción (`c470c8f`) sigue corriendo dos veces al día y puede haber añadido velas a esos objetos; el tamaño real es el del momento de la ejecución, y el job lo imprime. En la misma pasada se piden también los días interiores pendientes de esos dos pares, entre ellos su 20-jul.
 
-**Sigue pendiente de autorización:** la recuperación misma y la llamada de prueba a `info()` contra producción. Que `info()` devuelva `version`, `etag`, `size` y los metadatos de usuario está en los tipos de storage-js 2.102, **no comprobado contra producción**. Si no los devuelve, el código cae al respaldo y se queda dentro de las dos descargas, o dice «no verificado».
+**Llamada a `info()` contra producción (autorizada por el CTO, 6-oct; una sola, sin descargar el objeto, sobre `forex-data/AUDUSD/M1/2026.json`).** Campos y tipos devueltos: `archivedAt` null · `bucketId` string · `cacheControl` string · `contentType` string · `createdAt` string · `etag` string · `id` string · `isDeleteMarker` boolean · `isVersioned` boolean · `lastModified` string · `metadata` object (vacío en este objeto, que se subió sin metadatos de usuario) · `name` string · `size` number · `version` string. La firma (version, etag, size) tiene todo lo que usa. Que una subida con `metadata: { sha256 }` aparezca en `metadata` **no está comprobado**: se verá en la primera publicación real; si no aparece, el código verifica descargando dentro de las dos descargas, o dice «no verificado».
+
+**Sigue pendiente de autorización:** la recuperación.
 

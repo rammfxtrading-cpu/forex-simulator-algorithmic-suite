@@ -1,4 +1,6 @@
 import { requireAdmin } from '../../../lib/authApi'
+// CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
+import { registra } from '../../../lib/mercado/errores.mjs'
 
 /**
  * POST /api/admin/toggle-acceso-sim
@@ -41,7 +43,7 @@ export default async function handler(req, res) {
     .single()
 
   if (error) {
-    return res.status(500).json({ error: 'Error actualizando', detail: error.message })
+    return (registra('admin/toggle-acceso-sim', error), res.status(500).json({ error: 'Error actualizando' }))
   }
   if (!data) {
     return res.status(404).json({ error: 'Usuario no encontrado' })

@@ -2,6 +2,8 @@ import { metricas, ultimaActividad, activoEnLosUltimos } from '../../../lib/metr
 import { requireAdmin } from '../../../lib/authApi'
 import { leerTodo, porColumnas } from '../../../lib/paginado'
 import { tradesDeUsuario } from '../../../lib/tradesEstables'
+// CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
+import { registra } from '../../../lib/mercado/errores.mjs'
 
 /**
  * GET /api/admin/list-alumnos-sim
@@ -29,7 +31,7 @@ export default async function handler(req, res) {
     { ordena: porColumnas([['created_at', 'desc'], ['id', 'asc']]) })
 
   if (profErr) {
-    return res.status(503).json({ error: 'No se han podido leer los perfiles. Prueba de nuevo.', detail: profErr.message })
+    return (registra('admin/list-alumnos-sim', profErr), res.status(503).json({ error: 'No se han podido leer los perfiles. Prueba de nuevo.' }))
   }
 
   // 2) Traer sesiones y trades (solo de alumnos con simulador_activo para no cargar de más)
@@ -48,7 +50,7 @@ export default async function handler(req, res) {
     const tErr = porAlumno.find(r => r.error)?.error ?? null
     const trades = tErr ? null : porAlumno.flatMap(r => r.data)
     if (sErr || tErr) {
-      return res.status(503).json({ error: 'No se han podido leer las sesiones u operaciones. Prueba de nuevo.', detail: (sErr || tErr).message })
+      return (registra('admin/list-alumnos-sim', (sErr || tErr)), res.status(503).json({ error: 'No se han podido leer las sesiones u operaciones. Prueba de nuevo.' }))
     }
 
     for (const s of sessions || []) {

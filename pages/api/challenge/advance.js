@@ -3,6 +3,8 @@ import { tradesDeSesion } from '../../../lib/tradesEstables'
 import { requireSimulador } from '../../../lib/authApi'
 import { evaluateChallenge, isChallengeOver } from '../../../lib/challengeEngine'
 import { getChallengeConfig } from '../../../lib/challengeRules'
+// CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
+import { registra } from '../../../lib/mercado/errores.mjs'
 
 /**
  * POST /api/challenge/advance
@@ -106,6 +108,7 @@ export default async function handler(req, res) {
 
   // ── 4. Idempotencia: si ya está cerrada, no hacer nada.
   if (session.status !== 'active') {
+    registra('challenge/advance', iErr)
     return res.status(409).json({
       error: 'La sesión ya está cerrada',
       currentStatus: session.status
@@ -126,7 +129,7 @@ export default async function handler(req, res) {
   const { data: trades, error: tErr } = await tradesDeSesion(supabaseAdmin, session_id, { ordena: porColumnas([['id', 'asc']]) })
 
   if (tErr) {
-    return res.status(503).json({ error: 'No se han podido leer todas las operaciones. Prueba de nuevo.', detail: tErr.message })
+    return (registra('challenge/advance', tErr), res.status(503).json({ error: 'No se han podido leer todas las operaciones. Prueba de nuevo.' }))
   }
 
   let evaluation
@@ -138,7 +141,7 @@ export default async function handler(req, res) {
       trades: trades || [],
     })
   } catch (e) {
-    return res.status(500).json({ error: 'Error evaluando', detail: e.message })
+    return (registra('challenge/advance', e), res.status(500).json({ error: 'Error evaluando' }))
   }
 
   // ── 6. Validar coherencia cliente ↔ servidor
@@ -174,7 +177,7 @@ export default async function handler(req, res) {
       .single()
 
     if (uErr) {
-      return res.status(500).json({ error: 'Error cerrando sesión', detail: uErr.message })
+      return (registra('challenge/advance', uErr), res.status(500).json({ error: 'Error cerrando sesión' }))
     }
 
     return res.status(200).json({
@@ -204,7 +207,7 @@ export default async function handler(req, res) {
       .single()
 
     if (uErr) {
-      return res.status(500).json({ error: 'Error cerrando challenge', detail: uErr.message })
+      return (registra('challenge/advance', uErr), res.status(500).json({ error: 'Error cerrando challenge' }))
     }
 
     return res.status(200).json({
@@ -241,7 +244,7 @@ export default async function handler(req, res) {
     .single()
 
   if (uErr) {
-    return res.status(500).json({ error: 'Error cerrando fase', detail: uErr.message })
+    return (registra('challenge/advance', uErr), res.status(500).json({ error: 'Error cerrando fase' }))
   }
 
   const nextPhase = currentPhase + 1
@@ -284,7 +287,6 @@ export default async function handler(req, res) {
 
     return res.status(500).json({
       error: 'Error creando siguiente fase (se ha revertido el cierre de la actual)',
-      detail: iErr.message,
     })
   }
 

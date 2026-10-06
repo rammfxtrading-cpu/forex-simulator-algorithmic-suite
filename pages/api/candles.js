@@ -1,5 +1,6 @@
 import { requireSimulador, supabaseAdmin } from '../../lib/authApi'
 import { leerRuta, leerVigente, versionVigente } from '../../lib/mercado/ficheros.mjs'
+import { registra } from '../../lib/mercado/errores.mjs'
 
 const TIMEFRAMES = {
   M1: 1, M3: 3, M5: 5, M15: 15, M30: 30,
@@ -161,7 +162,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ candles, count: candles.length, source: 'ok' })
 
   } catch (e) {
-    console.error('[candles] handler error:', e)
-    return res.status(500).json({ error: e.message })
+    // CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
+    registra('candles', e)
+    return res.status(500).json({ error: 'Error interno al servir las velas. Prueba de nuevo en unos segundos.' })
   }
 }

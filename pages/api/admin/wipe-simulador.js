@@ -1,4 +1,6 @@
 import { requireAdmin } from '../../../lib/authApi'
+// CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
+import { registra } from '../../../lib/mercado/errores.mjs'
 
 /**
  * POST /api/admin/wipe-simulador
@@ -35,6 +37,7 @@ export default async function handler(req, res) {
 
   // Auto-proteccion: el admin no puede borrarse a si mismo
   if (user_id === user.id) {
+    registra('admin/wipe-simulador', toggleErr)
     return res.status(403).json({
       error: 'El admin no puede borrar sus propios datos del simulador'
     })
@@ -73,7 +76,6 @@ export default async function handler(req, res) {
   if (toggleErr) {
     return res.status(500).json({
       error: 'No se ha podido quitar el acceso al simulador. No se ha borrado nada.',
-      detail: toggleErr.message,
     })
   }
 
@@ -96,9 +98,9 @@ export default async function handler(req, res) {
       .select('user_id')
 
     if (error) {
+      registra('admin/wipe-simulador', error)
       return res.status(500).json({
         error: `Error borrando ${table}. Wipe INCOMPLETO: el acceso ya esta quitado; vuelve a lanzar el wipe para terminarlo.`,
-        detail: error.message,
         deleted_so_far: deleted,
       })
     }

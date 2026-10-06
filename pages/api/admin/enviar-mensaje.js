@@ -1,4 +1,6 @@
 import { requireAdmin } from '../../../lib/authApi'
+// CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
+import { registra } from '../../../lib/mercado/errores.mjs'
 
 /**
  * POST /api/admin/enviar-mensaje
@@ -45,7 +47,7 @@ export default async function handler(req, res) {
     .single()
 
   if (error) {
-    return res.status(500).json({ error: 'Error enviando mensaje', detail: error.message })
+    return (registra('admin/enviar-mensaje', error), res.status(500).json({ error: 'Error enviando mensaje' }))
   }
 
   return res.status(200).json({ ok: true, message: data })

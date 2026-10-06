@@ -1,6 +1,8 @@
 import { leerTodo, porColumnas } from '../../../../lib/paginado'
 import { tradesDeUsuario } from '../../../../lib/tradesEstables'
 import { requireAdmin } from '../../../../lib/authApi'
+// CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
+import { registra } from '../../../../lib/mercado/errores.mjs'
 
 /**
  * GET /api/admin/alumno-sim/[id]
@@ -48,10 +50,10 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: 'Alumno no encontrado' })
   }
   if (sessErr) {
-    return res.status(500).json({ error: 'Error cargando sesiones', detail: sessErr.message })
+    return (registra('admin/alumno-sim', sessErr), res.status(500).json({ error: 'Error cargando sesiones' }))
   }
   if (tradeErr) {
-    return res.status(500).json({ error: 'Error cargando trades', detail: tradeErr.message })
+    return (registra('admin/alumno-sim', tradeErr), res.status(500).json({ error: 'Error cargando trades' }))
   }
 
   return res.status(200).json({
