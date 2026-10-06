@@ -37,6 +37,8 @@ const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_
 const PAIRS = ['eurusd', 'gbpusd', 'audusd', 'nzdusd', 'usdchf', 'usdcad']
 const YEAR = 2026
 
+// Bloque G, punto 8 (BF-02): de un error ajeno solo clase y codigo (errores.mjs)
+let E
 async function downloadWithRetry(pair, attempt = 1) {
   const now = new Date()
   const from = new Date(`${YEAR}-01-01T00:00:00Z`)
@@ -51,7 +53,7 @@ async function downloadWithRetry(pair, attempt = 1) {
     return data
   } catch(e) {
     if(attempt < 3) {
-      console.log(`  ⚠ Retry ${attempt+1}/3 for ${pair}: ${e.message}`)
+      console.log(`  ⚠ Retry ${attempt+1}/3 for ${pair}: ${E.texto(e)}`)
       await new Promise(r => setTimeout(r, 5000))
       return downloadWithRetry(pair, attempt+1)
     }
@@ -63,6 +65,7 @@ async function main() {
   // los modulos comunes son ESM (.mjs): import() desde este script CommonJS
   const F = await import('../lib/mercado/ficheros.mjs')
   const C = await import('../lib/mercado/calidad.mjs')
+  E = await import('../lib/mercado/errores.mjs')
   console.log(`Restaurando ${YEAR} (${SUBIR ? '⚠️ REAL: sube' : '🔍 SECO: no escribe nada; para subir, --subir'})...\n`)
   const hoy = new Date()
   const ayerSeg = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1) / 1000
@@ -77,13 +80,13 @@ async function main() {
         open: c.open, high: c.high, low: c.low, close: c.close,
         volume: c.volume ?? 0,
       }))
-      if (!candles.length) throw new Error('el proveedor devolvio 0 velas')
+      if (!candles.length) throw E.errorPropio('el proveedor devolvio 0 velas')
       if (!SUBIR) {
         // en seco: la misma validacion contra lo guardado ahora (sin cerrojo)
         const g = await F.leerVigente(sb, pair, YEAR)
-        if (g.estado === 'error') throw new Error(`no se pudo leer lo guardado (${g.motivo}): no se sabe si lo nuevo es peor`)
+        if (g.estado === 'error') throw E.errorPropio(`no se pudo leer lo guardado (${g.motivo}): no se sabe si lo nuevo es peor`)
         const v = C.validaParaPublicar(candles, g.estado === 'ok' ? g.velas : null, { anio: YEAR, exigeHasta: ayerSeg })
-        if (!v.ok) throw new Error(`no se publicaria: ${v.problemas.join(' · ')}`)
+        if (!v.ok) throw E.errorPropio(`no se publicaria: ${v.problemas.join(' · ')}`)
         console.log(`  [SECO] subiria ${path}: ${candles.length} velas`)
         continue
       }
@@ -92,10 +95,10 @@ async function main() {
       const r = await F.publicarAnio(sb, { pair, year: YEAR, componer: () => candles, exigeHasta: ayerSeg, dueno: 'restore-2026' })
       for (const a of r.avisos || []) console.log(`  aviso: ${a}`)
       if (r.estado === 'sin-cambios') { console.log(`  ✓ ${path}: igual que lo guardado, nada que subir`); continue }
-      if (r.estado !== 'publicado') throw new Error(`${r.estado}: ${r.problemas.join(' · ')}`)
+      if (r.estado !== 'publicado') throw E.errorPropio(`${r.estado}: ${r.problemas.join(' · ')}`)
       console.log(`  ✓ ${path}: ${r.velas} candles, ${(r.bytes/1024/1024).toFixed(1)}MB (verificado)`)
     } catch(e) {
-      console.log(`  ✗ ${pair.toUpperCase()}: ${e.message}`)
+      console.log(`  ✗ ${pair.toUpperCase()}: ${E.texto(e)}`)
       fallos.push(pair.toUpperCase())
     }
   }
@@ -107,4 +110,4 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error('Fatal:', e.message); process.exit(1) })
+main().catch(e => { console.error('Fatal:', E ? E.texto(e) : 'Error'); process.exit(1) })

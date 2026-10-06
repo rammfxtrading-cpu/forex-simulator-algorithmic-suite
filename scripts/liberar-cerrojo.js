@@ -55,4 +55,5 @@ async function main() {
   console.log('\n=== ✓ TODO OK — cerrojo liberado ===')
 }
 
-main().catch(e => { console.error('Fatal:', e.message); process.exit(1) })
+// BF-02: solo clase y codigo (lib/mercado/errores.mjs), nunca el message
+main().catch(async e => { const E = await import('../lib/mercado/errores.mjs').catch(() => null); console.error('Fatal:', E ? E.texto(e) : 'Error'); process.exit(1) })

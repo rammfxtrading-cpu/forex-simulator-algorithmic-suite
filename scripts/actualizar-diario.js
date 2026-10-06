@@ -86,7 +86,7 @@ async function bajarDia(pair, y, m, d, limite = Infinity) {
 // primero a medias es el ultimo que se publica (tramo abierto) y lo demas
 // espera a la pasada siguiente. Umbrales y festivos: los de calidad.mjs.
 // Los modulos comunes son ESM (.mjs): se cargan con import() en main().
-let F, C   // lib/mercado/ficheros.mjs, lib/mercado/calidad.mjs
+let F, C, E   // lib/mercado/ficheros.mjs, calidad.mjs, errores.mjs (BF-02: solo clase y codigo)
 const MAX_DIAS_POR_PASADA = 40
 const DIA_MS = 86400000
 const ymd = ms => new Date(ms).toISOString().slice(0, 10)
@@ -171,7 +171,7 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity) {
     if (enCola && colaCortada) continue              // punto 2: cortada la cola, lo de despues no se publicaria
     const [y, m, dd] = d.split('-').map(Number)
     try { bajados[d] = (await bajarDia(pair, y, m - 1, dd, limite)) || [] }
-    catch (e) { fallidos.push(`${d} (${e?.message || e})`); if (enCola) colaCortada = true }
+    catch (e) { fallidos.push(`${d} (${E.texto(e)})`); if (enCola) colaCortada = true }
     // BF-01: un dia con mercado que llega vacio sigue PENDIENTE (y en la cola, la corta)
     if (bajados[d] && !bajados[d].length && !completo(d, [])) vacios.push(d)
     if (enCola && bajados[d] && !completo(d, bajados[d])) colaCortada = true
@@ -216,6 +216,7 @@ async function main() {
   F = await import('../lib/mercado/ficheros.mjs')
   DESC = await import('../lib/mercado/descarga.mjs')
   C = await import('../lib/mercado/calidad.mjs')
+  E = await import('../lib/mercado/errores.mjs')
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()} ===\n`)
   const resultados = []
   const finJob = Date.now() + PRESUPUESTO_JOB_MS
@@ -225,7 +226,7 @@ async function main() {
     primero = false
     process.stdout.write(`  ${pair.toUpperCase()}... `)
     try { const r = await procesarPar(pair, finJob); console.log(r.estado); resultados.push(r) }
-    catch(e) { console.log(`✗ ERROR: ${e.message}`); resultados.push({pair, estado:`✗ ${e.message}`}) }
+    catch(e) { console.log(`✗ ERROR: ${E.texto(e)}`); resultados.push({pair, estado:`✗ ${E.texto(e)}`}) }
   }
   // Bloque F, punto 6: veredicto SEPARADO. «Proveedor no disponible» = hoy no se
   // pudo descargar algun dia que hacia falta (servidor, red o sin tiempo): dice
@@ -276,7 +277,7 @@ async function main() {
       console.log(`  ${pair.toUpperCase().padEnd(8)} ${ok?'✓':'⚠️'} ultima ${ult.toISOString().slice(0,10)} (retraso: ${retraso} dia(s) de mercado)`)
       const hoyNo = sinProveedor.find(r => r.pair === pair)
       if (!ok) descolgados.push(`${pair.toUpperCase()}: ultima ${ult.toISOString().slice(0,10)}, ${retraso} dias de mercado de retraso — ${hoyNo ? 'hoy, ademas, proveedor no disponible para este par' : 'el proveedor SI respondio hoy: revisar los datos'}`)
-    } catch(e) { console.log(`  ${pair.toUpperCase().padEnd(8)} ✗ ${e.message}`); descolgados.push(`${pair}: ${e.message}`) }
+    } catch(e) { console.log(`  ${pair.toUpperCase().padEnd(8)} ✗ ${E.texto(e)}`); descolgados.push(`${pair}: ${E.texto(e)}`) }
   }
 
   // una publicacion rechazada, sin verificar o sin cerrojo NO es un fallo de
@@ -301,4 +302,4 @@ async function main() {
   if (!SUBIR) console.log(`\n  (SECO — no se tocó nada. Para subir: --subir)`)
 }
 
-main().catch(e => { console.error('Fatal:', e.message); process.exit(1) })
+main().catch(e => { console.error('Fatal:', E ? E.texto(e) : (e?.name === 'TypeError' ? 'TypeError' : 'Error')); process.exit(1) })
