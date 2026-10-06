@@ -90,7 +90,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         // dias incompletos y el aviso los nombra.
         avisoDatos: [
           result.diasIncompletos?.length ? `${pair}: ${result.diasIncompletos.length===1?'dia incompleto':result.diasIncompletos.length+' dias incompletos'} en esta sesion: ${listaDiasCortos(result.diasIncompletos)}. Ahi faltan velas.` : '',
-          result.tramoAbierto ? `${pair}: datos hasta ${fechaCorta(result.datosHasta)}. El resto se publica con la actualizacion diaria.` : '',
+          // CTO 6-oct: sin prometer actualizacion ni fecha de arreglo
+          result.tramoAbierto ? `${pair}: datos hasta ${fechaCorta(result.datosHasta)}; despues no hay velas.` : '',
         ].filter(Boolean).join(' '),
       }
       pairState.current[pair]=ps

@@ -274,7 +274,7 @@ async function main() {
   try { ACEPTADOS = (await import('../lib/mercado/aceptados.mjs')).cargaAceptados() }
   catch (e) {
     console.log(`Lista de dias aceptados no valida: ${E.texto(e)}`)
-    console.log('\n=== ⚠️ ATENCION: no se ha hecho nada (lib/mercado/dias-aceptados.json no valido) (codigo 4) ===')
+    console.log('\n=== ⚠️ ATENCION: no se ha hecho nada (lib/mercado/dias-aceptados.mjs no valido) (codigo 4) ===')
     process.exitCode = 4
     return
   }

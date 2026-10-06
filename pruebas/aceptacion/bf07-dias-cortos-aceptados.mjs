@@ -54,10 +54,11 @@ const r3 = await corre('AUDUSD')
 oraculo('BF07', 'AUDUSD: codigo 1 y su 29-mar sigue pendiente', r3.codigo === 1 && pidio29('AUDUSD'), `codigo ${r3.codigo}`)
 
 titulo('4 · el fichero versionado y su validacion')
-const RUTA = REPO + 'lib/mercado/dias-aceptados.json'
+// 6-oct (CTO): la lista paso de .json a .mjs para que la cargue tambien el navegador
+const RUTA = REPO + 'lib/mercado/dias-aceptados.mjs'
 let lista = null
-try { lista = JSON.parse(readFileSync(RUTA, 'utf8')) } catch { lista = null }
-oraculo('BF07', 'lib/mercado/dias-aceptados.json tiene exactamente la entrada de NZDUSD', Array.isArray(lista) && lista.length === 1 && lista[0].par === 'NZDUSD' && lista[0].fecha === '2024-03-29' && lista[0].velas === 973 && /viernes santo/i.test(lista[0].motivo ?? ''), existsSync(RUTA) ? JSON.stringify(lista) : 'no existe')
+try { lista = (await importa('lib/mercado/dias-aceptados.mjs')).default } catch { lista = null }
+oraculo('BF07', 'lib/mercado/dias-aceptados.mjs tiene exactamente la entrada de NZDUSD', Array.isArray(lista) && lista.length === 1 && lista[0].par === 'NZDUSD' && lista[0].fecha === '2024-03-29' && lista[0].velas === 973 && /viernes santo/i.test(lista[0].motivo ?? ''), existsSync(RUTA) ? JSON.stringify(lista) : 'no existe')
 let A = null
 try { A = await importa('lib/mercado/aceptados.mjs') } catch { A = null }
 const rechaza = e => { try { A.validaAceptados(JSON.stringify([e])); return false } catch { return true } }
