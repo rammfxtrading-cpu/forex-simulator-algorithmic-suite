@@ -3,7 +3,8 @@
 // lib/mercado/ficheros.mjs) NO caducan ni se recuperan solos: si un proceso
 // muere con uno puesto, todo lo de ese par y año falla, visible, hasta que una
 // persona compruebe que ese proceso ya no existe y lo libere con esto.
-// ⛔ Ningun workflow llama a este script. Liberar un cerrojo cuyo dueño sigue
+// ⛔ Ningun workflow llama a este script, y se niega a correr con CI o
+//    GITHUB_ACTIONS definidos (BE-01). Liberar un cerrojo cuyo dueño sigue
 //    vivo le deja publicar encima de otro: comprobarlo antes.
 //
 //   node scripts/liberar-cerrojo.js EURUSD_2026              -> enseña quien lo tiene y desde cuando; NO borra
@@ -20,6 +21,17 @@ function getEnv() {
 }
 
 async function main() {
+  // BE-01 (Astra, cierres-3; bloque G, punto 2): nunca desde una ejecucion
+  // automatizada. Con CI o GITHUB_ACTIONS definidos (con cualquier valor) no se
+  // libera nada, ni con --confirmo: liberar exige comprobar a mano que el dueño
+  // ya no existe. (No protege de quien lo eluda a proposito con la clave.)
+  const automatizado = ['CI', 'GITHUB_ACTIONS'].filter(v => Object.hasOwn(process.env, v))
+  if (automatizado.length) {
+    console.log(`Ejecucion automatizada (${automatizado.join(', ')} definido): liberar un cerrojo exige comprobacion humana. No se hace nada.`)
+    console.log('\n=== ⚠️ ATENCION: no se ha liberado nada (entorno CI/automatizado) ===')
+    process.exitCode = 1
+    return
+  }
   const clave = process.argv[2]
   const confirmo = process.argv.includes('--confirmo')
   const m = /^([A-Z]{6})_(\d{4})$/.exec(clave || '')

@@ -78,6 +78,13 @@ if (hayScript) {
   oraculo('BD01', 'sin --confirmo: enseña quien lo tiene y desde cuando, no borra y acaba con codigo 1', false, 'no existe scripts/liberar-cerrojo.js')
   oraculo('BD01', 'con --confirmo: lo borra y lo dice', false, 'no existe scripts/liberar-cerrojo.js')
 }
+// BE-01 (Astra, cierres-3; bloque G, punto 2): ni con --confirmo se ejecuta en
+// CI ni en GitHub Actions (variables definidas, con cualquier valor)
+for (const [nombre, valor] of [['CI', 'true'], ['GITHUB_ACTIONS', 'true'], ['CI', '']]) {
+  escenario({ storage: { 'forex-data': { [RUTA_CERROJO]: ficha('restore-2026:x7', '2026-01-03T09:00:00.000Z') } } })
+  const enCI = hayScript ? await correScript('scripts/liberar-cerrojo.js', { ahora: '2026-01-09T09:00:00Z', argv: ['EURUSD_2026', '--confirmo'], env: { ...ENV, [nombre]: valor } }) : null
+  oraculo('BE01', `con ${nombre}=${JSON.stringify(valor)} y --confirmo: no borra, lo dice y acaba con codigo 1`, !!enCI && Object.hasOwn(db.storage['forex-data'], RUTA_CERROJO) && !db.log.some(l => l.op === 'remove') && enCI.codigo === 1 && enCI.salida.some(l => /CI|automatizado/i.test(l)), enCI ? enCI.salida.slice(-2).join(' | ') : 'sin script')
+}
 const yml = fuente('.github/workflows/actualizar-velas.yml')
 oraculo('BD01', 'ningun workflow llama a liberar-cerrojo', hayScript && !/liberar-cerrojo/.test(yml))
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))
