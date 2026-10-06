@@ -141,7 +141,9 @@ proveedor.responde = args => diaM1(diaDe(args))
 // justo despues de la subida de AUDUSD, alguien que no usa la funcion comun lo pisa
 let pisado = false
 db.pausa = async c => {
-  if (!pisado && c.op === 'download' && String(c.payload).startsWith('AUDUSD/') && ops('upload').some(l => l.payload.ruta.startsWith('AUDUSD/M1/2026.json'))) {
+  // bloque G, punto 11: la verificacion empieza por info() (metadatos); el pisoton
+  // llega en la primera lectura de cualquier tipo despues de la subida
+  if (!pisado && (c.op === 'download' || c.op === 'info') && String(c.payload).startsWith('AUDUSD/') && ops('upload').some(l => l.payload.ruta.startsWith('AUDUSD/M1/2026.json'))) {
     pisado = true
     for (const r of Object.keys(db.storage['forex-data'])) if (r.startsWith('AUDUSD/M1/2026.json')) delete db.storage['forex-data'][r]
     publicaOtro('AUDUSD/M1/2026.json', base5.slice(0, 1000))

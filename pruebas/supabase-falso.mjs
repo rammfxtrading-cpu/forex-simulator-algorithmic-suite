@@ -19,6 +19,10 @@
 //   db.trasAplicar(ctx) → (storage upload) una promesa que retiene la RESPUESTA
 //                     de una subida YA APLICADA (bloque G, punto 9; opcional)
 //   db.clientes       → las opciones con que se creo cada cliente (createClient)
+//   db.metadatos[b][r] → los metadatos de usuario de la ultima subida de r
+//                     (upload con options.metadata; info los devuelve en
+//                     `metadata`, como el tipo FileObjectV2 de storage-js 2.102)
+//   db.infoSinMetadatos → true: info no devuelve `metadata` (bloque G, punto 11)
 //                       (se devuelve un error de transporte, como supabase-js ante
 //                       un fetch roto a la vuelta)
 //   db.log            cada operacion: { cliente, tabla, op, payload, filtros }
@@ -26,7 +30,7 @@ import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -183,7 +187,8 @@ function bucket(nombre) {
       if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: NO_ENCONTRADO }
       const c = objetos()[ruta]
       const etag = createHash('sha256').update(c).digest('hex').slice(0, 32)
-      return { data: { name: ruta, etag, version: etag, size: Buffer.byteLength(c), lastModified: null, contentType: null }, error: null }
+      const metadata = db.infoSinMetadatos ? undefined : (db.metadatos[nombre]?.[ruta] ?? null)
+      return { data: { name: ruta, etag, version: etag, size: Buffer.byteLength(c), lastModified: null, contentType: null, ...(metadata === undefined ? {} : { metadata }) }, error: null }
     },
     // texto o binario (Blob, Buffer, Uint8Array), como el real
     async upload(ruta, cuerpo, o = {}) {
@@ -194,6 +199,7 @@ function bucket(nombre) {
       if (!objetos()) return noExiste
       if (Object.hasOwn(objetos(), ruta) && !o.upsert) return { data: null, error: { message: 'The resource already exists', statusCode: '409' } }
       objetos()[ruta] = contenido
+      ;(db.metadatos[nombre] ??= {})[ruta] = o.metadata ?? null
       if (db.trasAplicar) await db.trasAplicar({ cliente: quien, tabla: 'storage:' + nombre, op: 'upload', payload: ruta })
       return { data: { path: ruta }, error: null }
     },
@@ -208,7 +214,7 @@ function bucket(nombre) {
       const err = await op('remove', rutas); if (err) return { data: null, error: err }
       if (!objetos()) return noExiste
       const fuera = rutas.filter(r => Object.hasOwn(objetos(), r))
-      for (const r of fuera) delete objetos()[r]
+      for (const r of fuera) { delete objetos()[r]; if (db.metadatos[nombre]) delete db.metadatos[nombre][r] }
       return { data: fuera.map(name => ({ name })), error: null }
     },
   }

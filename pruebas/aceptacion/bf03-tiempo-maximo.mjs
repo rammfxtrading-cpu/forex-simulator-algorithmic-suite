@@ -155,10 +155,16 @@ const retiene = pred => { let pillada = false; db.pausa = async c => { if (!pill
   oraculo('BF03', 'subida aplicada con la respuesta retenida: se reconcilia (lo vigente es lo subido), publicado y cerrojo suelto', h?.ok?.estado === 'publicado' && !hayCerrojo(), h ? JSON.stringify({ e: h.ok?.estado, p: h.ok?.problemas, a: h.ok?.avisos, c: hayCerrojo() }) : 'sigue pendiente')
   db.trasAplicar = null; suelta?.(); await ticks(200) }
 
-{ escenario({ storage: { 'forex-data': { [RUTA]: BASE } } }); const R = relojManual(); let lecturas = 0
-  const pillada = retiene(c => c.op === 'download' && c.payload === RUTA && ++lecturas === 2)
-  const p = publica(R); await ticks(60); ver('control: la verificacion (2.ª lectura) esta retenida tras subir', !F || (pillada() && guardado('EURUSD/M1/2026').velas?.length === 1440))
-  R.avanza(LIM.grandeMs); const h = await termino(p, 200)
+{ escenario({ storage: { 'forex-data': { [RUTA]: BASE } } }); const R = relojManual()
+  // bloque G, punto 11: la verificacion es info() (metadatos) y, si no, una
+  // descarga: se retienen LAS DOS despues de la subida
+  const sueltas = []; let retenidas = 0
+  db.pausa = async c => { if ((c.op === 'download' || c.op === 'info') && c.payload === RUTA && db.log.some(l => l.op === 'upload' && l.payload?.ruta === RUTA)) { retenidas++; await new Promise(r => sueltas.push(r)) } }
+  suelta = () => sueltas.forEach(f => f())
+  const pillada = () => retenidas > 0
+  const p = publica(R); await ticks(60); ver('control: la verificacion esta retenida tras subir', !F || (pillada() && guardado('EURUSD/M1/2026').velas?.length === 1440))
+  for (let k = 0; k < 3; k++) { R.avanza(LIM.grandeMs); await ticks(60) }
+  const h = await termino(p, 200)
   oraculo('BF03', 'verificacion colgada: error «no verificado» por tiempo y cerrojo suelto (la subida ya termino)', h?.ok?.estado === 'error' && /no verificado/.test(h.ok.problemas.join(' ')) && !hayCerrojo(), h ? JSON.stringify({ e: h.ok?.estado, p: h.ok?.problemas, c: hayCerrojo() }) : 'sigue pendiente')
   db.pausa = null; suelta?.(); await ticks(200) }
 

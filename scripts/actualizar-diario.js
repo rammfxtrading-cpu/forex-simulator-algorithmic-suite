@@ -6,6 +6,10 @@
 // Uso:
 //   node scripts/actualizar-diario.js          -> SECO (no sube, dice qué haría)
 //   node scripts/actualizar-diario.js --subir   -> SUBE de verdad
+//   ... --pares AUDUSD,GBPUSD                   -> solo esos pares (bloque G, punto 11)
+// Transferencia (bloque G, punto 11): cada par descarga su año como mucho DOS
+// veces por pasada (lectura inicial; relectura solo si cambio bajo el cerrojo;
+// verificacion por metadatos). El estado final no descarga nada.
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
 
@@ -39,7 +43,19 @@ const { url, key } = getEnv()
 // el cliente se crea en main(), con el fetch con plazo de lib/mercado/limites.mjs (BF-03)
 let sb
 const BUCKET = 'forex-data'
-const PAIRS = ['audcad','audusd','eurusd','gbpjpy','gbpusd','nzdusd','usdcad','usdchf','usdjpy']
+const TODOS = ['audcad','audusd','eurusd','gbpjpy','gbpusd','nzdusd','usdcad','usdchf','usdjpy']
+// --pares A,B (o --pares=A,B): solo esos; uno que no existe → no se ejecuta nada
+function paresPedidos(argv) {
+  const i = argv.findIndex(a => a === '--pares' || a.startsWith('--pares='))
+  if (i < 0) return { pares: TODOS }
+  const valor = argv[i].includes('=') ? argv[i].slice(8) : argv[i + 1]
+  const lista = String(valor ?? '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)
+  const malos = lista.filter(x => !TODOS.includes(x))
+  if (!lista.length || malos.length) return { error: `--pares: ${malos.length ? `par(es) desconocido(s): ${malos.map(x => x.toUpperCase()).join(', ')}` : 'lista vacia'}. Validos: ${TODOS.map(x => x.toUpperCase()).join(', ')}` }
+  return { pares: TODOS.filter(x => lista.includes(x)) }
+}
+const PEDIDOS = paresPedidos(process.argv)
+const PAIRS = PEDIDOS.pares || []
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -54,7 +70,7 @@ const PRESUPUESTO_PAR_MS = segs(process.env.PRESUPUESTO_PAR_S, 4 * 60) * 1000
 // se cancelan de verdad al llegar al limite (lib/mercado/descarga.mjs) y cada
 // operacion de Storage tiene su plazo (lib/mercado/ficheros.mjs). Antes de cada
 // par y antes de publicar se exige la RESERVA: el peor caso de publicar,
-// verificar y soltar el cerrojo (F.tiempoMaximoPublicar, 440 s con los plazos
+// verificar y soltar el cerrojo (F.tiempoMaximoPublicar, 480 s con los plazos
 // por defecto; RESERVA_PUBLICAR_S la cambia). Las descargas de un par acaban
 // como tarde en fin del job − reserva. Con 24 min de job y 30 de workflow
 // (checkout y npm ci dentro) quedan ~6 min para el estado final.
@@ -104,7 +120,10 @@ const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 // → { estado: 'ok', velas, ruta } | { estado: 'no-existe' } | { estado: 'error', ruta, motivo }
 // «No existe» = el 404 de storage-js en los dos formatos; cualquier otro error, no
 // se pudo leer (lib/mercado/ficheros.mjs).
-const leerAnio = (pair, year) => F.leerVigente(sb, pair, year, F.LIMITES)   // con plazo (BF-03)
+// con plazo (BF-03) y con su firma (bloque G, punto 11: no releer si no cambio).
+// TRANSFERENCIA: descargas y bytes de objetos anuales de esta pasada (se imprime)
+const TRANSFERENCIA = { n: 0, bytes: 0 }
+const leerAnio = async (pair, year) => { const x = await F.leerConFirma(sb, pair, year, F.LIMITES); if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 } return x }
 
 // Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los dias del
 // interior PENDIENTES (bloque G, punto 7: laborables cortos y, desde BF-01,
@@ -207,7 +226,8 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   }
   // BF-03: no se empieza a publicar sin la reserva para terminar (ni se toma el cerrojo)
   if (Date.now() + RESERVA_MS > finJob) return { ...base, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
-  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(g, bajados), dueno: 'actualizar-diario' })
+  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(g, bajados), dueno: 'actualizar-diario', previo: leido })
+  TRANSFERENCIA.n += r.descargado?.n || 0; TRANSFERENCIA.bytes += r.descargado?.bytes || 0
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
   if (r.estado === 'publicado') return { ...base, final: r.final, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
   if (r.estado === 'sin-cambios') return { ...base, final: r.final ?? velas, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir${nota}` }
@@ -236,6 +256,12 @@ async function procesarPar(pair, finJob = Infinity) {
 }
 
 async function main() {
+  if (PEDIDOS.error) {
+    console.log(PEDIDOS.error)
+    console.log('\n=== ⚠️ ATENCION: no se ha hecho nada (opcion --pares no valida) (codigo 4) ===')
+    process.exitCode = 4
+    return
+  }
   F = await import('../lib/mercado/ficheros.mjs')
   DESC = await import('../lib/mercado/descarga.mjs')
   C = await import('../lib/mercado/calidad.mjs')
@@ -245,7 +271,7 @@ async function main() {
   // acepta señal en download; asi tambien upload, info y remove)
   sb = createClient(url, key, { global: { fetch: L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs) } })
   RESERVA_MS = segs(process.env.RESERVA_PUBLICAR_S, F.tiempoMaximoPublicar() / 1000) * 1000
-  console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()} ===\n`)
+  console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()}${PAIRS.length < TODOS.length ? ` — solo ${PAIRS.map(p => p.toUpperCase()).join(', ')}` : ''} ===\n`)
   const resultados = []
   const finJob = Date.now() + PRESUPUESTO_JOB_MS
   let primero = true
@@ -338,6 +364,7 @@ async function main() {
     console.log(`\n=== DESCOLGADO(S) O INCOMPLETO(S) — ${descolgados.length} ===`)
     descolgados.forEach(d=>console.log(`  ${d}`))
   }
+  console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes`)
   const codigo = descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
   const motivos = [
     descolgados.length ? `${descolgados.length} par(es) descolgado(s) o con dias incompletos` : '',

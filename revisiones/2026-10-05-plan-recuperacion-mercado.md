@@ -63,3 +63,32 @@ Las subidas (≈ 265 MB) son entrada, no salida. Las descargas del proveedor (Du
 4. Real con base local.
 5. Verificación por metadatos y contra la copia.
 6. Decidir qué cron vuelve.
+
+## 5. Lo programado en el bloque G (6-oct): `--pares` y dos descargas por par como mucho
+
+El CTO pidió (G11) la opción `--pares` y verificar la publicación por metadatos más hash local, de modo que cada par descargue su año **como mucho dos veces**. La carpeta base local de § 4 **no** se ha programado; lo programado es esto:
+
+| Paso de una pasada que publica | Descargas del año | Cómo |
+|---|---|---|
+| Lectura inicial | 1 | `info()` (firma: versión, etag, tamaño) y la descarga |
+| Relectura bajo cerrojo | 0, o 1 si la firma cambió | `info()`; si la firma es la misma, se usa lo leído |
+| Verificación | 0 | `info()`: el sha256 del cuerpo, calculado en local, viaja en los metadatos de la subida; se compara con él y con el tamaño |
+| Respaldo de la verificación | 0, o 1 solo si `info()` no trae metadatos **y** aún no se descargó dos veces | si no queda, «no verificado» (código 1) |
+| Estado final | 0 | lo que el par ya leyó o verificó (G10) |
+
+El job imprime al final la transferencia que hizo: «Transferencia (objetos anuales leídos del bucket): N descarga(s), B bytes».
+
+**Transferencia de recuperar solo AUDUSD y GBPUSD** (`node scripts/actualizar-diario.js --subir --pares AUDUSD,GBPUSD`), con los tamaños de la copia del 5-oct (`stat`: AUDUSD_2026.json 28.895.708 bytes; GBPUSD_2026.json 29.419.992 bytes):
+
+| Caso | Descargas | Bytes |
+|---|---|---|
+| Normal: nadie cambia el objeto entre la lectura y el cerrojo, e `info()` trae metadatos | 2 (una por par) | **58.315.700** (≈ 58,3 MB) |
+| Peor caso: la firma cambia bajo el cerrojo o `info()` no trae metadatos | 4 (dos por par) | **116.631.400** (≈ 116,6 MB) |
+| Un seco antes (`--pares AUDUSD,GBPUSD` sin `--subir`) | +2 | +58.315.700 |
+
+Más las fichas del cerrojo y las llamadas `info()` (del orden de KB). Las subidas son entrada, no salida; el proveedor no cuenta. Antes de G10 y G11 la misma recuperación eran 8 descargas (≈ 233,3 MB).
+
+**Lo que puede cambiar estas cifras:** son los tamaños del 5-oct. El cron de producción (`c470c8f`) sigue corriendo dos veces al día y puede haber añadido velas a esos objetos; el tamaño real es el del momento de la ejecución, y el job lo imprime. En la misma pasada se piden también los días interiores pendientes de esos dos pares, entre ellos su 20-jul.
+
+**Sigue pendiente de autorización:** la recuperación misma y la llamada de prueba a `info()` contra producción. Que `info()` devuelva `version`, `etag`, `size` y los metadatos de usuario está en los tipos de storage-js 2.102, **no comprobado contra producción**. Si no los devuelve, el código cae al respaldo y se queda dentro de las dos descargas, o dice «no verificado».
+
