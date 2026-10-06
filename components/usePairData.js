@@ -17,7 +17,7 @@ import { fetchSessionCandles, setSeriesData, setMasterTime, getMasterTime } from
 import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar } from '../lib/chartViewport'
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
 import { computePhantomsNeeded } from '../lib/sessionUi'
-import { fechaCorta } from '../lib/mercado/calidad.mjs'
+import { fechaCorta, listaDiasCortos } from '../lib/mercado/calidad.mjs'
 
 export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools }){
   const saveProgress=useCallback(async(ts)=>{
@@ -86,7 +86,12 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         lastLimitIdx: engine.currentIndex,
         // Bloque D, punto 4: la sesion llega al tramo actual y los datos acaban
         // antes. Se opera hasta ahi y _SessionInner lo enseña para el par activo.
-        avisoDatos: result.tramoAbierto ? `${pair}: datos hasta ${fechaCorta(result.datosHasta)}. El resto se publica con la actualizacion diaria.` : '',
+        // Bloque G, punto 5: con COBERTURA_ESTRICTA apagado la sesion abre con
+        // dias incompletos y el aviso los nombra.
+        avisoDatos: [
+          result.diasIncompletos?.length ? `${pair}: ${result.diasIncompletos.length===1?'dia incompleto':result.diasIncompletos.length+' dias incompletos'} en esta sesion: ${listaDiasCortos(result.diasIncompletos)}. Ahi faltan velas.` : '',
+          result.tramoAbierto ? `${pair}: datos hasta ${fechaCorta(result.datosHasta)}. El resto se publica con la actualizacion diaria.` : '',
+        ].filter(Boolean).join(' '),
       }
       pairState.current[pair]=ps
       updateChart(pair,engine,true)

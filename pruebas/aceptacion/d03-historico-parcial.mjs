@@ -89,10 +89,19 @@ const res5 = await sesion('AUD/USD')
 ver('control: se pidieron 2024 (contexto, 200) y 2025 (sesion, 500)', api.llamadas.length === 2 && api.llamadas[0].estado === 200 && api.llamadas[1].estado === 500, JSON.stringify(api.llamadas.map(l => [l.ruta, l.estado])))
 oraculo('D03', 'sin el año de la sesion no hay sesion valida', !valida(res5), `devuelve ${res5?.candles?.length ?? 0} velas${res5?.error ? ', error: ' + res5.error : ' sin aviso'}`)
 
-titulo('6 · sesion lun 3 – vie 7 de marzo de 2025 sin el miercoles 5')
+// Bloque G, punto 5 (CTO, 6-oct-2026): lo que sigue (§6 a §8) es el contrato
+// D4, que ahora es el modo ESTRICTO (NEXT_PUBLIC_COBERTURA_ESTRICTA=1). El modo
+// aviso, apagado por defecto, lo mide cb01-cobertura-en-aviso.
+const estricta = v => { if (v) process.env.NEXT_PUBLIC_COBERTURA_ESTRICTA = '1'; else delete process.env.NEXT_PUBLIC_COBERTURA_ESTRICTA }
+titulo('6 · sesion lun 3 – vie 7 de marzo de 2025 sin el miercoles 5 (estricto)')
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': semana('USDCHF', ['2025-03-05']) } })
+estricta(true)
 const res6 = await sesion('USD/CHF')
 oraculo('D03', 'con un dia laborable vacio dentro de la sesion no se opera', !valida(res6), res6?.error ?? `devuelve ${res6?.candles?.length} velas sin aviso`)
+estricta(false)
+const res6b = await sesion('USD/CHF')
+oraculo('D03', 'el mismo hueco con el interruptor apagado: abre y marca el 5-mar como incompleto', valida(res6b) && JSON.stringify((res6b.diasIncompletos ?? []).map(x => x.slice(0, 10))) === '["2025-03-05"]', res6b?.error ?? JSON.stringify(res6b?.diasIncompletos))
+estricta(true)
 
 titulo('7 · controles del cliente')
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': semana('GBPJPY') } })
@@ -103,7 +112,7 @@ retenApi.responde = u => /year=2024/.test(u) ? respuesta(500, { error: 'Storage 
 const res8 = await sesion('USD/JPY')
 ver('control: el año de CONTEXTO caido no invalida la sesion', valida(res8) && res8.candles.length === 6000, res8?.error ?? `${res8?.candles?.length} velas, contexto ${res8?.contextoIncompleto}`)
 
-titulo('8 · bloque D, punto 4: tramo actual abierto ≠ historico cerrado incompleto')
+titulo('8 · bloque D, punto 4: tramo actual abierto ≠ historico cerrado incompleto (estricto)')
 // Astra (cierres, 5-oct): sesion 3–7 mar 2025 con UNA sola vela del dia 3 daba
 // ok (se excluia de la cobertura el ultimo dia con datos y todo lo posterior,
 // sin distinguir un año cerrado del tramo actual).
@@ -139,6 +148,7 @@ ver('control del fixture: hay un dia laborable que quitar dentro de lo cerrado',
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { [`AUDUSD/M1/${anioS}.json`]: JSON.stringify(quitaDia), [`AUDUSD/M1/${anioS - 1}.json`]: '[]' } } })
 const res12 = await fetchSessionCandles({ pair: 'AUD/USD', dateFrom: ymdS(desdeS), dateTo: ymdS(HOY + 3 * DIA_S) })
 ver('control: un dia cerrado vacio antes de la ventana sigue siendo un hueco', !valida(res12), res12?.error ?? '')
+estricta(false)
 
 titulo('9 · el alumno ve «datos hasta…» en la sesion')
 const { banco } = await import('../banco-motor.mjs')
