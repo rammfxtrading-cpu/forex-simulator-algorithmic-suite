@@ -27,7 +27,8 @@ const DIA = 86400000
 const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'https://falso.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'falsa' }
 const NUEVE = ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD', 'AUDCAD', 'GBPJPY']
 const velasDe = (dia, n = 1440) => diaM1(dia, n).map(c => ({ time: c.timestamp / 1000, open: c.open, high: c.high, low: c.low, close: c.close, volume: 1 }))
-const historial = (hasta, cortos = {}) => { const v = []; for (let t = Date.parse('2026-01-02T00:00:00Z'); t <= Date.parse(hasta + 'T00:00:00Z'); t += DIA) { const w = new Date(t).getUTCDay(), d = new Date(t).toISOString().slice(0, 10); if (w >= 1 && w <= 5) v.push(...velasDe(d, cortos[d] ?? 1440)); else if (w === 0) v.push(...velasDe(d).slice(22 * 60)) } return v }
+// 1-ene: mercado reducido (CTO 6-oct): velas de 22:00 a 23:59, como las medidas
+const historial = (hasta, cortos = {}) => { const v = [...velasDe('2026-01-01').slice(22 * 60)]; for (let t = Date.parse('2026-01-02T00:00:00Z'); t <= Date.parse(hasta + 'T00:00:00Z'); t += DIA) { const w = new Date(t).getUTCDay(), d = new Date(t).toISOString().slice(0, 10); if (w >= 1 && w <= 5) v.push(...velasDe(d, cortos[d] ?? 1440)); else if (w === 0) v.push(...velasDe(d).slice(22 * 60)) } return v }
 const todos = (extra = {}) => ({ ...Object.fromEntries(NUEVE.map(p => [`${p}/M1/2026.json`, JSON.stringify(historial('2026-02-01'))])), ...extra })
 const filas = (dia, n = 1440) => JSON.stringify(dow(dia) === 0 ? diaM1(dia).slice(22 * 60) : diaM1(dia, n))
 const dow = d => new Date(d + 'T00:00:00Z').getUTCDay()

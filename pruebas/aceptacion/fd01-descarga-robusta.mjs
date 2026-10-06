@@ -27,7 +27,8 @@ const enDia = (arr, dia) => (arr || []).filter(v => new Date(v.time * 1000).toIS
 // bloque G, punto 7 (BF-01): un domingo sin velas esta PENDIENTE; el historial
 // lleva domingos reales: 120 velas de 22:00 a 23:59 UTC (como los medidos)
 const domingos = (desde, hasta) => { const d = []; for (let t = Date.parse(desde + 'T00:00:00Z'); t <= Date.parse(hasta + 'T00:00:00Z'); t += DIA) if (new Date(t).getUTCDay() === 0) d.push(new Date(t).toISOString().slice(0, 10)); return d }
-const historial = (hasta, corto = null) => [...laborables('2026-01-02', hasta).flatMap(d => velasDe(d, d === corto ? 900 : 1440)), ...domingos('2026-01-02', hasta).flatMap(d => velasDe(d).slice(22 * 60))].sort((a, b) => a.time - b.time)
+// 1-ene: mercado reducido (CTO 6-oct): velas de 22:00 a 23:59, como las medidas
+const historial = (hasta, corto = null) => [...velasDe('2026-01-01').slice(22 * 60), ...laborables('2026-01-02', hasta).flatMap(d => velasDe(d, d === corto ? 900 : 1440)), ...domingos('2026-01-02', hasta).flatMap(d => velasDe(d).slice(22 * 60))].sort((a, b) => a.time - b.time)
 const diaDe = a => a.dates.from.toISOString().slice(0, 10)
 const RED = () => { throw new TypeError('fetch failed') }
 const linea = (r, par) => r.salida.find(l => l.includes(`${par}/M1`)) ?? ''

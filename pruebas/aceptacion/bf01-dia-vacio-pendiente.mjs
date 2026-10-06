@@ -42,7 +42,9 @@ const dow = d => new Date(d + 'T00:00:00Z').getUTCDay()
 const filasDia = (d, n) => dow(d) === 0 ? diaM1(d, 1440).slice(22 * 60, 22 * 60 + (n ?? 120)) : diaM1(d, n ?? 1440)
 const aVelas = filas => filas.map(c => ({ time: c.timestamp / 1000, open: c.open, high: c.high, low: c.low, close: c.close, volume: 1 }))
 // guardado: del 2-ene a `hasta`, sin sabados; `domingos` cambia el nº de velas de un domingo
-const historial = (hasta, domingos = {}) => dias('2026-01-02', hasta).filter(d => dow(d) !== 6).flatMap(d => aVelas(filasDia(d, dow(d) === 0 ? (domingos[d] ?? 120) : 1440)))
+// 1-ene: mercado reducido (CTO 6-oct): velas de 22:00 a 23:59, como las medidas
+const unoEne = () => aVelas(diaM1('2026-01-01')).slice(22 * 60)
+const historial = (hasta, domingos = {}) => [...unoEne(), ...dias('2026-01-02', hasta).filter(d => dow(d) !== 6).flatMap(d => aVelas(filasDia(d, dow(d) === 0 ? (domingos[d] ?? 120) : 1440)))]
 const enDia = (arr, dia) => (arr || []).filter(v => new Date(v.time * 1000).toISOString().startsWith(dia)).length
 const ultimoDia = arr => arr?.length ? new Date(arr.at(-1).time * 1000).toISOString().slice(0, 10) : ''
 const linea = (r, par) => r.salida.find(l => l.includes(`${par}/M1`)) ?? ''
