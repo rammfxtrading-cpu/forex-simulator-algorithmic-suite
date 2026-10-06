@@ -126,7 +126,9 @@ const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 // con plazo (BF-03) y con su firma (bloque G, punto 11: no releer si no cambio).
 // TRANSFERENCIA: descargas y bytes de objetos anuales de esta pasada (se imprime)
 const TRANSFERENCIA = { n: 0, bytes: 0 }
-const leerAnio = async (pair, year) => { const x = await F.leerConFirma(sb, pair, year, F.LIMITES); if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 } return x }
+// LIM: los plazos de Storage y la lista de tiempos reales de esta pasada (se imprime)
+let LIM
+const leerAnio = async (pair, year) => { const x = await F.leerConFirma(sb, pair, year, LIM); if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 } return x }
 
 // Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los dias del
 // interior PENDIENTES (bloque G, punto 7: laborables cortos y, desde BF-01,
@@ -229,7 +231,7 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   }
   // BF-03: no se empieza a publicar sin la reserva para terminar (ni se toma el cerrojo)
   if (Date.now() + RESERVA_MS > finJob) return { ...base, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
-  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido })
+  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido, limites: LIM })
   TRANSFERENCIA.n += r.descargado?.n || 0; TRANSFERENCIA.bytes += r.descargado?.bytes || 0
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
   if (r.estado === 'publicado') return { ...base, final: r.final, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
@@ -280,6 +282,7 @@ async function main() {
   // BF-03: cada peticion HTTP a Storage se corta a su plazo (storage-js solo
   // acepta señal en download; asi tambien upload, info y remove)
   sb = createClient(url, key, { global: { fetch: L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs) } })
+  LIM = { ...F.LIMITES, tiempos: [] }
   RESERVA_MS = segs(process.env.RESERVA_PUBLICAR_S, F.tiempoMaximoPublicar() / 1000) * 1000
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()}${PAIRS.length < TODOS.length ? ` — solo ${PAIRS.map(p => p.toUpperCase()).join(', ')}` : ''} ===\n`)
   const resultados = []
@@ -375,6 +378,7 @@ async function main() {
     descolgados.forEach(d=>console.log(`  ${d}`))
   }
   console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes`)
+  console.log(`  Tiempos de Storage (ms; plazos ${LIM.pequenaMs}/${LIM.grandeMs}): ${F.resumenTiempos(LIM.tiempos)}`)
   const codigo = descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
   const motivos = [
     descolgados.length ? `${descolgados.length} par(es) descolgado(s) o con dias incompletos` : '',

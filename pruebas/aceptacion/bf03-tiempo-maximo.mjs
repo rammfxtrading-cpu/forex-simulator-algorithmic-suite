@@ -128,7 +128,8 @@ const RUTA = 'EURUSD/M1/2026.json', CERROJO = '_cerrojos/EURUSD_2026.json'
 const hayCerrojo = () => Object.hasOwn(db.storage['forex-data'] ?? {}, CERROJO)
 const subidasDatos = () => db.log.filter(l => l.op === 'upload' && l.payload?.ruta === RUTA).length
 const LIM = { pequenaMs: 20000, grandeMs: 120000 }
-const publica = (R, dueno = 'A') => !F ? Promise.resolve({ estado: 'sin-modulo', problemas: [] }) : F.publicarAnio(sb, { pair: 'EURUSD', year: 2026, dueno, componer: () => velasDe('2026-01-02', 1440), ahoraMs: () => Date.parse('2026-01-02T12:00:00Z'), limites: { ...LIM, plazo: R.plazo } })
+let tiemposR = null
+const publica = (R, dueno = 'A') => { tiemposR = []; return !F ? Promise.resolve({ estado: 'sin-modulo', problemas: [] }) : F.publicarAnio(sb, { pair: 'EURUSD', year: 2026, dueno, componer: () => velasDe('2026-01-02', 1440), ahoraMs: () => Date.parse('2026-01-02T12:00:00Z'), limites: { ...LIM, plazo: R.plazo, tiempos: tiemposR } }) }
 let suelta = null
 const retiene = pred => { let pillada = false; db.pausa = async c => { if (!pillada && pred(c)) { pillada = true; await new Promise(r => { suelta = r }) } }; return () => pillada }
 
@@ -136,6 +137,7 @@ const retiene = pred => { let pillada = false; db.pausa = async c => { if (!pill
   const pillada = retiene(c => c.op === 'download' && c.payload === RUTA)
   const p = publica(R); await ticks(); ver('control: la relectura esta retenida', !F || pillada())
   R.avanza(LIM.grandeMs); const h = await termino(p, 120)
+  oraculo('BF03', 'el plazo agotado queda contado en los tiempos de Storage (para ajustar los plazos)', (tiemposR ?? []).some(t => t.tipo === 'lectura' && t.agotado === true), JSON.stringify(tiemposR ?? null))
   oraculo('BF03', 'relectura colgada: error de tiempo, sin subir y soltando el cerrojo', h?.ok?.estado === 'error' && /tiempo/i.test(h.ok.problemas.join(' ')) && subidasDatos() === 0 && !hayCerrojo(), h ? JSON.stringify({ e: h.ok?.estado, p: h.ok?.problemas, c: hayCerrojo() }) : 'sigue pendiente')
   db.pausa = null; suelta?.(); await ticks(200) }
 

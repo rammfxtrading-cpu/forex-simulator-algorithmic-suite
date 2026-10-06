@@ -67,6 +67,9 @@ const sub2 = db.log.find(l => l.op === 'upload' && l.payload?.ruta === AUD)
 const sha2 = createHash('sha256').update(db.storage['forex-data'][AUD]).digest('hex')
 oraculo('BF05', 'AUDUSD publica el 2-feb y su año se descargo UNA sola vez en toda la pasada', /SUBIDO.*verificado/.test(linea(r2, 'AUDUSD')) && descargas(AUD) === 1, `${descargas(AUD)} descargas · ${linea(r2, 'AUDUSD')}`)
 oraculo('BF05', 'el job dice la transferencia que hizo: 1 descarga y sus bytes exactos', r2.salida.some(l => new RegExp(`Transferencia.*: 1 descarga\\(s\\), ${bytesAntes} bytes`).test(l)), r2.salida.find(l => /Transferencia/.test(l)) ?? `(sin linea; esperados ${bytesAntes} bytes)`)
+// CTO 6-oct: el job imprime los tiempos reales de Storage para ajustar los plazos
+const tiempos2 = r2.salida.find(l => /Tiempos de Storage/.test(l)) ?? ''
+oraculo('BF05', 'el job imprime los tiempos reales de Storage por tipo (lectura, subida, info, cerrojo) con sus plazos', /plazos 20000\/120000/.test(tiempos2) && /lectura 1× max \d+/.test(tiempos2) && /subida 1× max \d+/.test(tiempos2) && /info \d+× max \d+/.test(tiempos2) && /cerrojo \d+× max \d+/.test(tiempos2), tiempos2 || '(sin linea)')
 oraculo('BF05', 'la subida lleva el sha256 del cuerpo en sus metadatos (hash local)', db.metadatos?.['forex-data']?.[AUD]?.sha256 === sha2, JSON.stringify(db.metadatos?.['forex-data']?.[AUD] ?? null))
 
 titulo('3 · otro escritor cambia el año despues de la lectura inicial')
