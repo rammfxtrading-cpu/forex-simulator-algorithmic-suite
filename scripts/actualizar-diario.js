@@ -113,6 +113,9 @@ async function bajarDia(pair, y, m, d, limite = Infinity) {
 // espera a la pasada siguiente. Umbrales y festivos: los de calidad.mjs.
 // Los modulos comunes son ESM (.mjs): se cargan con import() en main().
 let F, C, E   // lib/mercado/ficheros.mjs, calidad.mjs, errores.mjs (BF-02: solo clase y codigo)
+// Dias cortos aceptados (CTO 6-oct; lib/mercado/aceptados.mjs): 'PAR|fecha' → { velas, motivo }
+let ACEPTADOS = new Map()
+const estadoDe = (pair, d, velasDia) => C.estadoDia(d, velasDia, ACEPTADOS.get(`${pair.toUpperCase()}|${d}`)?.velas ?? null)
 const MAX_DIAS_POR_PASADA = 40
 const DIA_MS = 86400000
 const ymd = ms => new Date(ms).toISOString().slice(0, 10)
@@ -128,7 +131,7 @@ const leerAnio = async (pair, year) => { const x = await F.leerConFirma(sb, pair
 // Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los dias del
 // interior PENDIENTES (bloque G, punto 7: laborables cortos y, desde BF-01,
 // tambien domingos vacios o cortados; C.estadoDia).
-function diasPendientes(velas, year, ayerMs) {
+function diasPendientes(pair, velas, year, ayerMs) {
   const porDia = {}
   for (const v of velas) (porDia[ymd(v.time * 1000)] ??= []).push(v)
   const inicio = Date.UTC(year, 0, 1)
@@ -138,7 +141,7 @@ function diasPendientes(velas, year, ayerMs) {
   for (let t = inicio; t <= fin; t += DIA_MS) {
     const d = ymd(t)
     if (t > ultDiaMs) { if (C.diaConMercado(d)) cola.push(d); continue }   // cola: los dias con mercado (F3: el sabado no)
-    if (C.estadoDia(d, porDia[d]) === 'pendiente') cortos.push(d)
+    if (estadoDe(pair, d, porDia[d]) === 'pendiente') cortos.push(d)
   }
   // el ultimo dia guardado, si esta a medias, entra en los cortos (es laborable) o en la cola.
   // Bloque F, punto 2: del MAS ANTIGUO al mas reciente, cortos del interior
@@ -148,7 +151,7 @@ function diasPendientes(velas, year, ayerMs) {
 
 // ¿Dia completo? (bloque G, punto 7: C.estadoDia; un dia con mercado y sin
 // datos NUNCA lo es, tampoco el domingo)
-const completo = (d, velasDia) => C.estadoDia(d, velasDia) !== 'pendiente'
+const completo = (pair, d, velasDia) => estadoDe(pair, d, velasDia) !== 'pendiente'
 
 // Compone lo publicado sobre `guardadas` (lo RELEIDO justo antes de subir):
 //   · un dia solo se sustituye si el bajado trae MAS velas;
@@ -158,7 +161,7 @@ const completo = (d, velasDia) => C.estadoDia(d, velasDia) !== 'pendiente'
 //     ultimo publicado; el que falta, ni eso). Asi nunca queda un hueco
 //     interior nuevo, se bajen los dias en el orden que se bajen.
 // → velas | null (nada mejora lo guardado)
-function componer(guardadas, bajados) {
+function componer(pair, guardadas, bajados) {
   const porDia = {}
   for (const v of guardadas || []) (porDia[ymd(v.time * 1000)] ??= []).push(v)
   const ultima = guardadas?.length ? ymd(guardadas[guardadas.length - 1].time * 1000) : ''
@@ -172,9 +175,9 @@ function componer(guardadas, bajados) {
     const desde = ultima ? Date.parse(ultima + 'T00:00:00Z') + DIA_MS : Date.parse(cola[0].slice(0, 4) + '-01-01T00:00:00Z')
     for (let t = desde; t <= Date.parse(cola.at(-1) + 'T00:00:00Z'); t += DIA_MS) {
       const d = ymd(t)
-      if (!Object.hasOwn(bajados, d)) { if (!completo(d, [])) break; continue }   // falta un dia con mercado: corta
+      if (!Object.hasOwn(bajados, d)) { if (!completo(pair, d, [])) break; continue }   // falta un dia con mercado: corta
       if (bajados[d].length > (porDia[d] || []).length) { porDia[d] = bajados[d]; cambia = true }
-      if (!completo(d, porDia[d])) break                                          // vacio o a medias: ultimo (y si vacio, ni eso)
+      if (!completo(pair, d, porDia[d])) break                                          // vacio o a medias: ultimo (y si vacio, ni eso)
     }
   }
   return cambia ? Object.keys(porDia).sort().flatMap(d => porDia[d]).sort((a, b) => a.time - b.time) : null
@@ -190,7 +193,7 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   if (leido.estado === 'error') return { keyFile, anio: year, final: null, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
   const nuevoAnio = leido.estado === 'no-existe'
   const velas = nuevoAnio ? [] : leido.velas
-  const pendientes = diasPendientes(velas, year, ayerMs)
+  const pendientes = diasPendientes(pair, velas, year, ayerMs)
   if (!pendientes.length) return { keyFile, anio: year, final: velas, estado: `✓ al dia (${keyFile})` }
 
   // Bloque F, punto 1: el fallo de un dia NO tira el par. Se apunta y se sigue;
@@ -207,14 +210,14 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
     try { bajados[d] = (await bajarDia(pair, y, m - 1, dd, limite)) || [] }
     catch (e) { (e?.tipo === 'presupuesto' ? presupuesto : fallidos).push(`${d} (${E.texto(e)})`); if (enCola) colaCortada = true }
     // BF-01: un dia con mercado que llega vacio sigue PENDIENTE (y en la cola, la corta)
-    if (bajados[d] && !bajados[d].length && !completo(d, [])) vacios.push(d)
-    if (enCola && bajados[d] && !completo(d, bajados[d])) colaCortada = true
+    if (bajados[d] && !bajados[d].length && !completo(pair, d, [])) vacios.push(d)
+    if (enCola && bajados[d] && !completo(pair, d, bajados[d])) colaCortada = true
     await sleep(400)
   }
   const sinBajar = [...fallidos, ...presupuesto].sort()
   const nota = (sinBajar.length ? ` · sin descargar: ${sinBajar.join(', ')}` : '') + (vacios.length ? ` · pendiente (sin datos del proveedor): ${vacios.join(', ')}` : '')
   const base = { keyFile, anio: year, fallidos, vacios, presupuesto, final: velas }
-  const previsto = componer(nuevoAnio ? null : velas, bajados)
+  const previsto = componer(pair, nuevoAnio ? null : velas, bajados)
   if (!previsto) {
     if (sinBajar.length) return { ...base, estado: `✗ DESCARGA ${keyFile}: nada nuevo publicable${nota}` }
     return { ...base, estado: `${vacios.length ? '⚠️' : '✓'} ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado${nota}` }
@@ -226,7 +229,7 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   }
   // BF-03: no se empieza a publicar sin la reserva para terminar (ni se toma el cerrojo)
   if (Date.now() + RESERVA_MS > finJob) return { ...base, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
-  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(g, bajados), dueno: 'actualizar-diario', previo: leido })
+  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido })
   TRANSFERENCIA.n += r.descargado?.n || 0; TRANSFERENCIA.bytes += r.descargado?.bytes || 0
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
   if (r.estado === 'publicado') return { ...base, final: r.final, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
@@ -266,6 +269,13 @@ async function main() {
   DESC = await import('../lib/mercado/descarga.mjs')
   C = await import('../lib/mercado/calidad.mjs')
   E = await import('../lib/mercado/errores.mjs')
+  try { ACEPTADOS = (await import('../lib/mercado/aceptados.mjs')).cargaAceptados() }
+  catch (e) {
+    console.log(`Lista de dias aceptados no valida: ${E.texto(e)}`)
+    console.log('\n=== ⚠️ ATENCION: no se ha hecho nada (lib/mercado/dias-aceptados.json no valido) (codigo 4) ===')
+    process.exitCode = 4
+    return
+  }
   const L = await import('../lib/mercado/limites.mjs')
   // BF-03: cada peticion HTTP a Storage se corta a su plazo (storage-js solo
   // acepta señal en download; asi tambien upload, info y remove)
@@ -321,13 +331,13 @@ async function main() {
   }
   // dias INTERIORES (del 1-ene al dia anterior al ultimo con datos) pendientes
   // segun C.estadoDia: laborables cortos, domingos vacios o cortados
-  function interioresIncompletos(velas, anio) {
+  function interioresIncompletos(pair, velas, anio) {
     const porDia = {}
     for (const v of velas) (porDia[ymd(v.time * 1000)] ??= []).push(v)
     const ultimo = ymd(velas[velas.length - 1].time * 1000)
     const out = []
     for (let t = Date.UTC(anio, 0, 1); ymd(t) < ultimo; t += DIA_MS) {
-      const d = ymd(t), e = C.estadoDia(d, porDia[d])
+      const d = ymd(t), e = estadoDe(pair, d, porDia[d])
       if (e === 'pendiente') out.push(`${d} (${(porDia[d] || []).length})`)
     }
     return out
@@ -348,7 +358,7 @@ async function main() {
     }
     const ult = new Date(fin.velas[fin.velas.length - 1].time * 1000)
     const retraso = diasMercadoEntre(ult, ayer)
-    const interiores = interioresIncompletos(fin.velas, fin.anio)
+    const interiores = interioresIncompletos(pair, fin.velas, fin.anio)
     const ok = retraso <= MAX_DIAS_MERCADO_RETRASO && !interiores.length
     console.log(`  ${P} ${ok ? '✓' : '⚠️'} ultima ${ult.toISOString().slice(0,10)} (retraso: ${retraso} dia(s) de mercado)${interiores.length ? ` · ${interiores.length} dia(s) interior(es) incompleto(s): ${interiores.slice(0, 8).join(', ')}${interiores.length > 8 ? '…' : ''}` : ''}`)
     const hoyNo = sinProveedor.includes(r)
