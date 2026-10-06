@@ -30,6 +30,15 @@ escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'EURUSD/M1/2025.js
 const r1 = await llama(candles, { method: 'GET', token: tok(A), query: { pair: 'EURUSD', timeframe: 'M1', from: String(Date.parse('2025-01-06T00:00:00Z') / 1000), to: String(Date.parse('2025-01-07T00:00:00Z') / 1000), year: '2025' } })
 oraculo('GZ00', 'con .json (1.200) y .json.gz (1.440), sirve el .json', r1.estado === 200 && r1.cuerpo.count === 1200, `estado ${r1.estado}; ${r1.cuerpo?.count} velas`)
 
+titulo('1b · apagado: bytes gzip bajo un nombre .json → error visible (Astra, cierres-3; bloque G, punto 3)')
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { 'EURUSD/M1/2025.json': gzipSync(Buffer.from(JSON.stringify(velasDe('2025-01-06', 1300)))) } } })
+const r1b = await llama(candles, { method: 'GET', token: tok(A), query: { pair: 'EURUSD', timeframe: 'M1', from: String(Date.parse('2025-01-06T00:00:00Z') / 1000), to: String(Date.parse('2025-01-07T00:00:00Z') / 1000), year: '2025' } })
+oraculo('GZ00', 'la API no sirve el contenido comprimido: error (503 con mensaje), no 200 con 1.300 velas', r1b.estado === 503 && typeof r1b.cuerpo?.error === 'string', `estado ${r1b.estado}; ${r1b.cuerpo?.count ?? r1b.cuerpo?.error}`)
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': gzipSync(Buffer.from(JSON.stringify(laborables('2026-01-02', '2026-01-30').flatMap(d => velasDe(d))))) } } })
+proveedor.responde = a => diaM1(a.dates.from.toISOString().slice(0, 10))
+const s1b = await correScript('scripts/actualizar-diario.js', { ahora: '2026-02-04T06:00:00Z', argv: ['--subir'], env: ENV })
+oraculo('GZ00', 'el actualizador tampoco lo lee: «✗ no se pudo leer» con la causa (gzip) y sin publicar EURUSD', s1b.salida.some(l => /✗ no se pudo leer EURUSD\/M1\/2026\.json: .*gzip/i.test(l)) && !subidas('EURUSD/').length, s1b.salida.find(l => /EURUSD\/M1/.test(l)) ?? '')
+
 titulo('2 · apagado: los escritores publican solo JSON')
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': JSON.stringify(laborables('2026-01-02', '2026-01-30').flatMap(d => velasDe(d))) } } })
 proveedor.responde = a => diaM1(a.dates.from.toISOString().slice(0, 10))
