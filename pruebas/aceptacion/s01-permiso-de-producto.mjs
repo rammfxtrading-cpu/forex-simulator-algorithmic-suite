@@ -60,7 +60,8 @@ oraculo('S01', 'si no se puede comprobar el permiso, no se sirve nada: 503 (ni 2
 
 titulo('3 · el dashboard')
 const Dashboard = (await importa('pages/dashboard.js')).default
-const lecturas = () => db.log.filter(l => ['sim_sessions', 'sim_trades'].includes(l.tabla)).length
+// bloque G, punto 1: los trades llegan tambien por la rpc de sql/sim-002 (cuenta como lectura)
+const lecturas = () => db.log.filter(l => ['sim_sessions', 'sim_trades', 'rpc:sim_trades_de_usuario', 'rpc:sim_trades_de_sesion'].includes(l.tabla)).length
 montaje(true)
 let p = monta(Dashboard, {}); await p.asienta(60)
 ver('control: con permiso, el dashboard carga sus sesiones', p.texto().includes('Sesion') && lecturas() >= 2, `${lecturas()} lecturas`)

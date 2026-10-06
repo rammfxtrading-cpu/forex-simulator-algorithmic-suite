@@ -187,6 +187,34 @@ oraculo('C04', 'Analytics: TOTAL P&L $-400.00 (o error); nunca +$800.00', avisaE
 an11.desmonta()
 db.pausa = null; db.maxFilas = null
 
+titulo('12 · bloque G, punto 1: el numero VISIBLE del dashboard y de la sesion (Astra BD-04)')
+// Astra (cierres-3): el dashboard paginaba trades y enseñaba +$800.00 TOTAL P&L
+// con dos estados reales que suman −400. La sesion cargaba sus trades igual.
+const alternaConResultado = () => {
+  let lecturas = 0
+  db.pausa = async c => {
+    if ((c.tabla === 'sim_trades' && c.op === 'select') || c.op === 'rpc') {
+      const e = ++lecturas % 2 ? E1 : E2
+      db.tablas.sim_trades.forEach((t, i) => { t.pnl = e[i]; t.result = e[i] > 0 ? 'WIN' : 'LOSS' })
+    }
+  }
+}
+escenario({ sim_sessions: [reto], sim_trades: T11.map(t => ({ ...t })) }); db.maxFilas = 2; alternaConResultado()
+const d12 = monta(Dashboard, {}); await d12.asienta(80)
+const pnl12 = /([+-]?\$-?[\d.,]+)TOTAL P&L/.exec(d12.texto())?.[1]
+oraculo('C04', 'dashboard: TOTAL P&L $-400.00 (un estado que existio), nunca +$800.00', pnl12 === '$-400.00', `TOTAL P&L «${pnl12}»`)
+oraculo('C04', 'dashboard: los trades se leen en una sentencia (rpc), no por paginas', db.log.some(l => l.op === 'rpc' && l.tabla === 'rpc:sim_trades_de_usuario') && !db.log.some(l => l.tabla === 'sim_trades' && l.op === 'select'))
+d12.desmonta()
+escenario({ sim_sessions: [reto], sim_trades: T11.map(t => ({ ...t })) }); db.maxFilas = 2; alternaConResultado()
+router.query = { id: 'reto-pag' }
+const s12 = monta(Sesion, {}); await s12.asienta(250)
+const nW = s12.busca(x => x.tipo && /^\d+W$/.test(s12.texto(x))), nL = s12.busca(x => x.tipo && /^\d+L$/.test(s12.texto(x)))
+const wl = nW && nL ? [null, s12.texto(nW).slice(0, -1), s12.texto(nL).slice(0, -1)] : null
+oraculo('C04', 'sesion: la carga inicial de trades va en una sentencia (rpc), no por paginas', db.log.some(l => l.op === 'rpc' && l.tabla === 'rpc:sim_trades_de_sesion') && !db.log.some(l => l.tabla === 'sim_trades' && l.op === 'select'), db.log.filter(l => l.tabla === 'sim_trades' || l.op === 'rpc').map(l => l.op).join(' '))
+oraculo('C04', 'sesion: el recuento visible es de un estado que existio (2W·2L o 3W·1L), nunca 4W·0L', !!wl && ['2-2', '3-1'].includes(`${wl[1]}-${wl[2]}`), wl ? `${wl[1]}W · ${wl[2]}L` : `sin recuento: ${s12.texto().replace(/\s+/g, ' ').slice(0, 120)}`)
+s12.desmonta()
+db.pausa = null; db.maxFilas = null
+
 titulo('10 · bloque D, punto 5: un par que falla no tapa la sesion ni deja un motor sin controles')
 // Astra (cierres, 5-oct): EURUSD con posicion y reproduccion activa; se añade
 // GBPUSD y su año da 503. usePairData llamaba a setErrorDatos y _SessionInner

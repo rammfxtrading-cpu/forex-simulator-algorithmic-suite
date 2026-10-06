@@ -27,7 +27,8 @@ import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from './NoAccess'
 import ErrorCarga from './ErrorCarga'
-import { leerTodo, porColumnas } from '../lib/paginado'
+import { porColumnas } from '../lib/paginado'
+import { tradesDeSesion } from '../lib/tradesEstables'
 import ChallengePassedPhaseModal from './ChallengePassedPhaseModal'
 import ChallengePassedAllModal from './ChallengePassedAllModal'
 import ChallengeFailedModal from './ChallengeFailedModal'
@@ -719,9 +720,8 @@ export default function SessionPage(){
       try{ const _tf={}; _savedPairs.forEach(pp=>{ _tf[pp]=(pp===p?tf:'H1') }); setPairTf(_tf); pairTfRef.current=_tf }catch{}
       // Load previous trades for this session to show in journal
       // todas, paginadas y con el total comprobado (C04)
-      // bloque D, punto 5: por clave (created_at, id); el orden de cierre, despues
-      const { data: prevTrades, error: prevErr } = await leerTodo(() => supabase.from('sim_trades').select('*', { count: 'exact' })
-        .eq('session_id',id), { ordena: porColumnas([['closed_at','asc'],['id','asc']]) })
+      // bloque G, punto 1 (Astra BD-04): en UNA sentencia (sql/sim-002); el orden de cierre, despues
+      const { data: prevTrades, error: prevErr } = await tradesDeSesion(supabase, id, { ordena: porColumnas([['closed_at','asc'],['id','asc']]) })
       if(prevErr){setErrorSesion('No se han podido cargar las operaciones de esta sesión. Comprueba tu conexión y vuelve a intentarlo.');setLoading(false);return}
       if(prevTrades?.length){
         // Put them in pairState so allTrades shows them

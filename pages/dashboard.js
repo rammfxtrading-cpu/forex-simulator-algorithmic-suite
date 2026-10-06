@@ -9,6 +9,7 @@ import { metricas } from '../lib/metricas'
 import NoAccess from '../components/NoAccess'
 import ErrorCarga from '../components/ErrorCarga'
 import { leerTodo, porColumnas } from '../lib/paginado'
+import { tradesDeUsuario } from '../lib/tradesEstables'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -113,8 +114,9 @@ export default function Dashboard() {
   }
 
   async function loadTrades(userId) {
-    const r = await leerTodo(() => supabase.from('sim_trades').select('*', { count: 'exact' }).eq('user_id', userId),
-      { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) })
+    // bloque G, punto 1 (Astra BD-04): en UNA sentencia (sql/sim-002); paginando,
+    // el TOTAL P&L visible podia ser de un conjunto que nunca existio
+    const r = await tradesDeUsuario(supabase, userId, { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) })
     if (!r.error) setTrades(r.data)
     return r
   }
