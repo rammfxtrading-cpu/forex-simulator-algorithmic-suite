@@ -130,7 +130,8 @@ const r8 = await corre()
 proveedor.http = null
 const pnd8 = seccion(r8, 'PROVEEDOR NO DISPONIBLE')
 oraculo('FD01', '(a) AUDUSD aparece en «PROVEEDOR NO DISPONIBLE» con el dia y la clase (red)', pnd8.some(l => /AUDUSD/.test(l) && /2026-02-01/.test(l) && /red/.test(l)), pnd8.join(' | '))
-oraculo('FD01', '(a) no esta descolgado (retraso 0): el job acaba bien y no lo llama «descolgado»', r8.codigo === 0 && !r8.salida.some(l => /DESCOLGADO/.test(l)), `codigo ${r8.codigo}`)
+// bloque G, punto 10 (BF-04): proveedor no disponible tiene su propio codigo (2), no 0
+oraculo('FD01', '(a) no esta descolgado (retraso 0): no lo llama «descolgado» y acaba con el codigo de «proveedor no disponible» (2), no con 1', r8.codigo === 2 && !r8.salida.some(l => /DESCOLGADO/.test(l)), `codigo ${r8.codigo}`)
 // (b) AUDUSD guardado hasta el 23-ene y el proveedor no responde: descolgado Y sin proveedor
 escenario({ storage: { 'forex-data': { ...Object.fromEntries(NUEVE.map(p => [`${p}/M1/2026.json`, hastaVie30])), 'AUDUSD/M1/2026.json': JSON.stringify(historial('2026-01-23')) } } })
 proveedor.http = (url, n, { instrumento, dia }) => { if (instrumento === 'audusd') return { status: 503, body: '' }; return { status: 200, body: filas(dia) } }

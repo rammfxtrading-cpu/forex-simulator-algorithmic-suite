@@ -165,15 +165,20 @@ function componer(guardadas, bajados) {
 async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = Infinity) {
   const keyFile = F.rutaEscritura(pair, year)     // .json; .json.gz solo con MERCADO_GZIP=1
   const leido = await leerAnio(pair, year)
-  if (leido.estado === 'error') return { keyFile, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
+  // Bloque G, punto 10: cada resultado lleva el año y su contenido FINAL
+  // conocido (lo verificado al publicar o, si no se publico, lo leido): el
+  // veredicto se calcula con el, sin volver a descargar el año.
+  if (leido.estado === 'error') return { keyFile, anio: year, final: null, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
   const nuevoAnio = leido.estado === 'no-existe'
   const velas = nuevoAnio ? [] : leido.velas
   const pendientes = diasPendientes(velas, year, ayerMs)
-  if (!pendientes.length) return { keyFile, estado: `✓ al dia (${keyFile})` }
+  if (!pendientes.length) return { keyFile, anio: year, final: velas, estado: `✓ al dia (${keyFile})` }
 
   // Bloque F, punto 1: el fallo de un dia NO tira el par. Se apunta y se sigue;
   // componer corta la cola en el primer dia que falte.
-  const bajados = {}, fallidos = [], vacios = []
+  // fallidos: el proveedor no respondio (servidor, red); presupuesto: se acabo
+  // el tiempo (bloque G, punto 10: no se atribuye al proveedor)
+  const bajados = {}, fallidos = [], vacios = [], presupuesto = []
   const ultimaGuardada = velas.length ? ymd(velas[velas.length - 1].time * 1000) : ''
   let colaCortada = false
   for (const d of pendientes) {
@@ -181,30 +186,32 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
     if (enCola && colaCortada) continue              // punto 2: cortada la cola, lo de despues no se publicaria
     const [y, m, dd] = d.split('-').map(Number)
     try { bajados[d] = (await bajarDia(pair, y, m - 1, dd, limite)) || [] }
-    catch (e) { fallidos.push(`${d} (${E.texto(e)})`); if (enCola) colaCortada = true }
+    catch (e) { (e?.tipo === 'presupuesto' ? presupuesto : fallidos).push(`${d} (${E.texto(e)})`); if (enCola) colaCortada = true }
     // BF-01: un dia con mercado que llega vacio sigue PENDIENTE (y en la cola, la corta)
     if (bajados[d] && !bajados[d].length && !completo(d, [])) vacios.push(d)
     if (enCola && bajados[d] && !completo(d, bajados[d])) colaCortada = true
     await sleep(400)
   }
-  const nota = (fallidos.length ? ` · sin descargar: ${fallidos.join(', ')}` : '') + (vacios.length ? ` · pendiente (sin datos del proveedor): ${vacios.join(', ')}` : '')
+  const sinBajar = [...fallidos, ...presupuesto].sort()
+  const nota = (sinBajar.length ? ` · sin descargar: ${sinBajar.join(', ')}` : '') + (vacios.length ? ` · pendiente (sin datos del proveedor): ${vacios.join(', ')}` : '')
+  const base = { keyFile, anio: year, fallidos, vacios, presupuesto, final: velas }
   const previsto = componer(nuevoAnio ? null : velas, bajados)
   if (!previsto) {
-    if (fallidos.length) return { keyFile, fallidos, vacios, estado: `✗ DESCARGA ${keyFile}: nada nuevo publicable${nota}` }
-    return { keyFile, vacios, estado: `${vacios.length ? '⚠️' : '✓'} ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado${nota}` }
+    if (sinBajar.length) return { ...base, estado: `✗ DESCARGA ${keyFile}: nada nuevo publicable${nota}` }
+    return { ...base, estado: `${vacios.length ? '⚠️' : '✓'} ${keyFile}: ${pendientes.length} dia(s) revisado(s), nada mejor que lo guardado${nota}` }
   }
   const resumen = n => `${nuevoAnio ? 'año NUEVO, ' : ''}${n} velas (antes ${velas.length}); ultima ${ymd(previsto[previsto.length - 1].time * 1000)}`
   if (!SUBIR) {
     const v = C.validaParaPublicar(previsto, nuevoAnio ? null : velas, { anio: year })
-    return { keyFile, fallidos, vacios, estado: `[SECO] ${keyFile}: ${resumen(previsto.length)}${v.ok ? '' : ` — NO se publicaria: ${v.problemas.join(' · ')}`}` }
+    return { ...base, estado: `[SECO] ${keyFile}: ${resumen(previsto.length)}${v.ok ? '' : ` — NO se publicaria: ${v.problemas.join(' · ')}`}` }
   }
   // BF-03: no se empieza a publicar sin la reserva para terminar (ni se toma el cerrojo)
-  if (Date.now() + RESERVA_MS > finJob) return { keyFile, fallidos, vacios, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
+  if (Date.now() + RESERVA_MS > finJob) return { ...base, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
   const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(g, bajados), dueno: 'actualizar-diario' })
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
-  if (r.estado === 'publicado') return { keyFile, fallidos, vacios, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
-  if (r.estado === 'sin-cambios') return { keyFile, fallidos, vacios, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir${nota}` }
-  return { keyFile, fallidos, vacios, publicacion: true, estado: `✗ PUBLICACION ${r.estado} ${keyFile}: ${r.problemas.join(' · ')}${avisos}${nota}` }
+  if (r.estado === 'publicado') return { ...base, final: r.final, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
+  if (r.estado === 'sin-cambios') return { ...base, final: r.final ?? velas, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir${nota}` }
+  return { ...base, publicacion: true, estado: `✗ PUBLICACION ${r.estado} ${keyFile}: ${r.problemas.join(' · ')}${avisos}${nota}` }
 }
 
 async function procesarPar(pair, finJob = Infinity) {
@@ -214,15 +221,18 @@ async function procesarPar(pair, finJob = Infinity) {
   const ayerMs = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1)
   const year = hoy.getUTCFullYear()
   const anios = hoy.getUTCMonth() === 0 ? [year - 1, year] : [year]   // en enero, tambien el 31-dic anterior
-  const partes = [], fallidos = []
-  let sinTiempoPublicar = false
+  const partes = [], fallidos = [], presupuesto = [], finales = []
+  let sinTiempoPublicar = false, publicacion = false
   for (const y of anios) {
     if (Date.UTC(y, 0, 1) > ayerMs) continue           // el 1-ene aun no ha cerrado: nada que pedir de ese año
     const r = await reconciliaAnio(pair, y, ayerMs, limite, finJob)
-    partes.push(r.estado); fallidos.push(...(r.fallidos || [])); if (r.sinTiempo) sinTiempoPublicar = true
+    partes.push(r.estado); fallidos.push(...(r.fallidos || [])); presupuesto.push(...(r.presupuesto || []))
+    if (r.sinTiempo) sinTiempoPublicar = true
+    if (r.publicacion) publicacion = true
+    finales.push({ anio: y, velas: r.final })
   }
   const fallo = partes.find(p => p.startsWith('✗'))
-  return { pair, fallidos, sinTiempo: sinTiempoPublicar, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
+  return { pair, fallidos, presupuesto, publicacion, finales, sinTiempo: sinTiempoPublicar, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
 }
 
 async function main() {
@@ -244,24 +254,33 @@ async function main() {
     primero = false
     process.stdout.write(`  ${pair.toUpperCase()}... `)
     try { const r = await procesarPar(pair, finJob); console.log(r.estado); resultados.push(r) }
-    catch(e) { console.log(`✗ ERROR: ${E.texto(e)}`); resultados.push({pair, estado:`✗ ${E.texto(e)}`}) }
+    catch(e) { console.log(`✗ ERROR: ${E.texto(e)}`); resultados.push({pair, error: true, estado:`✗ ${E.texto(e)}`}) }
   }
-  // Bloque F, punto 6: veredicto SEPARADO. «Proveedor no disponible» = hoy no se
-  // pudo descargar algun dia que hacia falta (servidor, red o sin tiempo): dice
-  // de que par, que dia y por que. «Descolgado» = el par lleva mas de N dias de
-  // mercado sin datos, sea cual sea la causa; cada uno dice si hoy el proveedor
-  // estuvo disponible para el.
-  const sinProveedor = resultados.filter(r => r.fallidos?.length || r.sinTiempo)
+  // ── VEREDICTO (bloque F, punto 6; bloque G, punto 10: Astra BF-04) ─────────
+  // Secciones separadas y un CODIGO DE SALIDA por situacion:
+  //   0  todo bien: todos los pares al dia (<= MAX_DIAS_MERCADO_RETRASO), sin
+  //      dias interiores incompletos, sin fallos de descarga ni de tiempo
+  //   1  datos que no estan bien: par descolgado, no legible, con un dia
+  //      INTERIOR incompleto sin reparar, o publicacion fallida o incierta
+  //   2  proveedor no disponible: algun dia que hacia falta no se pudo bajar
+  //      (servidor o red), aunque los datos sigan dentro del margen
+  //   3  presupuesto agotado: un par sin tiempo, o una descarga cortada por
+  //      el limite (ya no se cuenta como «proveedor no disponible»)
+  //   4  error inesperado (Fatal)
+  // Si coinciden varias, manda la primera de 1, 3, 2. «TODO OK» solo con 0.
+  // El estado de los datos sale de lo que cada par ya leyo o verifico al
+  // publicar (finales): no se vuelve a descargar ningun año.
+  const MAX_DIAS_MERCADO_RETRASO = 2
+  const sinProveedor = resultados.filter(r => r.fallidos?.length)
+  const sinPresupuesto = resultados.filter(r => r.sinTiempo || r.presupuesto?.length)
   if (sinProveedor.length) {
     console.log(`\n=== PROVEEDOR NO DISPONIBLE (hoy) — ${sinProveedor.length} par(es) ===`)
-    sinProveedor.forEach(r => console.log(`  ${r.pair.toUpperCase()}: ${[r.sinTiempo ? 'sin tiempo (presupuesto del job, con su reserva para publicar)' : '', ...(r.fallidos || [])].filter(Boolean).join(', ')}`))
+    sinProveedor.forEach(r => console.log(`  ${r.pair.toUpperCase()}: ${r.fallidos.join(', ')}`))
   }
-
-  // ── VERDICTO por ESTADO REAL de los datos, no por fallos de descarga ──────
-  // Dukascopy falla de forma intermitente: un fallo de descarga NO es un problema
-  // si ese par ya tenia los datos al dia. Lo que importa es cuantos DIAS DE MERCADO
-  // lleva cada par sin actualizar. Solo alertamos si algun par se queda descolgado.
-  const MAX_DIAS_MERCADO_RETRASO = 2
+  if (sinPresupuesto.length) {
+    console.log(`\n=== PRESUPUESTO AGOTADO — ${sinPresupuesto.length} par(es) ===`)
+    sinPresupuesto.forEach(r => console.log(`  ${r.pair.toUpperCase()}: ${[r.sinTiempo ? 'sin tiempo (presupuesto del job, con su reserva para publicar)' : '', ...(r.presupuesto || [])].filter(Boolean).join(', ')}`))
+  }
 
   function diasMercadoEntre(desde, hasta) {   // cuenta lun-vie entre dos fechas
     let n = 0
@@ -274,50 +293,64 @@ async function main() {
     }
     return n
   }
+  // dias INTERIORES (del 1-ene al dia anterior al ultimo con datos) pendientes
+  // segun C.estadoDia: laborables cortos, domingos vacios o cortados
+  function interioresIncompletos(velas, anio) {
+    const porDia = {}
+    for (const v of velas) (porDia[ymd(v.time * 1000)] ??= []).push(v)
+    const ultimo = ymd(velas[velas.length - 1].time * 1000)
+    const out = []
+    for (let t = Date.UTC(anio, 0, 1); ymd(t) < ultimo; t += DIA_MS) {
+      const d = ymd(t), e = C.estadoDia(d, porDia[d])
+      if (e === 'pendiente') out.push(`${d} (${(porDia[d] || []).length})`)
+    }
+    return out
+  }
 
   console.log(`\n=== ESTADO DE LOS DATOS ===`)
-  const year = new Date().getUTCFullYear()
   const hoy = new Date()
-  // "ayer" es el ultimo dia que deberia estar disponible
   const ayer = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate()-1))
   const descolgados = []
-
   for (const pair of PAIRS) {
-    try {
-      // el año en curso; si aun no tiene fichero (1-ene festivo sin datos), el anterior
-      let leido = await leerAnio(pair, year)
-      if (leido.estado === 'no-existe') leido = await leerAnio(pair, year - 1)
-      if (leido.estado !== 'ok' || !leido.velas.length) { console.log(`  ${pair.toUpperCase().padEnd(8)} ✗ no legible`); descolgados.push(`${pair}: archivo no legible`); continue }
-      const arr = leido.velas
-      const ult = new Date(arr[arr.length-1].time*1000)
-      const retraso = diasMercadoEntre(ult, ayer)
-      const ok = retraso <= MAX_DIAS_MERCADO_RETRASO
-      console.log(`  ${pair.toUpperCase().padEnd(8)} ${ok?'✓':'⚠️'} ultima ${ult.toISOString().slice(0,10)} (retraso: ${retraso} dia(s) de mercado)`)
-      const hoyNo = sinProveedor.find(r => r.pair === pair)
-      if (!ok) descolgados.push(`${pair.toUpperCase()}: ultima ${ult.toISOString().slice(0,10)}, ${retraso} dias de mercado de retraso — ${hoyNo ? 'hoy, ademas, proveedor no disponible para este par' : 'el proveedor SI respondio hoy: revisar los datos'}`)
-    } catch(e) { console.log(`  ${pair.toUpperCase().padEnd(8)} ✗ ${E.texto(e)}`); descolgados.push(`${pair}: ${E.texto(e)}`) }
+    const r = resultados.find(x => x.pair === pair) || {}
+    const P = pair.toUpperCase().padEnd(8)
+    // el año mas reciente con datos de los que proceso el par
+    const fin = [...(r.finales || [])].reverse().find(f => f.velas?.length)
+    if (!fin) {
+      if (r.sinTiempo && !(r.finales || []).length) { console.log(`  ${P} — sin comprobar (sin tiempo)`); continue }
+      console.log(`  ${P} ✗ no legible`); descolgados.push(`${pair.toUpperCase()}: archivo no legible${r.error ? ' (error)' : ''}`); continue
+    }
+    const ult = new Date(fin.velas[fin.velas.length - 1].time * 1000)
+    const retraso = diasMercadoEntre(ult, ayer)
+    const interiores = interioresIncompletos(fin.velas, fin.anio)
+    const ok = retraso <= MAX_DIAS_MERCADO_RETRASO && !interiores.length
+    console.log(`  ${P} ${ok ? '✓' : '⚠️'} ultima ${ult.toISOString().slice(0,10)} (retraso: ${retraso} dia(s) de mercado)${interiores.length ? ` · ${interiores.length} dia(s) interior(es) incompleto(s): ${interiores.slice(0, 8).join(', ')}${interiores.length > 8 ? '…' : ''}` : ''}`)
+    const hoyNo = sinProveedor.includes(r)
+    if (retraso > MAX_DIAS_MERCADO_RETRASO) descolgados.push(`${pair.toUpperCase()}: ultima ${ult.toISOString().slice(0,10)}, ${retraso} dias de mercado de retraso — ${hoyNo ? 'hoy, ademas, proveedor no disponible para este par' : 'el proveedor SI respondio hoy: revisar los datos'}`)
+    if (interiores.length) descolgados.push(`${pair.toUpperCase()}: ${interiores.length} dia(s) interior(es) incompleto(s) sin reparar: ${interiores.slice(0, 8).join(', ')}${interiores.length > 8 ? '…' : ''}`)
   }
 
-  // una publicacion rechazada, sin verificar o sin cerrojo NO es un fallo de
-  // descarga puntual: siempre se avisa y el job acaba con codigo 1
-  const publicaciones = resultados.filter(r => r.estado.includes('✗ PUBLICACION'))
-  if (publicaciones.length) {
-    console.log(`\n  ✗ ${publicaciones.length} publicacion(es) sin completar: ${publicaciones.map(r => r.pair).join(', ')}`)
-    process.exitCode = 1
-  }
+  // una publicacion rechazada, sin verificar, incierta o sin cerrojo NO es un
+  // fallo de descarga puntual: siempre se avisa (codigo 1)
+  const publicaciones = resultados.filter(r => r.publicacion)
+  if (publicaciones.length) console.log(`\n  ✗ ${publicaciones.length} publicacion(es) sin completar: ${publicaciones.map(r => r.pair.toUpperCase()).join(', ')}`)
   if (descolgados.length) {
-    console.log(`\n=== DESCOLGADO(S) (>${MAX_DIAS_MERCADO_RETRASO} dias de mercado) — ${descolgados.length} par(es) ===`)
+    console.log(`\n=== DESCOLGADO(S) O INCOMPLETO(S) — ${descolgados.length} ===`)
     descolgados.forEach(d=>console.log(`  ${d}`))
-    console.log(`\n=== ⚠️ ATENCION: ${descolgados.length} PAR(ES) DESCOLGADO(S) ===`)
-    process.exitCode = 1
-  } else if (publicaciones.length) {
-    console.log(`\n=== ⚠️ ATENCION: ${publicaciones.length} publicacion(es) sin completar (ver ✗ PUBLICACION arriba) ===`)
-  } else {
-    console.log(`\n=== ✓ TODO OK — todos los pares dentro del margen (<=${MAX_DIAS_MERCADO_RETRASO} dias de mercado) ===`)
-    if (sinProveedor.length) console.log(`  (proveedor no disponible hoy para: ${sinProveedor.map(r => r.pair.toUpperCase()).join(', ')}; dentro del margen, se reintenta en la proxima pasada)`)
   }
+  const codigo = descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
+  const motivos = [
+    descolgados.length ? `${descolgados.length} par(es) descolgado(s) o con dias incompletos` : '',
+    publicaciones.length ? `${publicaciones.length} publicacion(es) sin completar` : '',
+    sinPresupuesto.length ? `presupuesto agotado en ${sinPresupuesto.length} par(es)` : '',
+    sinProveedor.length ? `proveedor no disponible para ${sinProveedor.length} par(es)` : '',
+  ].filter(Boolean)
+  if (codigo === 0) console.log(`\n=== ✓ TODO OK — todos los pares al dia (<=${MAX_DIAS_MERCADO_RETRASO} dias de mercado) y sin dias interiores incompletos ===`)
+  else console.log(`\n=== ⚠️ ATENCION: ${motivos.join(' · ')} (codigo ${codigo}) ===`)
+  process.exitCode = codigo
 
   if (!SUBIR) console.log(`\n  (SECO — no se tocó nada. Para subir: --subir)`)
 }
 
-main().catch(e => { console.error('Fatal:', E ? E.texto(e) : (e?.name === 'TypeError' ? 'TypeError' : 'Error')); process.exit(1) })
+// codigo 4: error inesperado (bloque G, punto 10)
+main().catch(e => { console.error('Fatal:', E ? E.texto(e) : (e?.name === 'TypeError' ? 'TypeError' : 'Error')); process.exit(4) })
