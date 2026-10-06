@@ -36,7 +36,7 @@ export class SalidaDeScript extends Error { constructor(c) { super(`process.exit
 export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 20000, reloj = null } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'simscript-'))
   fs.writeFileSync(path.join(tmp, '.env.local'), 'NEXT_PUBLIC_SUPABASE_URL=https://falso.supabase.co\nSUPABASE_SERVICE_ROLE_KEY=falsa\n')
-  const salida = [], envLeidos = [], envTodos = []
+  const salida = [], envLeidos = [], envTodos = [], esperas = []
   const orig = { load: Module._load, read: fs.readFileSync,
     fs: { readFileSync: fs.readFileSync, openSync: fs.openSync, createReadStream: fs.createReadStream, readFile: fs.readFile, open: fs.open,
       promisesReadFile: fs.promises.readFile, promisesOpen: fs.promises.open }, st: globalThis.setTimeout, fetch: globalThis.fetch, Date: globalThis.Date, log: console.log, err: console.error,
@@ -95,7 +95,8 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
     for (const via of ['readFile', 'open']) fs[via] = function (p, ...resto) { guarda(p, via); return orig.fs[via].call(this, p, ...resto) }
     fs.promises.readFile = function (p, ...resto) { guarda(p, 'promises.readFile'); return orig.fs.promisesReadFile.call(this, p, ...resto) }
     fs.promises.open = function (p, ...resto) { guarda(p, 'promises.open'); return orig.fs.promisesOpen.call(this, p, ...resto) }
-    globalThis.setTimeout = (f, ms, ...a) => orig.st(f, 0, ...a)
+    // bloque N, punto 2: se apunta lo que PIDE cada espera (esperas, en ms) aunque corra al instante
+    globalThis.setTimeout = (f, ms, ...a) => { esperas.push(ms ?? 0); return orig.st(f, 0, ...a) }
     // bloque F, punto 4: el fetch del script es el del proveedor falso (fuera, bloqueado)
     globalThis.fetch = proveedorFalso.fetchFalso
     globalThis.Date = FechaFija
@@ -117,7 +118,7 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
     if (!terminoPor) terminoPor = 'timeout'
     else if (terminoPor === 'final') codigo = process.exitCode ?? 0
     ejecucionesScripts.push({ rel, terminoPor, codigo })
-    return { salida, envLeidos, envTodos, codigo, terminoPor, exitCode: codigo, tmp }
+    return { salida, envLeidos, envTodos, codigo, terminoPor, exitCode: codigo, tmp, esperas }
   } finally {
     Module._load = orig.load
     for (const via of ['readFileSync', 'openSync', 'createReadStream', 'readFile', 'open']) fs[via] = orig.fs[via]

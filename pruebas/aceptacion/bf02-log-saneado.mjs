@@ -41,8 +41,9 @@ const r1 = await corre()
 const intentos1 = r1.salida.filter(l => /AUDUSD 2026-01-26 · intento/.test(l))
 // la precondicion (se intento 5 veces y fallo por red) va DENTRO del oraculo:
 // en el codigo viejo no hay descarga propia y un «no aparece» seria vacio
-const intentado1 = intentos1.length === 5 && /sin descargar: 2026-01-26 \(red/.test(linea(r1, 'AUDUSD'))
-oraculo('BF02', 'cinco intentos por red, y su log no lleva ni la URL ni el marcador', intentado1 && !intentos1.some(l => l.includes('SECRETO') || l.includes('datafeed.invalid')), intentos1[0])
+// 3 intentos por dia (CTO 6-oct)
+const intentado1 = intentos1.length === 3 && /sin descargar: 2026-01-26 \(red/.test(linea(r1, 'AUDUSD'))
+oraculo('BF02', 'tres intentos por red, y su log no lleva ni la URL ni el marcador', intentado1 && !intentos1.some(l => l.includes('SECRETO') || l.includes('datafeed.invalid')), intentos1[0])
 oraculo('BF02', 'ninguna linea de la salida (tambien la del par y el veredicto) los lleva', intentado1 && filtra(r1).length === 0, filtra(r1).slice(0, 2).join(' | '))
 
 titulo('2 · cause.code fuera de la lista')

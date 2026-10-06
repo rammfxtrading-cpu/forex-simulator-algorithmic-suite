@@ -75,6 +75,14 @@ const PRESUPUESTO_PAR_MS = segs(process.env.PRESUPUESTO_PAR_S, 4 * 60) * 1000
 // como tarde en fin del job − reserva. Con 24 min de job y 30 de workflow
 // (checkout y npm ci dentro) quedan ~6 min para el estado final.
 let RESERVA_MS
+// CTO 6-oct (tras la sonda 1: 69 de 75 peticiones con HTTP 429): 3 intentos por
+// dia y una pausa entre dias (PAUSA_DIA_S, 5 s por defecto). Un 429 que no se
+// puede esperar (sin Retry-After o sin presupuesto) CORTA EL JOB ENTERO: ni otros
+// dias ni otros pares; lo contiguo ya descargado se publica y el job sale con
+// el codigo de «proveedor no disponible» (2).
+const INTENTOS_DIA = 3
+const PAUSA_DIA_MS = segs(process.env.PAUSA_DIA_S, 5) * 1000
+let CORTE_429 = null      // 'PAR dia: motivo' cuando el proveedor limita
 
 // Baja UN dia por la DESCARGA PROPIA (bloque F, punto 4: lib/mercado/descarga.mjs):
 // estado HTTP, bytes e intento de cada peticion en el log; esperas crecientes
@@ -84,7 +92,7 @@ const dukascopy = require('dukascopy-node')
 let DESC   // lib/mercado/descarga.mjs (ESM, se carga en main)
 async function bajarDia(pair, y, m, d, limite = Infinity) {
   const dia = new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10)
-  const r = await DESC.bajaDia({ sdk: dukascopy, fetch: (...a) => globalThis.fetch(...a), espera: sleep, log: l => console.log('    ' + l), par: pair, dia, limite })
+  const r = await DESC.bajaDia({ sdk: dukascopy, fetch: (...a) => globalThis.fetch(...a), espera: sleep, log: l => console.log('    ' + l), par: pair, dia, limite, intentos: INTENTOS_DIA })
   return r.velas
 }
 
@@ -210,11 +218,14 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
     if (enCola && colaCortada) continue              // punto 2: cortada la cola, lo de despues no se publicaria
     const [y, m, dd] = d.split('-').map(Number)
     try { bajados[d] = (await bajarDia(pair, y, m - 1, dd, limite)) || [] }
-    catch (e) { (e?.tipo === 'presupuesto' ? presupuesto : fallidos).push(`${d} (${E.texto(e)})`); if (enCola) colaCortada = true }
+    catch (e) {
+      (e?.tipo === 'presupuesto' ? presupuesto : fallidos).push(`${d} (${E.texto(e)})`); if (enCola) colaCortada = true
+      if (e?.tipo === 'limite') { CORTE_429 = `${pair.toUpperCase()} ${d}: ${E.texto(e)}`; break }   // el proveedor limita: ni un dia mas
+    }
     // BF-01: un dia con mercado que llega vacio sigue PENDIENTE (y en la cola, la corta)
     if (bajados[d] && !bajados[d].length && !completo(pair, d, [])) vacios.push(d)
     if (enCola && bajados[d] && !completo(pair, d, bajados[d])) colaCortada = true
-    await sleep(400)
+    await sleep(PAUSA_DIA_MS)
   }
   const sinBajar = [...fallidos, ...presupuesto].sort()
   const nota = (sinBajar.length ? ` · sin descargar: ${sinBajar.join(', ')}` : '') + (vacios.length ? ` · pendiente (sin datos del proveedor): ${vacios.join(', ')}` : '')
@@ -249,6 +260,7 @@ async function procesarPar(pair, finJob = Infinity) {
   const partes = [], fallidos = [], presupuesto = [], finales = []
   let sinTiempoPublicar = false, publicacion = false
   for (const y of anios) {
+    if (CORTE_429) break
     if (Date.UTC(y, 0, 1) > ayerMs) continue           // el 1-ene aun no ha cerrado: nada que pedir de ese año
     const r = await reconciliaAnio(pair, y, ayerMs, limite, finJob)
     partes.push(r.estado); fallidos.push(...(r.fallidos || [])); presupuesto.push(...(r.presupuesto || []))
@@ -289,6 +301,7 @@ async function main() {
   const finJob = Date.now() + PRESUPUESTO_JOB_MS
   let primero = true
   for (const pair of PAIRS) {
+    if (CORTE_429) { resultados.push({ pair, cortado429: true, estado: '✗ NO EMPEZADO: el proveedor limita (HTTP 429), job cortado' }); console.log(`  ${pair.toUpperCase()}... ✗ NO EMPEZADO: el proveedor limita (HTTP 429), job cortado`); continue }
     if (!primero) await sleep(8000)  // pausa anti-rafaga entre pares
     primero = false
     process.stdout.write(`  ${pair.toUpperCase()}... `)
@@ -306,7 +319,8 @@ async function main() {
   //   3  presupuesto agotado: un par sin tiempo, o una descarga cortada por
   //      el limite (ya no se cuenta como «proveedor no disponible»)
   //   4  error inesperado (Fatal)
-  // Si coinciden varias, manda la primera de 1, 3, 2. «TODO OK» solo con 0.
+  // Si coinciden varias, manda la primera de 1, 3, 2; salvo un corte por HTTP
+  // 429 (CTO 6-oct): siempre 2, y el log dice el resto. «TODO OK» solo con 0.
   // El estado de los datos sale de lo que cada par ya leyo o verifico al
   // publicar (finales): no se vuelve a descargar ningun año.
   const MAX_DIAS_MERCADO_RETRASO = 2
@@ -357,6 +371,7 @@ async function main() {
     const fin = [...(r.finales || [])].reverse().find(f => f.velas?.length)
     if (!fin) {
       if (r.sinTiempo && !(r.finales || []).length) { console.log(`  ${P} — sin comprobar (sin tiempo)`); continue }
+      if (r.cortado429) { console.log(`  ${P} — sin comprobar (job cortado por HTTP 429)`); continue }
       console.log(`  ${P} ✗ no legible`); descolgados.push(`${pair.toUpperCase()}: archivo no legible${r.error ? ' (error)' : ''}`); continue
     }
     const ult = new Date(fin.velas[fin.velas.length - 1].time * 1000)
@@ -379,8 +394,11 @@ async function main() {
   }
   console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes`)
   console.log(`  Tiempos de Storage (ms; plazos ${LIM.pequenaMs}/${LIM.grandeMs}): ${F.resumenTiempos(LIM.tiempos)}`)
-  const codigo = descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
+  // CTO 6-oct: un corte por 429 sale con el codigo de «proveedor no disponible»
+  if (CORTE_429) console.log(`\n=== PROVEEDOR LIMITA (HTTP 429) — job cortado en ${CORTE_429}; no se ha pedido nada mas ===`)
+  const codigo = CORTE_429 ? 2 : descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
   const motivos = [
+    CORTE_429 ? 'job cortado: el proveedor limita (HTTP 429)' : '',
     descolgados.length ? `${descolgados.length} par(es) descolgado(s) o con dias incompletos` : '',
     publicaciones.length ? `${publicaciones.length} publicacion(es) sin completar` : '',
     sinPresupuesto.length ? `presupuesto agotado en ${sinPresupuesto.length} par(es)` : '',
