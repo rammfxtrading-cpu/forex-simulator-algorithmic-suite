@@ -158,5 +158,6 @@ const bb = await banco({ sesion: ses })
 oraculo('D03', 'la sesion de tramo abierto se carga (motor real)', !!bb.motor())
 const aviso = bb.ps()?.avisoDatos ?? ''
 oraculo('D03', 'el estado del par lleva el aviso «datos hasta …» (lo pinta la sesion)', /datos hasta \d{1,2}-[a-z]{3}-\d{4}/.test(aviso), aviso)
-oraculo('D03', 'y la sesion lo pinta para el par activo', /avisoDatos/.test(fuente('components/_SessionInner.js')))
+// 6-oct (CTO): el aviso lo pinta components/AvisoCobertura.js (10 s; cb03)
+oraculo('D03', 'y la sesion lo pinta para el par activo', /<AvisoCobertura estadoPar=\{pairState\.current\[activePair\]\}/.test(fuente('components/_SessionInner.js')) && /avisoDatos/.test(fuente('components/AvisoCobertura.js')))
 fin()

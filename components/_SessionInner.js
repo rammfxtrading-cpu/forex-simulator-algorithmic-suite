@@ -27,6 +27,7 @@ import { fromScreenCoords, toScreenCoords } from '../lib/chartCoords'
 import { useAuth } from '../lib/useAuth'
 import NoAccess from './NoAccess'
 import ErrorCarga from './ErrorCarga'
+import AvisoCobertura from './AvisoCobertura'
 import { porColumnas } from '../lib/paginado'
 import { tradesDeSesion } from '../lib/tradesEstables'
 import ChallengePassedPhaseModal from './ChallengePassedPhaseModal'
@@ -1393,14 +1394,8 @@ export default function SessionPage(){
       {/* Las estrellas del hub, justo despues del cielo de esta pagina */}
       <Estrellas />
 
-      {/* Bloque D, punto 4: tramo actual abierto → «datos hasta…» del par activo */}
-      {pairState.current[activePair]?.avisoDatos ? (
-        <div role="status" style={{position:'absolute',top:8,left:'50%',transform:'translateX(-50%)',zIndex:30,
-          background:'rgba(4,10,24,0.85)',border:'1px solid rgba(45,126,247,0.45)',borderRadius:6,padding:'4px 10px',
-          color:'#cfe0ff',fontSize:12,fontFamily:"'Montserrat',sans-serif",pointerEvents:'none',maxWidth:'calc(100% - 32px)',textAlign:'center'}}>
-          {pairState.current[activePair].avisoDatos}
-        </div>
-      ) : null}
+      {/* Bloque D, punto 4: el aviso de cobertura del par activo, 10 s al cargar */}
+      <AvisoCobertura estadoPar={pairState.current[activePair]}/>
 
       {/* Bloque D, punto 5: el fallo de velas del par activo, en su grafico, con reintento */}
       {pairState.current[activePair]?.error ? (
