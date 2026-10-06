@@ -5,8 +5,12 @@
 // ⛔ No escribe en el bucket, no llama al proveedor, no borra nada.
 //
 //   node scripts/copia-mercado.js EURUSD AUDUSD AUDCAD GBPJPY
-//      → ~/copias-suite/AAAA-MM-DD-mercado/<PAR>_<AÑO>.json (+ .sha256) y resumen.txt
-//   COPIA_DIR=/otra/carpeta  cambia el destino (fuera de los repositorios y de iCloud)
+//      → ~/copias-suite/<fecha-hora>-mercado-<AÑO>-<aleatorio>/<PAR>_<AÑO>.json (+ .sha256)
+//        y resumen-<AÑO>.txt. BE-03 (Astra, cierres-3; bloque G, punto 4): UNA
+//        CARPETA NUEVA POR EJECUCION, creada en exclusiva, y ficheros escritos
+//        con 'wx': una copia anterior nunca se sobrescribe.
+//   COPIA_DIR=/otra/carpeta  cambia la BASE (dentro, la carpeta de la ejecucion;
+//                            fuera de los repositorios y de iCloud)
 //   ANIO=2025                el año (por defecto, el UTC en curso). ASCII: una
 //                            variable «AÑO» no llega al proceso (5-oct: se copio 2026 dos veces)
 // Lee lo vigente con las mismas reglas que /api/candles (lib/mercado/ficheros.mjs:
@@ -35,8 +39,11 @@ async function main() {
   console.log(`Año ${anio}${process.env.ANIO ? '' : ' (por defecto: el UTC en curso)'}`)
   const ayer = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1) / 1000
   const hasta = Math.min(ayer, Date.UTC(anio, 11, 31) / 1000)
-  const dir = process.env.COPIA_DIR || path.join(os.homedir(), 'copias-suite', `${hoy.toISOString().slice(0, 10)}-mercado`)
-  fs.mkdirSync(dir, { recursive: true })
+  const base = process.env.COPIA_DIR || path.join(os.homedir(), 'copias-suite')
+  fs.mkdirSync(base, { recursive: true })
+  const ejecucion = `${hoy.toISOString().replace(/[:.]/g, '-')}-mercado-${anio}-${crypto.randomBytes(3).toString('hex')}`
+  const dir = path.join(fs.realpathSync(base), ejecucion)
+  fs.mkdirSync(dir)                      // exclusiva: si existiera, falla (nunca se reutiliza)
   const { url, key } = getEnv()
   const sb = createClient(url, key)
   const resumen = [], fallos = []
@@ -46,8 +53,8 @@ async function main() {
     const texto = JSON.stringify(l.velas)
     const sha = crypto.createHash('sha256').update(texto).digest('hex')
     const fichero = path.join(dir, `${par}_${anio}.json`)
-    fs.writeFileSync(fichero, texto)
-    fs.writeFileSync(fichero + '.sha256', `${sha}  ${path.basename(fichero)}\n`)
+    fs.writeFileSync(fichero, texto, { flag: 'wx' })
+    fs.writeFileSync(fichero + '.sha256', `${sha}  ${path.basename(fichero)}\n`, { flag: 'wx' })
     // comprobacion de la copia: se relee del disco y se compara la huella
     const releida = crypto.createHash('sha256').update(fs.readFileSync(fichero)).digest('hex')
     const ultima = l.velas.length ? l.velas[l.velas.length - 1].time : null
@@ -60,8 +67,9 @@ async function main() {
     console.log(m); resumen.push(m)
     if (releida !== sha) fallos.push(par)
   }
-  fs.writeFileSync(path.join(dir, `resumen-${anio}.txt`), resumen.join('\n') + '\n')
-  console.log(`\nCopia en ${dir}`)
+  fs.writeFileSync(path.join(dir, `resumen-${anio}.txt`), `Ejecucion ${ejecucion}\n` + resumen.join('\n') + '\n', { flag: 'wx' })
+  console.log('')
+  console.log(`Copia en ${dir}`)
   if (fallos.length) { console.log(`\n=== ⚠️ ATENCION: ${fallos.join(', ')} sin copia valida ===`); process.exitCode = 1 }
   else console.log(`\n=== ✓ TODO OK — ${pares.length} copia(s) verificada(s) ===`)
 }
