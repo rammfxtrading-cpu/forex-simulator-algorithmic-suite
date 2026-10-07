@@ -56,6 +56,21 @@ function paresPedidos(argv) {
 }
 const PEDIDOS = paresPedidos(process.argv)
 const PAIRS = PEDIDOS.pares || []
+// --objetivo PAR:AAAA-MM-DD[,PAR:AAAA-MM-DD...] (Astra M-03, CTO 7-oct): al
+// terminar, el job dice por cada objetivo si quedo completo (velas y ultimo
+// minuto) y sale distinto de 0 (1) si alguno no, aunque el estado diario sea
+// «todo bien». Cada par tiene que estar entre los que se procesan.
+function objetivosPedidos(argv) {
+  const i = argv.findIndex(a => a === '--objetivo' || a.startsWith('--objetivo='))
+  if (i < 0) return { lista: [] }
+  const valor = argv[i].includes('=') ? argv[i].slice(11) : argv[i + 1]
+  const lista = String(valor ?? '').split(',').map(x => x.trim()).filter(Boolean)
+  const fechaOk = f => /^\d{4}-\d{2}-\d{2}$/.test(f) && new Date(f + 'T00:00:00Z').toISOString().slice(0, 10) === f
+  const malos = lista.filter(x => { const m = /^([A-Z]{6}):(.+)$/.exec(x); return !m || !PAIRS.includes(m[1].toLowerCase()) || !fechaOk(m[2]) })
+  if (!lista.length || malos.length) return { error: `--objetivo: ${malos.length ? `no valido(s): ${malos.join(', ')} (PAR:AAAA-MM-DD, con el par entre los que se procesan)` : 'lista vacia'}` }
+  return { lista: lista.map(x => ({ par: x.slice(0, 6), dia: x.slice(7) })) }
+}
+const OBJETIVOS = objetivosPedidos(process.argv)
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -284,9 +299,9 @@ async function procesarPar(pair, finJob = Infinity) {
 }
 
 async function main() {
-  if (PEDIDOS.error) {
-    console.log(PEDIDOS.error)
-    console.log('\n=== ⚠️ ATENCION: no se ha hecho nada (opcion --pares no valida) (codigo 4) ===')
+  if (PEDIDOS.error || OBJETIVOS.error) {
+    console.log(PEDIDOS.error || OBJETIVOS.error)
+    console.log(`\n=== ⚠️ ATENCION: no se ha hecho nada (opcion ${PEDIDOS.error ? '--pares' : '--objetivo'} no valida) (codigo 4) ===`)
     process.exitCode = 4
     return
   }
@@ -406,12 +421,34 @@ async function main() {
   }
   console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes`)
   console.log(`  Tiempos de Storage (ms; plazos ${LIM.pequenaMs}/${LIM.grandeMs}): ${F.resumenTiempos(LIM.tiempos)}`)
+  // M-03: los objetivos, con lo que cada par ya leyo o verifico (sin descargar)
+  const objetivosMal = []
+  if (OBJETIVOS.lista.length) {
+    console.log(`\n=== OBJETIVOS — ${OBJETIVOS.lista.length} ===`)
+    const hm = t => new Date(t * 1000).toISOString().slice(11, 16)
+    for (const { par, dia } of OBJETIVOS.lista) {
+      const r = resultados.find(x => x.pair === par.toLowerCase()) || {}
+      const fin = (r.finales || []).find(f => f.anio === Number(dia.slice(0, 4)))
+      let linea, ok = false
+      if (!fin || !Array.isArray(fin.velas)) linea = `✗ no comprobado (${r.cortado429 ? 'job cortado por HTTP 429' : r.sinTiempo ? 'sin tiempo' : 'año no leido'})`
+      else {
+        const vd = fin.velas.filter(v => ymd(v.time * 1000) === dia)
+        const e = estadoDe(par.toLowerCase(), dia, vd)
+        ok = e !== 'pendiente'
+        linea = !vd.length ? (ok ? '✓ sin mercado (no se exige)' : '✗ incompleto · 0 velas (sin velas)') : `${ok ? '✓ completo' : '✗ incompleto'} · ${vd.length} velas · ultima ${hm(vd[vd.length - 1].time)}`
+      }
+      console.log(`  ${par} ${dia}: ${linea}`)
+      if (!ok) objetivosMal.push(`${par} ${dia}`)
+    }
+  }
   // CTO 6-oct: un corte por 429 sale con el codigo de «proveedor no disponible»;
   // CTO 7-oct: pero una publicacion fallida en la misma ejecucion gana (1)
   if (CORTE_429) console.log(`\n=== PROVEEDOR LIMITA (HTTP 429) — job cortado en ${CORTE_429}; no se ha pedido nada mas ===`)
-  const codigo = CORTE_429 ? (publicaciones.length ? 1 : 2) : descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
+  let codigo = CORTE_429 ? (publicaciones.length ? 1 : 2) : descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
+  if (codigo === 0 && objetivosMal.length) codigo = 1   // M-03: un objetivo sin completar no es «todo bien»
   const motivos = [
     CORTE_429 ? 'job cortado: el proveedor limita (HTTP 429)' : '',
+    objetivosMal.length ? `${objetivosMal.length} objetivo(s) sin completar: ${objetivosMal.join(', ')}` : '',
     descolgados.length ? `${descolgados.length} par(es) descolgado(s) o con dias incompletos` : '',
     publicaciones.length ? `${publicaciones.length} publicacion(es) sin completar` : '',
     sinPresupuesto.length ? `presupuesto agotado en ${sinPresupuesto.length} par(es)` : '',

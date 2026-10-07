@@ -53,6 +53,14 @@ const casos = { 'AUDUSD': 0, 'AUDUSD,GBPUSD': 4, '': 4, 'audusd': 4, 'AUDUSD; rm
 const vistos = Object.fromEntries(Object.keys(casos).map(k => [k, bloque ? valida(k) : null]))
 oraculo('WF01', 'la validacion (ejecutada con bash) admite UN par y rechaza el resto con 4', !!bloque && Object.entries(casos).every(([k, v]) => vistos[k] === v), JSON.stringify(vistos))
 
+titulo('3b · objetivo (Astra M-03, CTO 7-oct): la lista PAR:FECHA del modo recuperar')
+oraculo('WF01', 'entrada «objetivo» (texto) y el paso la pasa por variable a --objetivo, solo si viene', ins.objetivo?.type === 'string' && /inputs\.objetivo/.test(String(recup?.env?.OBJETIVO ?? '')) && /\$\{OBJETIVO:\+--objetivo "\$OBJETIVO"\}/.test(String(recup?.run ?? '')), String(recup?.run ?? ''))
+const bloqueObj = (String(recup?.run ?? '').match(/# >>> valida-objetivo\n([\s\S]*?)# <<< valida-objetivo/) ?? [])[1] ?? ''
+const validaObj = (par, obj) => spawnSync('bash', ['-c', bloqueObj + '\nexit 0'], { env: { PATH: process.env.PATH, PARES: par, OBJETIVO: obj }, encoding: 'utf8' }).status
+const casosObj = { '': 0, 'AUDUSD:2026-07-20': 0, 'AUDUSD:2026-07-20,AUDUSD:2026-09-28': 0, 'GBPUSD:2026-07-20': 4, 'AUDUSD:2026-07-20,GBPUSD:2026-10-02': 4, 'AUDUSD:20260720': 4, 'AUDUSD:2026-07-20;rm -rf /': 4, 'AUDUSD:2026-07-20\nAUDUSD:2026-07-21': 4 }
+const vistosObj = Object.fromEntries(Object.keys(casosObj).map(k => [k, bloqueObj ? validaObj('AUDUSD', k) : null]))
+oraculo('WF01', 'la validacion del objetivo (ejecutada con bash): vacio o PAR:FECHA del mismo par; lo demas, 4', !!bloqueObj && Object.entries(casosObj).every(([k, v]) => vistosObj[k] === v), JSON.stringify(vistosObj))
+
 titulo('4 · lo que no puede pasar')
 oraculo('WF01', 'los dos modos imprimen el codigo de salida al final', /Codigo de salida/.test(String(sonda?.run ?? '')) && /Codigo de salida/.test(String(recup?.run ?? '')))
 const secretos = [...new Set((texto.match(/secrets\.([A-Z0-9_]+)/g) || []).map(x => x.slice(8)))].sort()

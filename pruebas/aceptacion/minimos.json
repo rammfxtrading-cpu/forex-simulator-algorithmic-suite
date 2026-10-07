@@ -12,6 +12,7 @@
   "bf08-limite-429": 10,
   "bf09-borde-pendiente": 6,
   "bf10-429-al-limite": 6,
+  "bf11-objetivos": 7,
   "c02-metricas": 7,
   "c03-sesiones-mismo-nombre": 3,
   "c04-estados-honestos": 29,
@@ -36,5 +37,5 @@
   "sp01-sonda-proveedor": 9,
   "sp02-sonda-educada": 7,
   "u01-auto-break-even": 1,
-  "wf01-workflow-manual": 11
+  "wf01-workflow-manual": 13
 }

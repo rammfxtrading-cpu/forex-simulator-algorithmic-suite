@@ -6,7 +6,9 @@ name: Actualizar velas (manual)
 #   · modo sonda: scripts/sonda-proveedor.js con UN dia (EURUSD 2026-07-20).
 #     No lee ni escribe Storage y este paso NO recibe la clave de servicio.
 #   · modo recuperar: scripts/actualizar-diario.js --subir --pares <PAR>, con
-#     UN solo par por ejecucion y MERCADO_GZIP sin definir.
+#     UN solo par por ejecucion y MERCADO_GZIP sin definir. Con «objetivo»
+#     (PAR:AAAA-MM-DD,...), el job dice si cada dia quedo completo y sale
+#     distinto de 0 si alguno no (Astra M-03, CTO 7-oct).
 # Ninguna clave ni URL en el log. Desde aqui no se libera ningun cerrojo.
 on:
   workflow_dispatch:
@@ -21,6 +23,11 @@ on:
         default: sonda
       pares:
         description: 'Solo en recuperar: UN par, p. ej. AUDUSD'
+        required: false
+        type: string
+        default: ''
+      objetivo:
+        description: 'Solo en recuperar, opcional: dias que tienen que quedar completos, PAR:AAAA-MM-DD separados por comas (del mismo par)'
         required: false
         type: string
         default: ''
@@ -60,6 +67,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PARES: ${{ inputs.pares }}
+          OBJETIVO: ${{ inputs.objetivo }}
         run: |
           # >>> valida-pares
           if ! [[ "$PARES" =~ ^[A-Z]{6}$ ]]; then
@@ -67,9 +75,15 @@ jobs:
             exit 4
           fi
           # <<< valida-pares
+          # >>> valida-objetivo
+          if [ -n "$OBJETIVO" ] && ! [[ "$OBJETIVO" =~ ^${PARES}:[0-9]{4}-[0-9]{2}-[0-9]{2}(,${PARES}:[0-9]{4}-[0-9]{2}-[0-9]{2})*$ ]]; then
+            echo "objetivo: PAR:AAAA-MM-DD separados por comas, todos del par pedido. No se ha hecho nada."
+            exit 4
+          fi
+          # <<< valida-objetivo
           unset MERCADO_GZIP
           set +e
-          node scripts/actualizar-diario.js --subir --pares "$PARES"
+          node scripts/actualizar-diario.js --subir --pares "$PARES" ${OBJETIVO:+--objetivo "$OBJETIVO"}
           c=$?
           echo "Codigo de salida: $c"
           exit $c
