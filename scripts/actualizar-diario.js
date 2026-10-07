@@ -64,7 +64,10 @@ function objetivosPedidos(argv) {
   const i = argv.findIndex(a => a === '--objetivo' || a.startsWith('--objetivo='))
   if (i < 0) return { lista: [] }
   const valor = argv[i].includes('=') ? argv[i].slice(11) : argv[i + 1]
-  const lista = String(valor ?? '').split(',').map(x => x.trim()).filter(Boolean)
+  // CTO 7-oct (como CSV-04 del importador): un elemento vacio no se descarta en silencio
+  const crudos = String(valor ?? '').split(',').map(x => x.trim())
+  if (crudos.some(x => !x)) return { error: `--objetivo: ${crudos.every(x => !x) ? 'lista vacia' : 'lista con elementos vacios'}` }
+  const lista = crudos
   const fechaOk = f => { if (!/^\d{4}-\d{2}-\d{2}$/.test(f || '')) return false; const t = Date.parse(f + 'T00:00:00Z'); return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === f }   // MER-R2: 2026-13-01 o 99-99 sin RangeError
   const malos = lista.filter(x => { const m = /^([A-Z]{6}):(.+)$/.exec(x); return !m || !PAIRS.includes(m[1].toLowerCase()) || !fechaOk(m[2]) })
   if (!lista.length || malos.length) return { error: `--objetivo: ${malos.length ? `no valido(s): ${malos.join(', ')} (PAR:AAAA-MM-DD, con el par entre los que se procesan)` : 'lista vacia'}` }

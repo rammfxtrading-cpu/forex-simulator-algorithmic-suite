@@ -18,7 +18,8 @@
  *   · 30 velas · ultima 00:29»;
  *   con --objetivo AUDUSD:2026-02-02: «completo · 1440 velas · ultima 23:59»
  *   y sale con 0;
- *   mal escrito, o un par que no esta en --pares: no se hace nada y sale con 4.
+ *   mal escrito, o un par que no esta en --pares: no se hace nada y sale con 4;
+ *   con elementos vacios («AUDUSD:2026-02-03,», «,AUDUSD:…», dobles comas): 4.
  */
 import { titulo, oraculo, fin, escenario, proveedor } from '../lib.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
@@ -48,7 +49,8 @@ oraculo('BF11', '--objetivo AUDUSD:2026-02-02: «completo · 1440 velas · ultim
 
 titulo('4 · entrada que no vale')
 // MER-R2 (Astra, 7-oct): fechas imposibles (mes 13, 99-99) daban RangeError sin capturar
-for (const mal of ['AUDUSD-2026-02-03', 'GBPUSD:2026-02-03', 'AUDUSD:2026-02-30', 'AUDUSD:2026-99-99', 'AUDUSD:2026-13-01']) {
+// CTO 7-oct (como CSV-04 del importador): elementos vacios en la lista, tambien 4
+for (const mal of ['AUDUSD-2026-02-03', 'GBPUSD:2026-02-03', 'AUDUSD:2026-02-30', 'AUDUSD:2026-99-99', 'AUDUSD:2026-13-01', ',', 'AUDUSD:2026-02-03,', ',AUDUSD:2026-02-03', 'AUDUSD:2026-02-02,,AUDUSD:2026-02-03', 'AUDUSD:2026-02-03, ']) {
   prepara(); proveedor.llamadas.length = 0
   const r = await corre(['--objetivo', mal])
   oraculo('BF11', `--objetivo ${mal}: no se hace nada y sale con 4 (error controlado)`, r.codigo === 4 && proveedor.llamadas.length === 0 && !r.salida.some(l => /RangeError|Invalid time/.test(l)) && r.terminoPor !== 'timeout', `codigo ${r.codigo} · ${proveedor.llamadas.length} peticiones · ${r.salida.slice(-2).join(' | ')}`)
