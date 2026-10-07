@@ -181,7 +181,11 @@ function componer(pair, guardadas, bajados) {
     if (bajados[d].length > (porDia[d] || []).length) { porDia[d] = bajados[d]; cambia = true }
   }
   const cola = dias.filter(d => d > ultima)
-  if (cola.length) {
+  // M-01 (Astra, 7-oct): el ultimo dia guardado, si tras combinar lo guardado y
+  // lo bajado sigue incompleto, es BARRERA: no se añade nada detras (si no, se
+  // convertiria en un hueco interior). Vale para el calculo previo y bajo el
+  // cerrojo, que componen con esta misma funcion.
+  if (cola.length && !(ultima && !completo(pair, ultima, porDia[ultima]))) {
     const desde = ultima ? Date.parse(ultima + 'T00:00:00Z') + DIA_MS : Date.parse(cola[0].slice(0, 4) + '-01-01T00:00:00Z')
     for (let t = desde; t <= Date.parse(cola.at(-1) + 'T00:00:00Z'); t += DIA_MS) {
       const d = ymd(t)
@@ -212,9 +216,13 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   // el tiempo (bloque G, punto 10: no se atribuye al proveedor)
   const bajados = {}, fallidos = [], vacios = [], presupuesto = []
   const ultimaGuardada = velas.length ? ymd(velas[velas.length - 1].time * 1000) : ''
+  const guardadasDe = d => velas.filter(v => ymd(v.time * 1000) === d)
+  // M-01: el ultimo dia guardado a medias cuenta como cola: si no se completa
+  // (combinando lo guardado y lo bajado), corta y no se pide nada posterior
+  const bordePendiente = !!ultimaGuardada && !completo(pair, ultimaGuardada, guardadasDe(ultimaGuardada))
   let colaCortada = false
   for (const d of pendientes) {
-    const enCola = d > ultimaGuardada
+    const enCola = d > ultimaGuardada || (bordePendiente && d === ultimaGuardada)
     if (enCola && colaCortada) continue              // punto 2: cortada la cola, lo de despues no se publicaria
     const [y, m, dd] = d.split('-').map(Number)
     try { bajados[d] = (await bajarDia(pair, y, m - 1, dd, limite)) || [] }
@@ -224,7 +232,10 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
     }
     // BF-01: un dia con mercado que llega vacio sigue PENDIENTE (y en la cola, la corta)
     if (bajados[d] && !bajados[d].length && !completo(pair, d, [])) vacios.push(d)
-    if (enCola && bajados[d] && !completo(pair, d, bajados[d])) colaCortada = true
+    if (enCola && bajados[d]) {
+      const mejor = d === ultimaGuardada && guardadasDe(d).length >= bajados[d].length ? guardadasDe(d) : bajados[d]
+      if (!completo(pair, d, mejor)) colaCortada = true
+    }
     await sleep(PAUSA_DIA_MS)
   }
   const sinBajar = [...fallidos, ...presupuesto].sort()
