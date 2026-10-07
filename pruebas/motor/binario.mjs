@@ -14,7 +14,9 @@
  * incluido); el trozo no depende del dia anterior; tamaño 18 + 26·n; JPY con 3
  * digitos; dia vacio; y se rechazan: vela fuera del dia, desordenada o
  * repetida, OHLC incoherente, mas de 1.440, magia o version ajenas, trozo
- * truncado.
+ * truncado. C6-06: decodificar valida lo mismo que codificar (OHLC, precio
+ * positivo, minuto en el dia, orden, volumen finito ≥ 0, digitos, dia y
+ * reservado); un binario invalido no recibe manifiesto.
  */
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
 const B = await importa('lib/motor/binario.mjs')
@@ -55,4 +57,30 @@ const roto = Buffer.from(buf); roto.write('XXXX', 0, 'latin1')
 const vers = Buffer.from(buf); vers[4] = 2
 oraculo('BIN', 'decodificar rechaza magia ajena, version desconocida y trozo truncado', lanza(() => B.decodifica(roto)) && lanza(() => B.decodifica(vers)) && lanza(() => B.decodifica(buf.subarray(0, buf.length - 1))))
 oraculo('BIN', 'la huella (sha256) del trozo identifica su contenido', B.huella(buf) === B.huella(Buffer.from(buf)) && B.huella(buf) !== B.huella(B.codifica('EURUSD', DIA, eur.slice(0, 2))) && /^[0-9a-f]{64}$/.test(B.huella(buf)))
+
+titulo('3 · C6-06 (Astra, cierres-6): el decodificador valida las mismas invariantes que el codificador')
+// el trozo de 3 velas de arriba (registros en 18, 44 y 70), con UNA cosa rota cada vez
+const rompe = f => { const x = Buffer.from(buf); f(x); return x }
+const casos = [
+  ['high por debajo del open (high − open = −1, el caso de Astra)', x => x.writeInt32LE(-1, 18 + 6)],
+  ['low por encima del open (open − low = −1)', x => x.writeInt32LE(-1, 18 + 10)],
+  ['close por encima del high', x => x.writeInt32LE(50, 18 + 14)],
+  ['precio no positivo (ancla 0)', x => x.writeUInt32LE(0, 12)],
+  ['minuto fuera del dia (1.440)', x => x.writeUInt16LE(1440, 70)],
+  ['minuto repetido', x => x.writeUInt16LE(0, 44)],
+  ['minutos desordenados (5 y luego 3)', x => { x.writeUInt16LE(5, 44); x.writeUInt16LE(3, 70) }],
+  ['volumen NaN', x => x.writeDoubleLE(NaN, 18 + 18)],
+  ['volumen infinito', x => x.writeDoubleLE(Infinity, 44 + 18)],
+  ['volumen negativo', x => x.writeDoubleLE(-1, 70 + 18)],
+  ['escala (digitos) que no existe: 7', x => { x[5] = 7 }],
+  ['dia que no es una medianoche UTC', x => x.writeUInt32LE(DIA + 60, 8)],
+  ['reservado distinto de 0', x => x.writeUInt16LE(1, 6)],
+]
+for (const [que, f] of casos) {
+  const x = rompe(f)
+  oraculo('BIN', `C6-06: ${que}: decodificar lo rechaza`, lanza(() => B.decodifica(x)) && !lanza(() => B.decodifica(buf)), '')
+}
+const MF = await importa('lib/motor/manifiesto.mjs')
+const astra = rompe(x => x.writeInt32LE(-1, 18 + 6))
+oraculo('BIN', 'C6-06: un binario invalido no recibe manifiesto (creaManifiesto lo rechaza)', lanza(() => MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [{ dia: '2026-03-03', buffer: astra }] })) && !lanza(() => MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [{ dia: '2026-03-03', buffer: buf }] })))
 fin()
