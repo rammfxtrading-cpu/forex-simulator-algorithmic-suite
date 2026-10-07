@@ -28,6 +28,10 @@
  *   CSV-01: 23:60, 24:00 y 50.06 (Date.UTC los lleva al 20-jul 00:00): 4, nada;
  *   CSV-02: un maximo de 10⁹, el dia entero +3 %, una mecha de −4,5 % y una
  *   deriva por escalones de 1,5 % hasta +16 % (mediana intacta): 4, nada;
+ *   CSV-03: solo un dia interior con velas o el ultimo guardado: el lunes 27
+ *   detras del viernes 24 (domingo vacio), o con el 24 a medias: 4; reparar el
+ *   ultimo (24-jul 600 → 1440): 0; si bajo el cerrojo el dia ya no es
+ *   interior: 1, nada;
  *   60 velas planas con volumen 0: se quitan (1.380 publicadas).
  */
 import { titulo, oraculo, fin, escenario, db, guardado, REPO } from '../lib.mjs'
@@ -117,6 +121,28 @@ for (const [que, texto] of Object.entries(anomalos)) {
   const r = await corre([...ARGS(fichero(`anomalo-${que.replace(/[^a-z0-9]+/gi, '-')}.csv`, texto)), ...SUBIR])
   oraculo('IC01', `CSV-02: ${que}: rechazado entero (4) y cero subidas`, r.codigo === 4 && subidasDatos() === 0, `codigo ${r.codigo} · ${r.salida.slice(-2).join(' | ')}`)
 }
+
+titulo('3d · CSV-03 (Astra, cierres-5): solo dias interiores existentes o el ultimo; nunca extender')
+// lo guardado acaba el viernes 24-jul (el domingo 26 no esta); hasta(fin, n): el ultimo dia con n velas
+const hasta = (fin, n = 1440) => { const fin0 = Date.parse(fin + 'T00:00:00Z') / 1000; return historial().filter(v => v.time < fin0 || (v.time < fin0 + 86400 && v.time < fin0 + n * 60)) }
+const conHistoria = velas => escenario({ storage: { 'forex-data': { [RUTA]: JSON.stringify(velas) } } })
+const ARGS27 = f => ['--par', 'EURUSD', '--dia', '2026-07-27', '--csv', f]
+const LUNES = fichero('lunes-27.csv', csv(velasDe('2026-07-27')))
+conHistoria(hasta('2026-07-24'))
+const e1 = await corre([...ARGS27(LUNES), ...SUBIR])
+oraculo('IC01', 'CSV-03: lunes 27 detras del viernes 24 con el domingo 26 vacio: 4, nada subido', e1.codigo === 4 && subidasDatos() === 0, `codigo ${e1.codigo} · ${e1.salida.slice(-2).join(' | ')}`)
+conHistoria(hasta('2026-07-24', 600))
+const e2 = await corre([...ARGS27(LUNES), ...SUBIR])
+oraculo('IC01', 'CSV-03: con el ultimo dia (24-jul) a medias, importar el 27: 4, nada subido', e2.codigo === 4 && subidasDatos() === 0, `codigo ${e2.codigo} · ${e2.salida.slice(-2).join(' | ')}`)
+conHistoria(hasta('2026-07-24', 600))
+const e3 = await corre(['--par', 'EURUSD', '--dia', '2026-07-24', '--csv', fichero('viernes-24.csv', csv(velasDe('2026-07-24'))), ...SUBIR])
+oraculo('IC01', 'CSV-03 control: reparar el ultimo dia guardado (24-jul, 600 → 1440) si se publica, con 0', e3.codigo === 0 && en(guardado('EURUSD/M1/2026').velas, '2026-07-24') === 1440, `codigo ${e3.codigo} · 24-jul ${en(guardado('EURUSD/M1/2026').velas, '2026-07-24')}`)
+// bajo el cerrojo: al tomarlo, lo guardado ya no llega al 20-jul (acaba el 17): componer no extiende
+base()
+db.pausa = async c => { if (c.op === 'upload' && String(c.payload?.ruta).startsWith('_cerrojos/') && !db.cambiado) { db.cambiado = true; db.storage['forex-data'][RUTA] = JSON.stringify(hasta('2026-07-17')) } }
+const e4 = await corre([...ARGS(BUENO), ...SUBIR])
+db.pausa = null; delete db.cambiado
+oraculo('IC01', 'CSV-03 bajo el cerrojo: si al releer el 20-jul ya no es interior, no se publica (1) y lo dice', db.log.some(l => l.op === 'upload' && String(l.payload?.ruta).startsWith('_cerrojos/')) && e4.codigo === 1 && subidasDatos() === 0 && e4.salida.some(l => /bajo el cerrojo.*no extiende el historico/.test(l)), `codigo ${e4.codigo} · ${e4.salida.filter(l => /✗|✓/.test(l)).join(' | ')}`)
 
 titulo('4 · nada mejor, cerrojo y velas planas')
 base()

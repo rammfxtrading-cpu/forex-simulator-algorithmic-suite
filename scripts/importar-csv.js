@@ -23,6 +23,8 @@
 //     del ultimo cierre guardado antes de ese dia (descarta el CSV de otro par);
 //   · cada extremo a ≤ 2 % del cierre anterior y a ≤ 10 % del ultimo guardado
 //     (CSV-02); si no, el CSV entero se rechaza;
+//   · solo repara un dia con velas guardadas, interior o el ultimo: nunca
+//     extiende el historico (CSV-03), antes y bajo el cerrojo;
 //   · solo sustituye el dia si trae MAS velas que lo guardado (nunca menos).
 // Al terminar dice por cada objetivo (por defecto, el dia importado) si quedo
 // completo (calidad.estadoDia, con la lista de dias aceptados).
@@ -140,7 +142,23 @@ async function main() {
     anterior = v.close
   }
   const delDia = g => (g || []).filter(v => ymd(v.time) === dia)
+  // CSV-03 (Astra, cierres-5; CTO 7-oct): solo se repara un dia que YA tiene
+  // velas guardadas y no es posterior al ultimo dia guardado (interior o el
+  // ultimo). Nunca se extiende el historico: un hueco detras (domingo vacio,
+  // ultimo dia a medias) no se salta (la barrera de M-01). Antes de publicar y
+  // otra vez bajo el cerrojo, sobre lo releido.
+  const noReparable = g => {
+    const ultimo = g?.length ? ymd(g[g.length - 1].time) : null
+    if (!ultimo || dia > ultimo) return `el ${dia} va despues del ultimo dia guardado (${ultimo ?? 'ninguno'}): el importador no extiende el historico`
+    if (!delDia(g).length) return `el ${dia} no tiene velas guardadas: el importador solo repara dias interiores ya existentes o el ultimo`
+    return null
+  }
+  const pre = noReparable(guardadas)
+  if (pre) throw para(pre)
+  let bajoCerrojo = null
   const componer = g => {
+    bajoCerrojo = noReparable(g)
+    if (bajoCerrojo) return null
     const antes = delDia(g).length
     if (nuevas.length <= antes) return null                                   // nunca menos, ni igual
     return [...(g || []).filter(v => ymd(v.time) !== dia), ...nuevas].sort((a, b) => a.time - b.time)
@@ -160,6 +178,7 @@ async function main() {
     const r = await F.publicarAnio(sb, { pair: par, year: anio, componer, dueno: 'importar-csv', previo: leido })
     const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
     if (r.estado === 'publicado') { console.log(`✓ PUBLICADO ${par} ${dia}: ${antes} → ${nuevas.length} velas, verificado${avisos}`); final = r.final }
+    else if (r.estado === 'sin-cambios' && bajoCerrojo) { console.log(`✗ NO PUBLICADO ${par} ${dia}: al releer bajo el cerrojo, ${bajoCerrojo}`); final = r.final ?? guardadas; codigo = 1 }
     else if (r.estado === 'sin-cambios') { console.log(`✗ NO PUBLICADO ${par} ${dia}: lo guardado ya tiene tantas velas o mas que el CSV`); final = r.final ?? guardadas; codigo = 1 }
     else { console.log(`✗ PUBLICACION ${r.estado} ${par} ${dia}: ${r.problemas.join(' · ')}${avisos}`); codigo = 1 }
   }
