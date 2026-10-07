@@ -11,7 +11,8 @@
  * trozo; trozo alterado → error; manifiesto incoherente (dia de cabecera,
  * duplicado, desordenado, digitos de otro par) → error; cobertura: dias con
  * mercado sin trozo o cortos, sin el sabado ni los cerrados; A26: la version
- * fijada no cambia aunque se publique otra.
+ * fijada no cambia aunque se publique otra. C6-04: el 25-dic y el 1-ene no
+ * tienen excepcion propia: cortos y sin declarar, falta; declarados, cerrados.
  */
 import { titulo, oraculo, fin, importa } from '../lib.mjs'
 const MF = await importa('lib/motor/manifiesto.mjs')
@@ -52,6 +53,16 @@ titulo('4 · cobertura (horario v2.1; festivos solo si el manifiesto los marca)'
 const m3 = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [LUN, MAR, dia('EURUSD', '2026-03-04', 600)], cerrados: ['2026-03-06'] })
 const falta = MF.cobertura(m3, '2026-03-02', '2026-03-07')
 oraculo('MAN', 'faltan o estan cortos el 4 (600/1200) y el 5 (sin trozo); no el 6 (cerrado) ni el 7 (sabado)', JSON.stringify(falta) === JSON.stringify(['2026-03-04 (600/1200)', '2026-03-05 (sin trozo)']), JSON.stringify(falta))
+
+titulo('4b · C6-04 (Astra, cierres-6): sin tabla de festivos; solo decide el manifiesto (§ 12.10)')
+// 25-dic-2026 y 1-ene-2027 (viernes, umbral 1.000): un trozo de UNA vela a las 00:00
+for (const d of ['2026-12-25', '2027-01-01']) {
+  const uno = dia('EURUSD', d, 1)
+  const sin = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [uno] })
+  const con = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [uno], cerrados: [d] })
+  oraculo('MAN', `C6-04: ${d} con 1 vela y SIN declararlo cerrado: falta cobertura (1/1000)`, JSON.stringify(MF.cobertura(sin, d, d)) === JSON.stringify([`${d} (1/1000)`]), JSON.stringify(MF.cobertura(sin, d, d)))
+  oraculo('MAN', `C6-04: ${d} declarado cerrado en el manifiesto: sin falta`, JSON.stringify(MF.cobertura(con, d, d)) === '[]', JSON.stringify(MF.cobertura(con, d, d)))
+}
 
 titulo('5 · A26: la version fijada no cambia')
 const fijada = MF.fija(m1)

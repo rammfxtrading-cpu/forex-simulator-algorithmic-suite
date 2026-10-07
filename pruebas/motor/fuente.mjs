@@ -139,4 +139,14 @@ const rLibre = FU ? FU.avanza(libre, S('2026-03-02') + 3600, FU.creaFuente({ man
 oraculo('FUE', 'C6-03: un estado sin mercado fijado: detencion «mercado_no_fijado», estado intacto', rLibre?.detencion?.motivo === 'mercado_no_fijado' && quieto(rLibre, tl), enTexto(rLibre?.detencion))
 const rBien = FU ? FU.avanza(s0, S('2026-03-02') + 3600, fFin, { desde: S('2026-03-02') }) : null
 oraculo('FUE', 'C6-03 control: la fuente fijada en el estado avanza sin detencion', !!rBien && !rBien.detencion && rBien.estado.reloj.cursor === S('2026-03-02') + 3600 && rBien.estado.versiones.mercado?.EURUSD === MF.fija(m3), enTexto(rBien?.estado.versiones))
+
+titulo('7 · C6-04: el festivo lo decide solo el manifiesto')
+// viernes 25-dic-2026 con UNA vela a las 00:00 (el caso de Astra)
+const nav = { dia: '2026-12-25', buffer: B.codifica('EURUSD', S('2026-12-25'), M.velas('EURUSD', [{ time: S('2026-12-25'), open: '1.10000', high: '1.10000', low: '1.10000', close: '1.10000' }]).map(v => ({ ...v, volume: 1 }))) }
+for (const [que, cerrados, detiene] of [['sin declarar', [], true], ['declarado cerrado', ['2026-12-25'], false]]) {
+  const mN = mercado([nav], cerrados)
+  const fN2 = FU?.creaFuente({ manifiesto: mN, fijado: MF.fija(mN), leeTrozo: lector([nav]) })
+  const r = FU ? FU.avanza(sesion(mN), S('2026-12-25') + 3600, fN2, { desde: S('2026-12-25') }) : null
+  oraculo('FUE', `C6-04: 25-dic con 1 vela ${que}: ${detiene ? 'detencion «no_valorable», sin fin_de_datos' : 'sin detencion (cerrado: se salta)'}`, !!r && (detiene ? r.detencion?.motivo === 'no_valorable' && r.detencion?.dia === '2026-12-25' && !r.eventos.some(x => x.tipo === 'fin_de_datos') : !r.detencion), r ? `${enTexto(r.detencion)} · ${r.eventos.map(x => x.tipo).join(',')}` : '')
+}
 fin()
