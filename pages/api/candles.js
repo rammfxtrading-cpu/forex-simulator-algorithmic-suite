@@ -48,6 +48,18 @@ function unaVez(clave, trabajo) {
 // funcion comun de lib/mercado/ficheros.mjs. Si el año no esta publicado, 503
 // con mensaje. Formato (.json.gz o .json) y «no existe» frente a «no se pudo
 // leer» (D04): lib/mercado/ficheros.mjs.
+// El motivo de un fallo de lectura (lib/mercado/ficheros.mjs; ya saneado) en el
+// formato de registra: «clase codigo». Si vienen dos (version y lectura), el
+// ultimo. Los motivos propios del fichero, con un codigo fijo.
+function claseYCodigo(motivo) {
+  const m = String(motivo ?? '')
+  const x = /^(?:fichero ilegible \()?([A-Za-z]*Error) (HTTP \d{3}|[A-Z0-9_]+|otro)\)?$/.exec(m.split('; ').pop())
+  if (x) return `${x[1]} ${x[2]}`
+  if (/contenido gzip/.test(m)) return 'Lectura gzip-apagado'
+  if (/no es una lista/.test(m)) return 'Lectura no-es-lista'
+  return 'Lectura otro'
+}
+
 async function loadFromSupabase(pair, year) {
   const key = `${pair}_${year}`
   const enCache = cache.get(key)
@@ -149,7 +161,8 @@ export default async function handler(req, res) {
     const lectura = await loadFromSupabase(cleanPair, yr)    // bloque E: version por peticion
     // D04: si no se pudo leer, NO es «no hay fichero»: ni proveedor ni nada
     if (lectura.estado === 'error') {
-      console.error(`[candles] No se pudo leer ${cleanPair}/${yr}: ${lectura.motivo}`)
+      // Astra (7-oct): mismo formato que registra: «[candles] clase codigo»
+      console.error(`[candles] ${claseYCodigo(lectura.motivo)}`)
       return res.status(503).json({ error: 'No se ha podido leer el historico. Prueba de nuevo en unos segundos.' })
     }
     // Bloque D: si el año no esta publicado, 503 con mensaje; nada se reconstruye aqui

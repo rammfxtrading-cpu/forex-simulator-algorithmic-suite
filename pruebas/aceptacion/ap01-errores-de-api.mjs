@@ -174,7 +174,27 @@ escenario({ perfiles: [perfil(A)], storage: { 'forex-data': {} } })
 const w3 = await llama(candles, { method: 'GET', token: tok(A), query: { pair: 'EURUSD', timeframe: 'M1', from: '1767571200', to: '1767657600', year: '2026' } })
 oraculo('AP01', 'año sin publicar: 503 que dice que no esta disponible, sin prometer actualizacion ni plazo', w3.estado === 503 && /no esta disponible/i.test(w3.cuerpo?.error ?? '') && !/actualizaci|se publica|prueba mas tarde|mañana|pronto|diaria/i.test(w3.cuerpo?.error ?? ''), `${w3.estado} · ${w3.cuerpo?.error}`)
 
-titulo('8 · barrido de pages/api')
+titulo('8 · el log de fallo de lectura de candles: «[candles] clase codigo»; la auditoria de exito se conserva')
+// Astra (7-oct): candles.js:152 escribia «No se pudo leer PAR/AÑO: motivo». Mismo
+// formato que el resto (registra): ruta, clase y codigo. Los logs de exito del
+// wipe y del descarte de flotantes son AUDITORIA (ids y recuentos) y se quedan.
+const conTodoLog = async f => { const l = [], o = { e: console.error, w: console.warn, g: console.log }; const t = (...a) => l.push(a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' ')); console.error = t; console.warn = t; console.log = t; try { await f() } finally { console.error = o.e; console.warn = o.w; console.log = o.g } return l }
+const lecturaCandles = async storage => { escenario({ perfiles: [perfil(A)], storage: { 'forex-data': storage } }); return conTodoLog(() => llama(candles, { method: 'GET', token: tok(A), query: { pair: 'EURUSD', timeframe: 'M1', from: '1767571200', to: '1767657600', year: '2026' } })) }
+const RUTA_E = 'EURUSD/M1/2026.json'
+db.falla = null
+const fallo500 = await (async () => { const st = { [RUTA_E]: '[]' }; escenario({ perfiles: [perfil(A)], storage: { 'forex-data': st } }); db.falla = c => String(c.tabla).startsWith('storage') && c.payload === RUTA_E ? { message: `x ${MARCA}`, statusCode: '500' } : null; const l = await conTodoLog(() => llama(candles, { method: 'GET', token: tok(A), query: { pair: 'EURUSD', timeframe: 'M1', from: '1767571200', to: '1767657600', year: '2026' } })); db.falla = null; return l })()
+const gzipLog = await lecturaCandles({ [RUTA_E]: (await import('node:zlib')).gzipSync(Buffer.from('[]')) })
+const ilegibleLog = await lecturaCandles({ [RUTA_E]: `${MARCA}{no es json` })
+const deCandles = l => l.filter(x => x.startsWith('[candles]'))
+const formato = /^\[candles\] [A-Za-z]+ (HTTP \d{3}|[A-Za-z0-9_-]+)$/
+oraculo('AP01', 'Storage con 500, gzip con la compresion apagada y JSON ilegible: cada fallo, una linea «[candles] clase codigo» sin par, año, ruta ni texto ajeno', [fallo500, gzipLog, ilegibleLog].every(l => deCandles(l).length === 1 && formato.test(deCandles(l)[0]) && !/EURUSD|2026|SECRETO|forex-data/.test(deCandles(l)[0])), JSON.stringify([fallo500, gzipLog, ilegibleLog].map(deCandles)))
+escenario({ perfiles: [perfil(A), perfil(ADM, { rol_global: 'admin' })], sesion: ADM, sim_sessions: [sesionSim({ user_id: A })] })
+const auditWipe = await conTodoLog(() => llama(wipe, { method: 'POST', token: tok(ADM), body: { user_id: A, confirm_email: 'a@ejemplo.test' } }))
+escenario({ perfiles: [perfil(A)], sim_sessions: [sesionSim({ id: 'reto-f', challenge_type: '2F', challenge_phase: 1, capital: 100000, balance: 110000 })], sim_trades: [tradeSim({ session_id: 'reto-f', pnl: 10000, result: 'WIN', closed_at: '2025-03-04T12:00:00Z' })] })
+const auditFlot = await conTodoLog(() => llama(advance, { method: 'POST', token: tok(A), body: { session_id: 'reto-f', outcome: 'pass', end_timestamp: 1741100000, open_positions: [{ id: 'p1', pair: 'EUR/USD' }] } }))
+oraculo('AP01', 'se conservan los logs de auditoria de exito: «wipe ejecutado» y «descarte de flotantes»', auditWipe.some(x => /\[admin\/wipe-simulador\] wipe ejecutado/.test(x)) && auditFlot.some(x => /\[challenge\/advance\] descarte de flotantes/.test(x)), `${auditWipe.filter(x => /wipe/.test(x)).length} · ${auditFlot.filter(x => /flotantes/.test(x)).length}`)
+
+titulo('9 · barrido de pages/api')
 const rutas = []
 const recorre = d => { for (const n of readdirSync(d)) { const p = d + '/' + n; if (statSync(p).isDirectory()) recorre(p); else if (/\.m?js$/.test(n)) rutas.push(p) } }
 recorre(REPO + 'pages/api')
