@@ -83,7 +83,17 @@ try { re = await avanza('reto-p') } catch (e) { re = { estado: 'lanzo ' + (e?.na
 const hijas = db.tablas.sim_sessions.filter(x => x.challenge_parent_id === 'reto-p').length
 oraculo('AP01', 'respuesta perdida: el cierre se aplico (phase_passed); el reintento responde 409 sin escribir y sigue habiendo una sola fase hija', primero.estado === 200 && re.estado === 409 && re.cuerpo?.currentStatus === 'passed_phase' && escrituras() === antesRe && hijas === 1, `1.º ${primero.estado} ${primero.cuerpo?.action ?? ''} · reintento ${re.estado} · ${escrituras() - antesRe} escrituras · ${hijas} hija(s)`)
 
-titulo('5 · barrido de pages/api')
+titulo('5 · W-02 (Astra, 7-oct): el admin intenta borrar sus propios datos del simulador')
+// H4 dejo registra(toggleErr) en la autoproteccion, antes de declararse
+// toggleErr: ReferenceError y 500 en vez de 403.
+const wipe = (await importa('pages/api/admin/wipe-simulador.js')).default
+escenario({ perfiles: [perfil(ADM, { rol_global: 'admin', email: 'adm@ejemplo.test' })], sesion: ADM, sim_sessions: [sesionSim({ user_id: ADM })] })
+const tablasTocadas = () => db.log.filter(l => ['insert', 'update', 'delete', 'upsert'].includes(l.op)).map(l => `${l.op} ${l.tabla}`)
+let rw
+try { rw = await llama(wipe, { method: 'POST', token: tok(ADM), body: { user_id: ADM, confirm_email: 'adm@ejemplo.test' } }) } catch (e) { rw = { estado: 'lanzo ' + (e?.name ?? 'Error') } }
+oraculo('AP01', 'autoborrado: 403 con su mensaje y ninguna tabla tocada', rw.estado === 403 && /propios datos/.test(rw.cuerpo?.error ?? '') && tablasTocadas().length === 0, `${rw.estado} · ${JSON.stringify(rw.cuerpo)} · ${tablasTocadas().join(', ') || 'nada tocado'}`)
+
+titulo('6 · barrido de pages/api')
 const rutas = []
 const recorre = d => { for (const n of readdirSync(d)) { const p = d + '/' + n; if (statSync(p).isDirectory()) recorre(p); else if (/\.m?js$/.test(n)) rutas.push(p) } }
 recorre(REPO + 'pages/api')

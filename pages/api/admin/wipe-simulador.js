@@ -37,7 +37,6 @@ export default async function handler(req, res) {
 
   // Auto-proteccion: el admin no puede borrarse a si mismo
   if (user_id === user.id) {
-    registra('admin/wipe-simulador', toggleErr)
     return res.status(403).json({
       error: 'El admin no puede borrar sus propios datos del simulador'
     })
@@ -74,6 +73,7 @@ export default async function handler(req, res) {
     .eq('id', user_id)
 
   if (toggleErr) {
+    registra('admin/wipe-simulador', toggleErr)
     return res.status(500).json({
       error: 'No se ha podido quitar el acceso al simulador. No se ha borrado nada.',
     })
