@@ -15,6 +15,8 @@
  *   · Despues del ultimo dia del manifiesto: fin de datos, no un fallo.
  *   · C6-03: el estado fija su mercado (versiones.mercado, § 3.1); una fuente de
  *     otro par, de otra huella o un estado sin fijar: detencion, estado intacto.
+ *   · C6-06: un manifiesto externo con hash correcto y un trozo invalido (OHLC,
+ *     escala, reservado): trozo_alterado, sin eventos, estado identico.
  *   · A15: paso a paso (serializando en cada frontera), salto, cortes por dia y
  *     el motor con todas las velas dan el mismo estado y los mismos eventos.
  */
@@ -148,5 +150,26 @@ for (const [que, cerrados, detiene] of [['sin declarar', [], true], ['declarado 
   const fN2 = FU?.creaFuente({ manifiesto: mN, fijado: MF.fija(mN), leeTrozo: lector([nav]) })
   const r = FU ? FU.avanza(sesion(mN), S('2026-12-25') + 3600, fN2, { desde: S('2026-12-25') }) : null
   oraculo('FUE', `C6-04: 25-dic con 1 vela ${que}: ${detiene ? 'detencion «no_valorable», sin fin_de_datos' : 'sin detencion (cerrado: se salta)'}`, !!r && (detiene ? r.detencion?.motivo === 'no_valorable' && r.detencion?.dia === '2026-12-25' && !r.eventos.some(x => x.tipo === 'fin_de_datos') : !r.detencion), r ? `${enTexto(r.detencion)} · ${r.eventos.map(x => x.tipo).join(',')}` : '')
+}
+
+titulo('8 · C6-06 (Astra, cierres-6/7): manifiesto externo con hash correcto y trozo invalido → trozo_alterado')
+// un artefacto de otro productor: bytes integros (sha256 correcto) y contenido financiero invalido. No pasa por
+// creaManifiesto (que ya lo rechaza): se rehace aqui su sha, su nombre y la huella del contenido canonico
+const { createHash } = await import('node:crypto')
+const bueno = MF.creaManifiesto({ par: 'EURUSD', version: 'externo', trozos: [LUN] })
+const externo = buf => {
+  const m = structuredClone(bueno)
+  m.dias[0].sha256 = B.huella(buf); m.dias[0].nombre = `${m.dias[0].dia}.${m.dias[0].sha256}.bin`
+  m.huella = createHash('sha256').update(JSON.stringify({ esquema: m.esquema, par: m.par, version: m.version, digitos: m.digitos, dias: m.dias, cerrados: m.cerrados })).digest('hex')
+  return m
+}
+for (const [que, f] of [['OHLC (high − open = −1)', x => x.writeInt32LE(-1, 18 + 6)], ['escala 4', x => x.writeUInt8(4, 5)], ['reservado 1', x => x.writeUInt16LE(1, 6)]]) {
+  const malo = Buffer.from(LUN.buffer); f(malo)
+  const m = externo(malo)
+  ver(`control ${que}: el manifiesto externo pasa su huella, el sha del trozo coincide y creaManifiesto lo rechazaria`, MF.validaManifiesto(m) === true && B.huella(malo) === m.dias[0].sha256 && lanza(() => MF.creaManifiesto({ par: 'EURUSD', version: 'externo', trozos: [{ dia: LUN.dia, buffer: malo }] })))
+  const fx = FU?.creaFuente({ manifiesto: m, fijado: MF.fija(m), leeTrozo: lector([{ dia: LUN.dia, buffer: malo }]) })
+  const s0 = sesion(m), t0 = M.serializa(s0)
+  const r = FU ? FU.avanza(s0, S('2026-03-02') + 3600, fx, { desde: S('2026-03-02') }) : null
+  oraculo('FUE', `C6-06: ${que} con hash correcto: detencion «trozo_alterado», cero eventos y estado identico`, r?.detencion?.motivo === 'trozo_alterado' && r.detencion.dia === '2026-03-02' && r.eventos.length === 0 && M.serializa(r.estado) === t0, r ? `${enTexto(r.detencion)} · ${r.eventos.length} eventos` : '')
 }
 fin()
