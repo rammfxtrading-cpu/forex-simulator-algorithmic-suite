@@ -23,7 +23,8 @@
  *   rechazos con codigo 4 y cero subidas: una fila de otro dia, un minuto
  *   repetido, OHLC incoherente, «Local time», precio de otro par (157,4 en
  *   EURUSD), un objetivo de otro par;
- *   un CSV con menos velas que lo guardado: no publica, codigo 1;
+ *   un CSV con menos velas que lo guardado (le faltan minutos guardados): 4;
+ *   con los mismos minutos: nada nuevo, codigo 1;
  *   cerrojo puesto: «ocupado», cero subidas de datos, codigo 1;
  *   CSV-01: 23:60, 24:00 y 50.06 (Date.UTC los lleva al 20-jul 00:00): 4, nada;
  *   CSV-02: un maximo de 10⁹, el dia entero +3 %, una mecha de −4,5 % y una
@@ -34,6 +35,9 @@
  *   interior: 1, nada;
  *   CSV-04: --objetivo ',' (con 900 guardadas y un CSV de 1.000), vacio, con
  *   elementos vacios o sin valor: 4, nada leido ni subido;
+ *   C6-01: el CSV trae todos los minutos guardados del dia con OHLC a ≤ 1 pip;
+ *   se publican los guardados tal cual + los minutos nuevos. Desplazado (le
+ *   faltan 00:00–03:59), a 2 pips o discrepante bajo el cerrojo: 4, nada;
  *   60 velas planas con volumen 0: se quitan (1.380 publicadas).
  */
 import { titulo, oraculo, fin, escenario, db, guardado, REPO } from '../lib.mjs'
@@ -146,6 +150,26 @@ const e4 = await corre([...ARGS(BUENO), ...SUBIR])
 db.pausa = null; delete db.cambiado
 oraculo('IC01', 'CSV-03 bajo el cerrojo: si al releer el 20-jul ya no es interior, no se publica (1) y lo dice', db.log.some(l => l.op === 'upload' && String(l.payload?.ruta).startsWith('_cerrojos/')) && e4.codigo === 1 && subidasDatos() === 0 && e4.salida.some(l => /bajo el cerrojo.*no extiende el historico/.test(l)), `codigo ${e4.codigo} · ${e4.salida.filter(l => /✗|✓/.test(l)).join(' | ')}`)
 
+titulo('3f · C6-01 (Astra, cierres-6): reparar nunca cambia ni borra una vela guardada')
+// lo guardado del 20-jul: 900 velas, 00:00–14:59, a 1,1
+const del20 = () => (guardado('EURUSD/M1/2026').velas || []).filter(v => new Date(v.time * 1000).toISOString().startsWith('2026-07-20'))
+base()
+const c1 = await corre([...ARGS(fichero('desplazado.csv', csv(velasDe('2026-07-20', 1200, 240)))), ...SUBIR])
+oraculo('IC01', 'C6-01: CSV de 1.200 velas de 04:00 a 23:59 (le faltan las 240 guardadas de 00:00 a 03:59): 4 y cero subidas', c1.codigo === 4 && subidasDatos() === 0 && del20().length === 900 && del20()[0].time === Date.parse('2026-07-20T00:00:00Z') / 1000, `codigo ${c1.codigo} · ${c1.salida.slice(-2).join(' | ')}`)
+base()
+const c2 = await corre([...ARGS(fichero('dos-pips.csv', csv(velasDe('2026-07-20', 1440, 0, 1.1002)))), ...SUBIR])
+oraculo('IC01', 'C6-01: los minutos guardados vienen a 2 pips (1,1002 frente a 1,1): 4 y cero subidas', c2.codigo === 4 && subidasDatos() === 0, `codigo ${c2.codigo} · ${c2.salida.slice(-2).join(' | ')}`)
+base()
+const c3 = await corre([...ARGS(fichero('un-pip.csv', csv(velasDe('2026-07-20', 1440, 0, 1.1001)))), ...SUBIR])
+const p20 = del20()
+oraculo('IC01', 'C6-01: a 1 pip exacto pasa; se publican las 900 guardadas TAL CUAL (1,1) y los 540 minutos nuevos del CSV (1,1001)', c3.codigo === 0 && p20.length === 1440 && p20.slice(0, 900).every(v => v.close === 1.1 && v.high === 1.1 && v.volume === 1) && p20.slice(900).every(v => v.close === 1.1001), `codigo ${c3.codigo} · ${p20.length} velas · ${p20[0]?.close} / ${p20[900]?.close}`)
+// bajo el cerrojo: otro escritor cambio el 20-jul a 1,1003 (3 pips del CSV) antes de que lo tomemos
+base()
+db.pausa = async c => { if (c.op === 'upload' && String(c.payload?.ruta).startsWith('_cerrojos/') && !db.cambiado) { db.cambiado = true; db.storage['forex-data'][RUTA] = JSON.stringify(historial().map(v => (new Date(v.time * 1000).toISOString().startsWith('2026-07-20') ? { ...v, open: 1.1003, high: 1.1003, low: 1.1003, close: 1.1003 } : v))) } }
+const c4 = await corre([...ARGS(BUENO), ...SUBIR])
+db.pausa = null; delete db.cambiado
+oraculo('IC01', 'C6-01 bajo el cerrojo: lo releido discrepa del CSV en mas de 1 pip: 4 y cero subidas de datos', db.log.some(l => l.op === 'upload' && String(l.payload?.ruta).startsWith('_cerrojos/')) && c4.codigo === 4 && subidasDatos() === 0 && c4.salida.some(l => /bajo el cerrojo/.test(l)), `codigo ${c4.codigo} · ${c4.salida.filter(l => /✗|✓/.test(l)).join(' | ')}`)
+
 titulo('3e · CSV-04 (Astra, cierres-5): --objetivo con al menos un elemento valido y sin vacios')
 // el caso de Astra: 900 guardadas, CSV de 1.000 (aun corto) y --objetivo ','
 const MIL = fichero('mil.csv', csv(velasDe('2026-07-20', 1000)))
@@ -158,7 +182,10 @@ for (const extra of [['--objetivo', ','], ['--objetivo', ''], ['--objetivo', 'EU
 titulo('4 · nada mejor, cerrojo y velas planas')
 base()
 const r4 = await corre([...ARGS(fichero('menos.csv', csv(velasDe('2026-07-20', 800)))), ...SUBIR])
-oraculo('IC01', 'un CSV con menos velas que lo guardado (800 < 900): no publica y sale con 1', r4.codigo === 1 && subidasDatos() === 0 && en(guardado('EURUSD/M1/2026').velas, '2026-07-20') === 900, `codigo ${r4.codigo} · ${r4.salida.slice(-2).join(' | ')}`)
+oraculo('IC01', 'un CSV con menos velas que lo guardado (800 < 900; le faltan minutos guardados, C6-01): no publica y sale con 4', r4.codigo === 4 && subidasDatos() === 0 && en(guardado('EURUSD/M1/2026').velas, '2026-07-20') === 900, `codigo ${r4.codigo} · ${r4.salida.slice(-2).join(' | ')}`)
+base()
+const r4b = await corre([...ARGS(fichero('igual.csv', csv(velasDe('2026-07-20', 900)))), ...SUBIR])
+oraculo('IC01', 'un CSV con los mismos 900 minutos que lo guardado: nada nuevo, no publica y sale con 1', r4b.codigo === 1 && subidasDatos() === 0, `codigo ${r4b.codigo} · ${r4b.salida.slice(-2).join(' | ')}`)
 escenario({ storage: { 'forex-data': { [RUTA]: JSON.stringify(historial()), '_cerrojos/EURUSD_2026.json': JSON.stringify({ dueno: 'otro', desde: '2026-10-07T11:00:00Z' }) } } })
 const r5 = await corre([...ARGS(BUENO), ...SUBIR])
 oraculo('IC01', 'cerrojo puesto: «ocupado», cero subidas de datos y codigo 1', r5.codigo === 1 && subidasDatos() === 0 && r5.salida.some(l => /ocupado|cerrojo/.test(l)), `codigo ${r5.codigo}`)

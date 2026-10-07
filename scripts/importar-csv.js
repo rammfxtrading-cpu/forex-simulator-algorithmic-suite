@@ -25,10 +25,13 @@
 //     (CSV-02); si no, el CSV entero se rechaza;
 //   · solo repara un dia con velas guardadas, interior o el ultimo: nunca
 //     extiende el historico (CSV-03), antes y bajo el cerrojo;
-//   · solo sustituye el dia si trae MAS velas que lo guardado (nunca menos).
+//   · reparar nunca cambia ni borra una vela guardada (C6-01): el CSV trae
+//     todos los minutos guardados del dia, con OHLC a ≤ 1 pip; se publican
+//     las guardadas tal cual + los minutos nuevos (antes y bajo el cerrojo).
 // Al terminar dice por cada objetivo (por defecto, el dia importado) si quedo
 // completo (calidad.estadoDia, con la lista de dias aceptados).
-// Codigos: 0 bien · 1 no publicado, objetivo incompleto o cerrojo · 4 entrada no valida.
+// Codigos: 0 bien · 1 no publicado, objetivo incompleto o cerrojo · 4 entrada no
+// valida (tambien si el CSV no casa con lo guardado, aunque sea bajo el cerrojo).
 // Clave por nombre (como el resto de scripts), nunca impresa. MERCADO_GZIP: sin tocar.
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
@@ -86,12 +89,16 @@ function leeCsv(texto, dia) {
   }
   if (velas.length > 1440) throw para(`${velas.length} minutos: un dia tiene como mucho 1.440`)
   const planas = velas.filter(x => x.volume === 0 && x.open === x.high && x.high === x.low && x.low === x.close)
-  return { velas: velas.filter(x => !planas.includes(x)), planas: planas.length }
+  return { velas: velas.filter(x => !planas.includes(x)), planas: planas.length, todas: velas }
 }
 
 // CSV-02: umbrales de plausibilidad (fraccion). Un minuto de FX no se mueve un
 // 2 %; un dia no se aleja un 10 % del cierre anterior (como la mediana).
 const SALTO_MAX = 0.02, BANDA_MAX = 0.10
+// precios en ticks del par (enteros): 3 decimales los pares con JPY, 5 el resto
+const DIGITOS = par => (par.endsWith('JPY') ? 3 : 5)
+const PIP_TICKS = 10
+let ticks = null                                // se fija con el par en main()
 const mediana = xs => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : NaN }
 const ymd = t => new Date(t * 1000).toISOString().slice(0, 10)
 const hm = t => new Date(t * 1000).toISOString().slice(11, 16)
@@ -111,7 +118,8 @@ async function main() {
   if (objetivos.some(x => !x)) throw para(`--objetivo «${String(valorObjetivo).slice(0, 80)}»: lista vacia o con elementos vacios`)
   for (const o of objetivos) { const m = /^([A-Z]{6}):(.+)$/.exec(o); if (!m || m[1] !== par || !fechaOk(m[2]) || m[2].slice(0, 4) !== dia.slice(0, 4)) throw para(`--objetivo ${o}: tiene que ser ${par}:AAAA-MM-DD del mismo año`) }
   if (!fs.existsSync(ruta)) throw para(`no existe el fichero ${path.basename(ruta)}`)
-  const { velas: nuevas, planas } = leeCsv(fs.readFileSync(ruta, 'utf8'), dia)
+  ticks = x => Math.round(x * 10 ** DIGITOS(par))
+  const { velas: nuevas, planas, todas } = leeCsv(fs.readFileSync(ruta, 'utf8'), dia)
   console.log(`CSV ${path.basename(ruta)}: ${nuevas.length} velas del ${dia}${planas ? ` (${planas} plana(s) con volumen 0, fuera)` : ''}${nuevas.length ? `, de ${hm(nuevas[0].time)} a ${hm(nuevas[nuevas.length - 1].time)} UTC` : ''}`)
   if (!nuevas.length) throw para('el CSV no trae ninguna vela (quitadas las planas)')
 
@@ -158,33 +166,51 @@ async function main() {
     if (!delDia(g).length) return `el ${dia} no tiene velas guardadas: el importador solo repara dias interiores ya existentes o el ultimo`
     return null
   }
+  // C6-01 (Astra, cierres-6; CTO 7-oct): reparar nunca cambia ni borra una vela
+  // guardada. El CSV trae TODOS los minutos guardados del dia (planas incluidas)
+  // y en ellos su OHLC coincide con lo guardado a ≤ 1 pip (el volumen no se
+  // compara). Se publican las guardadas TAL CUAL mas los minutos nuevos.
+  const csvPorMinuto = new Map(todas.map(v => [v.time, v]))
+  const discrepa = g => {
+    for (const s of delDia(g)) {
+      const c = csvPorMinuto.get(s.time)
+      if (!c) return `el CSV no trae el minuto guardado ${hm(s.time)} UTC: reparar no puede borrar velas`
+      for (const k of ['open', 'high', 'low', 'close']) if (Math.abs(ticks(c[k]) - ticks(s[k])) > PIP_TICKS) return `minuto ${hm(s.time)} UTC: ${k} del CSV ${c[k]} frente a ${s[k]} guardado (mas de 1 pip): reparar no puede cambiar velas`
+    }
+    return null
+  }
   const pre = noReparable(guardadas)
   if (pre) throw para(pre)
-  let bajoCerrojo = null
+  const preDiscrepa = discrepa(guardadas)
+  if (preDiscrepa) throw para(preDiscrepa)
+  let bajoCerrojo = null, bajoCerrojoCodigo = 1
   const componer = g => {
-    bajoCerrojo = noReparable(g)
+    bajoCerrojo = noReparable(g); bajoCerrojoCodigo = 1
     if (bajoCerrojo) return null
-    const antes = delDia(g).length
-    if (nuevas.length <= antes) return null                                   // nunca menos, ni igual
-    return [...(g || []).filter(v => ymd(v.time) !== dia), ...nuevas].sort((a, b) => a.time - b.time)
+    bajoCerrojo = discrepa(g); bajoCerrojoCodigo = 4                          // C6-01, otra vez sobre lo releido
+    if (bajoCerrojo) return null
+    const guardadasDia = delDia(g), tiene = new Set(guardadasDia.map(v => v.time))
+    const nuevos = nuevas.filter(v => !tiene.has(v.time))
+    if (!nuevos.length) return null                                           // nada nuevo que añadir
+    return [...(g || []).filter(v => ymd(v.time) !== dia), ...guardadasDia, ...nuevos].sort((a, b) => a.time - b.time)
   }
   const antes = delDia(guardadas).length
   let final = guardadas, codigo = 0
   if (!SUBIR) {
     const previsto = componer(guardadas)
-    if (!previsto) { console.log(`[SECO] no se publicaria: el CSV trae ${nuevas.length} velas y lo guardado del ${dia} tiene ${antes}`); codigo = 1 }
+    if (!previsto) { console.log(`[SECO] no se publicaria: el CSV no trae minutos nuevos (${nuevas.length} velas; lo guardado del ${dia} tiene ${antes})`); codigo = 1 }
     else {
       const v = C.validaParaPublicar(previsto, leido.estado === 'ok' ? guardadas : null, { anio })
-      console.log(`[SECO] ${v.ok ? 'publicaria' : 'NO publicaria'} ${par} ${dia}: ${antes} → ${nuevas.length} velas${v.ok ? '' : ` — ${v.problemas.join(' · ')}`}`)
+      console.log(`[SECO] ${v.ok ? 'publicaria' : 'NO publicaria'} ${par} ${dia}: ${antes} → ${delDia(previsto).length} velas${v.ok ? '' : ` — ${v.problemas.join(' · ')}`}`)
       if (!v.ok) codigo = 1
       else final = previsto
     }
   } else {
     const r = await F.publicarAnio(sb, { pair: par, year: anio, componer, dueno: 'importar-csv', previo: leido })
     const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
-    if (r.estado === 'publicado') { console.log(`✓ PUBLICADO ${par} ${dia}: ${antes} → ${nuevas.length} velas, verificado${avisos}`); final = r.final }
-    else if (r.estado === 'sin-cambios' && bajoCerrojo) { console.log(`✗ NO PUBLICADO ${par} ${dia}: al releer bajo el cerrojo, ${bajoCerrojo}`); final = r.final ?? guardadas; codigo = 1 }
-    else if (r.estado === 'sin-cambios') { console.log(`✗ NO PUBLICADO ${par} ${dia}: lo guardado ya tiene tantas velas o mas que el CSV`); final = r.final ?? guardadas; codigo = 1 }
+    if (r.estado === 'publicado') { console.log(`✓ PUBLICADO ${par} ${dia}: ${antes} → ${delDia(r.final).length} velas, verificado${avisos}`); final = r.final }
+    else if (r.estado === 'sin-cambios' && bajoCerrojo) { console.log(`✗ NO PUBLICADO ${par} ${dia}: al releer bajo el cerrojo, ${bajoCerrojo}`); final = r.final ?? guardadas; codigo = bajoCerrojoCodigo }
+    else if (r.estado === 'sin-cambios') { console.log(`✗ NO PUBLICADO ${par} ${dia}: el CSV no trae minutos nuevos frente a lo guardado`); final = r.final ?? guardadas; codigo = 1 }
     else { console.log(`✗ PUBLICACION ${r.estado} ${par} ${dia}: ${r.problemas.join(' · ')}${avisos}`); codigo = 1 }
   }
 
