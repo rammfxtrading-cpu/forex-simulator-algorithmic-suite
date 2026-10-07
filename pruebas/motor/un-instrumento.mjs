@@ -230,4 +230,27 @@ titulo('A17 · cotizacion vieja: precio_cambiado, nunca un fill al precio viejo'
   const r2 = ap(s, { tipo: 'abrir', orden: 'mercado', lado: 'BUY', lotes: '1', cotizadoEn: s.e.reloj.cursor })
   oraculo('A17', 'recotizado (cursor vigente): entra a 1,10503', tx('EURUSD', fills(r2)[0]?.precio) === '1.10503')
 }
+
+titulo('C6-07 (Astra, cierres-6): modificar un limit hasta dejarlo ejecutable = crearlo ejecutable')
+{
+  // costes@1: bid 1,10000, ask 1,10003. Pendientes que se modifican al precio de 1,11000 (BUY) / 1,09000 (SELL)
+  const conLimit = (lado, precio, extra = {}, capital = '100000') => { const s = sesion({ capital, filas: [plana('1.10000'), plana('1.10000')] }); ap(s, { tipo: 'abrir', orden: 'limit', lado, lotes: '1', precio, ...extra }); return s }
+  const b = conLimit('BUY', '1.09000'), cursor = b.e.reloj.cursor
+  const rb = ap(b, { tipo: 'modificar', id: 'o1', precio: '1.11000' })
+  const creada = pendiente('BUY', 'limit', '1.11000', plana('1.10000'))
+  oraculo('A01', 'C6-07: BUY LIMIT 1,09000 modificado a 1,11000: fill YA al ask vigente 1,10003 (como al crearlo), sin pendiente', rb.resultado === 'aceptado' && fills(rb).length === 1 && tx('EURUSD', fills(rb)[0].precio) === '1.10003' && tx('EURUSD', fills(creada.c)[0]?.precio) === '1.10003' && b.e.ordenes.length === 0 && b.e.posiciones.length === 1, `${JSON.stringify(rb.resultado)} · ${rb.eventos.map(x => x.tipo).join(',')} · ${tx('EURUSD', fills(rb)[0]?.precio)}`)
+  oraculo('A01', 'C6-07: el fill lleva la orden (o1), a la hora del comando (cursor + 60), y la posicion la comision de apertura', fills(rb)[0]?.orden === 'o1' && fills(rb)[0]?.en?.t === cursor + 60 && fills(rb)[0]?.comision_µ === 3_000_000n, JSON.stringify(fills(rb)[0]?.en))
+  const v = conLimit('SELL', '1.11000')
+  const rv = ap(v, { tipo: 'modificar', id: 'o1', precio: '1.09000' })
+  oraculo('A01', 'C6-07: SELL LIMIT 1,11000 modificado a 1,09000: fill YA al bid vigente 1,10000', tx('EURUSD', fills(rv)[0]?.precio) === '1.10000' && v.e.ordenes.length === 0, rv.eventos.map(x => x.tipo).join(','))
+  const lado = conLimit('BUY', '1.09000')
+  const rl = ap(lado, { tipo: 'modificar', id: 'o1', precio: '1.11000', sl: '1.10100' })
+  oraculo('A01', 'C6-07: admision al precio vigente: SL 1,10100 por encima de la entrada real (1,10003): precio_invalido y la orden sigue como estaba', rl.resultado?.rechazado === 'precio_invalido' && lado.e.ordenes.length === 1 && tx('EURUSD', lado.e.ordenes[0].precio) === '1.09000' && lado.e.posiciones.length === 0, JSON.stringify(rl.resultado))
+  const pobre = conLimit('BUY', '1.09000', {}, '1000')
+  const rm = ap(pobre, { tipo: 'modificar', id: 'o1', precio: '1.11000' })
+  oraculo('A01', 'C6-07: margen: con 1.000 de capital (hacen falta ~1.100), margen_insuficiente y la orden sigue como estaba', rm.resultado?.rechazado === 'margen_insuficiente' && pobre.e.ordenes.length === 1 && tx('EURUSD', pobre.e.ordenes[0].precio) === '1.09000', JSON.stringify(rm.resultado))
+  const quieta = conLimit('BUY', '1.09000')
+  const rq = ap(quieta, { tipo: 'modificar', id: 'o1', precio: '1.09500' })
+  oraculo('A01', 'C6-07 control: modificarlo a 1,09500 (no ejecutable): solo orden_modificada, sigue pendiente', rq.eventos.map(x => x.tipo).join() === 'orden_modificada' && quieta.e.ordenes.length === 1 && quieta.e.posiciones.length === 0)
+}
 fin()
