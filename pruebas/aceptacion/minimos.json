@@ -33,5 +33,6 @@
   "s05-logs": 3,
   "sp01-sonda-proveedor": 9,
   "sp02-sonda-educada": 7,
-  "u01-auto-break-even": 1
+  "u01-auto-break-even": 1,
+  "wf01-workflow-manual": 11
 }

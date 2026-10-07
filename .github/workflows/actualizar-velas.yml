@@ -1,10 +1,29 @@
-name: Actualizar velas (diario)
+name: Actualizar velas (manual)
 
+# CTO, 7-oct-2026: SIN disparo programado. Desde el equipo de trabajo el
+# proveedor responde 429 a la primera peticion; se prueba desde Actions, con
+# otra IP de salida, y solo a mano (Actions → este workflow → Run workflow):
+#   · modo sonda: scripts/sonda-proveedor.js con UN dia (EURUSD 2026-07-20).
+#     No lee ni escribe Storage y este paso NO recibe la clave de servicio.
+#   · modo recuperar: scripts/actualizar-diario.js --subir --pares <PAR>, con
+#     UN solo par por ejecucion y MERCADO_GZIP sin definir.
+# Ninguna clave ni URL en el log. Desde aqui no se libera ningun cerrojo.
 on:
-  schedule:
-    - cron: '0 6 * * *'
-    - cron: '0 14 * * *'
   workflow_dispatch:
+    inputs:
+      modo:
+        description: 'sonda (EURUSD 2026-07-20, sin Storage ni clave) o recuperar (un par)'
+        required: true
+        type: choice
+        options:
+          - sonda
+          - recuperar
+        default: sonda
+      pares:
+        description: 'Solo en recuperar: UN par, p. ej. AUDUSD'
+        required: false
+        type: string
+        default: ''
 
 concurrency:
   group: actualizar-velas
@@ -26,8 +45,31 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Ejecutar actualizacion incremental
+      - name: Sonda del proveedor (un dia, sin Storage ni clave)
+        if: ${{ inputs.modo == 'sonda' }}
+        run: |
+          set +e
+          node scripts/sonda-proveedor.js EURUSD:2026-07-20
+          c=$?
+          echo "Codigo de salida: $c"
+          exit $c
+
+      - name: Recuperar un par
+        if: ${{ inputs.modo == 'recuperar' }}
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/actualizar-diario.js --subir
+          PARES: ${{ inputs.pares }}
+        run: |
+          # >>> valida-pares
+          if ! [[ "$PARES" =~ ^[A-Z]{6}$ ]]; then
+            echo "pares: hace falta UN solo par, en mayusculas (p. ej. AUDUSD). No se ha hecho nada."
+            exit 4
+          fi
+          # <<< valida-pares
+          unset MERCADO_GZIP
+          set +e
+          node scripts/actualizar-diario.js --subir --pares "$PARES"
+          c=$?
+          echo "Codigo de salida: $c"
+          exit $c
