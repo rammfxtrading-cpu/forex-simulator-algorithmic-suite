@@ -154,7 +154,8 @@ export default async function handler(req, res) {
     }
     // Bloque D: si el año no esta publicado, 503 con mensaje; nada se reconstruye aqui
     if (lectura.estado === 'no-existe' || !lectura.velas?.length) {
-      return res.status(503).json({ error: `El historico de ${cleanPair} ${yr} todavia no esta disponible. Se publica con la actualizacion diaria; prueba mas tarde.` })
+      // W-03 (Astra, 7-oct): el estado, sin prometer cadencia ni plazo
+      return res.status(503).json({ error: `El historico de ${cleanPair} ${yr} no esta disponible.` })
     }
     const m1 = lectura.velas
 

@@ -169,7 +169,12 @@ for (const [ruta, que, metodo, token, datos, esperado, prepara] of casos) {
 }
 oraculo('AP01', `${casos.length} retornos tempranos de las ${rutasVistas.size} rutas: cada uno con su codigo, un «error» controlado y sin excepcion`, rutasVistas.size === 10 && malos.length === 0, malos.join(' · ') || `${casos.length} casos`)
 
-titulo('7 · barrido de pages/api')
+titulo('7 · W-03 (Astra, 7-oct): el 503 de un año sin publicar no promete nada')
+escenario({ perfiles: [perfil(A)], storage: { 'forex-data': {} } })
+const w3 = await llama(candles, { method: 'GET', token: tok(A), query: { pair: 'EURUSD', timeframe: 'M1', from: '1767571200', to: '1767657600', year: '2026' } })
+oraculo('AP01', 'año sin publicar: 503 que dice que no esta disponible, sin prometer actualizacion ni plazo', w3.estado === 503 && /no esta disponible/i.test(w3.cuerpo?.error ?? '') && !/actualizaci|se publica|prueba mas tarde|mañana|pronto|diaria/i.test(w3.cuerpo?.error ?? ''), `${w3.estado} · ${w3.cuerpo?.error}`)
+
+titulo('8 · barrido de pages/api')
 const rutas = []
 const recorre = d => { for (const n of readdirSync(d)) { const p = d + '/' + n; if (statSync(p).isDirectory()) recorre(p); else if (/\.m?js$/.test(n)) rutas.push(p) } }
 recorre(REPO + 'pages/api')
