@@ -634,9 +634,23 @@ En cada punto *s*, en este orden:
 - **Admisión:** margen libre = equity del conjunto − Σ margen usado de todas las posiciones de todos los pares; se admite si margen libre ≥ margen requerido (§ 3.7).
 - **La sesión carga** los datos de los pares operados, de los de conversión (§ 3.6) y de los base→USD de sus cruces (AUDUSD para AUDCAD, GBPUSD para GBPJPY), y fija la versión de todos en `versiones.mercado` (§ 3.1, A26).
 
-**PENDIENTE (P-13a):** el **fill de una pendiente** no ocurre «en el cursor de un comando», sino dentro de una vela. Falta decidir qué precio base→USD fija su margen: el de la apertura del minuto del par base→USD (como la conversión en las fases 1–3) o su precio en la fracción del fill. **Propuesta:** la apertura del minuto, por coherencia con § 3.6.
+**P-13a (decidido, CTO 7-oct):** el **fill de una pendiente** no ocurre en el cursor de un comando, sino dentro de una vela: su margen se fija con el **bid del par base→USD en la apertura de ese minuto** (el mismo instante que la conversión de las fases 1–3, § 3.6). Sin vela del par base→USD en ese minuto en horario de mercado, el minuto queda sin consumir (`no_valorable`, § 3.5), como cualquier dato que falta.
 
-**PENDIENTE (P-13b):** para los pares con USD cotizado (EURUSD, GBPUSD, AUDUSD, NZDUSD), el par base→USD es el propio par. La regla de § 13.3 usa su **bid** en el cursor; el motor de un instrumento usa hoy el **precio de entrada** (ask en un BUY), y su diferencia es el spread. **Propuesta:** aplicar el bid también ahí, para una sola regla, y ajustar el motor de un par cuando se escriba el multipar.
+**P-13b (decidido, CTO 7-oct): una sola regla, el bid, también en los pares con USD cotizado** (EURUSD, GBPUSD, AUDUSD, NZDUSD), cuyo par base→USD es el propio par: a mercado, su bid en el cursor del comando; una pendiente, su bid en la apertura del minuto del fill (P-13a).
+
+**Cambio sobre una pieza aprobada (para Astra).** El motor de un instrumento (pieza 2, `lib/motor/motor.mjs`, `margen_µ`) calcula hoy el nocional de esos pares con el **precio de entrada** (ask en un BUY, bid en un SELL; en una pendiente, el precio de su fill) y recalcula el margen usado desde la entrada de cada posición. Con P-13b:
+- el nocional usa el **bid** (en el cursor, o en la apertura del minuto del fill);
+- cada posición **guarda su margen fijado** (`margen_µ`) al abrirse: el bid de ese instante no se puede reconstruir desde la entrada;
+- USD como base (USDJPY, USDCHF, USDCAD): sin cambio (lotes × 100.000).
+
+| Caso (`costes@1`, 1 lote, apalancamiento 100) | Hoy | Con P-13b |
+|---|---|---|
+| EURUSD BUY a mercado; bid 1,10000, ask 1,10003 | 100.000 × 1,10003 / 100 = **1.100,03** USD | 100.000 × 1,10000 / 100 = **1.100,00** USD |
+| EURUSD SELL a mercado; bid 1,10000 | **1.100,00** (entrada = bid) | **1.100,00** (sin cambio) |
+| EURUSD BUY LIMIT 1,09900 llenada en la vela O 1,09950 H 1,09960 L 1,09880 C 1,09900 (A01 b: fill al ask 1,09900) | 100.000 × 1,09900 / 100 = **1.099,00** | bid de apertura del minuto 1,09950 → **1.099,50** |
+| USDJPY BUY 1 | **1.000,00** | **1.000,00** (sin cambio) |
+
+La diferencia en un BUY a mercado es el spread por lote (3 USD de nocional, 0,03 de margen en EURUSD); en una pendiente, la distancia entre la apertura del minuto y el fill. **Ningún oráculo aprobado depende de esas cifras** (buscado en `pruebas/motor/` y en § 10): el único con margen insuficiente (C6-07, 1.000 de capital frente a unos 1.100) da lo mismo con las dos reglas. **Se exigirá como prueba (A37)** que una cartera de un solo par dé exactamente lo mismo que el motor de un par ya ajustado.
 
 ### 13.4 Elección del camino de cada par (aproximación declarada)
 
@@ -649,7 +663,7 @@ En cada punto *s*, en este orden:
 
 Posiciones abiertas + órdenes pendientes de todos los pares ≤ **50** (§ 12.7). Se comprueba **al crear**: un `abrir` (a mercado o pendiente) que haría 51 se rechaza con `tope_alcanzado`. El fill de una pendiente no cambia la cuenta (una orden pasa a ser una posición). Un cierre o una cancelación la bajan.
 
-### 13.6 Casos de aceptación (A29–A36)
+### 13.6 Casos de aceptación (A29–A37)
 
 Salvo que se diga: capital 100.000; **sin spread y sin comisión** (aislado), 1 lote = 1 USD por tick en los pares con USD cotizado y 5 dígitos; el reto con suelo diario = saldo de medianoche − 5.000.
 
@@ -661,10 +675,11 @@ Salvo que se diga: capital 100.000; **sin spread y sin comisión** (aislado), 1 
 | **A32** — breach dentro del camino sincronizado | A30 con suelo **98.500**. | Los puntos de la fase 2 son *m*/12.000 con *m* par (AUDUSD) o múltiplo de 3 (EURUSD). Primer punto con equity < 98.500: *m* = 9.002, *s* = **4.501/6.000**: AUDUSD **0,65499** (4.501 ticks), EURUSD **1,07000** (⌊4.000 · 4.501/6.000⌋ = 3.000 ticks); equity **98.499**. Liquidación de los dos en esos precios: −4.501 y +3.000; saldo **98.499**. (En *m* = 9.000, 98.500 exacto: no incumple.) Secuencial, en contraste: AUDUSD primero, breach en AUDUSD 0,68499 con EURUSD en 1,10000; EURUSD primero, breach en AUDUSD 0,64499 con EURUSD en 1,06000. Tres puntos distintos: solo el sincronizado vale. |
 | **A33** — breach frente a objetivo entre dos pares | Reto: saldo de medianoche **120.000** (suelo **115.000**), objetivo 110.000, con el cuarto día ya contado por estas aperturas. GBPUSD BUY **2** lotes a 1,30000, SL 1,26000 (2 USD por tick); vela O 1,30000 H 1,30000 L 1,18000 C 1,18000 (B: 12.000 ticks en la fase 2; el SL sería el tick 4.000). EURUSD SELL 1 a 1,10000, TP 1,06000; vela O 1,10000 H 1,10000 L 1,02000 C 1,02000 (B: 8.000 ticks; el TP sería el tick 4.000). | Puntos *m*/24.000 (*m* par: GBPUSD; múltiplo de 3: EURUSD). Equity = 120.000 − 2·⌊*m*/2⌋ + ⌊*m*/3⌋. Primer punto < 115.000: *m* = 7.502, *s* = **3.751/12.000**: GBPUSD **1,26249**, EURUSD **1,07500**; equity **114.998** → **breach `perdida_diaria`**, antes del SL y del TP; liquidación en esos precios, saldo **114.998**; **sin fase superada**. (En *m* = 7.500, 115.000 exacto: no incumple.) Contraste secuencial: EURUSD primero → TP (+4.000), después SL (−8.000), saldo 116.000 sin posiciones ≥ suelo: **concedería la fase**; GBPUSD primero → breach en 1,27499 con equity 114.998. |
 | **A34** — tope de 50 | 30 posiciones abiertas en 3 pares y 20 pendientes. | Un `abrir` más (a mercado o pendiente): `tope_alcanzado`, sin efectos. El fill de una de las 20 pendientes deja la cuenta en 50 y no rechaza nada. Tras cerrar una posición, un `abrir` se admite. |
-| **A35** — margen de cruces | Bid en el cursor: AUDUSD **0,65000**, GBPUSD **1,25000**. Capital 100.000 sin posiciones. | AUDCAD BUY 1: margen **650,00** USD (100.000 × 0,65 / 100). GBPJPY BUY 1: **1.250,00**. USDJPY BUY 1: **1.000,00**. EURUSD BUY 1 con bid 1,10000: **1.100,00** (P-13b). El margen usado no cambia aunque AUDUSD se mueva después. Sin vela de AUDUSD en ese minuto en horario de mercado: el `abrir` de AUDCAD se rechaza con `margen_sin_cotizacion`, sin efectos. |
+| **A35** — margen de cruces | Bid en el cursor: AUDUSD **0,65000**, GBPUSD **1,25000**. Capital 100.000 sin posiciones. | AUDCAD BUY 1: margen **650,00** USD (100.000 × 0,65 / 100). GBPJPY BUY 1: **1.250,00**. USDJPY BUY 1: **1.000,00**. EURUSD BUY 1 con bid 1,10000 (ask 1,10003): **1.100,00** (P-13b: el bid, no la entrada). El margen usado no cambia aunque AUDUSD se mueva después. Sin vela de AUDUSD en ese minuto en horario de mercado: el `abrir` de AUDCAD se rechaza con `margen_sin_cotizacion`, sin efectos. |
 | **A36** — elección del camino aislada | EURUSD BUY STOP 1,10100 con SL 1,09900; vela O 1,10000 H 1,10150 L 1,09850 C 1,10050 (A03 b). En el mismo minuto, GBPUSD BUY 1 abierto con su propia vela móvil. | EURUSD elige su camino como en A03 b (**A**: equity mínima −200 < −50; ambigua, con causa), **con o sin** la posición de GBPUSD: la elección se hace con GBPUSD quieto en su apertura. Después el minuto se ejecuta sincronizado con EURUSD por A. |
+| **A37** — una cartera de un solo par = el motor de un par (P-13b) | Los casos A01–A17 del motor de un instrumento (ya con el margen de P-13b), ejecutados por la cartera multipar con un solo par. | Mismo estado (proyección económica, § 12.4) y misma secuencia de eventos económicos que el motor de un par, comando a comando; y el margen de A35/§ 13.3: EURUSD BUY a mercado **1.100,00**, la BUY LIMIT de A01 b **1.099,50**. |
 
-### 13.7 Pendiente de decidir (no se inventa)
+### 13.7 Pendientes
 
-- **P-13a:** precio base→USD que fija el margen de una pendiente de un cruce al llenarse (§ 13.3).
-- **P-13b:** bid frente a precio de entrada en el nocional de los pares con USD cotizado (§ 13.3).
+- ~~**P-13a**~~ y ~~**P-13b**~~: decididos por el CTO el 7-oct (§ 13.3). P-13b cambia el motor de un instrumento aprobado: queda señalado para Astra con sus cifras, y A37 lo cubre.
+- Nada más pendiente en esta sección. Sin código de motor hasta que Astra revise la v2.2.
