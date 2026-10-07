@@ -3,11 +3,12 @@
 // Instrucciones para descargar el CSV: revisiones/2026-10-07-plan-b-csv.md.
 //
 //   node scripts/importar-csv.js --par EURUSD --dia 2026-07-20 --csv FICHERO.csv
-//        [--subir] [--objetivo EURUSD:2026-07-20,...]
+//        [--subir --subida-autorizada] [--objetivo EURUSD:2026-07-20,...]
 //
 // Valida el CSV de UN dia y UN par y, con --subir, lo publica por la funcion
 // comun (lib/mercado/ficheros.mjs publicarAnio: cerrojo, relectura, validacion
-// y verificacion). Sin --subir, en SECO: valida y dice que haria.
+// y verificacion). Sin --subir, en SECO: valida y dice que haria. --subir solo
+// con --subida-autorizada (CTO, 7-oct: bloqueado hasta que Astra lo verifique).
 //   · formato: cabecera «Gmt time,Open,High,Low,Close,Volume» y fechas
 //     «dd.mm.aaaa HH:MM:SS.mmm» (el export web, SIN COMPROBAR contra un fichero
 //     real), o «timestamp,open,high,low,close,volume» en milisegundos. «Local
@@ -83,6 +84,9 @@ const hm = t => new Date(t * 1000).toISOString().slice(11, 16)
 
 async function main() {
   // ── entrada ──
+  // CTO 7-oct (cierres-5): el importador no publica hasta que Astra lo verifique;
+  // --subir exige una opcion explicita que autoriza el CTO
+  if (SUBIR && !process.argv.includes('--subida-autorizada')) throw para('--subir esta bloqueado hasta que se verifique el importador: hace falta tambien --subida-autorizada (solo con autorizacion del CTO). En seco (sin --subir) se puede validar.')
   const par = String(arg('--par') || '').toUpperCase(), dia = arg('--dia'), ruta = arg('--csv')
   if (!PARES.includes(par) || !fechaOk(dia) || !ruta) throw para('uso: node scripts/importar-csv.js --par PAR --dia AAAA-MM-DD --csv FICHERO.csv [--subir] [--objetivo PAR:AAAA-MM-DD,...]')
   const objetivos = (arg('--objetivo') ? String(arg('--objetivo')).split(',').map(x => x.trim()).filter(Boolean) : [`${par}:${dia}`])

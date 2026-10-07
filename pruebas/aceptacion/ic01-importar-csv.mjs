@@ -14,6 +14,7 @@
  *   cualquier otra cabecera: rechazados. Velas planas con volumen 0: fuera
  *   (como ignoreFlats del actualizador).
  * Codigos: 0 bien · 1 no publicado / objetivo incompleto / cerrojo · 4 entrada.
+ * --subir exige ademas --subida-autorizada (CTO, cierres-5): sin ella, 4 y nada.
  *
  * ORACULOS (Storage falso; EURUSD 2026 con el 20-jul en 900 velas):
  *   seco: valida y dice que publicaria 900 → 1440, sin subir nada;
@@ -51,16 +52,23 @@ const subidasDatos = () => db.log.filter(l => l.op === 'upload' && l.payload?.ru
 const en = (arr, d) => (arr || []).filter(v => new Date(v.time * 1000).toISOString().startsWith(d)).length
 const BUENO = fichero('EURUSD_Candlestick_1_M_BID_20.07.2026-20.07.2026.csv', csv(velasDe('2026-07-20', 1440, 0, 1.1)))
 const ARGS = f => ['--par', 'EURUSD', '--dia', '2026-07-20', '--csv', f]
+// CTO 7-oct (cierres-5): --subir solo con la opcion explicita, hasta que Astra verifique el importador
+const SUBIR = ['--subir', '--subida-autorizada']
 
 titulo('1 · en seco')
 base()
 const r0 = await corre(ARGS(BUENO))
 oraculo('IC01', 'seco: valida, dice que publicaria el 20-jul 900 → 1440 y no sube nada', r0.codigo === 0 && r0.salida.some(l => /SECO/.test(l) && /900 → 1440/.test(l)) && subidasDatos() === 0, `codigo ${r0.codigo} · ${r0.salida.filter(l => /SECO|→/.test(l)).join(' | ')}`)
 
+titulo('1b · --subir sin la opcion explicita (CTO, cierres-5)')
+base()
+const rg = await corre([...ARGS(BUENO), '--subir'])
+oraculo('IC01', '--subir sin --subida-autorizada: 4, nada leido ni subido, y lo dice', rg.codigo === 4 && !db.log.some(l => String(l.tabla).startsWith('storage')) && rg.salida.some(l => /--subida-autorizada/.test(l)), `codigo ${rg.codigo} · ${rg.salida.slice(-2).join(' | ')}`)
+
 titulo('2 · --subir')
 base()
 const antes = JSON.parse(db.storage['forex-data'][RUTA])
-const r1 = await corre([...ARGS(BUENO), '--subir'])
+const r1 = await corre([...ARGS(BUENO), ...SUBIR])
 const g1 = guardado('EURUSD/M1/2026').velas
 const otrosIguales = g1 && en(g1, '2026-07-17') === 1440 && en(g1, '2026-07-21') === 1440 && g1.length === antes.length - 900 + 1440
 oraculo('IC01', '--subir: el 20-jul queda con 1.440, el resto igual y el cerrojo suelto', en(g1, '2026-07-20') === 1440 && otrosIguales && !Object.keys(db.storage['forex-data']).some(k => k.startsWith('_cerrojos/')), `20-jul ${en(g1, '2026-07-20')} · total ${g1?.length} (antes ${antes.length})`)
@@ -76,7 +84,7 @@ const malos = {
 }
 for (const [que, texto] of Object.entries(malos)) {
   base()
-  const r = await corre([...ARGS(fichero(`malo-${que.replace(/ /g, '-')}.csv`, texto)), '--subir'])
+  const r = await corre([...ARGS(fichero(`malo-${que.replace(/ /g, '-')}.csv`, texto)), ...SUBIR])
   oraculo('IC01', `${que}: rechazado con 4 y cero subidas`, r.codigo === 4 && subidasDatos() === 0, `codigo ${r.codigo} · ${r.salida.slice(-2).join(' | ')}`)
 }
 base()
@@ -85,14 +93,14 @@ oraculo('IC01', 'un objetivo de otro par: 4 y nada leido ni subido', rObj.codigo
 
 titulo('4 · nada mejor, cerrojo y velas planas')
 base()
-const r4 = await corre([...ARGS(fichero('menos.csv', csv(velasDe('2026-07-20', 800)))), '--subir'])
+const r4 = await corre([...ARGS(fichero('menos.csv', csv(velasDe('2026-07-20', 800)))), ...SUBIR])
 oraculo('IC01', 'un CSV con menos velas que lo guardado (800 < 900): no publica y sale con 1', r4.codigo === 1 && subidasDatos() === 0 && en(guardado('EURUSD/M1/2026').velas, '2026-07-20') === 900, `codigo ${r4.codigo} · ${r4.salida.slice(-2).join(' | ')}`)
 escenario({ storage: { 'forex-data': { [RUTA]: JSON.stringify(historial()), '_cerrojos/EURUSD_2026.json': JSON.stringify({ dueno: 'otro', desde: '2026-10-07T11:00:00Z' }) } } })
-const r5 = await corre([...ARGS(BUENO), '--subir'])
+const r5 = await corre([...ARGS(BUENO), ...SUBIR])
 oraculo('IC01', 'cerrojo puesto: «ocupado», cero subidas de datos y codigo 1', r5.codigo === 1 && subidasDatos() === 0 && r5.salida.some(l => /ocupado|cerrojo/.test(l)), `codigo ${r5.codigo}`)
 base()
 const conPlanas = velasDe('2026-07-20', 1440).map((v, i) => i >= 1380 ? { ...v, volume: 0 } : v)
-const r6 = await corre([...ARGS(fichero('planas.csv', csv(conPlanas))), '--subir'])
+const r6 = await corre([...ARGS(fichero('planas.csv', csv(conPlanas))), ...SUBIR])
 oraculo('IC01', '60 velas planas con volumen 0: se quitan y se publican 1.380', r6.codigo === 0 && en(guardado('EURUSD/M1/2026').velas, '2026-07-20') === 1380, `codigo ${r6.codigo} · 20-jul ${en(guardado('EURUSD/M1/2026').velas, '2026-07-20')}`)
 // MER-R2: fechas imposibles en --dia y en --objetivo: 4 controlado, sin RangeError ni Storage
 for (const extra of [['--par', 'EURUSD', '--dia', '2026-99-99', '--csv', BUENO], [...ARGS(BUENO), '--objetivo', 'EURUSD:2026-13-01']]) { base(); const r = await corre(extra); oraculo('IC01', `${extra.join(' ').replace(/ --csv \S+/, '')}: 4 controlado`, r.codigo === 4 && !db.log.some(l => String(l.tabla).startsWith('storage')) && !r.salida.some(l => /RangeError|Invalid time/.test(l)), `codigo ${r.codigo} · ${r.salida.slice(-2).join(' | ')}`) }
