@@ -32,6 +32,8 @@
  *   detras del viernes 24 (domingo vacio), o con el 24 a medias: 4; reparar el
  *   ultimo (24-jul 600 → 1440): 0; si bajo el cerrojo el dia ya no es
  *   interior: 1, nada;
+ *   CSV-04: --objetivo ',' (con 900 guardadas y un CSV de 1.000), vacio, con
+ *   elementos vacios o sin valor: 4, nada leido ni subido;
  *   60 velas planas con volumen 0: se quitan (1.380 publicadas).
  */
 import { titulo, oraculo, fin, escenario, db, guardado, REPO } from '../lib.mjs'
@@ -143,6 +145,15 @@ db.pausa = async c => { if (c.op === 'upload' && String(c.payload?.ruta).startsW
 const e4 = await corre([...ARGS(BUENO), ...SUBIR])
 db.pausa = null; delete db.cambiado
 oraculo('IC01', 'CSV-03 bajo el cerrojo: si al releer el 20-jul ya no es interior, no se publica (1) y lo dice', db.log.some(l => l.op === 'upload' && String(l.payload?.ruta).startsWith('_cerrojos/')) && e4.codigo === 1 && subidasDatos() === 0 && e4.salida.some(l => /bajo el cerrojo.*no extiende el historico/.test(l)), `codigo ${e4.codigo} · ${e4.salida.filter(l => /✗|✓/.test(l)).join(' | ')}`)
+
+titulo('3e · CSV-04 (Astra, cierres-5): --objetivo con al menos un elemento valido y sin vacios')
+// el caso de Astra: 900 guardadas, CSV de 1.000 (aun corto) y --objetivo ','
+const MIL = fichero('mil.csv', csv(velasDe('2026-07-20', 1000)))
+for (const extra of [['--objetivo', ','], ['--objetivo', ''], ['--objetivo', 'EURUSD:2026-07-20,'], ['--objetivo', ',EURUSD:2026-07-20'], ['--objetivo', 'EURUSD:2026-07-20,,EURUSD:2026-07-21'], ['--objetivo']]) {
+  base()
+  const r = await corre([...ARGS(MIL), ...SUBIR, ...extra])
+  oraculo('IC01', `CSV-04: ${extra.map(x => (x === '' ? "''" : x)).join(' ')}: 4, nada leido ni subido`, r.codigo === 4 && !db.log.some(l => String(l.tabla).startsWith('storage')) && !r.salida.some(l => /TODO OK/.test(l)), `codigo ${r.codigo} · ${r.salida.slice(-2).join(' | ')}`)
+}
 
 titulo('4 · nada mejor, cerrojo y velas planas')
 base()

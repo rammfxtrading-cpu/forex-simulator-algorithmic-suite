@@ -103,7 +103,12 @@ async function main() {
   if (SUBIR && !process.argv.includes('--subida-autorizada')) throw para('--subir esta bloqueado hasta que se verifique el importador: hace falta tambien --subida-autorizada (solo con autorizacion del CTO). En seco (sin --subir) se puede validar.')
   const par = String(arg('--par') || '').toUpperCase(), dia = arg('--dia'), ruta = arg('--csv')
   if (!PARES.includes(par) || !fechaOk(dia) || !ruta) throw para('uso: node scripts/importar-csv.js --par PAR --dia AAAA-MM-DD --csv FICHERO.csv [--subir] [--objetivo PAR:AAAA-MM-DD,...]')
-  const objetivos = (arg('--objetivo') ? String(arg('--objetivo')).split(',').map(x => x.trim()).filter(Boolean) : [`${par}:${dia}`])
+  // CSV-04 (Astra, cierres-5): si se da --objetivo, tiene que traer al menos un
+  // elemento y ninguno vacio (',' no puede convertirse en «sin objetivos»)
+  const hayObjetivo = process.argv.includes('--objetivo'), valorObjetivo = arg('--objetivo')
+  if (hayObjetivo && (valorObjetivo == null || String(valorObjetivo).startsWith('--'))) throw para('--objetivo sin valor: hace falta una lista PAR:AAAA-MM-DD,...')
+  const objetivos = hayObjetivo ? String(valorObjetivo).split(',').map(x => x.trim()) : [`${par}:${dia}`]
+  if (objetivos.some(x => !x)) throw para(`--objetivo «${String(valorObjetivo).slice(0, 80)}»: lista vacia o con elementos vacios`)
   for (const o of objetivos) { const m = /^([A-Z]{6}):(.+)$/.exec(o); if (!m || m[1] !== par || !fechaOk(m[2]) || m[2].slice(0, 4) !== dia.slice(0, 4)) throw para(`--objetivo ${o}: tiene que ser ${par}:AAAA-MM-DD del mismo año`) }
   if (!fs.existsSync(ruta)) throw para(`no existe el fichero ${path.basename(ruta)}`)
   const { velas: nuevas, planas } = leeCsv(fs.readFileSync(ruta, 'utf8'), dia)
