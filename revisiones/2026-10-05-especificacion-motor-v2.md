@@ -588,3 +588,83 @@ Cada punto cita el hallazgo de Astra al que responde (`2026-10-05-astra-simulado
 
 ### 12.9 Qué se puede programar ya (orden del CTO)
 En `lib/motor/` y sin tocar nada en uso: **1)** contratos puros (instrumentos, bid/ask, costes, P&L, redondeo, estado serializable, comparador); **2)** motor de un solo instrumento con **A01–A06, A08, A11, A12, A16 y A17** en verde. Nada de multipar, base ni interfaz todavía. Antes, la tabla de spreads en pantalla.
+
+---
+
+## 13. v2.2 — multipar (decisiones del CTO, 7-oct-2026, tras Astra cierres-8)
+
+**Sección nueva; no cambia nada de lo aprobado en § 0–12.** Concreta lo que § 3.2, § 3.4, § 3.5, § 3.7 y § 12.1 dejaban abierto para varios pares. Las cifras de los casos están hechas a mano y comprobadas con aritmética entera exacta, independiente del motor. **Sin código de motor hasta que Astra revise esta v2.2** (orden del CTO).
+
+### 13.1 El camino sincronizado dentro de una fase
+
+Por cada minuto, los pares de la sesión con vela en ese minuto tienen su vela bid (O, H, L, C) en ticks y su camino elegido (§ 13.4): A = O→H→L→C o B = O→L→H→C. Los puntos del camino de un par son P0 = O, P1, P2, P3 = C. Un par **sin vela** porque su mercado está cerrado (calendario o manifiesto, § 12.2, § 12.10) se queda en su último precio en todo el minuto; uno sin vela **en horario de mercado** deja el minuto entero sin consumir (`no_valorable`, § 3.5).
+
+**Fases** (§ 12.1): fase 1 = apertura; fase 2 = tramo P0→P1; fase 3 = tramo P1→P2; fase 4 = tramo P2→P3.
+
+**Fase 1 (apertura).** Un solo punto: todos los pares pasan a la vez de su última cotización a su O (con `hueco` si cambia), y después se aplican los eventos de § 13.2.
+
+**Fases 2 a 4 (tramos).** Para cada par *i*, su tramo va del tick *aᵢ* al tick *bᵢ*; *nᵢ* = |*bᵢ* − *aᵢ*|; σᵢ = signo(*bᵢ* − *aᵢ*). La fracción *s* es un **racional** de [0, 1].
+- **El par *i* da su tick *j*** (j = 1…*nᵢ*) en la fracción *s* = *j* / *nᵢ*.
+- **Su precio en cualquier fracción *s*** es *pᵢ*(*s*) = *aᵢ* + σᵢ · ⌊*nᵢ* · *s*⌋ (con *nᵢ* = 0, *pᵢ*(*s*) = *aᵢ*). Es decir: un precio no se alcanza hasta su fracción; el redondeo a tick es hacia el punto de partida del tramo.
+- **Puntos de evaluación de la fase:** la unión, sin repetidos, de las fracciones *j* / *nᵢ* de **todos** los pares de la sesión, ordenada como racionales (se compara *j*/*n* con *k*/*m* por *j*·*m* frente a *k*·*n*, en enteros). Un par sin posiciones ni órdenes no cambia la equity ni los eventos, así que sus puntos no cambian el resultado.
+
+### 13.2 Qué pasa en cada punto
+
+En cada punto *s*, en este orden:
+
+1. **Se actualizan todos los precios** de los pares a *pᵢ*(*s*). Todos los ticks de esa fracción se aplican **antes** de evaluar nada.
+2. **Protecciones** (SL/TP) de todas las posiciones de todos los pares que estén alcanzadas a esos precios, por `seq` de apertura (un único contador de `seq` para la cartera).
+3. **Órdenes** ejecutables de todos los pares, por `seq`. Cada fill revalida el margen con la equity del conjunto en este punto (§ 3.3, punto 8) y activa su protección inmediata, con la regla de un par.
+4. **Objetivo del reto** (si hubo algún cierre en este punto): con la regla de C7-01, primero los límites a estos precios; un breach prevalece; el objetivo solo se concede sin breach.
+5. **Equity del conjunto** = saldo + flotante redondeado de todas las posiciones a sus precios *pᵢ*(*s*) (§ 12.5). Si queda **por debajo** de un límite (estricto, en µ): **breach** en este punto.
+
+**Liquidación por breach:** todas las posiciones de **todos** los pares se cierran a su precio en esa fracción (*pᵢ*(*s*), al lado de salida); se cancelan todas las órdenes; el evento `breach` guarda la fase, la fracción *s* (racional) y los precios de todos los pares. El motor no procesa más velas de ningún par (§ 3.4).
+
+**Conversión a USD en cada punto** (§ 3.6, § 12.1): en las fases 1 a 3, con la **apertura** del par de conversión en ese minuto; en la fase 4, con su **cierre**. Un par que se convierte con su **propio** precio (USDJPY, USDCHF, USDCAD) usa su precio *pᵢ*(*s*) al lado de salida, como en A08.
+
+**Paso, salto y reanudación** (§ 3.8): los cortes de persistencia van entre minutos, nunca dentro de una fase, así que el camino sincronizado no cambia la equivalencia.
+
+### 13.3 Margen de la cartera (1:100)
+
+- **Margen requerido de una posición:** nocional en USD / 100.
+  - **USD como base** (USDJPY, USDCHF, USDCAD): nocional = lotes × 100.000.
+  - **Base distinta de USD** (EURUSD, GBPUSD, AUDUSD, NZDUSD, AUDCAD, GBPJPY): nocional = lotes × 100.000 × **bid del par base→USD en el cursor del comando** (EURUSD, GBPUSD, AUDUSD, NZDUSD; para AUDCAD, AUDUSD; para GBPJPY, GBPUSD).
+  - Se **fija en la apertura**: el margen usado de una posición no se recalcula después.
+  - **Sin dato** del par base→USD en ese minuto en horario de mercado: el comando se rechaza con `margen_sin_cotizacion`. No se estima.
+- **Admisión:** margen libre = equity del conjunto − Σ margen usado de todas las posiciones de todos los pares; se admite si margen libre ≥ margen requerido (§ 3.7).
+- **La sesión carga** los datos de los pares operados, de los de conversión (§ 3.6) y de los base→USD de sus cruces (AUDUSD para AUDCAD, GBPUSD para GBPJPY), y fija la versión de todos en `versiones.mercado` (§ 3.1, A26).
+
+**PENDIENTE (P-13a):** el **fill de una pendiente** no ocurre «en el cursor de un comando», sino dentro de una vela. Falta decidir qué precio base→USD fija su margen: el de la apertura del minuto del par base→USD (como la conversión en las fases 1–3) o su precio en la fracción del fill. **Propuesta:** la apertura del minuto, por coherencia con § 3.6.
+
+**PENDIENTE (P-13b):** para los pares con USD cotizado (EURUSD, GBPUSD, AUDUSD, NZDUSD), el par base→USD es el propio par. La regla de § 13.3 usa su **bid** en el cursor; el motor de un instrumento usa hoy el **precio de entrada** (ask en un BUY), y su diferencia es el spread. **Propuesta:** aplicar el bid también ahí, para una sola regla, y ajustar el motor de un par cuando se escriba el multipar.
+
+### 13.4 Elección del camino de cada par (aproximación declarada)
+
+- Para cada par con posiciones u órdenes vivas, se simula su vela por A y por B **con los demás pares quietos en la apertura del minuto** (los precios de la fase 1), con la regla de un par (§ 3.2): menor equity mínima; a igualdad, menor equity al cierre; a igualdad, B. La equity es la del conjunto, con los demás pares fijos.
+- Después se ejecuta el minuto entero, sincronizado (§ 13.1–13.2), con los caminos ya elegidos.
+- La marca de ambigüedad de un par sale de su simulación aislada: si A y B dan conjuntos de eventos distintos para ese par.
+- **Es una aproximación declarada:** no se exploran las combinaciones de caminos entre pares (§ 12.1), y la ejecución conjunta puede dar eventos distintos de los de la simulación aislada (por ejemplo, una orden que en la simulación aislada cabía de margen y en la conjunta no). Manda la ejecución conjunta; la marca y la causa lo dicen.
+
+### 13.5 Tope de la cartera
+
+Posiciones abiertas + órdenes pendientes de todos los pares ≤ **50** (§ 12.7). Se comprueba **al crear**: un `abrir` (a mercado o pendiente) que haría 51 se rechaza con `tope_alcanzado`. El fill de una pendiente no cambia la cuenta (una orden pasa a ser una posición). Un cierre o una cancelación la bajan.
+
+### 13.6 Casos de aceptación (A29–A36)
+
+Salvo que se diga: capital 100.000; **sin spread y sin comisión** (aislado), 1 lote = 1 USD por tick en los pares con USD cotizado y 5 dígitos; el reto con suelo diario = saldo de medianoche − 5.000.
+
+| # | Entrada | Resultado exigido |
+|---|---|---|
+| **A29** — A06 en multipar | A06 tal cual (sin spread, comisión 3 debitada: saldo **99.997**; EURUSD BUY 1 a 1,20000; suelo 95.000; vela O 1,20000 H 1,26000 L 1,14000 C 1,20000, camino B) y, en el mismo minuto, GBPUSD con una BUY LIMIT 1,20000 pendiente que no se alcanza y vela O 1,30000 H 1,30000 L 1,29000 C 1,29000 (camino B: baja 1.000 ticks en la fase 2). | La fase 2 tiene los puntos *j*/6.000 (EURUSD) y *k*/1.000 (GBPUSD). Primer punto con equity < 95.000: *s* = 4.998/6.000; EURUSD **1,15002**, equity **94.999** (en 1,15003, 95.000 exacto: no incumple). GBPUSD en esa fracción: ⌊1.000 · 4.998/6.000⌋ = 833 ticks → **1,29167**. Liquidación de EURUSD en 1,15002; la orden de GBPUSD, cancelada por breach. Los puntos de GBPUSD no adelantan ni atrasan el breach: **igual que A06**. |
+| **A30** — A07 en multipar | Saldo 100.000, suelo 95.000. AUDUSD BUY 1 a 0,70000, vela O 0,70000 H 0,70000 L 0,64000 C 0,64000. EURUSD SELL 1 a 1,10000, vela O 1,10000 H 1,10000 L 1,06000 C 1,06000. Los dos eligen B (empate en mínimo y cierre), y los dos se mueven en la **fase 2**: AUDUSD −6.000 (6.000 ticks), EURUSD +4.000 (4.000 ticks). | En el punto *s*, equity = 100.000 − ⌊6.000 *s*⌋ + ⌊4.000 *s*⌋. Mínimo de la fase 2: **98.000**, en *s* = 1 (y en *s* = 5.999/6.000). **Sin breach.** Intercambiar los nombres de los pares (o el orden de creación) no cambia nada. |
+| **A31** — el orden secuencial daría otro resultado | A30 con el mismo suelo, 95.000. | Sincronizado: **sin breach** (A30). Como contraste, lo que **no** debe pasar: procesando AUDUSD entero antes que EURUSD, breach en AUDUSD **0,64999** (tick 5.001), equity **94.999**; procesando EURUSD primero, sin breach (98.000). El resultado no puede depender del nombre ni del orden de los pares. |
+| **A32** — breach dentro del camino sincronizado | A30 con suelo **98.500**. | Los puntos de la fase 2 son *m*/12.000 con *m* par (AUDUSD) o múltiplo de 3 (EURUSD). Primer punto con equity < 98.500: *m* = 9.002, *s* = **4.501/6.000**: AUDUSD **0,65499** (4.501 ticks), EURUSD **1,07000** (⌊4.000 · 4.501/6.000⌋ = 3.000 ticks); equity **98.499**. Liquidación de los dos en esos precios: −4.501 y +3.000; saldo **98.499**. (En *m* = 9.000, 98.500 exacto: no incumple.) Secuencial, en contraste: AUDUSD primero, breach en AUDUSD 0,68499 con EURUSD en 1,10000; EURUSD primero, breach en AUDUSD 0,64499 con EURUSD en 1,06000. Tres puntos distintos: solo el sincronizado vale. |
+| **A33** — breach frente a objetivo entre dos pares | Reto: saldo de medianoche **120.000** (suelo **115.000**), objetivo 110.000, con el cuarto día ya contado por estas aperturas. GBPUSD BUY **2** lotes a 1,30000, SL 1,26000 (2 USD por tick); vela O 1,30000 H 1,30000 L 1,18000 C 1,18000 (B: 12.000 ticks en la fase 2; el SL sería el tick 4.000). EURUSD SELL 1 a 1,10000, TP 1,06000; vela O 1,10000 H 1,10000 L 1,02000 C 1,02000 (B: 8.000 ticks; el TP sería el tick 4.000). | Puntos *m*/24.000 (*m* par: GBPUSD; múltiplo de 3: EURUSD). Equity = 120.000 − 2·⌊*m*/2⌋ + ⌊*m*/3⌋. Primer punto < 115.000: *m* = 7.502, *s* = **3.751/12.000**: GBPUSD **1,26249**, EURUSD **1,07500**; equity **114.998** → **breach `perdida_diaria`**, antes del SL y del TP; liquidación en esos precios, saldo **114.998**; **sin fase superada**. (En *m* = 7.500, 115.000 exacto: no incumple.) Contraste secuencial: EURUSD primero → TP (+4.000), después SL (−8.000), saldo 116.000 sin posiciones ≥ suelo: **concedería la fase**; GBPUSD primero → breach en 1,27499 con equity 114.998. |
+| **A34** — tope de 50 | 30 posiciones abiertas en 3 pares y 20 pendientes. | Un `abrir` más (a mercado o pendiente): `tope_alcanzado`, sin efectos. El fill de una de las 20 pendientes deja la cuenta en 50 y no rechaza nada. Tras cerrar una posición, un `abrir` se admite. |
+| **A35** — margen de cruces | Bid en el cursor: AUDUSD **0,65000**, GBPUSD **1,25000**. Capital 100.000 sin posiciones. | AUDCAD BUY 1: margen **650,00** USD (100.000 × 0,65 / 100). GBPJPY BUY 1: **1.250,00**. USDJPY BUY 1: **1.000,00**. EURUSD BUY 1 con bid 1,10000: **1.100,00** (P-13b). El margen usado no cambia aunque AUDUSD se mueva después. Sin vela de AUDUSD en ese minuto en horario de mercado: el `abrir` de AUDCAD se rechaza con `margen_sin_cotizacion`, sin efectos. |
+| **A36** — elección del camino aislada | EURUSD BUY STOP 1,10100 con SL 1,09900; vela O 1,10000 H 1,10150 L 1,09850 C 1,10050 (A03 b). En el mismo minuto, GBPUSD BUY 1 abierto con su propia vela móvil. | EURUSD elige su camino como en A03 b (**A**: equity mínima −200 < −50; ambigua, con causa), **con o sin** la posición de GBPUSD: la elección se hace con GBPUSD quieto en su apertura. Después el minuto se ejecuta sincronizado con EURUSD por A. |
+
+### 13.7 Pendiente de decidir (no se inventa)
+
+- **P-13a:** precio base→USD que fija el margen de una pendiente de un cruce al llenarse (§ 13.3).
+- **P-13b:** bid frente a precio de entrada en el nocional de los pares con USD cotizado (§ 13.3).
