@@ -3,7 +3,8 @@ name: Actualizar velas (manual)
 # CTO, 7-oct-2026: SIN disparo programado. Desde el equipo de trabajo el
 # proveedor responde 429 a la primera peticion; se prueba desde Actions, con
 # otra IP de salida, y solo a mano (Actions → este workflow → Run workflow):
-#   · modo sonda: scripts/sonda-proveedor.js con UN dia (EURUSD 2026-07-20).
+#   · modo sonda: scripts/sonda-proveedor.js con UN dia: la entrada «dia»
+#     (PAR:AAAA-MM-DD; vacia = EURUSD de ayer), con sus cabeceras de limite.
 #     No lee ni escribe Storage y este paso NO recibe la clave de servicio.
 #   · modo recuperar: scripts/actualizar-diario.js --subir --pares <PAR>, con
 #     UN solo par por ejecucion y MERCADO_GZIP sin definir. Con «objetivo»
@@ -21,6 +22,11 @@ on:
           - sonda
           - recuperar
         default: sonda
+      dia:
+        description: 'Solo en sonda: UN dia, PAR:AAAA-MM-DD (vacio = EURUSD de ayer)'
+        required: false
+        type: string
+        default: ''
       pares:
         description: 'Solo en recuperar: UN par, p. ej. AUDUSD'
         required: false
@@ -54,9 +60,18 @@ jobs:
 
       - name: Sonda del proveedor (un dia, sin Storage ni clave)
         if: ${{ inputs.modo == 'sonda' }}
+        env:
+          DIA: ${{ inputs.dia }}
         run: |
+          # >>> valida-dia
+          if [ -z "$DIA" ]; then DIA="EURUSD:$(node -e 'console.log(new Date(Date.now() - 864e5).toISOString().slice(0, 10))')"; fi
+          if ! [[ "$DIA" =~ ^[A-Z]{6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "dia: UN dia, PAR:AAAA-MM-DD (p. ej. EURUSD:2026-10-06). No se ha pedido nada."
+            exit 4
+          fi
+          # <<< valida-dia
           set +e
-          node scripts/sonda-proveedor.js EURUSD:2026-07-20
+          node scripts/sonda-proveedor.js --cabeceras "$DIA"
           c=$?
           echo "Codigo de salida: $c"
           exit $c

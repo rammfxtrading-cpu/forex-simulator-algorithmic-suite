@@ -41,7 +41,15 @@ oraculo('WF01', 'entradas: modo (sonda | recuperar) y pares', ins.modo?.type ===
 oraculo('WF01', 'concurrencia sin cancelar lo que esta en curso, y timeout', !!wf?.concurrency?.group && wf.concurrency['cancel-in-progress'] === false && Number(job['timeout-minutes']) > 0, JSON.stringify({ c: wf?.concurrency, t: job['timeout-minutes'] }))
 
 titulo('2 · modo sonda')
-oraculo('WF01', 'la sonda pide un solo dia: EURUSD 2026-07-20', !!sonda && /node scripts\/sonda-proveedor\.js EURUSD:2026-07-20\s*$/m.test(String(sonda.run)) && (String(sonda.run).match(/[A-Z]{6}:\d{4}-\d{2}-\d{2}/g) || []).length === 1, String(sonda?.run ?? '(sin paso de sonda)'))
+// CTO 7-oct: la sonda pide el dia de la entrada «dia» (PAR:AAAA-MM-DD; por defecto, EURUSD de ayer)
+oraculo('WF01', 'la sonda pide UN dia, el de la entrada «dia» (por variable), con --cabeceras', !!sonda && ins.dia?.type === 'string' && /inputs\.dia/.test(String(sonda.env?.DIA ?? '')) && /node scripts\/sonda-proveedor\.js --cabeceras "\$DIA"\s*$/m.test(String(sonda.run)) && !/\$\{\{/.test(String(sonda.run)), String(sonda?.run ?? '(sin paso de sonda)'))
+const bloqueDia = (String(sonda?.run ?? '').match(/# >>> valida-dia\n([\s\S]*?)# <<< valida-dia/) ?? [])[1] ?? ''
+const validaDia = d => spawnSync('bash', ['-c', bloqueDia + '\nprintf "%s" "$DIA"; exit 0'], { env: { PATH: process.env.PATH, DIA: d }, encoding: 'utf8' })
+const ayer = new Date(Date.now() - 864e5).toISOString().slice(0, 10)
+const casosDia = { '': 0, 'AUDUSD:2026-07-20': 0, 'AUDUSD': 4, 'AUDUSD:2026-07-20..2026-07-21': 4, 'AUDUSD:2026-07-20,EURUSD:2026-07-20': 4, 'audusd:2026-07-20': 4, 'AUDUSD:2026-07-20;rm -rf /': 4, 'AUDUSD:2026-07-20\nEURUSD:2026-07-20': 4 }
+const vistosDia = Object.fromEntries(Object.keys(casosDia).map(k => [k, bloqueDia ? validaDia(k).status : null]))
+const porDefecto = bloqueDia ? validaDia('').stdout.trim() : ''
+oraculo('WF01', 'la validacion del dia (ejecutada con bash): un PAR:AAAA-MM-DD; vacio = EURUSD de ayer; lo demas, 4', !!bloqueDia && Object.entries(casosDia).every(([k, v]) => vistosDia[k] === v) && porDefecto === `EURUSD:${ayer}`, `${JSON.stringify(vistosDia)} · por defecto ${porDefecto}`)
 oraculo('WF01', 'en modo sonda ningun paso recibe la clave de servicio (ni el job)', !!sonda && !conSecretos(sonda) && !/secrets\./.test(JSON.stringify(job.env ?? {})) && pasos.filter(conSecretos).every(p => /recuperar/.test(String(p.if ?? ''))), pasos.filter(conSecretos).map(p => p.name).join(', '))
 
 titulo('3 · modo recuperar')
