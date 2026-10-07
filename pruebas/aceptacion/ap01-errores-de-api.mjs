@@ -164,7 +164,17 @@ for (const [ruta, que, metodo, token, datos, esperado, prepara] of casos) {
   rutasVistas.add(ruta)
   if (r.excepcion || r.estado !== esperado || typeof r.cuerpo?.error !== 'string' || JSON.stringify(r.cuerpo).includes(MARCA)) malos.push(`${ruta} «${que}»: ${r.excepcion ? 'EXCEPCION ' + r.excepcion.name : r.estado} (esperado ${esperado})`)
 }
-oraculo('AP01', `${casos.length} retornos tempranos de las ${rutasVistas.size} rutas: cada uno con su codigo, un «error» controlado y sin excepcion`, rutasVistas.size === 10 && malos.length === 0, malos.join(' · ') || `${casos.length} casos`)
+// WEB-R1 (Astra, cierres-4): una cookie de sesion mal codificada lanzaba URIError
+// (el catch repetia el decodeURIComponent) en las diez rutas. Credencial no valida: 401.
+const metodoDe = { 'admin/alumno-sim/[id]': 'GET', 'admin/enviar-mensaje': 'POST', 'admin/list-alumnos-sim': 'GET', 'admin/set-plan-sim': 'POST', 'admin/toggle-acceso-sim': 'POST', 'admin/wipe-simulador': 'POST', candles: 'GET', 'challenge/advance': 'POST', 'challenge/create': 'POST', 'challenge/status': 'GET' }
+for (const [ruta, metodo] of Object.entries(metodoDe)) {
+  for (const cookie of ['sb-prueba-auth-token=%', 'sb-prueba-auth-token=%E0%A4%A']) {
+    base()
+    const r = await llama(H[ruta], { method: metodo, cookie, ...(metodo === 'GET' ? { query: ruta.endsWith('[id]') ? { id: A } : {} } : { body: {} }) })
+    if (r.excepcion || r.estado !== 401 || typeof r.cuerpo?.error !== 'string') malos.push(`${ruta} cookie «${cookie}»: ${r.excepcion ? 'EXCEPCION ' + r.excepcion.name : r.estado} (esperado 401)`)
+  }
+}
+oraculo('AP01', `${casos.length} retornos tempranos y ${Object.keys(metodoDe).length * 2} cookies mal codificadas en las ${rutasVistas.size} rutas: cada uno con su codigo, un «error» controlado y sin excepcion`, rutasVistas.size === 10 && malos.length === 0, malos.join(' · ') || `${casos.length + Object.keys(metodoDe).length * 2} casos`)
 
 titulo('7 · W-03 (Astra, 7-oct): el 503 de un año sin publicar no promete nada')
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': {} } })
