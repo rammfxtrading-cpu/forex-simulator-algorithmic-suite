@@ -40,7 +40,8 @@ export default async function handler(req, res) {
     .update({ simulador_activo })
     .eq('id', user_id)
     .select('id, email, simulador_activo')
-    .single()
+    // maybeSingle: sin filas = data null (404 abajo); con single() era el error PGRST116 → 500 (CTO 7-oct)
+    .maybeSingle()
 
   if (error) {
     return (registra('admin/toggle-acceso-sim', error), res.status(500).json({ error: 'Error actualizando' }))

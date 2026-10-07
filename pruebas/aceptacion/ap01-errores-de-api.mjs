@@ -126,11 +126,8 @@ const falla = pred => () => { db.falla = c => (pred(c) ? { message: `fallo ${MAR
 const Q = { pair: 'EURUSD', timeframe: 'M1', from: '1767571200', to: '1767657600', year: '2026' }
 const AV = { session_id: 'reto', outcome: 'pass', end_timestamp: 1741100000 }
 const CR = { challenge_type: '2F', capital: 100000, pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-03-03', date_to: '2025-03-07' }
-// NOTA (7-oct, encontrado al ejecutar esta pasada; NO arreglado: fuera del
-// encargo): set-plan-sim y toggle-acceso-sim con un usuario que no existe dan 500,
-// no su 404: .update().select().single() sin filas devuelve el error PGRST116 y
-// entra por la rama de error. Igual que en c470c8f. Aqui se exige el
-// comportamiento ACTUAL controlado (500 con mensaje fijo, sin excepcion).
+// set-plan-sim y toggle-acceso-sim con un usuario que no existe: 404 (CTO 7-oct;
+// antes 500: .single() sin filas devolvia PGRST116 y entraba por la rama de error)
 // [ruta, que, metodo, token, body|query, codigo, prepara?]
 const casos = [
   ['admin/alumno-sim/[id]', 'metodo', 'POST', ADM, { id: A }, 405], ['admin/alumno-sim/[id]', 'sin token', 'GET', null, { id: A }, 401], ['admin/alumno-sim/[id]', 'sin id', 'GET', ADM, {}, 400], ['admin/alumno-sim/[id]', 'no existe', 'GET', ADM, { id: NADIE }, 404],
@@ -139,9 +136,9 @@ const casos = [
   ['admin/enviar-mensaje', 'sin cuerpo', 'POST', ADM, { to_user_id: A, subject: 'x' }, 400], ['admin/enviar-mensaje', 'a si mismo', 'POST', ADM, { to_user_id: ADM, subject: 'x', body: 'y' }, 400], ['admin/enviar-mensaje', 'insercion en error', 'POST', ADM, { to_user_id: A, subject: 'x', body: 'y' }, 500, falla(c => c.tabla === 'messages' && c.op === 'insert')],
   ['admin/list-alumnos-sim', 'metodo', 'POST', ADM, {}, 405], ['admin/list-alumnos-sim', 'sin token', 'GET', null, {}, 401], ['admin/list-alumnos-sim', 'sesiones en error', 'GET', ADM, {}, 503, falla(c => c.tabla === 'sim_sessions' && c.op === 'select')],
   ['admin/set-plan-sim', 'metodo', 'GET', ADM, {}, 405], ['admin/set-plan-sim', 'sin token', 'POST', null, {}, 401], ['admin/set-plan-sim', 'sin user_id', 'POST', ADM, {}, 400], ['admin/set-plan-sim', 'plan raro', 'POST', ADM, { user_id: A, plan: 'zz' }, 400],
-  ['admin/set-plan-sim', 'update en error', 'POST', ADM, { user_id: A, plan: 'basic' }, 500, falla(c => c.tabla === 'profiles' && c.op === 'update')], ['admin/set-plan-sim', 'no existe (hoy 500: ver nota)', 'POST', ADM, { user_id: NADIE, plan: 'basic' }, 500],
+  ['admin/set-plan-sim', 'update en error', 'POST', ADM, { user_id: A, plan: 'basic' }, 500, falla(c => c.tabla === 'profiles' && c.op === 'update')], ['admin/set-plan-sim', 'no existe', 'POST', ADM, { user_id: NADIE, plan: 'basic' }, 404],
   ['admin/toggle-acceso-sim', 'metodo', 'GET', ADM, {}, 405], ['admin/toggle-acceso-sim', 'sin token', 'POST', null, {}, 401], ['admin/toggle-acceso-sim', 'sin user_id', 'POST', ADM, {}, 400], ['admin/toggle-acceso-sim', 'no booleano', 'POST', ADM, { user_id: A }, 400],
-  ['admin/toggle-acceso-sim', 'a si mismo', 'POST', ADM, { user_id: ADM, simulador_activo: false }, 403], ['admin/toggle-acceso-sim', 'update en error', 'POST', ADM, { user_id: A, simulador_activo: true }, 500, falla(c => c.tabla === 'profiles' && c.op === 'update')], ['admin/toggle-acceso-sim', 'no existe (hoy 500: ver nota)', 'POST', ADM, { user_id: NADIE, simulador_activo: true }, 500],
+  ['admin/toggle-acceso-sim', 'a si mismo', 'POST', ADM, { user_id: ADM, simulador_activo: false }, 403], ['admin/toggle-acceso-sim', 'update en error', 'POST', ADM, { user_id: A, simulador_activo: true }, 500, falla(c => c.tabla === 'profiles' && c.op === 'update')], ['admin/toggle-acceso-sim', 'no existe', 'POST', ADM, { user_id: NADIE, simulador_activo: true }, 404],
   ['admin/wipe-simulador', 'metodo', 'GET', ADM, {}, 405], ['admin/wipe-simulador', 'sin token', 'POST', null, {}, 401], ['admin/wipe-simulador', 'sin user_id', 'POST', ADM, {}, 400], ['admin/wipe-simulador', 'sin confirmacion', 'POST', ADM, { user_id: A }, 400],
   ['admin/wipe-simulador', 'a si mismo', 'POST', ADM, { user_id: ADM, confirm_email: 'x' }, 403], ['admin/wipe-simulador', 'no existe', 'POST', ADM, { user_id: NADIE, confirm_email: 'x' }, 404], ['admin/wipe-simulador', 'email distinto', 'POST', ADM, { user_id: A, confirm_email: 'otro@ejemplo.test' }, 400],
   ['admin/wipe-simulador', 'quitar acceso en error', 'POST', ADM, { user_id: A, confirm_email: 'a@ejemplo.test' }, 500, falla(c => c.tabla === 'profiles' && c.op === 'update')], ['admin/wipe-simulador', 'borrado en error', 'POST', ADM, { user_id: A, confirm_email: 'a@ejemplo.test' }, 500, falla(c => c.op === 'delete')],

@@ -10,7 +10,8 @@ export default async function handler(req, res) {
   const { user_id, plan } = req.body || {}
   if (!user_id || typeof user_id !== 'string') return res.status(400).json({ error: 'user_id requerido' })
   if (plan !== 'basic' && plan !== 'extra') return res.status(400).json({ error: "plan debe ser basic o extra" })
-  const { data, error } = await supabaseAdmin.from('profiles').update({ plan }).eq('id', user_id).select('id, email, plan').single()
+  // maybeSingle: sin filas = data null (404 abajo); con single() era el error PGRST116 → 500 (CTO 7-oct)
+  const { data, error } = await supabaseAdmin.from('profiles').update({ plan }).eq('id', user_id).select('id, email, plan').maybeSingle()
   if (error) return (registra('admin/set-plan-sim', error), res.status(500).json({ error: 'Error actualizando' }))
   if (!data) return res.status(404).json({ error: 'Usuario no encontrado' })
   return res.status(200).json({ ok: true, profile: data })
