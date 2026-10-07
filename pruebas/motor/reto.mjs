@@ -38,6 +38,9 @@
  *   Objetivo: saldo 110.000 con la posicion aun abierta → no hay fase
  *   superada; al cerrarla, con 4 dias → «fase_superada» una vez; con 3 dias, no;
  *   cerrar lo que da 110.000 dejando un 0,01 abierto → no; al cerrar el 0,01 → si.
+ *   C6-02: un TP que deja el objetivo dentro de una vela detiene ahi el
+ *   recorrido: la pendiente (BUY STOP 1,21000) se anula con su evento, sin fill
+ *   ni SL posterior; por comando, igual.
  *   Paso, salto y reanudacion (serializando) → mismo veredicto y eventos.
  */
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
@@ -63,7 +66,8 @@ function corre(velas, inicioIso, guion, { fase = 1, partir = null } = {}) {
         r = x.reto; ev.push(...x.eventos)
       }
     } else {
-      const c = paso[0] === 'abrir' ? { tipo: 'abrir', lado: paso[1], orden: 'mercado', lotes: paso[2], cotizadoEn: r.motor.reloj.cursor } : { tipo: 'cerrar', id: paso[1] }
+      // ['abrir', lado, lotes, extra?]: extra se mezcla en el comando (tp, sl, orden: 'stop', precio)
+      const c = paso[0] === 'abrir' ? { tipo: 'abrir', lado: paso[1], orden: 'mercado', lotes: paso[2], cotizadoEn: r.motor.reloj.cursor, ...(paso[3] || {}) } : { tipo: 'cerrar', id: paso[1] }
       const x = RT.aplicaReto(r, c)
       r = x.reto; ev.push(...x.eventos)
     }
@@ -151,6 +155,25 @@ if (RT) {
   oraculo('A14', 'domingo 12:00 UTC con el cursor en el viernes: abrir se rechaza («reset_posterior»), sin fill ni dia contado', r.resultado?.rechazado === 'reset_posterior' && r.eventos.length === 0 && r.reto.dias_con_apertura.length === 0, enTexto(r.resultado))
 } else oraculo('A14', 'domingo 12:00 UTC con el cursor en el viernes: abrir se rechaza («reset_posterior»), sin fill ni dia contado', false, 'sin modulo')
 
+titulo('3b · C6-02 (Astra, cierres-6): la fase se decide en el evento de cierre, dentro de la vela')
+// lun 5 – mie 7 oct: BUY 1 abierto y cerrado al mismo precio; jue 8: BUY 1 con TP 1,20000 y un BUY STOP 1,21000
+// (con SL 1,15000 en la variante de perdida); vela de las 00:01 del jue 8: O 1,10000, H 1,22000, L 1,10000, C X
+const d4 = ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08']
+const vIntra = cierre => vs([...d4.map(d => [`${d}T08:00:00Z`, '1.10000']), ['2026-10-08T08:01:00Z', '1.10000']]).map((v, i, a) => (i === a.length - 1 ? M.velas('EURUSD', [{ time: v.time, open: '1.10000', high: '1.22000', low: '1.10000', close: cierre }])[0] : v)).concat(vs([['2026-10-08T09:00:00Z', cierre]]))
+const gIntra = sl => { const g = []; let id = 1; for (const d of d4.slice(0, 3)) { g.push(['avanza', `${d}T08:00:00Z`], ['abrir', 'BUY', '1'], ['cerrar', `p${id}`]); id++ } g.push(['avanza', '2026-10-08T08:00:00Z'], ['abrir', 'BUY', '1', { tp: '1.20000' }], ['abrir', 'BUY', '1', { orden: 'stop', precio: '1.21000', ...(sl ? { sl } : {}) }], ['avanza', '2026-10-08T09:00:00Z']); return g }
+const intra = RT ? corre(vIntra('1.22000'), '2026-10-05T07:00:00Z', gIntra(null)) : null
+const fsup = intra && de(intra.eventos, 'fase_superada')[0]
+oraculo('RETO', 'C6-02: el TP deja 110.000 sin posiciones y con 4 dias: «fase_superada» en ese cierre; el BUY STOP 1,21000 no se llena', !!fsup && intra.reto.estado === 'superada' && intra.reto.motor.saldo_µ === µ(110000) && intra.reto.motor.posiciones.length === 0 && !intra.eventos.some(x => x.tipo === 'fill' && x.orden === 'o5'), intra ? `${intra.reto.estado} · saldo ${enTexto(intra.reto.motor.saldo_µ)} · ${intra.reto.motor.posiciones.length} abiertas · ${intra.eventos.filter(x => x.tipo === 'fill' || x.tipo === 'fase_superada' || x.tipo === 'orden_cancelada').map(x => x.tipo + (x.orden ? ' ' + x.orden : '') + (x.motivo ? ' ' + x.motivo : '')).join(', ')}` : '')
+const cancel = intra && intra.eventos.find(x => x.tipo === 'orden_cancelada' && x.orden === 'o5')
+oraculo('RETO', 'C6-02: la pendiente se anula con su evento («orden_cancelada», motivo «objetivo»), en el mismo punto que el cierre, y no queda ninguna', !!cancel && cancel.motivo === 'objetivo' && enTexto(cancel.en) === enTexto(de(intra.eventos, 'cierre').at(-1).en) && intra.reto.motor.ordenes.length === 0 && enTexto(fsup.en) === enTexto(cancel.en), enTexto(cancel))
+const perd = RT ? corre(vIntra('1.10000'), '2026-10-05T07:00:00Z', gIntra('1.15000')) : null
+oraculo('RETO', 'C6-02: objetivo seguido (sin el arreglo) de fill y de perdida por SL en la misma vela: superada con 110.000, sin fill ni SL', !!perd && perd.reto.estado === 'superada' && perd.reto.motor.saldo_µ === µ(110000) && !perd.eventos.some(x => (x.tipo === 'fill' && x.orden === 'o5') || (x.tipo === 'cierre' && x.motivo === 'SL')), perd ? `${perd.reto.estado} · saldo ${enTexto(perd.reto.motor.saldo_µ)}` : '')
+// por comando: cerrar a mano lo que da el objetivo con una pendiente viva
+const gMano = () => { const g = gIntra(null); g.pop(); g.splice(g.length - 2, 1, ['abrir', 'BUY', '1']); g.push(['avanza', '2026-10-08T08:01:00Z'], ['cerrar', 'p4']); return g }
+const vMano = vs([...d4.map(d => [`${d}T08:00:00Z`, '1.10000']), ['2026-10-08T08:01:00Z', '1.20000']])
+const mano = RT ? corre(vMano, '2026-10-05T07:00:00Z', gMano()) : null
+oraculo('RETO', 'C6-02 por comando: cerrar a mano hasta 110.000 con un BUY STOP vivo: superada y la pendiente anulada con su evento', !!mano && mano.reto.estado === 'superada' && mano.eventos.some(x => x.tipo === 'orden_cancelada' && x.motivo === 'objetivo') && mano.reto.motor.ordenes.length === 0, mano ? `${mano.reto.estado} · ${mano.reto.motor.ordenes.length} pendientes · ${mano.eventos.filter(x => x.tipo === 'orden_cancelada').map(x => x.motivo).join(',')}` : '')
+
 titulo('4 · paso, salto y reanudacion dan lo mismo')
 const porMinuto = (a, b) => { const o = []; for (let t = a + 60; t <= b; t += 60) o.push(t); return o.length ? o : [b] }
 const porHora = (a, b) => { const o = []; for (let t = a + 3600; t < b; t += 3600) o.push(t); o.push(b); return o }
@@ -161,4 +184,6 @@ const amarH = RT ? corre(vmar, '2026-03-27T19:00:00Z', [['avanza', '2026-03-27T2
 oraculo('RETO', 'marzo por horas (cruzando las tres medianoches) = de un salto', mismo(amar, amarH))
 const cerradaH = RT ? corre(vobj(4), '2026-02-09T07:00:00Z', gobj(4, true), { partir: porHora }) : null
 oraculo('RETO', 'el objetivo por horas = de un salto (mismo veredicto y eventos)', mismo(cerrada, cerradaH))
+const intraM = RT ? corre(vIntra('1.10000'), '2026-10-05T07:00:00Z', gIntra('1.15000'), { partir: porMinuto }) : null
+oraculo('RETO', 'C6-02: el objetivo dentro de la vela, paso a paso (cada minuto, serializando) = de un salto', mismo(perd, intraM))
 fin()
