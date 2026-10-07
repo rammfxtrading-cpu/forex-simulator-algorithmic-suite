@@ -41,6 +41,9 @@
  *   C6-02: un TP que deja el objetivo dentro de una vela detiene ahi el
  *   recorrido: la pendiente (BUY STOP 1,21000) se anula con su evento, sin fill
  *   ni SL posterior; por comando, igual.
+ *   C6-05: horizonte confirmado comun a resets y velas: una vela anterior o igual
+ *   a el se rechaza; con fuente, un dato que falta detiene y no confirma nada
+ *   despues (sin resets), y un dia declarado cerrado si.
  *   Paso, salto y reanudacion (serializando) → mismo veredicto y eventos.
  */
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
@@ -186,4 +189,40 @@ const cerradaH = RT ? corre(vobj(4), '2026-02-09T07:00:00Z', gobj(4, true), { pa
 oraculo('RETO', 'el objetivo por horas = de un salto (mismo veredicto y eventos)', mismo(cerrada, cerradaH))
 const intraM = RT ? corre(vIntra('1.10000'), '2026-10-05T07:00:00Z', gIntra('1.15000'), { partir: porMinuto }) : null
 oraculo('RETO', 'C6-02: el objetivo dentro de la vela, paso a paso (cada minuto, serializando) = de un salto', mismo(perd, intraM))
+
+titulo('5 · C6-05 (Astra, cierres-6): horizonte confirmado comun a resets y velas')
+const B = await importa('lib/motor/binario.mjs'), MF = await importa('lib/motor/manifiesto.mjs'), FU = await importa('lib/motor/fuente.mjs')
+// el caso de Astra: lunes 5-oct 12:00 abre BUY 1; avanzar hasta el 6-oct 00:00 sin velas emite el reset de las 22:00 del 5
+const base5 = () => { let r = RT.creaReto({ motor: M.crea({ par: 'EURUSD', costes: cero, capital: '100000' }), inicio: U('2026-10-05T12:00:00Z') }); r = RT.avanzaReto(r, U('2026-10-05T12:00:00Z'), vs([['2026-10-05T12:00:00Z', '1.10000']])).reto; r = RT.aplicaReto(r, { tipo: 'abrir', orden: 'mercado', lado: 'BUY', lotes: '1', cotizadoEn: r.motor.reloj.cursor }).reto; return RT.avanzaReto(r, U('2026-10-06T00:00:00Z'), []) }
+const h0 = RT ? base5() : null
+oraculo('RETO', 'C6-05: avanzar sin velas hasta el 6-oct 00:00 confirma ese horizonte y emite el reset de las 22:00 del 5', !!h0 && h0.reto.horizonte === U('2026-10-06T00:00:00Z') && de(h0.eventos, 'reset_diario').length === 1, h0 ? `horizonte ${h0.reto.horizonte} · ${de(h0.eventos, 'reset_diario').length} reset` : '')
+for (const [que, iso] of [['13:00 del 5 (antes del reset)', '2026-10-05T13:00:00Z'], ['00:00 del 6 (igual al horizonte)', '2026-10-06T00:00:00Z']]) {
+  const tarde = h0 ? RT.avanzaReto(h0.reto, U('2026-10-06T06:00:00Z'), vs([[iso, '1.11000']])) : null
+  oraculo('RETO', `C6-05: una vela de las ${que} que llega despues: se rechaza («vela_anterior_al_horizonte»), sin eventos y el reto intacto`, !!tarde && tarde.detencion?.motivo === 'vela_anterior_al_horizonte' && tarde.eventos.length === 0 && RT.serializaReto(tarde.reto) === RT.serializaReto(h0.reto), tarde ? `${enTexto(tarde.detencion)} · cursor ${tarde.reto.motor.reloj.cursor}` : '')
+}
+const despues = h0 ? RT.avanzaReto(h0.reto, U('2026-10-06T06:00:00Z'), vs([['2026-10-06T00:01:00Z', '1.11000']])) : null
+oraculo('RETO', 'C6-05 control: una vela posterior al horizonte (00:01 del 6) se procesa', !!despues && !despues.detencion && despues.reto.motor.reloj.cursor === U('2026-10-06T00:01:00Z'), despues ? `cursor ${despues.reto.motor.reloj.cursor}` : '')
+// con una fuente: lunes 2-mar y miercoles 4 completos; el martes 3 sin trozo (dato que falta) o declarado cerrado
+const S0 = d => Date.parse(d + 'T00:00:00Z') / 1000
+const trozo = d => { const velas = M.velas('EURUSD', Array.from({ length: 1440 }, (_, i) => ({ time: S0(d) + 60 * i, open: '1.10000', high: '1.10000', low: '1.10000', close: '1.10000' }))).map(v => ({ ...v, volume: 1 })); return { dia: d, buffer: B.codifica('EURUSD', S0(d), velas) } }
+const LU = trozo('2026-03-02'), MI = trozo('2026-03-04'), JU = trozo('2026-03-05')
+const lectorDe = ts => d => ts.find(t => t.dia === d)?.buffer ?? null
+const conFuente = (cerrados, cortes, hasta = U('2026-03-05T12:00:00Z')) => {
+  const mf = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [LU, MI, JU], cerrados })
+  const f = FU.creaFuente({ manifiesto: mf, fijado: MF.fija(mf), leeTrozo: lectorDe([LU, MI, JU]) })
+  let r = RT.creaReto({ motor: M.crea({ par: 'EURUSD', costes: cero, capital: '100000', mercado: MF.fija(mf) }), inicio: U('2026-03-02T00:00:00Z') })
+  const ev = []; let det = null
+  for (const h of cortes ?? [hasta]) { const x = RT.avanzaReto(RT.deserializaReto(RT.serializaReto(r)), h, f); r = x.reto; ev.push(...x.eventos); det = x.detencion ?? null }
+  return { reto: r, eventos: ev, detencion: det, f }
+}
+const falta = RT ? conFuente([]) : null
+const rFalta = falta ? de(falta.eventos, 'reset_diario').map(x => new Date(x.en.t * 1000).toISOString().slice(0, 16)) : []
+oraculo('RETO', 'C6-05 con fuente: el martes sin trozo detiene («no_valorable»); horizonte al final del lunes y solo el reset de esa medianoche (2-mar 23:00)', !!falta && falta.detencion?.motivo === 'no_valorable' && falta.detencion?.dia === '2026-03-03' && falta.reto.horizonte === S0('2026-03-03') - 60 && JSON.stringify(rFalta) === '["2026-03-02T23:00"]', falta ? `${enTexto(falta.detencion)} · horizonte ${falta.reto.horizonte} · ${rFalta.join(' ')}` : '')
+const otra = falta ? RT.avanzaReto(falta.reto, U('2026-03-05T12:00:00Z'), falta.f) : null
+oraculo('RETO', 'C6-05 con fuente: repetir el avance da la misma detencion, sin eventos ni resets', !!otra && otra.detencion?.dia === '2026-03-03' && otra.eventos.length === 0 && RT.serializaReto(otra.reto) === RT.serializaReto(falta.reto))
+const cerrado = RT ? conFuente(['2026-03-03']) : null
+const rCerr = cerrado ? de(cerrado.eventos, 'reset_diario').map(x => new Date(x.en.t * 1000).toISOString().slice(0, 16)) : []
+oraculo('RETO', 'C6-05 con fuente: el martes DECLARADO cerrado es mercado cerrado: sin detencion, resets del 2, 3 y 4-mar y horizonte en el destino', !!cerrado && !cerrado.detencion && JSON.stringify(rCerr) === '["2026-03-02T23:00","2026-03-03T23:00","2026-03-04T23:00"]' && cerrado.reto.horizonte === U('2026-03-05T12:00:00Z'), cerrado ? `${enTexto(cerrado.detencion)} · ${rCerr.join(' ')}` : '')
+const cerradoH = RT ? conFuente(['2026-03-03'], Array.from({ length: 84 }, (_, i) => U('2026-03-02T01:00:00Z') + 3600 * i)) : null
+oraculo('RETO', 'C6-05 con fuente: por horas (serializando) = de un salto: mismos eventos y mismo reto', !!cerradoH && enTexto(cerradoH.eventos) === enTexto(cerrado.eventos) && RT.serializaReto(cerradoH.reto) === RT.serializaReto(cerrado.reto), cerradoH ? `${cerradoH.eventos.length} / ${cerrado.eventos.length} eventos` : '')
 fin()
