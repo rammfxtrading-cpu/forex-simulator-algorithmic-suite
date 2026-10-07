@@ -94,7 +94,7 @@ function leeCsv(texto, dia) {
 
 // CSV-02: umbrales de plausibilidad (fraccion). Un minuto de FX no se mueve un
 // 2 %; un dia no se aleja un 10 % del cierre anterior (como la mediana).
-const SALTO_MAX = 0.02, BANDA_MAX = 0.10
+const SALTO_MAX = 2, BANDA_MAX = 10           // en % (enteros)
 // precios en ticks del par (enteros): 3 decimales los pares con JPY, 5 el resto
 const DIGITOS = par => (par.endsWith('JPY') ? 3 : 5)
 const PIP_TICKS = 10
@@ -145,12 +145,14 @@ async function main() {
   // (O, H, L, C) a ≤ SALTO_MAX del cierre anterior (la primera vela, del
   // ultimo cierre guardado) y a ≤ BANDA_MAX del ultimo cierre guardado. Lo
   // anomalo se rechaza ENTERO: se revisa a mano, no se publica.
-  const fuera = (x, ref, max) => !(Math.abs(x / ref - 1) <= max)
+  // C6-08 (Astra, cierres-6): en ticks enteros, |x − ref| × 100 ≤ max × ref; el
+  // valor exactamente igual al umbral pasa (sin errores de coma flotante)
+  const fuera = (x, ref, max) => Math.abs(ticks(x) - ticks(ref)) * 100 > max * ticks(ref)
   let anterior = ultimoGuardado
   for (const v of nuevas) {
     for (const [k, x] of [['open', v.open], ['high', v.high], ['low', v.low], ['close', v.close]]) {
-      if (anterior != null && fuera(x, anterior, SALTO_MAX)) throw para(`vela ${hm(v.time)} UTC: ${k} ${x} salta mas de un ${SALTO_MAX * 100} % frente al cierre anterior ${anterior}: CSV rechazado entero, revisalo`)
-      if (ultimoGuardado != null && fuera(x, ultimoGuardado, BANDA_MAX)) throw para(`vela ${hm(v.time)} UTC: ${k} ${x} a mas de un ${BANDA_MAX * 100} % del ultimo cierre guardado ${ultimoGuardado}: CSV rechazado entero, revisalo`)
+      if (anterior != null && fuera(x, anterior, SALTO_MAX)) throw para(`vela ${hm(v.time)} UTC: ${k} ${x} salta mas de un ${SALTO_MAX} % frente al cierre anterior ${anterior}: CSV rechazado entero, revisalo`)
+      if (ultimoGuardado != null && fuera(x, ultimoGuardado, BANDA_MAX)) throw para(`vela ${hm(v.time)} UTC: ${k} ${x} a mas de un ${BANDA_MAX} % del ultimo cierre guardado ${ultimoGuardado}: CSV rechazado entero, revisalo`)
     }
     anterior = v.close
   }

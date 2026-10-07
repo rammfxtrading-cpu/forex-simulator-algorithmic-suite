@@ -38,6 +38,7 @@
  *   C6-01: el CSV trae todos los minutos guardados del dia con OHLC a ≤ 1 pip;
  *   se publican los guardados tal cual + los minutos nuevos. Desplazado (le
  *   faltan 00:00–03:59), a 2 pips o discrepante bajo el cerrojo: 4, nada;
+ *   C6-08: 2 % y 10 % en ticks enteros: debajo e igual pasan, encima no.
  *   60 velas planas con volumen 0: se quitan (1.380 publicadas).
  */
 import { titulo, oraculo, fin, escenario, db, guardado, REPO } from '../lib.mjs'
@@ -169,6 +170,25 @@ db.pausa = async c => { if (c.op === 'upload' && String(c.payload?.ruta).startsW
 const c4 = await corre([...ARGS(BUENO), ...SUBIR])
 db.pausa = null; delete db.cambiado
 oraculo('IC01', 'C6-01 bajo el cerrojo: lo releido discrepa del CSV en mas de 1 pip: 4 y cero subidas de datos', db.log.some(l => l.op === 'upload' && String(l.payload?.ruta).startsWith('_cerrojos/')) && c4.codigo === 4 && subidasDatos() === 0 && c4.salida.some(l => /bajo el cerrojo/.test(l)), `codigo ${c4.codigo} · ${c4.salida.filter(l => /✗|✓/.test(l)).join(' | ')}`)
+
+titulo('3g · C6-08 (Astra, cierres-6): umbrales del 2 % y del 10 % en ticks; el valor igual al umbral pasa')
+// referencia 1,1 = 110.000 ticks: 2 % = 2.200 ticks (1,12200); 10 % = 11.000 ticks (1,21000)
+// los 900 minutos guardados siguen a 1,1 (C6-01); el salto cae en el minuto 900 (15:00), uno nuevo
+const conSalto = p => velasDe('2026-07-20').map((v, i) => (i < 900 ? v : { ...v, open: p, high: p, low: p, close: p }))
+const escalera = tope => velasDe('2026-07-20').map((v, i) => { const pasos = [1.12, 1.14, 1.16, 1.18, 1.2, tope]; const k = i - 1434; if (k < 0) return v; const p = pasos[k]; return { ...v, open: p, high: p, low: p, close: p } })
+const fronteras = [
+  ['salto justo debajo del 2 % (1,12199)', csv(conSalto(1.12199)), 0],
+  ['salto igual al 2 % (1,12200)', csv(conSalto(1.122)), 0],
+  ['salto justo encima del 2 % (1,12201)', csv(conSalto(1.12201)), 4],
+  ['banda justo debajo del 10 % (1,20999)', csv(escalera(1.20999)), 0],
+  ['banda igual al 10 % (1,21000)', csv(escalera(1.21)), 0],
+  ['banda justo encima del 10 % (1,21001)', csv(escalera(1.21001)), 4],
+]
+for (const [que, texto, esperado] of fronteras) {
+  base()
+  const r = await corre([...ARGS(fichero(`frontera-${que.replace(/[^a-z0-9]+/gi, '-')}.csv`, texto)), ...SUBIR])
+  oraculo('IC01', `C6-08: ${que}: ${esperado === 0 ? 'pasa (0)' : 'rechazado (4, nada)'}`, r.codigo === esperado && (esperado === 0 ? subidasDatos() === 1 : subidasDatos() === 0), `codigo ${r.codigo} · ${r.salida.filter(l => /✗|✓ PUB/.test(l)).join(' | ')}`)
+}
 
 titulo('3e · CSV-04 (Astra, cierres-5): --objetivo con al menos un elemento valido y sin vacios')
 // el caso de Astra: 900 guardadas, CSV de 1.000 (aun corto) y --objetivo ','
