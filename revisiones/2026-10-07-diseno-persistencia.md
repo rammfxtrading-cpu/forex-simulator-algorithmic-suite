@@ -2,6 +2,8 @@
 
 **Fecha:** 7-oct-2026 · **Rama:** `auditoria-simulador` · **Solo diseño:** ni código ni SQL ejecutable. Nada de esto está aplicado ni se aplica sin orden expresa.
 
+**Revisión 2 (8-oct-2026):** decisiones del CTO sobre la revisión de Astra `2026-10-08-astra-simulador-diseno-3.md` (V3-01, V3-04 a V3-07, V3-10). Cambian § 2.2, § 4, § 6, § 6.1, § 7, § 8, § 9 y § 10.
+
 **Encargo (CTO, 7-oct, tras Astra cierres-8):** tablas y columnas; quién escribe; recibo por comando; CAS con testigo de arrendamiento; identidad versionada del mercado en el estado; respuesta perdida; sesiones antiguas en solo lectura; permisos y RLS; tamaño por sesión frente al plan gratuito; decisiones que hacen falta.
 
 **Base:** la especificación v2.1 (`revisiones/2026-10-05-especificacion-motor-v2.md`, § 1, § 3.1, § 4, § 6, § 9, § 12.4–12.7) y el motor de `lib/motor/` (piezas 1–6). Donde este documento concreta algo que la especificación deja abierto, lo dice y lo lleva a la lista de decisiones (§ 10). **No se ha consultado la base viva:** el esquema actual se toma de `sql/APLICADOS.md` (resumen de s04, 4-oct) y del código que escribe hoy en las tablas; lo que no consta, se marca.
@@ -33,7 +35,7 @@ Convenciones: dinero en **µUSD enteros** (`bigint`); precios en **ticks** (`big
 | `epoca` | integer | no, por defecto 0 | época del protocolo; el corte la pone a 1 (§ 7) |
 | `version` | bigint | no, por defecto 0 | contador CAS; +1 en cada comando confirmado |
 | `estado` | jsonb | sí (null en legado) | snapshot del motor (y del reto, si lo hay) tras la versión `version` |
-| `escritor` | jsonb | sí | arrendamiento: `{ cliente_id, token, hasta }` (§ 4) |
+| `escritor` | jsonb | sí | quién escribe y hasta cuándo, visible: `{ cliente_id, hasta }`. **El testigo no está aquí**: va en `sim_arrendamientos`, sin grants para el navegador (§ 4.2, V3-06) |
 | `terminal` | text | sí | `borrada` · `revocada` · null |
 | `legado` | boolean | no, por defecto false | sesión anterior al corte, solo lectura |
 | `legado_snapshot` | jsonb | sí | foto inmutable del corte: `saldo` tal cual (0 ≠ null), `last_timestamp`, nº de trades (G02) |
@@ -58,9 +60,15 @@ Las columnas actuales (`capital`, `balance`, `last_timestamp`, `challenge_*`, `s
 | `resultado` | text | `aceptado` · `rechazado` · `conflicto` |
 | `motivo` | text | el `rechazado` del motor (`margen_insuficiente`, `precio_cambiado`, `reset_posterior`, `sesion_en_breach`…) o del protocolo |
 | `resumen` | jsonb | resumen económico: saldo antes/después, nº de eventos, cursor antes/después, detención si la hubo |
+| `clase` | text | `economico` (se conserva siempre) · `ultimo_avance` (uno por sesión, se sobrescribe: V3-07) |
 | `creado` | timestamptz | — |
 
-Restricciones: `unique (session_id, command_id)`. Índice por `(session_id, creado)`.
+Restricciones: `unique (session_id, command_id)`; **una sola** fila `ultimo_avance` por sesión (índice único parcial sobre `session_id` donde `clase = 'ultimo_avance'`). Índice por `(session_id, creado)`.
+
+**Qué recibo guarda cada comando (V3-07, V3-10, CTO 8-oct):**
+- **Comandos con eventos económicos** (`fill`, `cierre`, `orden_*`, `posicion_modificada`, `reset_diario`, `breach`, `fase_superada`) y **todos** los que no son `avanzar`/`checkpoint`: recibo `economico`, que **no se poda nunca** (§ 6).
+- **`avanzar` / `checkpoint` sin eventos económicos:** no guardan un recibo cada uno. Hay **un único recibo `ultimo_avance` por sesión**, que cada avance así **sobrescribe** (su `command_id`, digest, versiones, cursor). `fin_de_datos` cuenta como evento técnico, no económico.
+- **Esto refina § 1.3 de la especificación** («un comando sin eventos también tiene recibo»; «misma clave, mismo recibo aunque hayan entrado más comandos») dentro de lo que ya aprobó § 12.7 (retención de los recibos de avance): un avance sin eventos económicos solo conserva recibo mientras sea el último. Su reintento tardío recibe `comando_caducado` (§ 6). Lo señalo para Astra.
 
 ### 2.3 `sim_eventos` (nueva)
 
@@ -108,39 +116,60 @@ Restricciones: `unique (session_id, seq)`, `unique (session_id, command_id, ordi
 
 ### 4.1 El comando
 
-Cada comando lleva: `session_id`, `command_id` (UUID del cliente), `tipo`, `epoca`, `version_esperada`, `token` de arrendamiento y el payload normalizado (números como texto, lotes en centésimas, precios en ticks). El servidor calcula el **digest** del sobre canónico `{tipo, payload}` (§ 12.4: `cancelar` y `cerrar` con la misma carga no colisionan).
+Cada comando lleva: `session_id`, `command_id` (UUID del cliente), `tipo`, `epoca`, `version_esperada`, `cliente_id` de la pestaña y el payload normalizado (números como texto, lotes en centésimas, precios en ticks). **El testigo del arrendamiento no viaja en el comando** ni lo conoce el navegador (§ 4.2). El servidor calcula el **digest** del sobre canónico `{tipo, payload}` (§ 12.4: `cancelar` y `cerrar` con la misma carga no colisionan).
+
+**El servidor solo acepta intención** (V3-04, V3-06): tipo, instrumento, lado, lotes, precios pedidos, SL/TP, `cotizadoEn`, `hasta`. Nunca acepta del cuerpo estado, saldo, eventos, versión resultante ni dueño.
+
+**Actor (V3-06, CTO 8-oct):** el endpoint obtiene el usuario autenticado del guard (`lib/authApi.js`, `requireSimulador`) y lo pasa a la RPC como `actor_id`. La RPC lo **compara con `sim_sessions.user_id`** de la fila bloqueada antes de hacer o devolver nada (también antes de devolver un recibo existente): si no coincide, `404 sesion_no_encontrada`, sin revelar que existe. El `user_id` de recibos, eventos y trades sale de la fila, nunca del payload.
 
 ### 4.2 El arrendamiento (un solo escritor por sesión)
 
-- `sim_sessions.escritor = { cliente_id, token, hasta }`. `cliente_id` identifica la pestaña; `token` es un valor aleatorio que **solo** conoce esa pestaña (se lo devuelve `sim_tomar_escritor`); `hasta` = ahora + 60 s.
-- **Tomar:** `sim_tomar_escritor(session_id, cliente_id, forzar)`. Sin escritor o con el arrendamiento caducado, lo da. Con uno vigente de otra pestaña, solo con `forzar` («Usar aquí»), y la otra pestaña pasa a solo lectura al recibir su siguiente `409 sin_arrendamiento`. Tomar es un comando con recibo.
-- **Renovar:** cada comando aceptado renueva `hasta`.
-- **Las demás pestañas** leen (RLS) y lo dicen en pantalla.
+- **El testigo está fuera del alcance del navegador** (V3-06): tabla `sim_arrendamientos (session_id PK → sim_sessions ON DELETE CASCADE, cliente_id, testigo_hash, hasta)`, **sin ningún grant a `authenticated` ni a `anon`**. `sim_sessions` solo expone, si se quiere enseñar, quién escribe y hasta cuándo (`cliente_id`, `hasta`), nunca el testigo.
+- **Testigo nuevo en cada toma:** `sim_tomar_escritor(actor_id, session_id, cliente_id, forzar)` genera un testigo aleatorio en la base, guarda su hash y lo devuelve **al servidor**, que lo guarda asociado a esa pestaña en su lado (cookie de servidor `HttpOnly` por pestaña, o tabla del servidor: D-16). Una toma nueva invalida el testigo anterior.
+- **Caducidad con el reloj de la base** (V3-06): `hasta = now() + 60 s` calculado en la RPC; la comprobación es `hasta > now()` **en el commit**, nunca con el reloj del servidor de Next ni del navegador.
+- **Fencing:** la RPC final comprueba el testigo y la caducidad **dentro** de la transacción que escribe. Un cálculo que terminó cuando el arrendamiento ya había caducado o cambiado de dueño se rechaza en el commit (`409 sin_arrendamiento`), aunque el cálculo se haya hecho.
+- **Tomar:** sin escritor o con el arrendamiento caducado, lo da. Con uno vigente de otra pestaña, solo con `forzar` («Usar aquí», con confirmación en la pestaña que lo toma, D-04); la otra pasa a solo lectura en su siguiente `409 sin_arrendamiento`. Tomar es un comando con recibo `economico` (cambia quién puede escribir).
+- **Renovar:** cada comando que llega a la RPC con el testigo vigente renueva `hasta`, también un rechazo puro (es actividad del escritor); renovar **no** sube la versión (§ 4.3).
 
 ### 4.3 La RPC final (CAS)
 
 Dentro de una transacción, en este orden:
 
-1. `SELECT … FROM sim_sessions WHERE id = $1 FOR UPDATE` (orden de bloqueos: sesión y, si hay, reto padre).
-2. **Idempotencia primero:** si existe `sim_recibos (session_id, command_id)`:
-   - mismo digest → devolver ese recibo tal cual, **sin ejecutar** (aunque hayan entrado comandos después);
+1. **Bloqueos, siempre padre y después hija** (V3-05): si la sesión es una fase 2 enlazada, primero `SELECT … FOR UPDATE` del reto padre y después el de la sesión; si no, solo la sesión. Ninguna RPC bloquea dos sesiones que no sean padre e hija.
+2. **Sesión inexistente** → `410 sesion_borrada`, sin efectos. **Actor distinto del dueño** → `404`, sin efectos.
+3. **Idempotencia:** si existe `sim_recibos (session_id, command_id)`:
+   - mismo digest → devolver ese recibo tal cual, **sin ejecutar**;
    - digest distinto → `409 clave_reutilizada`.
-3. Verificaciones, cada una con su respuesta y **sin efectos**:
-   - `terminal` no nulo → `410 sesion_borrada` / `403 acceso_revocado`;
-   - acceso de producto vigente (`profiles.simulador_activo`), comprobado **dentro** de la RPC (§ 12.4);
-   - `legado` → `409 solo_lectura`;
-   - `epoca` del comando = la de la sesión → si no, `426 actualizar_cliente`;
-   - `escritor.token` = el del comando y `escritor.hasta` > ahora → si no, `409 sin_arrendamiento`;
-   - `version` = `version_esperada` → si no, `409 conflicto` con la versión confirmada.
-4. Escribir: recibo (`aceptado` o `rechazado`), eventos con `seq` consecutivo, trades de los `cierre`, `estado`, proyecciones (`balance`, `last_timestamp`, `challenge_*`), `version = version + 1`, renovar `escritor.hasta`.
+4. **Avance caducado** (V3-07): `avanzar`/`checkpoint` sin recibo y con `version_esperada` distinta de la vigente → `409 comando_caducado` (§ 6). Para los demás tipos, la misma situación es un `409 conflicto` normal.
+5. Verificaciones, cada una con su respuesta y **sin efectos**: `terminal` (`410` / `403`); acceso de producto vigente (`profiles.simulador_activo`, dentro de la RPC, § 12.4); `legado` (`409 solo_lectura`); `epoca` (`426 actualizar_cliente`); testigo y caducidad con `now()` (`409 sin_arrendamiento`); `version = version_esperada` (`409 conflicto`).
+6. Escribir: recibo, eventos con `seq` consecutivo (lo asigna la RPC bajo el bloqueo), trades de los `cierre`, `estado`, proyecciones (`balance`, `last_timestamp`, `challenge_*`), renovar `hasta` y, según § 4.3.1, `version`.
 
-**Un comando rechazado (D-03, CTO 7-oct)** tiene recibo (`resultado = rechazado`, con su motivo) y **no sube la versión**: el estado no cambia. `version_resultante` = `version_partida`. El recibo hace idempotente el reintento (el mismo `command_id` devuelve el mismo rechazo) sin necesidad de versión nueva.
+#### 4.3.1 Cuándo sube la versión (V3-01, CTO 8-oct)
 
-**Para Astra, una excepción que obliga a subirla:** un comando puede **rechazarse después de haber cambiado el estado**. En el reto, antes de aplicar un comando se emiten los resets de medianoche que tocan a su hora (`lib/motor/reto.mjs`, `aplicaReto`); si un reset dispara un breach, el reto queda en breach (liquidación y cancelaciones) y el comando se rechaza con `sesion_en_breach`. Es el caso de integración de Astra (cierres-8, `323e9d7`): cierre pedido a las 22:00 UTC → `reset_diario`, `breach`, `cierre` por breach, y el comando rechazado. Ahí hay eventos y el estado cambió: **se confirman los eventos, se escribe el estado y la versión sube**, aunque el recibo diga `rechazado`. Propuesta de regla única: **la versión sube si y solo si el comando produce eventos** (cambia el estado); un rechazo sin eventos no la sube.
+**La versión sube con todo cambio del estado confirmado**, haya o no eventos económicos: cursor, cotización, horizonte del reto, `fin_de_datos_emitido`, flags del motor o del reto. Comparación: la proyección canónica del estado nuevo (`lib/motor/motor.mjs`, `serializa`) frente a la confirmada.
 
-Un rechazo sin eventos **renueva el arrendamiento** (es actividad del escritor) sin tocar `version`: propuesta, también para Astra.
+| Caso | ¿Cambia el estado? | Versión | Recibo |
+|---|---|---|---|
+| `avanzar` con velas nuevas, sin fills (solo cursor y cotización) | sí | **+1** | `ultimo_avance` |
+| `avanzar` que solo confirma horizonte del reto (sin velas, sin reset) | sí (`horizonte`) | **+1** | `ultimo_avance` |
+| `avanzar` con fills, cierres, resets | sí | +1 | `economico` |
+| `avanzar` que no cambia nada (mismo cursor y horizonte) | no | igual | `ultimo_avance` |
+| Rechazo puro (`margen_insuficiente`, `precio_cambiado`…) | no | **igual** (D-03) | `economico` (`rechazado`) |
+| Rechazo **después** de cambiar el estado (reset con breach antes del comando, cierres-8) | sí | **+1** | `economico` (`rechazado`, con sus eventos) |
+| Solo renovar el arrendamiento | no (el arrendamiento no es estado económico) | igual | — |
 
-El servidor calculó **fuera de bloqueo** sobre la versión N. Si al bloquear la versión ya no es N, su cálculo **se descarta**: nunca se recalcula ni se recotiza en silencio dentro de la RPC. Un conflicto en un comando económico exige una nueva decisión del alumno, con **otro** `command_id` (§ 12.4).
+Así dos cálculos hechos desde N no pueden confirmar los dos: el primero que cambia el estado deja N+1 y el segundo recibe `409 conflicto` (oráculo de Astra, V3-01). Y dos avances sucesivos nunca quedan con la misma versión.
+
+El servidor calculó **fuera de bloqueo** sobre la versión N. Si al bloquear ya no es N, su cálculo **se descarta**: nunca se recalcula ni se recotiza en silencio dentro de la RPC. Un conflicto en un comando económico exige una nueva decisión del alumno, con **otro** `command_id` (§ 12.4).
+
+#### 4.3.2 Creación idempotente (V3-06, CTO 8-oct)
+
+**El cliente genera el id de la sesión** (UUID) y lo envía con su `command_id`. `sim_crear_sesion(actor_id, session_id, command_id, payload)`:
+- si la sesión ya existe **del mismo actor** y con el mismo digest de creación → devuelve la existente (la respuesta perdida se recupera reintentando con el mismo id);
+- si existe con otro digest o de otro actor → `409 clave_reutilizada` (sin revelar de quién);
+- si no existe → barrera por usuario (bloqueo del perfil del actor, § 6.1), cupo, `profiles.simulador_activo`, inserción con `creada_por_rpc = true`, `motor_version = 1`, `epoca` vigente, mercado fijado (§ 5) y recibo `economico`.
+
+La transición de fase (`sim_avanzar_fase`) sigue la misma regla: el id de la hija lo genera quien la pide, y la unicidad de transición (`unique (challenge_parent_id)` en las hijas, D07 de la especificación) impide dos hijas.
 
 ### 4.4 Una petición en vuelo por sesión
 
@@ -169,35 +198,77 @@ El cliente guarda dos cosas separadas (§ 1.5): el **estado confirmado** (versi�
 | La RPC confirmó y el ACK se perdió | recibo + eventos + estado N+1 | pide los recibos: está; aplica su resultado y lo saca de la cola **sin reenviar** | una sola comisión, una sola fila económica (A18) |
 | Reenvío con el mismo `command_id` tras confirmar | recibo | la RPC devuelve el recibo original sin ejecutar | idempotente |
 | Respuesta vieja que llega tarde (versión < la conocida, u otra sesión/usuario/época) | — | se ignora; nunca se baja de versión (A20) | — |
+| Reintento de un `avanzar` cuyo recibo `ultimo_avance` ya se sobrescribió (V3-07) | el estado ya avanzó (versión > la esperada) | la RPC responde `409 comando_caducado`; el cliente **carga el estado confirmado y descarta su cola** | nada se reejecuta; el alumno sigue desde lo confirmado |
 
 - **«Guardado»** solo se enseña con recibo remoto.
 - **Conflicto** (`409 conflicto`): el comando sale de la cola sin efectos; si era económico, se recotiza y se pide confirmación con **un `command_id` nuevo**.
+- **`comando_caducado`:** solo para `avanzar`/`checkpoint` sin recibo y con versión distinta de la vigente. No hay ambigüedad económica: un avance no lleva intención de operar, y el estado confirmado ya incluye lo que hubiera hecho. Los comandos económicos conservan su recibo siempre, así que «sin recibo» en un comando económico solo puede significar «no se ejecutó».
+- **ACK y snapshot, separados** (V3-07, § 12.4): la respuesta de un comando **confirma su entrada de la cola** (sale por su `command_id`) aunque traiga un snapshot más viejo que el que el cliente ya tiene; el snapshot solo se instala si su versión es **mayor** que la conocida. Una respuesta vieja confirma la cola y no rebaja el estado; nunca deja el comando colgado en la cola.
 - **Identidad:** al cambiar de usuario se descarta la cola de esa clave sin enviarla (A22). Si `localStorage` falla, se avisa y cada comando espera su confirmación.
 - **Borrado:** un reintento de una sesión borrada recibe `410` y no la recrea (A24).
 
 ---
 
-### 6.1 El hub borra al alumno con un comando en vuelo (D-08)
+### 6.1 Borrado del alumno, grafo de claves e intercalados (D-08, V3-05)
 
-**Lo que hace el hub (leído en solo lectura, sin tocarlo):** `algorithmic-suite-hub/pages/api/users/delete.js:104` borra, con `service_role` y sin pasar por ninguna RPC del simulador, `sim_sessions` (y otras 4 tablas del simulador) con `.delete().eq('user_id', userId)`; después la cuenta de acceso y el perfil. **No lee** `sim_sessions` en ningún otro sitio. No marca `terminal` ni toma el bloqueo de la barrera de CD07: borra las filas.
+**Lo que hace el hub (leído en solo lectura, sin tocarlo):** `algorithmic-suite-hub/pages/api/users/delete.js:104` borra, con `service_role`, `sim_sessions` y otras 4 tablas del simulador con `.delete().eq('user_id', userId)`; **después** la cuenta de acceso y, al final, el perfil. No lee `sim_sessions` en ningún otro sitio. No toma ninguna barrera del simulador.
 
-**Qué le pasa a un comando en vuelo**, según cuándo llegue el DELETE respecto a la RPC (Postgres: un DELETE de una fila espera al bloqueo `FOR UPDATE` que tenga otra transacción sobre ella):
+#### Grafo de claves (cada arista con su `ON DELETE`)
 
-| Orden | Qué ocurre | Qué recibe el cliente |
+| Hija → padre | ON DELETE | Estado |
 |---|---|---|
-| El DELETE confirma **antes** de que la RPC bloquee la sesión | La RPC no encuentra la fila en `SELECT … FOR UPDATE`: **no escribe nada** (ni recibo, que no tendría a qué sesión colgarse) | `410 sesion_borrada`. Un reintento con el mismo `command_id`, igual: la RPC nunca crea una sesión |
-| La RPC bloquea **antes** | El DELETE del hub **espera** al COMMIT de la RPC; la RPC confirma recibo, eventos, trades y estado; después el DELETE borra la sesión y **la cascada** se lleva `sim_recibos`, `sim_eventos` y `sim_trades` | `200` con su recibo; el siguiente comando, `410`. Lo confirmado desaparece con el alumno: es lo que se pidió al borrarlo |
-| El servidor calculó fuera de bloqueo y el DELETE confirma antes de la RPC | Igual que la primera fila: su cálculo se descarta | `410` |
+| `sim_sessions.user_id` → `profiles(id)` | **CASCADE** | **nueva** (V3-05, CTO 8-oct). Hoy, según el resumen de s04, las tablas «caen con auth.users»; no consta la FK exacta (D-01) |
+| `sim_sessions.challenge_parent_id` → `sim_sessions(id)` | **CASCADE** (propuesta) | nueva; hoy no consta (D-01). Borrar un reto padre borra sus fases → D-17 |
+| `sim_recibos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
+| `sim_eventos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
+| `sim_arrendamientos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
+| `sim_trades.session_id` → `sim_sessions(id)` | CASCADE | existe (comunicado por el CTO, 4-oct) |
+| `sim_trades.evento_id` → `sim_eventos(id)` | CASCADE | nueva; los dos caen con la sesión (corrige la versión anterior de este documento, que la ponía hacia `sim_sessions`) |
+| `session_drawings.session_id`, `session_chart_config.session_id` → `sim_sessions(id)` | CASCADE | existen |
+| `profiles.id` → `auth.users(id)` | no consta (D-01) | el hub borra la cuenta antes que el perfil |
 
-**Lo que tiene que garantizar el diseño, sin tocar el hub:**
-- **FK con `ON DELETE CASCADE`** de `sim_recibos`, `sim_eventos` (y la nueva `sim_trades.evento_id`) hacia `sim_sessions` (§ 2): ninguna fila huérfana, en ningún orden.
-- **La RPC trata «sesión inexistente» como `410`**, no como error 500, y sin efectos. Lo mismo un `user_id` cuyo perfil ya no existe (el acceso se comprueba dentro de la RPC, § 4.3).
-- **Sin interbloqueo:** la RPC solo bloquea la fila de la sesión (y la del reto padre) y escribe en tablas hijas; el DELETE del hub bloquea las filas de `sim_sessions` del alumno y espera. Una RPC de **otro** alumno no comparte filas. El riesgo que queda es el de un alumno con dos sesiones y dos comandos a la vez en sesiones distintas mientras el hub borra: el DELETE espera a cada una por separado; no hay ciclo porque la RPC no bloquea una segunda sesión.
-- **La cola del cliente** de ese alumno se descarta al perder la identidad (§ 6, A22): no se reenvía nada a otra cuenta.
+`user_id` de recibos, eventos y trades es una copia para la RLS: no lleva FK propia; caen con su sesión.
 
-**Lo que no garantiza:** la barrera `terminal` con lápida (CD07) solo existe para los borrados que pasan por `sim_borrar_sesion` / `sim_borrar_alumno` del simulador. El del hub no deja lápida; como los ids son UUID y la RPC nunca inserta sesiones, un reintento no puede resucitar nada, pero la respuesta es `410` por fila inexistente, no por lápida. Si se quiere lápida también ahí, el hub tendría que llamar a la RPC del simulador: **no se toca el hub** sin decisión expresa.
+#### Orden de bloqueos e interbloqueo
+
+- **Simulador: siempre padre y después hija** (§ 4.3), y nunca dos sesiones que no sean padre e hija.
+- **El DELETE del hub** bloquea las filas de `sim_sessions` del alumno en el orden en que las recorra; no se puede imponer sin tocar el hub. Con un reto padre P y su hija H, una RPC sobre H (bloquea P y luego H) y el DELETE (que puede tomar H y esperar a P) **pueden interbloquearse**.
+- **Tratamiento (CTO 8-oct): el interbloqueo es un reintento controlado e idempotente.** PostgreSQL aborta una de las dos transacciones (`40P01`):
+  - si aborta la **RPC**: el endpoint reintenta la RPC con el **mismo** `command_id` (como mucho 3 veces, con espera corta y aleatoria). Al reintentar, o el DELETE ya confirmó (→ `410`, sin efectos) o la RPC gana y confirma; el recibo hace idempotente el reintento;
+  - si aborta el **DELETE del hub**: su código para y dice dónde (`intenta`, «el mensaje dice dónde paró», prueba `d02-borrar-alumno` del hub); el administrador repite el borrado, que es idempotente. No se toca el hub.
+
+#### Los tres intercalados de Astra (V3-05), como pruebas en PostgreSQL de ensayo
+
+| # | Intercalado | Resultado exigido |
+|---|---|---|
+| **I1** | **Creación en vuelo:** el hub ya borró `sim_sessions` del alumno; antes de que borre la cuenta y el perfil, una `sim_crear_sesion` autorizada inserta una sesión nueva | La sesión nueva **desaparece** cuando el hub borra el perfil (FK `sim_sessions.user_id → profiles ON DELETE CASCADE`), con todo lo que cuelga de ella. Además, `sim_crear_sesion` toma un bloqueo del **perfil** del actor (barrera por usuario): si el perfil ya no existe, `410`. Al acabar el borrado no queda ninguna fila del alumno en ninguna tabla del simulador |
+| **I2** | **Transición en vuelo:** `sim_avanzar_fase` crea la hija H de P mientras el hub borra | O el DELETE confirma antes (la RPC no encuentra P → `410`, sin hija) o la RPC confirma antes (H existe y el DELETE la borra: por `user_id`, por la cascada desde P y, en último caso, por la del perfil). Ninguna hija sobrevive |
+| **I3** | **Interbloqueo padre/hija:** RPC sobre H (bloquea P, luego H) frente al DELETE del hub (bloquea H, espera P) | Una de las dos aborta con `40P01`; si es la RPC, su reintento con el mismo `command_id` da `410` o el recibo; si es el DELETE, el borrado repetido termina. Ningún estado intermedio: ni medio comando ni medio borrado |
+
+Además, los dos órdenes simples de un comando ordinario: DELETE antes de la RPC (`410`, sin efectos) y RPC antes del DELETE (`200`, y después la cascada se lo lleva).
+
+**Lo que no hace:** la lápida de CD07 (`terminal`) solo existe en los borrados que pasan por `sim_borrar_sesion` / `sim_borrar_alumno`. El borrado del hub no la deja; no hace falta para impedir resurrecciones (los ids son UUID y ninguna RPC inserta una sesión sin el perfil vivo, I1), pero la respuesta es `410` por fila inexistente.
 
 ## 7. Sesiones antiguas en solo lectura (corte)
+
+### 7.0 Inventario de los escritores económicos actuales (V3-04, CTO 8-oct)
+
+Buscado en `pages/`, `components/` y `lib/` (sin `lib/motor/`) el 8-oct: todas las escrituras en `sim_sessions` y `sim_trades`.
+
+| Escritor | Qué escribe | Quién | Qué pasa en el corte |
+|---|---|---|---|
+| `components/useTradingActions.js:49`, `:67` | INSERT `sim_trades`; UPDATE `balance`, `last_timestamp` | navegador | el SQL lo impide (§ 8); el cliente nuevo no lo llama en v1 |
+| `components/_SessionInner.js:1104`, `:1363`, `:1949`, `:1950` | UPDATE `balance`, `last_timestamp`, `timeframe`; INSERT `sim_trades` | navegador | igual; `timeframe` pasa a ser no económico (grant de columna, § 8) |
+| `components/usePairData.js:25` | UPDATE `last_timestamp`, `timeframe` | navegador | `last_timestamp` lo escribe solo la RPC; `timeframe` sigue |
+| `pages/dashboard.js:183` | INSERT `sim_sessions` con `capital` y `balance` | navegador | sustituido por `sim_crear_sesion` (§ 4.3.2) |
+| `pages/dashboard.js:135` | DELETE `sim_sessions` | navegador | por `sim_borrar_sesion` (lápida, CD07) |
+| `pages/api/challenge/create.js:104` | INSERT `sim_sessions` (reto) | servidor, `service_role` | **delega por entero** en `sim_crear_sesion` (con el reto como reglas del estado) o se retira; nunca inserta una fila fuera del protocolo (evita la «tercera categoría» de Astra: `motor_version = 0`, `legado = false`, sin estado) |
+| `pages/api/challenge/advance.js:89`, `:168`, `:198`, `:235`, `:275`, `:284` | lee y UPDATE de `balance`, `last_timestamp`, estado de fase; INSERT de la hija | servidor, `service_role` | **rechaza** sesiones `legado` (`409 solo_lectura`) y v1 (`409 usar_comando`); la transición v1 es `sim_avanzar_fase` |
+| `pages/api/challenge/status.js:54` | lee la sesión y reconstruye el estado del reto desde los trades | servidor, `service_role` | **rechaza** v1 (el estado del reto está en `sim_sessions.estado`) y deja de ser autoridad para legado (solo lectura de lo guardado) |
+| `pages/api/admin/wipe-simulador.js:96` | DELETE de las tablas del simulador por `user_id` | servidor, admin | pasa por `sim_borrar_alumno`, o queda cubierto por § 6.1 (cascada e intercalados) |
+| `pages/api/admin/alumno-sim/[id].js:42` | lectura | servidor, admin | sin cambio |
+
+**Pruebas (A23, A25 ampliadas, V3-04):** llamar **directamente a las URL** `challenge/create`, `challenge/advance` y `challenge/status` con un alumno autenticado, sobre una sesión legado (reto `active` con trades que su evaluador anterior aprobaría, y un `end_timestamp` dentro del rango admitido) y sobre una v1: ninguna escribe `balance`, `last_timestamp`, estado de fase ni crea hija. No basta con quitar los botones.
 
 Según § 6 y § 12.6 de la especificación, en este orden:
 
@@ -228,7 +299,10 @@ Roles: `anon`, alumno (`authenticated`, dueño), alumno ajeno, revocado (`simula
 | Storage `forex-data` y `mercado/v1` | — | — | — | — | — | lectura/escritura (bucket privado) |
 
 **RLS:**
-- `sim_sessions`, `sim_recibos`, `sim_eventos`, `sim_trades`: política **SELECT** `auth.uid() = user_id` para `authenticated`; **ninguna** política de INSERT/UPDATE/DELETE para `authenticated` en las tres nuevas y en `sim_trades`; en `sim_sessions`, política UPDATE `auth.uid() = user_id` **con** `WITH CHECK` igual, y el grant de columna limitado a `name` (la RLS filtra filas; el grant de columna filtra columnas).
+- `sim_sessions`, `sim_recibos`, `sim_eventos`, `sim_trades`: política **SELECT** `auth.uid() = user_id` para `authenticated`; **ninguna** política de INSERT/UPDATE/DELETE para `authenticated` en las tres nuevas y en `sim_trades`.
+- **`name` (y `timeframe`) exigen acceso vigente** (V3-06, CTO 8-oct): política UPDATE de `sim_sessions` con `USING` y `WITH CHECK` = `auth.uid() = user_id` **y** el perfil del usuario con `simulador_activo = true`; grant de columna limitado a `name` y `timeframe`. Un revocado no puede escribir ni eso.
+- **`sim_arrendamientos`:** sin grants para `authenticated` ni `anon`; solo las RPC.
+- **Se retiran** los grants y políticas heredados que hoy permiten ALL al dueño, y `EXECUTE` de las RPC a `PUBLIC` (solo `service_role`). La RLS por dueño, sola, no basta (Astra, diseño-3 § B).
 - Las RPC son `SECURITY DEFINER` con `search_path` vacío; derivan `user_id` de la sesión bloqueada, nunca del payload (una RPC de A no puede apuntar a la sesión de B, A23).
 - Se prueba en PostgreSQL de ensayo real (A28), no con el doble: anon, A, B, revocado y admin contra esta matriz; la migración dos veces; un fallo a mitad.
 
@@ -250,34 +324,37 @@ Roles: `anon`, alumno (`authenticated`, dueño), alumno ajeno, revocado (`simula
 
 Eventos: **≈ 152 B** de `datos` por evento (media medida sobre `fill` y `orden_creada`).
 
-### 9.2 Estimado (hipótesis explícitas, no medidas en Postgres)
+### 9.2 Estimado con la regla nueva de recibos (V3-07, V3-10; hipótesis explícitas, no medidas en Postgres)
 
-- Fila de `sim_eventos` ≈ 152 B de `datos` + ≈ 100 B de columnas y cabecera + índices ≈ **0,35 KB**.
-- Fila de `sim_recibos` ≈ **0,35 KB** con su índice.
-- Una operación completa (abrir + cerrar, con fill y cierre) ≈ 2 comandos y 3–4 eventos ≈ **2 KB** con su `sim_trades`.
-- Avance: con un comando cada 5 s de reproducción, **una hora** de reproducción ≈ 720 recibos ≈ **250 KB**. Por eso los recibos de avance **sin eventos** tienen retención (§ 12.7): se conservan, por ejemplo, los de las últimas 24 h y uno por día después (D-06).
-- Snapshot: el vigente pesa ≤ 15 KB (14,6 KB con el reto). Cada UPDATE deja una versión muerta que limpia autovacuum; no crece con el tiempo.
+**Hipótesis:** fila de `sim_recibos` o `sim_eventos` ≈ **0,35 KB** con índices; fila de `sim_trades` ≈ 0,5 KB; snapshot ≤ **15 KB** medido con un par (§ 9.1). **El estado multipar no está medido** (D-12): con 50 posiciones + órdenes y 9 pares de cotización estimo ≤ **20 KB**; se medirá con la pieza 7.
 
-Las cifras de recibos «con retención» son las de una sesión cuya reproducción tiene más de 24 h: mientras tanto se conservan enteros (≈ 250 KB por hora reproducida en las últimas 24 h).
+**Estado estable** (lo que queda guardado; los avances sin eventos ya no dejan filas, solo el `ultimo_avance`):
 
-| Escenario por sesión | Eventos + trades | Recibos | Total aprox. |
-|---|---|---|---|
-| Ligera: 50 operaciones, 5 h de reproducción, con retención y pasadas 24 h | ≈ 0,1 MB | ≈ 0,05 MB | **≈ 0,15 MB** |
-| La misma, el día en que se reprodujo (sin aplicar aún la retención) | ≈ 0,1 MB | ≈ 1,3 MB | **≈ 1,4 MB** |
-| Intensa: 500 operaciones, 50 h de reproducción, con retención y pasadas 24 h | ≈ 1 MB | ≈ 0,5 MB | **≈ 1,5 MB** |
-| Intensa **sin** retención de avances | ≈ 1 MB | ≈ 12,5 MB | **≈ 14 MB** |
+| Sesión | Recibos `economico` | Eventos | Trades | Snapshot + `ultimo_avance` | Total |
+|---|---|---|---|---|---|
+| Ligera: 50 operaciones (≈ 100 comandos, ≈ 200 eventos) | ≈ 35 KB | ≈ 70 KB | ≈ 25 KB | ≈ 20 KB | **≈ 0,15 MB** |
+| Intensa: 500 operaciones (≈ 1.000 comandos, ≈ 2.000 eventos) | ≈ 350 KB | ≈ 700 KB | ≈ 250 KB | ≈ 20 KB | **≈ 1,3 MB** |
 
-Con 5 alumnos y su cupo (6 sesiones Basic, 12 Extra: `pages/dashboard.js:191–193`), el peor caso con retención es 5 × 12 × 1,5 MB ≈ **90 MB**.
+Con 5 alumnos y su cupo máximo (12 sesiones Extra): 60 sesiones intensas ≈ **78 MB**. Ya **no depende de las horas reproducidas**: la reproducción no deja filas.
+
+**Pico de 24 h:** lo que crece con la reproducción ya no son filas vivas, sino **versiones muertas** de las filas que se reescriben en cada avance: `sim_sessions` (snapshot ≤ 20 KB, en TOAST) y el `ultimo_avance` (0,35 KB). Autovacuum las marca reutilizables, pero mientras no pasa ocupan, y el fichero no se encoge solo.
+
+| Escenario | Avances por hora (1 cada 5 s por sesión, § 4.4) | Escrito por hora (≈ 20,35 KB por avance) |
+|---|---|---|
+| Los 5 alumnos reproduciendo a la vez, una sesión cada uno | 5 × 720 = 3.600 | **≈ 73 MB/h** |
+| 60 sesiones reproduciendo a la vez (todo el cupo) | 43.200 | **≈ 880 MB/h** |
+
+El espacio muerto que queda en un momento dado depende de la frecuencia de autovacuum en `sim_sessions` y su TOAST: con una pasada cada pocos minutos, son unos MB; con una hora de retraso en el peor escenario, del orden de cientos de MB. Es una **cota de escritura**, no una previsión de ocupación (la compresión de TOAST no está medida).
 
 ### 9.3 Frente al plan
 
-Según la página de precios de Supabase (consultada el 7-oct-2026, <https://supabase.com/pricing>): el plan **gratuito** incluye «500 MB database size per project», y los proyectos gratuitos se pausan tras una semana de inactividad; **Pro** incluye 8 GB de disco por proyecto (después, 0,125 USD/GB).
+Según la página de precios de Supabase (consultada el 7-oct-2026, <https://supabase.com/pricing>): el plan **gratuito** incluye «500 MB database size per project»; **Pro**, 8 GB de disco por proyecto (después, 0,125 USD/GB).
 
-- **Los 500 MB son del proyecto entero**, compartido con el hub y el journal. **Hoy ocupa unos 170 MB** (captura del panel de Ramón, comunicada por el CTO el 7-oct, D-07): quedan **≈ 330 MB** para todo el proyecto.
-- **Con retención** de avances (D-06, aprobada), el peor caso de § 9.2 (60 sesiones intensas) es **≈ 90 MB**: **≈ 27 %** de esos 330 MB, y la base quedaría en ≈ 260 MB de 500. A eso se suma, durante el día en que se reproduce, ≈ 250 KB por hora reproducida en cada sesión (se poda a las 24 h).
-- **Sin** retención, el peor caso (≈ 14 MB por sesión intensa, ≈ 840 MB con 60 sesiones) **no cabe**, ni con una cuarta parte de esas sesiones (≈ 210 MB de 330, con el resto del proyecto creciendo).
-- El margen es del proyecto: el hub y el journal también crecen. No sé a qué ritmo; los 170 MB son una foto.
-- La especificación ya decide que **la v1 no se habilita sin Supabase Pro** (§ 12.7), por el mercado versionado en Storage (§ 7.3), no por la base. Este cálculo no cambia esa decisión.
+- **La base ocupa hoy unos 170 MB** (captura de Ramón, D-07): quedan **≈ 330 MB** para todo el proyecto (hub y journal incluidos, que también crecen).
+- **Estado estable:** ≈ 78 MB en el peor caso del cupo actual: cabe.
+- **Pico de 24 h:** con los 5 alumnos a la vez, ≈ 73 MB/h de escritura que autovacuum tiene que reciclar al ritmo; con el cupo entero a la vez, ≈ 880 MB/h, que **no cabe** si autovacuum se retrasa. La retención ya no es el problema; el problema son las reescrituras del snapshot.
+- **Límites que lo acotan:** un avance cada ≥ 5 s y una petición en vuelo por sesión (§ 4.4); un escritor por sesión (§ 4.2); propuesta de **una sola sesión v1 en reproducción a la vez por alumno** (D-18).
+- **Pro sigue siendo condición para encender la v1** (§ 12.7, CTO 8-oct).
 
 ---
 
@@ -289,15 +366,26 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 |---|---|---|
 | D-01 | Salida completa de s04 fila a fila antes de escribir el SQL | **Sí**; el CTO la pedirá a Ramón cuando toque |
 | D-02 | Lista de tipos de evento | **La del motor manda** (§ 2.3) |
-| D-03 | ¿Un comando rechazado sube la versión? | **No: tiene recibo y el estado no cambia** (§ 4.3). **Para Astra:** el rechazo que llega después de un reset con breach sí cambia el estado; propuesta: la versión sube si y solo si hay eventos (§ 4.3) |
+| D-03 | ¿Un comando rechazado sube la versión? | **Rechazo puro: no.** Sustituida por V3-01 (8-oct): la versión sube con **todo** cambio del estado confirmado, haya o no eventos; un rechazo después de un reset con breach sí la sube (§ 4.3.1) |
 | D-04 | Arrendamiento de 60 s y confirmación en «Usar aquí» | **Aprobado** |
 | D-05 | `balance`, `last_timestamp`, `challenge_*` como proyecciones que escribe la RPC | **Aprobado** |
-| D-06 | Retención: 24 h enteras y después uno por día | **Aprobado** |
+| D-06 | Retención de recibos de avance | **Sustituida por V3-07/V3-10 (8-oct):** un único recibo `ultimo_avance` por sesión, sobrescrito; reintento sin recibo → `comando_caducado` (§ 2.2, § 6) |
 | D-08 | ¿El hub lee `sim_sessions`? | **Cerrada:** no lee; solo borra con `service_role` (`algorithmic-suite-hub/pages/api/users/delete.js:104`). Comando en vuelo: § 6.1 |
 | D-09 | Orden del despliegue (cliente con época → corte → permisos) | **Aprobado, con ensayo previo** |
 | D-10 | Bucket privado leído con `service_role` desde el endpoint | **Aprobado** |
 | D-11 | Empaquetar el motor para el navegador | **Después de la persistencia** |
-| D-12 | Forma multipar del estado | **A la espera de Astra** sobre la v2.2 (§ 13 de la especificación) |
+| D-12 | Forma multipar del estado | **A la espera** de la v2.3 de la especificación (§ 13) |
+| V3-04 | Escritores económicos antiguos en el corte | **Rechazan legado y v1 o delegan en las RPC**; pruebas llamando a las URL (§ 7.0) |
+| V3-05 | Grafo de claves, bloqueos e interbloqueo | **FK sesión → perfil en cascada; padre y después hija; interbloqueo = reintento idempotente; I1–I3 como pruebas** (§ 6.1) |
+| V3-06 | Testigo, actor y creación | **Testigo fuera del navegador, nuevo en cada toma, caducidad con `now()`; `actor_id` comparado con el dueño; id de sesión del cliente; `name` con acceso vigente** (§ 4, § 8) |
+
+**Nuevas, del CTO (propuestas de este documento):**
+
+| # | Decisión | Propuesta |
+|---|---|---|
+| D-16 | Dónde guarda el servidor el testigo de cada pestaña | cookie de servidor `HttpOnly` por pestaña (`cliente_id`), firmada; el navegador no puede leerla |
+| D-17 | `ON DELETE` de `challenge_parent_id` | CASCADE: borrar un reto padre borra sus fases (hoy no consta qué pasa) |
+| D-18 | Una sola sesión v1 en reproducción a la vez por alumno | sí: acota el pico de escritura (§ 9.3) |
 
 **De Ramón:**
 
@@ -313,5 +401,5 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 ## 11. Lo que este documento no hace
 
 - No escribe SQL ni código; no toca la base, Storage ni la web.
-- No decide la forma multipar del estado (D-12: a la espera de Astra sobre la v2.2).
+- No decide la forma multipar del estado (D-12: a la espera de la v2.3).
 - No mide Postgres real: los tamaños de § 9.2 son estimaciones con sus hipótesis; los de § 9.1 están medidos con el motor.
