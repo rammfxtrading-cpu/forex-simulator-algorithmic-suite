@@ -39,6 +39,8 @@
  *   se publican los guardados tal cual + los minutos nuevos. Desplazado (le
  *   faltan 00:00–03:59), a 2 pips o discrepante bajo el cerrojo: 4, nada;
  *   C6-08: 2 % y 10 % en ticks enteros: debajo e igual pasan, encima no.
+ *   C7-02: la mediana igual (referencia 1,2; mayoria del dia en 1,31999 /
+ *   1,32000 / 1,32001).
  *   60 velas planas con volumen 0: se quitan (1.380 publicadas).
  */
 import { titulo, oraculo, fin, escenario, db, guardado, REPO } from '../lib.mjs'
@@ -188,6 +190,19 @@ for (const [que, texto, esperado] of fronteras) {
   base()
   const r = await corre([...ARGS(fichero(`frontera-${que.replace(/[^a-z0-9]+/gi, '-')}.csv`, texto)), ...SUBIR])
   oraculo('IC01', `C6-08: ${que}: ${esperado === 0 ? 'pasa (0)' : 'rechazado (4, nada)'}`, r.codigo === esperado && (esperado === 0 ? subidasDatos() === 1 : subidasDatos() === 0), `codigo ${r.codigo} · ${r.salida.filter(l => /✗|✓ PUB/.test(l)).join(' | ')}`)
+}
+
+titulo('3h · C7-02 (Astra, cierres-7): la mediana tambien en ticks; exactamente al 10 % pasa')
+// el caso de Astra: todo lo guardado a 1,20000 y del 20-jul solo 300 minutos (00:00–04:59); el CSV los conserva, sube
+// por 1,22–1,30 y se queda en T: la mayoria del dia (y la mediana) queda en T. 10 % de 1,20000 = 1,32000
+// (en coma flotante 1,32 / 1,2 − 1 = 0,10000000000000009: se rechazaba)
+const a120 = v => ({ ...v, open: 1.2, high: 1.2, low: 1.2, close: 1.2 })
+const con300 = () => escenario({ storage: { 'forex-data': { [RUTA]: JSON.stringify(historial().filter(v => !(new Date(v.time * 1000).toISOString().startsWith('2026-07-20') && (v.time % 86400) >= 300 * 60)).map(a120)) } } })
+const mayoria = T => velasDe('2026-07-20').map((v, i) => { const p = i < 300 ? 1.2 : [1.22, 1.24, 1.26, 1.28, 1.3][i - 300] ?? T; return { ...v, open: p, high: p, low: p, close: p } })
+for (const [que, T, esperado] of [['justo debajo (1,31999)', 1.31999, 0], ['exactamente al 10 % (1,32000)', 1.32, 0], ['justo encima (1,32001)', 1.32001, 4]]) {
+  con300()
+  const r = await corre([...ARGS(fichero(`mediana-${T}.csv`, csv(mayoria(T)))), ...SUBIR])
+  oraculo('IC01', `C7-02: mediana ${que}: ${esperado === 0 ? 'pasa (0)' : 'rechazado (4, nada)'}`, r.codigo === esperado && subidasDatos() === (esperado === 0 ? 1 : 0), `codigo ${r.codigo} · ${r.salida.filter(l => /✗|✓ PUB/.test(l)).join(' | ')}`)
 }
 
 titulo('3e · CSV-04 (Astra, cierres-5): --objetivo con al menos un elemento valido y sin vacios')

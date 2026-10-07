@@ -137,17 +137,18 @@ async function main() {
   const guardadas = leido.estado === 'ok' ? leido.velas : []
   const previas = guardadas.filter(v => v.time < Date.parse(dia + 'T00:00:00Z') / 1000)
   const ultimoGuardado = previas.length ? previas[previas.length - 1].close : null
+  // C6-08 (Astra, cierres-6): en ticks enteros, |x − ref| × 100 ≤ max × ref; el
+  // valor exactamente igual al umbral pasa (sin errores de coma flotante).
+  // C7-02 (cierres-7): la misma regla para la mediana.
+  const fuera = (x, ref, max) => Math.abs(ticks(x) - ticks(ref)) * 100 > max * ticks(ref)
   if (ultimoGuardado != null) {
     const ref = ultimoGuardado, med = mediana(nuevas.map(v => v.close))
-    if (!(Math.abs(med / ref - 1) <= 0.10)) throw para(`precio no plausible para ${par}: mediana del CSV ${med} frente al ultimo cierre guardado ${ref} (¿es de otro par?)`)
+    if (fuera(med, ref, BANDA_MAX)) throw para(`precio no plausible para ${par}: mediana del CSV ${med} frente al ultimo cierre guardado ${ref} (¿es de otro par?)`)
   }
   // CSV-02 (Astra, cierres-5): la mediana no certifica cada fila. Cada extremo
   // (O, H, L, C) a ≤ SALTO_MAX del cierre anterior (la primera vela, del
   // ultimo cierre guardado) y a ≤ BANDA_MAX del ultimo cierre guardado. Lo
   // anomalo se rechaza ENTERO: se revisa a mano, no se publica.
-  // C6-08 (Astra, cierres-6): en ticks enteros, |x − ref| × 100 ≤ max × ref; el
-  // valor exactamente igual al umbral pasa (sin errores de coma flotante)
-  const fuera = (x, ref, max) => Math.abs(ticks(x) - ticks(ref)) * 100 > max * ticks(ref)
   let anterior = ultimoGuardado
   for (const v of nuevas) {
     for (const [k, x] of [['open', v.open], ['high', v.high], ['low', v.low], ['close', v.close]]) {
