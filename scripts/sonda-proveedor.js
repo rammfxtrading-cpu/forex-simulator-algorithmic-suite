@@ -38,8 +38,8 @@ function pedidos(argv) {
 
 // --cabeceras: solo las de limite, y sin nada que parezca una URL
 const DE_LIMITE = /^(retry-after|x-ratelimit-[a-z0-9-]+|server|via|cf-[a-z0-9-]+)$/i
-const fetchConCabeceras = ver => async (...a) => {
-  const r = await globalThis.fetch(...a)
+const fetchConCabeceras = (ver, base) => async (...a) => {
+  const r = await base(...a)
   if (ver) {
     const vistas = []
     for (const [k, v] of (r.headers?.entries?.() ?? [])) if (DE_LIMITE.test(k)) vistas.push(`${k.toLowerCase()}: ${String(v).replace(/[a-z]+:\/\/\S+/gi, '[url]')}`)
@@ -48,6 +48,7 @@ const fetchConCabeceras = ver => async (...a) => {
   return r
 }
 
+let FETCH_PROV
 async function main() {
   const args = process.argv.slice(2)
   const ic = args.indexOf('--cabeceras'), verCabeceras = ic >= 0
@@ -63,6 +64,8 @@ async function main() {
     return
   }
   const DESC = await import('../lib/mercado/descarga.mjs')
+  // CTO 7-oct: UNA conexion keep-alive por job, con User-Agent del proyecto
+  FETCH_PROV = (await import('../lib/mercado/conexion.mjs')).fetchDelJob()
   const E = await import('../lib/mercado/errores.mjs')
   console.log(`\n=== SONDA DEL PROVEEDOR (educada: 1 intento por dia, pausa ${pausaS} s) — ${new Date().toISOString()} — ${lista.length} dia(s) ===\n`)
   const filas = []
@@ -72,7 +75,7 @@ async function main() {
     const t0 = Date.now(), p0 = performance.now()
     let res
     try {
-      const r = await DESC.bajaDia({ sdk: dukascopy, fetch: fetchConCabeceras(verCabeceras), espera: sleep, log: l => console.log('    ' + l), par, dia, intentos: 1 })
+      const r = await DESC.bajaDia({ sdk: dukascopy, fetch: fetchConCabeceras(verCabeceras, FETCH_PROV), espera: sleep, log: l => console.log('    ' + l), par, dia, intentos: 1 })
       res = r.velas.length ? `disponible ${r.velas.length} velas` : 'sin datos'
       redSeguidas = 0
     } catch (e) {
@@ -95,4 +98,4 @@ async function main() {
   else { console.log(`\n=== ⚠️ ATENCION: ${no.length} de ${filas.length} dia(s) no disponibles (codigo 2) ===`); process.exitCode = 2 }
 }
 
-main().catch(async e => { const E = await import('../lib/mercado/errores.mjs').catch(() => null); console.error('Fatal:', E ? E.texto(e) : 'Error'); process.exit(4) })
+main().finally(() => FETCH_PROV?.cierra?.()).catch(async e => { const E = await import('../lib/mercado/errores.mjs').catch(() => null); console.error('Fatal:', E ? E.texto(e) : 'Error'); process.exit(4) })

@@ -19,6 +19,7 @@
   "cb01-cobertura-en-aviso": 13,
   "cb02-aviso-sin-ocultar": 5,
   "cb03-aviso-temporal": 9,
+  "cx01-conexion-reutilizada": 5,
   "d03-historico-parcial": 17,
   "d04-antidegradacion": 12,
   "d05-actualizador-y-cache": 9,

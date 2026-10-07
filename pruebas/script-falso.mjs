@@ -97,6 +97,8 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
     fs.promises.open = function (p, ...resto) { guarda(p, 'promises.open'); return orig.fs.promisesOpen.call(this, p, ...resto) }
     // bloque N, punto 2: se apunta lo que PIDE cada espera (esperas, en ms) aunque corra al instante
     globalThis.setTimeout = (f, ms, ...a) => { esperas.push(ms ?? 0); return orig.st(f, 0, ...a) }
+    // el fetch del proveedor de los scripts (lib/mercado/conexion.mjs fetchDelJob): el doble
+    globalThis.__dobleProveedor = proveedorFalso.fetchFalso
     // bloque F, punto 4: el fetch del script es el del proveedor falso (fuera, bloqueado)
     globalThis.fetch = proveedorFalso.fetchFalso
     globalThis.Date = FechaFija
@@ -122,7 +124,7 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
   } finally {
     Module._load = orig.load
     for (const via of ['readFileSync', 'openSync', 'createReadStream', 'readFile', 'open']) fs[via] = orig.fs[via]
-    fs.promises.readFile = orig.fs.promisesReadFile; fs.promises.open = orig.fs.promisesOpen; globalThis.setTimeout = orig.st; globalThis.Date = orig.Date; globalThis.fetch = orig.fetch
+    fs.promises.readFile = orig.fs.promisesReadFile; fs.promises.open = orig.fs.promisesOpen; globalThis.setTimeout = orig.st; globalThis.Date = orig.Date; globalThis.fetch = orig.fetch; delete globalThis.__dobleProveedor
     console.log = orig.log; console.error = orig.err; process.stdout.write = orig.write; process.exit = orig.exit
     process.chdir(orig.cwd); process.argv = orig.argv
     for (const k of Object.keys(process.env)) if (!(k in orig.env)) delete process.env[k]

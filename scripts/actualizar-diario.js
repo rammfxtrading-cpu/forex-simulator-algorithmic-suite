@@ -105,9 +105,12 @@ let CORTE_429 = null      // 'PAR dia: motivo' cuando el proveedor limita
 // «red». Lanza ErrorDescarga si no se pudo. → velas del dia ([] si no hay datos)
 const dukascopy = require('dukascopy-node')
 let DESC   // lib/mercado/descarga.mjs (ESM, se carga en main)
+// CTO 7-oct: UNA conexion keep-alive por job hacia el proveedor, con User-Agent
+// del proyecto (lib/mercado/conexion.mjs); se crea en main y se cierra al acabar
+let FETCH_PROV
 async function bajarDia(pair, y, m, d, limite = Infinity) {
   const dia = new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10)
-  const r = await DESC.bajaDia({ sdk: dukascopy, fetch: (...a) => globalThis.fetch(...a), espera: sleep, log: l => console.log('    ' + l), par: pair, dia, limite, intentos: INTENTOS_DIA })
+  const r = await DESC.bajaDia({ sdk: dukascopy, fetch: FETCH_PROV, espera: sleep, log: l => console.log('    ' + l), par: pair, dia, limite, intentos: INTENTOS_DIA })
   return r.velas
 }
 
@@ -307,6 +310,7 @@ async function main() {
   }
   F = await import('../lib/mercado/ficheros.mjs')
   DESC = await import('../lib/mercado/descarga.mjs')
+  FETCH_PROV = (await import('../lib/mercado/conexion.mjs')).fetchDelJob()
   C = await import('../lib/mercado/calidad.mjs')
   E = await import('../lib/mercado/errores.mjs')
   try { ACEPTADOS = (await import('../lib/mercado/aceptados.mjs')).cargaAceptados() }
@@ -462,4 +466,4 @@ async function main() {
 }
 
 // codigo 4: error inesperado (bloque G, punto 10)
-main().catch(e => { console.error('Fatal:', E ? E.texto(e) : (e?.name === 'TypeError' ? 'TypeError' : 'Error')); process.exit(4) })
+main().finally(() => FETCH_PROV?.cierra?.()).catch(e => { console.error('Fatal:', E ? E.texto(e) : (e?.name === 'TypeError' ? 'TypeError' : 'Error')); process.exit(4) })
