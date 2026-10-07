@@ -58,7 +58,32 @@ const { r: r3, log: l3 } = await conLog(() => llama(status, { method: 'GET', tok
 db.falla = null
 oraculo('AP01', 'challenge/status: 503 sin el mensaje del error en la respuesta ni en el log', r3.estado === 503 && limpio(r3, l3), `${r3.estado} · ${JSON.stringify(r3.cuerpo)} · log: ${l3.join(' | ').slice(0, 200)}`)
 
-titulo('4 · barrido de pages/api')
+titulo('4 · W-01 (Astra, 7-oct): reintentar el cierre de un reto ya cerrado')
+// H4 dejo registra(iErr) en el retorno de «sesion ya cerrada», antes de declararse
+// iErr: ReferenceError y 500 en vez del 409 controlado. Reintento sobre una fase
+// cerrada de cada tipo y la respuesta perdida (el cierre se aplico; se repite).
+const advance = (await importa('pages/api/challenge/advance.js')).default
+const escrituras = () => db.log.filter(l => ['insert', 'update', 'delete', 'upsert'].includes(l.op) && !String(l.tabla).startsWith('storage')).length
+const retoCerrado = status => { escenario({ perfiles: [perfil(A)], sim_sessions: [sesionSim({ id: 'reto-c', challenge_type: '2F', challenge_phase: 1, capital: 100000, balance: 110000, status })], sim_trades: [tradeSim({ session_id: 'reto-c', pnl: 10000, result: 'WIN', closed_at: '2025-03-04T12:00:00Z' })] }) }
+const avanza = (id, outcome = 'pass') => llama(advance, { method: 'POST', token: tok(A), body: { session_id: id, outcome, end_timestamp: 1741100000 } })
+const vistos409 = {}
+for (const st of ['passed_phase', 'failed_dd_total', 'passed_all']) {
+  retoCerrado(st)
+  const antes = escrituras()
+  let r
+  try { r = await avanza('reto-c') } catch (e) { r = { estado: 'lanzo ' + (e?.name ?? 'Error') } }
+  vistos409[st] = `${r.estado}${r.cuerpo?.currentStatus ? ' ' + r.cuerpo.currentStatus : ''} · ${escrituras() - antes} escrituras`
+}
+oraculo('AP01', 'reintento sobre passed_phase, failed_dd_total y passed_all: 409 controlado (con su estado) y cero escrituras', Object.entries(vistos409).every(([st, v]) => v === `409 ${st} · 0 escrituras`), JSON.stringify(vistos409))
+escenario({ perfiles: [perfil(A)], sim_sessions: [sesionSim({ id: 'reto-p', challenge_type: '2F', challenge_phase: 1, capital: 100000, balance: 110000 })], sim_trades: [tradeSim({ session_id: 'reto-p', pnl: 10000, result: 'WIN', closed_at: '2025-03-04T12:00:00Z' })] })
+const primero = await avanza('reto-p')
+const antesRe = escrituras()
+let re
+try { re = await avanza('reto-p') } catch (e) { re = { estado: 'lanzo ' + (e?.name ?? 'Error') } }
+const hijas = db.tablas.sim_sessions.filter(x => x.challenge_parent_id === 'reto-p').length
+oraculo('AP01', 'respuesta perdida: el cierre se aplico (phase_passed); el reintento responde 409 sin escribir y sigue habiendo una sola fase hija', primero.estado === 200 && re.estado === 409 && re.cuerpo?.currentStatus === 'passed_phase' && escrituras() === antesRe && hijas === 1, `1.º ${primero.estado} ${primero.cuerpo?.action ?? ''} · reintento ${re.estado} · ${escrituras() - antesRe} escrituras · ${hijas} hija(s)`)
+
+titulo('5 · barrido de pages/api')
 const rutas = []
 const recorre = d => { for (const n of readdirSync(d)) { const p = d + '/' + n; if (statSync(p).isDirectory()) recorre(p); else if (/\.m?js$/.test(n)) rutas.push(p) } }
 recorre(REPO + 'pages/api')

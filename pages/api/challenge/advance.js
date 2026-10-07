@@ -108,7 +108,6 @@ export default async function handler(req, res) {
 
   // ── 4. Idempotencia: si ya está cerrada, no hacer nada.
   if (session.status !== 'active') {
-    registra('challenge/advance', iErr)
     return res.status(409).json({
       error: 'La sesión ya está cerrada',
       currentStatus: session.status
@@ -279,6 +278,7 @@ export default async function handler(req, res) {
     .single()
 
   if (iErr) {
+    registra('challenge/advance', iErr)
     // Revertir: volver a active la fase que acabamos de cerrar.
     await supabaseAdmin
       .from('sim_sessions')
