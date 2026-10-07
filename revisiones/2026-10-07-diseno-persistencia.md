@@ -40,7 +40,7 @@ Convenciones: dinero en **µUSD enteros** (`bigint`); precios en **ticks** (`big
 | `mercado` | jsonb | sí | copia de `estado.versiones.mercado` para consultas e índices (§ 5) |
 | `creada_por_rpc` | boolean | no, por defecto false | v1 solo nace por la RPC de creación |
 
-Las columnas actuales (`capital`, `balance`, `last_timestamp`, `challenge_*`, `status`, `name`, `pair`, `timeframe`, `date_from`, `date_to`) se mantienen para las pantallas y el hub. En v1, `balance` y `last_timestamp` son **proyecciones** que escribe la RPC a partir del estado (saldo cerrado y cursor), nunca el cliente.
+Las columnas actuales (`capital`, `balance`, `last_timestamp`, `challenge_*`, `status`, `name`, `pair`, `timeframe`, `date_from`, `date_to`) se mantienen para las pantallas (el hub no las lee: solo borra filas, § 6.1). En v1, `balance` y `last_timestamp` son **proyecciones** que escribe la RPC a partir del estado (saldo cerrado y cursor), nunca el cliente.
 
 ### 2.2 `sim_recibos` (nueva)
 
@@ -78,7 +78,7 @@ Restricciones: `unique (session_id, command_id)`. Índice por `(session_id, crea
 
 Restricciones: `unique (session_id, seq)`, `unique (session_id, command_id, ordinal)`.
 
-**Diferencia con la especificación:** § 1.3 lista `proteccion_activada` y `comision`; el motor actual no los emite como eventos separados: la protección es un `cierre` con `motivo` `SL`/`TP`/`breach`, y la comisión va en `fill.comision_µ` y en `cierre.comision_µ` (asignada). `fase_superada` y `posicion_modificada` sí los emite y no estaban en la lista. → D-02.
+**La lista de eventos del motor manda (D-02, CTO 7-oct)** sobre la de § 1.3: no hay `proteccion_activada` ni `comision` separados (la protección es un `cierre` con `motivo` `SL`/`TP`/`breach`; la comisión va en `fill.comision_µ` y en `cierre.comision_µ`, asignada), y sí `fase_superada` y `posicion_modificada`.
 
 ### 2.4 `sim_trades` (columnas nuevas; § 4 de la especificación)
 
@@ -134,7 +134,11 @@ Dentro de una transacción, en este orden:
    - `version` = `version_esperada` → si no, `409 conflicto` con la versión confirmada.
 4. Escribir: recibo (`aceptado` o `rechazado`), eventos con `seq` consecutivo, trades de los `cierre`, `estado`, proyecciones (`balance`, `last_timestamp`, `challenge_*`), `version = version + 1`, renovar `escritor.hasta`.
 
-Un `rechazado` del motor (p. ej. `margen_insuficiente`) **también** tiene recibo y sube la versión: es un hecho confirmado (§ 1.3, «un comando sin eventos también tiene recibo»). → D-03 (si el rechazo debe subir o no la versión).
+**Un comando rechazado (D-03, CTO 7-oct)** tiene recibo (`resultado = rechazado`, con su motivo) y **no sube la versión**: el estado no cambia. `version_resultante` = `version_partida`. El recibo hace idempotente el reintento (el mismo `command_id` devuelve el mismo rechazo) sin necesidad de versión nueva.
+
+**Para Astra, una excepción que obliga a subirla:** un comando puede **rechazarse después de haber cambiado el estado**. En el reto, antes de aplicar un comando se emiten los resets de medianoche que tocan a su hora (`lib/motor/reto.mjs`, `aplicaReto`); si un reset dispara un breach, el reto queda en breach (liquidación y cancelaciones) y el comando se rechaza con `sesion_en_breach`. Es el caso de integración de Astra (cierres-8, `323e9d7`): cierre pedido a las 22:00 UTC → `reset_diario`, `breach`, `cierre` por breach, y el comando rechazado. Ahí hay eventos y el estado cambió: **se confirman los eventos, se escribe el estado y la versión sube**, aunque el recibo diga `rechazado`. Propuesta de regla única: **la versión sube si y solo si el comando produce eventos** (cambia el estado); un rechazo sin eventos no la sube.
+
+Un rechazo sin eventos **renueva el arrendamiento** (es actividad del escritor) sin tocar `version`: propuesta, también para Astra.
 
 El servidor calculó **fuera de bloqueo** sobre la versión N. Si al bloquear la versión ya no es N, su cálculo **se descarta**: nunca se recalcula ni se recotiza en silencio dentro de la RPC. Un conflicto en un comando económico exige una nueva decisión del alumno, con **otro** `command_id` (§ 12.4).
 
@@ -172,6 +176,26 @@ El cliente guarda dos cosas separadas (§ 1.5): el **estado confirmado** (versi�
 - **Borrado:** un reintento de una sesión borrada recibe `410` y no la recrea (A24).
 
 ---
+
+### 6.1 El hub borra al alumno con un comando en vuelo (D-08)
+
+**Lo que hace el hub (leído en solo lectura, sin tocarlo):** `algorithmic-suite-hub/pages/api/users/delete.js:104` borra, con `service_role` y sin pasar por ninguna RPC del simulador, `sim_sessions` (y otras 4 tablas del simulador) con `.delete().eq('user_id', userId)`; después la cuenta de acceso y el perfil. **No lee** `sim_sessions` en ningún otro sitio. No marca `terminal` ni toma el bloqueo de la barrera de CD07: borra las filas.
+
+**Qué le pasa a un comando en vuelo**, según cuándo llegue el DELETE respecto a la RPC (Postgres: un DELETE de una fila espera al bloqueo `FOR UPDATE` que tenga otra transacción sobre ella):
+
+| Orden | Qué ocurre | Qué recibe el cliente |
+|---|---|---|
+| El DELETE confirma **antes** de que la RPC bloquee la sesión | La RPC no encuentra la fila en `SELECT … FOR UPDATE`: **no escribe nada** (ni recibo, que no tendría a qué sesión colgarse) | `410 sesion_borrada`. Un reintento con el mismo `command_id`, igual: la RPC nunca crea una sesión |
+| La RPC bloquea **antes** | El DELETE del hub **espera** al COMMIT de la RPC; la RPC confirma recibo, eventos, trades y estado; después el DELETE borra la sesión y **la cascada** se lleva `sim_recibos`, `sim_eventos` y `sim_trades` | `200` con su recibo; el siguiente comando, `410`. Lo confirmado desaparece con el alumno: es lo que se pidió al borrarlo |
+| El servidor calculó fuera de bloqueo y el DELETE confirma antes de la RPC | Igual que la primera fila: su cálculo se descarta | `410` |
+
+**Lo que tiene que garantizar el diseño, sin tocar el hub:**
+- **FK con `ON DELETE CASCADE`** de `sim_recibos`, `sim_eventos` (y la nueva `sim_trades.evento_id`) hacia `sim_sessions` (§ 2): ninguna fila huérfana, en ningún orden.
+- **La RPC trata «sesión inexistente» como `410`**, no como error 500, y sin efectos. Lo mismo un `user_id` cuyo perfil ya no existe (el acceso se comprueba dentro de la RPC, § 4.3).
+- **Sin interbloqueo:** la RPC solo bloquea la fila de la sesión (y la del reto padre) y escribe en tablas hijas; el DELETE del hub bloquea las filas de `sim_sessions` del alumno y espera. Una RPC de **otro** alumno no comparte filas. El riesgo que queda es el de un alumno con dos sesiones y dos comandos a la vez en sesiones distintas mientras el hub borra: el DELETE espera a cada una por separado; no hay ciclo porque la RPC no bloquea una segunda sesión.
+- **La cola del cliente** de ese alumno se descarta al perder la identidad (§ 6, A22): no se reenvía nada a otra cuenta.
+
+**Lo que no garantiza:** la barrera `terminal` con lápida (CD07) solo existe para los borrados que pasan por `sim_borrar_sesion` / `sim_borrar_alumno` del simulador. El del hub no deja lápida; como los ids son UUID y la RPC nunca inserta sesiones, un reintento no puede resucitar nada, pero la respuesta es `410` por fila inexistente, no por lápida. Si se quiere lápida también ahí, el hub tendría que llamar a la RPC del simulador: **no se toca el hub** sin decisión expresa.
 
 ## 7. Sesiones antiguas en solo lectura (corte)
 
@@ -249,43 +273,45 @@ Con 5 alumnos y su cupo (6 sesiones Basic, 12 Extra: `pages/dashboard.js:191–1
 
 Según la página de precios de Supabase (consultada el 7-oct-2026, <https://supabase.com/pricing>): el plan **gratuito** incluye «500 MB database size per project», y los proyectos gratuitos se pausan tras una semana de inactividad; **Pro** incluye 8 GB de disco por proyecto (después, 0,125 USD/GB).
 
-- **Los 500 MB son del proyecto entero**, compartido con el hub y el journal (CLAUDE.md, § 2). Hoy no sé cuánto ocupa la base: **falta leerlo en el panel** (D-07).
-- Con retención de avances, el simulador v1 ocuparía del orden de **decenas de MB** para los alumnos actuales: cabe en el gratuito si el resto del proyecto deja margen. **Sin** retención, el peor caso (≈ 14 MB por sesión intensa, ≈ 840 MB con 60 sesiones) **no cabe**.
+- **Los 500 MB son del proyecto entero**, compartido con el hub y el journal. **Hoy ocupa unos 170 MB** (captura del panel de Ramón, comunicada por el CTO el 7-oct, D-07): quedan **≈ 330 MB** para todo el proyecto.
+- **Con retención** de avances (D-06, aprobada), el peor caso de § 9.2 (60 sesiones intensas) es **≈ 90 MB**: **≈ 27 %** de esos 330 MB, y la base quedaría en ≈ 260 MB de 500. A eso se suma, durante el día en que se reproduce, ≈ 250 KB por hora reproducida en cada sesión (se poda a las 24 h).
+- **Sin** retención, el peor caso (≈ 14 MB por sesión intensa, ≈ 840 MB con 60 sesiones) **no cabe**, ni con una cuarta parte de esas sesiones (≈ 210 MB de 330, con el resto del proyecto creciendo).
+- El margen es del proyecto: el hub y el journal también crecen. No sé a qué ritmo; los 170 MB son una foto.
 - La especificación ya decide que **la v1 no se habilita sin Supabase Pro** (§ 12.7), por el mercado versionado en Storage (§ 7.3), no por la base. Este cálculo no cambia esa decisión.
 
 ---
 
-## 10. Decisiones que hacen falta
+## 10. Decisiones
 
-**Del CTO:**
+**Del CTO (7-oct-2026):**
 
-| # | Decisión | Propuesta |
+| # | Decisión | Estado |
 |---|---|---|
-| D-01 | Salida completa de s04 fila a fila (columnas, triggers, políticas literales, grants de `service_role`) antes de escribir el SQL | pedirla a Ramón: es la consulta ya versionada, de solo lectura |
-| D-02 | Lista de tipos de evento: la de § 1.3 o la que emite el motor (`fase_superada`, `posicion_modificada`; sin `proteccion_activada` ni `comision` separados) | la del motor, y corregir § 1.3 |
-| D-03 | ¿Un comando rechazado por el motor sube la versión? | sí: tiene recibo y es un hecho confirmado; así el cliente no reintenta en bucle |
-| D-04 | Duración del arrendamiento (60 s, § 1.4) y si «Usar aquí» exige confirmación | 60 s; confirmación en la pestaña que lo toma |
-| D-05 | Las proyecciones `balance`/`last_timestamp`/`challenge_*` en `sim_sessions` las escribe la RPC: ¿se mantienen como columnas o las pantallas leen el estado? | mantenerlas (hub y pantallas actuales) |
-| D-06 | Retención de los recibos de avance sin eventos | últimas 24 h enteras + uno por día de mercado después |
-| D-08 | Si el hub lee `sim_sessions` (CLAUDE.md, § 2, dice que sí, para métricas; la especificación § 4 dice que no, `c25f28d`) | comprobarlo en el repositorio del hub antes del corte (sin tocarlo) |
-| D-09 | Orden del despliegue: cliente que entiende la época → corte → retirada de permisos | el de § 7, con ensayo previo en PostgreSQL de ensayo |
-| D-10 | Bucket privado para `mercado/v1` y cómo lo lee el servidor (firmado o `service_role`) | `service_role` desde el endpoint; nunca URL pública |
-| D-11 | Proyección en el navegador con el mismo motor: cuándo y cómo se empaqueta `lib/motor/` para el cliente | después de la persistencia; hasta entonces, el cliente espera al recibo |
-| D-12 | Pieza 7 (multipar): forma final del estado con varios pares (cotizaciones, conversión) | depende de las tres preguntas abiertas de la pieza 7 |
+| D-01 | Salida completa de s04 fila a fila antes de escribir el SQL | **Sí**; el CTO la pedirá a Ramón cuando toque |
+| D-02 | Lista de tipos de evento | **La del motor manda** (§ 2.3) |
+| D-03 | ¿Un comando rechazado sube la versión? | **No: tiene recibo y el estado no cambia** (§ 4.3). **Para Astra:** el rechazo que llega después de un reset con breach sí cambia el estado; propuesta: la versión sube si y solo si hay eventos (§ 4.3) |
+| D-04 | Arrendamiento de 60 s y confirmación en «Usar aquí» | **Aprobado** |
+| D-05 | `balance`, `last_timestamp`, `challenge_*` como proyecciones que escribe la RPC | **Aprobado** |
+| D-06 | Retención: 24 h enteras y después uno por día | **Aprobado** |
+| D-08 | ¿El hub lee `sim_sessions`? | **Cerrada:** no lee; solo borra con `service_role` (`algorithmic-suite-hub/pages/api/users/delete.js:104`). Comando en vuelo: § 6.1 |
+| D-09 | Orden del despliegue (cliente con época → corte → permisos) | **Aprobado, con ensayo previo** |
+| D-10 | Bucket privado leído con `service_role` desde el endpoint | **Aprobado** |
+| D-11 | Empaquetar el motor para el navegador | **Después de la persistencia** |
+| D-12 | Forma multipar del estado | **A la espera de Astra** sobre la v2.2 (§ 13 de la especificación) |
 
 **De Ramón:**
 
-| # | Decisión |
-|---|---|
-| D-07 | Leer en el panel de Supabase el tamaño actual de la base (Database → uso) y la unidad del GB que cuenta (pendiente 2 de la especificación) |
-| D-13 | Aviso a los 5 alumnos con fecha y hora del corte (texto de § 6, punto 2): «a las HH:MM las sesiones actuales pasan a solo lectura; cierra tus posiciones abiertas antes si quieres que cuenten» |
-| D-14 | Qué se enseña en una sesión legado (balance tal cual, trades, sin poder operar) y si el alumno puede borrarla |
-| D-15 | Si las sesiones legado siguen sin contar en el cupo (§ 6 lo propone) |
+| # | Decisión | Estado |
+|---|---|---|
+| D-07 | Tamaño actual de la base | **≈ 170 MB de 500** (captura); margen recalculado en § 9.3 |
+| D-13 | Aviso a los 5 alumnos con fecha y hora del corte (texto de § 6, punto 2 de la especificación) | Pendiente; no bloquea |
+| D-14 | Qué se enseña en una sesión legado y si el alumno puede borrarla | Pendiente; no bloquea |
+| D-15 | Si las sesiones legado siguen sin contar en el cupo | Pendiente; no bloquea |
 
 ---
 
 ## 11. Lo que este documento no hace
 
 - No escribe SQL ni código; no toca la base, Storage ni la web.
-- No decide la forma multipar del estado (pieza 7, pendiente de tres decisiones).
+- No decide la forma multipar del estado (D-12: a la espera de Astra sobre la v2.2).
 - No mide Postgres real: los tamaños de § 9.2 son estimaciones con sus hipótesis; los de § 9.1 están medidos con el motor.
