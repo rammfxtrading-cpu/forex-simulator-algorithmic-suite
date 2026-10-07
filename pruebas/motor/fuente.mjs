@@ -13,6 +13,8 @@
  *     en la lista de aceptados, trozo alterado o no disponible): DETENCION, con
  *     el cursor SIN CONSUMIR ese dia (§ 12.2: no_valorable).
  *   · Despues del ultimo dia del manifiesto: fin de datos, no un fallo.
+ *   · C6-03: el estado fija su mercado (versiones.mercado, § 3.1); una fuente de
+ *     otro par, de otra huella o un estado sin fijar: detencion, estado intacto.
  *   · A15: paso a paso (serializando en cada frontera), salto, cortes por dia y
  *     el motor con todas las velas dan el mismo estado y los mismos eventos.
  */
@@ -39,7 +41,8 @@ const LUN = dia('2026-03-02'), MAR = dia('2026-03-03', 1440, i => (i === 600 ? '
 const mercado = (trozos, cerrados = []) => MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos, cerrados })
 const lector = trozos => d => trozos.find(t => t.dia === d)?.buffer ?? null
 const enTexto = x => JSON.stringify(x, (k, v) => (typeof v === 'bigint' ? `${v}n` : v))
-const sesion = () => M.crea({ par: 'EURUSD', costes: sinCostes, capital: '100000' })
+// C6-03: la sesion fija su mercado (versiones.mercado) y la fuente tiene que ser esa
+const sesion = (m = m3) => M.crea({ par: 'EURUSD', costes: sinCostes, capital: '100000', mercado: MF.fija(m) })
 const economicos = evs => evs.filter(e => e.tipo !== 'fin_de_datos')
 
 titulo('1 · A26: la fuente solo acepta el manifiesto fijado')
@@ -91,12 +94,12 @@ titulo('4 · mercado cerrado frente a dato que falta (§ 12.2)')
 const JUE = dia('2026-03-05'), DOM8 = domingo('2026-03-08', 21, 180), LUN9 = dia('2026-03-09')
 const conCierre = mercado([LUN, MAR, MIE, JUE, DOM8, LUN9], ['2026-03-06'])
 const fC = FU?.creaFuente({ manifiesto: conCierre, fijado: MF.fija(conCierre), leeTrozo: lector([LUN, MAR, MIE, JUE, DOM8, LUN9]) })
-const rC = FU ? FU.avanza(sesion(), S('2026-03-09') + 3600, fC, { desde: S('2026-03-02') }) : null
+const rC = FU ? FU.avanza(sesion(conCierre), S('2026-03-09') + 3600, fC, { desde: S('2026-03-02') }) : null
 oraculo('FUE', 'viernes cerrado por el manifiesto y sabado: se saltan; llega al lunes 9 sin detencion', !!rC && !rC.detencion && rC.estado.reloj.cursor === S('2026-03-09') + 3600, rC ? enTexto(rC.detencion) : '')
 // sin el trozo del miercoles (dia con mercado): detencion no_valorable, cursor al final del martes
 const hueco = mercado([LUN, MAR, JUE])
 const fH = FU?.creaFuente({ manifiesto: hueco, fijado: MF.fija(hueco), leeTrozo: lector([LUN, MAR, JUE]) })
-const rH = FU ? FU.avanza(sesion(), S('2026-03-05') + 3600, fH, { desde: S('2026-03-02') }) : null
+const rH = FU ? FU.avanza(sesion(hueco), S('2026-03-05') + 3600, fH, { desde: S('2026-03-02') }) : null
 oraculo('FUE', 'un dia con mercado sin trozo: detencion «no_valorable» del 2026-03-04, cursor sin consumir ese dia', !!rH && rH.detencion?.motivo === 'no_valorable' && rH.detencion?.dia === '2026-03-04' && rH.estado.reloj.cursor === S('2026-03-03') + 86400 - 60, rH ? `${enTexto(rH.detencion)} · cursor ${rH.estado.reloj.cursor}` : '')
 const rH2 = FU ? FU.avanza(rH.estado, S('2026-03-05') + 3600, fH) : null
 oraculo('FUE', 'repetir el avance: la misma detencion, el cursor no se mueve y sin eventos', !!rH2 && rH2.detencion?.dia === '2026-03-04' && rH2.estado.reloj.cursor === rH.estado.reloj.cursor && rH2.eventos.length === 0)
@@ -104,9 +107,9 @@ oraculo('FUE', 'repetir el avance: la misma detencion, el cursor no se mueve y s
 const corto = dia('2026-03-04', 600)
 const mCorto = mercado([LUN, MAR, corto, JUE])
 const fK = FU?.creaFuente({ manifiesto: mCorto, fijado: MF.fija(mCorto), leeTrozo: lector([LUN, MAR, corto, JUE]) })
-const rK = FU ? FU.avanza(sesion(), S('2026-03-05') + 3600, fK, { desde: S('2026-03-02') }) : null
+const rK = FU ? FU.avanza(sesion(mCorto), S('2026-03-05') + 3600, fK, { desde: S('2026-03-02') }) : null
 const fKa = FU?.creaFuente({ manifiesto: mCorto, fijado: MF.fija(mCorto), leeTrozo: lector([LUN, MAR, corto, JUE]), aceptados: new Map([['2026-03-04', 600]]) })
-const rKa = FU ? FU.avanza(sesion(), S('2026-03-05') + 3600, fKa, { desde: S('2026-03-02') }) : null
+const rKa = FU ? FU.avanza(sesion(mCorto), S('2026-03-05') + 3600, fKa, { desde: S('2026-03-02') }) : null
 oraculo('FUE', 'dia corto (600/1200): no_valorable; aceptado con 600 velas: se avanza hasta el jueves', rK?.detencion?.motivo === 'no_valorable' && rK?.detencion?.dia === '2026-03-04' && !rKa?.detencion && rKa?.estado.reloj.cursor === S('2026-03-05') + 3600, `${enTexto(rK?.detencion)} · ${enTexto(rKa?.detencion)}`)
 
 titulo('5 · trozos que no se pueden leer')
@@ -117,4 +120,23 @@ oraculo('A26', 'un trozo alterado (sha distinto): detencion «trozo_alterado» d
 const fN = FU?.creaFuente({ manifiesto: m3, fijado: MF.fija(m3), leeTrozo: d => (d === '2026-03-03' ? null : lector([LUN, MAR, MIE])(d)) })
 const rN = FU ? FU.avanza(sesion(), finMie, fN, { desde: S('2026-03-02') }) : null
 oraculo('FUE', 'un trozo que no llega: detencion «trozo_no_disponible»', rN?.detencion?.motivo === 'trozo_no_disponible' && rN?.detencion?.dia === '2026-03-03', enTexto(rN?.detencion))
+
+titulo('6 · C6-03 (Astra, cierres-6): la fuente tiene que ser la del estado (par y huella)')
+// una fuente VALIDA y fijada de GBPUSD a 1,25000, conectada a una sesion EURUSD
+const gbFilas = Array.from({ length: 1440 }, (_, i) => ({ time: S('2026-03-02') + 60 * i, open: '1.25000', high: '1.25000', low: '1.25000', close: '1.25000' }))
+const gb = { dia: '2026-03-02', buffer: B.codifica('GBPUSD', S('2026-03-02'), M.velas('GBPUSD', gbFilas).map(v => ({ ...v, volume: 1 }))) }
+const mGb = MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: [gb] })
+const fGb = FU?.creaFuente({ manifiesto: mGb, fijado: MF.fija(mGb), leeTrozo: lector([gb]) })
+const quieto = (r, antes) => !!r && r.eventos.length === 0 && M.serializa(r.estado) === antes
+const s0 = sesion(), t0 = M.serializa(s0)
+const rGb = FU ? FU.avanza(s0, S('2026-03-02') + 3600, fGb, { desde: S('2026-03-02') }) : null
+oraculo('FUE', 'C6-03: fuente de GBPUSD con una sesion EURUSD: detencion «fuente_de_otro_par», estado intacto (sin cotizacion de otro par)', rGb?.detencion?.motivo === 'fuente_de_otro_par' && quieto(rGb, t0), rGb ? `${enTexto(rGb.detencion)} · ${enTexto(rGb.estado.cotizacion)}` : '')
+const fOtro = FU?.creaFuente({ manifiesto: otro, fijado: MF.fija(otro), leeTrozo: lector([LUN, MAR, dia('2026-03-04', 1440, () => '1.10010')]) })
+const rOtro = FU ? FU.avanza(s0, S('2026-03-02') + 3600, fOtro, { desde: S('2026-03-02') }) : null
+oraculo('FUE', 'C6-03: fuente de EURUSD con otra huella que la fijada en el estado: detencion «fuente_de_otra_version», estado intacto', rOtro?.detencion?.motivo === 'fuente_de_otra_version' && quieto(rOtro, t0), enTexto(rOtro?.detencion))
+const libre = M.crea({ par: 'EURUSD', costes: sinCostes, capital: '100000' }), tl = M.serializa(libre)
+const rLibre = FU ? FU.avanza(libre, S('2026-03-02') + 3600, FU.creaFuente({ manifiesto: m3, fijado: MF.fija(m3), leeTrozo: lector([LUN, MAR, MIE]) }), { desde: S('2026-03-02') }) : null
+oraculo('FUE', 'C6-03: un estado sin mercado fijado: detencion «mercado_no_fijado», estado intacto', rLibre?.detencion?.motivo === 'mercado_no_fijado' && quieto(rLibre, tl), enTexto(rLibre?.detencion))
+const rBien = FU ? FU.avanza(s0, S('2026-03-02') + 3600, fFin, { desde: S('2026-03-02') }) : null
+oraculo('FUE', 'C6-03 control: la fuente fijada en el estado avanza sin detencion', !!rBien && !rBien.detencion && rBien.estado.reloj.cursor === S('2026-03-02') + 3600 && rBien.estado.versiones.mercado?.EURUSD === MF.fija(m3), enTexto(rBien?.estado.versiones))
 fin()
