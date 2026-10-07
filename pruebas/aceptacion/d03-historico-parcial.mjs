@@ -142,7 +142,11 @@ const anioS = new Date(desdeS * 1000).getUTCFullYear()
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { [`AUDUSD/M1/${anioS}.json`]: JSON.stringify(abiertas), [`AUDUSD/M1/${anioS - 1}.json`]: '[]' } } })
 const res11 = await fetchSessionCandles({ pair: 'AUD/USD', dateFrom: ymdS(desdeS), dateTo: ymdS(HOY + 3 * DIA_S) })
 oraculo('D03', 'sesion que llega a hoy con datos hasta antes de la ventana abierta: se opera', valida(res11), res11?.error ?? '')
-oraculo('D03', 'marcada como tramo abierto, con su «datos hasta»', res11?.tramoAbierto === true && res11?.datosHasta === abiertas[abiertas.length - 1].time, JSON.stringify({ tramoAbierto: res11?.tramoAbierto, datosHasta: res11?.datosHasta }))
+// 7-oct: «datos hasta» es la ultima vela que SOBREVIVE al filtro de fin de
+// semana del cliente (viernes desde las 21:00 UTC fuera). Si el ultimo dia del
+// fixture cae en viernes (depende del dia en que corre), es su 20:59.
+const ultimaVisible = abiertas.filter(v => { const d = new Date(v.time * 1000); return !(d.getUTCDay() === 5 && d.getUTCHours() >= 21) }).at(-1).time
+oraculo('D03', 'marcada como tramo abierto, con su «datos hasta»', res11?.tramoAbierto === true && res11?.datosHasta === ultimaVisible, JSON.stringify({ tramoAbierto: res11?.tramoAbierto, datosHasta: res11?.datosHasta }))
 const quitaDia = abiertas.filter(v => ymdS(v.time) !== ymdS(abiertas[0].time + 3 * DIA_S))
 ver('control del fixture: hay un dia laborable que quitar dentro de lo cerrado', quitaDia.length < abiertas.length)
 escenario({ perfiles: [perfil(A)], storage: { 'forex-data': { [`AUDUSD/M1/${anioS}.json`]: JSON.stringify(quitaDia), [`AUDUSD/M1/${anioS - 1}.json`]: '[]' } } })
