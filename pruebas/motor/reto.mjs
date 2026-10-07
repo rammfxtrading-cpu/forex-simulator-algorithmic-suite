@@ -197,7 +197,9 @@ const igualF = RT ? corre(vHueco('1.20000', '1.05000'), '2026-10-05T07:00:00Z', 
 oraculo('RETO', 'C7-01 frontera: el hueco deja 115.000,00 = suelo (y ≥ objetivo): no hay breach y la fase se concede', !!igualF && igualF.reto.estado === 'superada' && igualF.reto.motor.saldo_µ === µ(115000) && de(igualF.eventos, 'breach').length === 0, veredicto(igualF))
 const bajoF = RT ? corre(vHueco('1.20000', '1.04999'), '2026-10-05T07:00:00Z', gHueco('1', '1.05000')) : null
 oraculo('RETO', 'C7-01 frontera: 1 tick mas abajo (114.999,00 < suelo): breach «perdida_diaria», sin fase', !!bajoF && bajoF.reto.estado === 'breach' && de(bajoF.eventos, 'breach')[0]?.equity_µ === µ(114999) && de(bajoF.eventos, 'fase_superada').length === 0, veredicto(bajoF))
-// cierre manual (motor): limites por encima de la equity sin evaluar (como los deja un reset) y alto que se cumpliria
+// cierre manual, prueba DEFENSIVA de unidad (motor): se inyecta a mano un limite por encima de la equity sin evaluar y un
+// alto que se cumpliria. No es un estado alcanzable desde un reto valido (el reset del reto evalua el limite en el acto,
+// Astra cierres-8); el caso alcanzable es el de la prueba de integracion siguiente
 {
   const s0 = M.aplica(M.crea({ par: 'EURUSD', costes: cero, capital: '100000' }), { tipo: 'avanzar', hasta: U('2026-10-08T08:00:00Z') }, vs([['2026-10-08T08:00:00Z', '1.10000'], ['2026-10-08T08:01:00Z', '1.08000']])).estado
   let e = M.aplica(s0, { tipo: 'abrir', orden: 'mercado', lado: 'BUY', lotes: '5', cotizadoEn: s0.reloj.cursor }).estado
@@ -205,6 +207,16 @@ oraculo('RETO', 'C7-01 frontera: 1 tick mas abajo (114.999,00 < suelo): breach �
   e = { ...e, limites: [{ regla: 'perdida_diaria', limite_µ: µ(115000) }] }
   const r = M.aplica(e, { tipo: 'cerrar', id: e.posiciones[0].id }, [], { alto: () => true })
   oraculo('RETO', 'C7-01 cierre manual: equity 90.000 bajo un limite de 115.000 y alto cumplido: breach, no «objetivo»', r.estado.estado === 'breach' && r.eventos.some(x => x.tipo === 'breach') && r.estado.objetivo == null, `${r.estado.estado} · ${r.eventos.map(x => x.tipo).join(',')}`)
+}
+// integracion (Astra, cierres-8): el cierre se pide a las 22:00 UTC (medianoche de Praga); el reset de esa medianoche sube
+// el suelo de 95.000 a 115.000 con la equity en 110.000: breach y el comando se rechaza sin cierre manual ni fase
+{
+  const vM = vs([['2026-10-05T08:00:00Z', '1.10000'], ['2026-10-06T08:00:00Z', '1.10000'], ['2026-10-07T08:00:00Z', '1.10000'], ['2026-10-07T09:00:00Z', '1.20000'], ['2026-10-07T21:58:00Z', '1.10000'], ['2026-10-07T21:59:00Z', '1.08000'], ['2026-10-08T08:00:00Z', '1.08000']])
+  const gM = [['avanza', '2026-10-05T08:00:00Z'], ['abrir', 'BUY', '1'], ['cerrar', 'p1'], ['avanza', '2026-10-06T08:00:00Z'], ['abrir', 'BUY', '1'], ['cerrar', 'p2'], ['avanza', '2026-10-07T08:00:00Z'], ['abrir', 'BUY', '2'], ['avanza', '2026-10-07T09:00:00Z'], ['cerrar', 'p3'], ['avanza', '2026-10-07T21:58:00Z'], ['abrir', 'BUY', '5'], ['avanza', '2026-10-07T21:59:00Z']]
+  const antes = RT ? corre(vM, '2026-10-05T07:00:00Z', gM) : null
+  const pide = antes ? RT.aplicaReto(antes.reto, { tipo: 'cerrar', id: 'p4' }) : null
+  const tipos = pide ? pide.eventos.map(x => x.tipo + (x.motivo ? ' ' + x.motivo : '') + (x.regla ? ' ' + x.regla : '')) : []
+  oraculo('RETO', 'C7-01 integracion: cierre pedido a las 22:00 UTC; el reset sube el suelo a 115.000 con equity 110.000: reset → breach → cierre por breach, y el comando se rechaza («sesion_en_breach»), sin cierre manual ni fase', !!pide && antes.reto.estado === 'en_curso' && M.equity_µ(antes.reto.motor, antes.reto.motor.cotizacion.bid) === µ(110000) && pide.resultado?.rechazado === 'sesion_en_breach' && JSON.stringify(tipos) === JSON.stringify(['reset_diario', 'breach perdida_diaria', 'cierre breach']) && pide.reto.estado === 'breach' && de(pide.eventos, 'reset_diario')[0]?.limite_diario_µ === µ(115000) && de(pide.eventos, 'reset_diario')[0]?.en.t === U('2026-10-07T22:00:00Z'), `${JSON.stringify(pide?.resultado)} · ${tipos.join(', ')}`)
 }
 
 titulo('4 · paso, salto y reanudacion dan lo mismo')
