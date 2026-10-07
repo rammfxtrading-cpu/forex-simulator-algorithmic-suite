@@ -12,7 +12,7 @@
   "bf08-limite-429": 10,
   "bf09-borde-pendiente": 6,
   "bf10-429-al-limite": 8,
-  "bf11-objetivos": 7,
+  "bf11-objetivos": 9,
   "c02-metricas": 7,
   "c03-sesiones-mismo-nombre": 3,
   "c04-estados-honestos": 29,
@@ -27,7 +27,7 @@
   "fd01-descarga-robusta": 20,
   "gz00-interruptor": 7,
   "gz01-velas-comprimidas": 12,
-  "ic01-importar-csv": 13,
+  "ic01-importar-csv": 15,
   "m13-horario-nueva-york": 4,
   "mp01-mercado-un-escritor": 15,
   "o01-anio-nuevo": 1,
@@ -37,7 +37,7 @@
   "s03-coste-de-velas": 8,
   "s05-logs": 3,
   "sp01-sonda-proveedor": 9,
-  "sp02-sonda-educada": 9,
+  "sp02-sonda-educada": 11,
   "u01-auto-break-even": 1,
   "wf01-workflow-manual": 14
 }

@@ -65,7 +65,7 @@ function objetivosPedidos(argv) {
   if (i < 0) return { lista: [] }
   const valor = argv[i].includes('=') ? argv[i].slice(11) : argv[i + 1]
   const lista = String(valor ?? '').split(',').map(x => x.trim()).filter(Boolean)
-  const fechaOk = f => /^\d{4}-\d{2}-\d{2}$/.test(f) && new Date(f + 'T00:00:00Z').toISOString().slice(0, 10) === f
+  const fechaOk = f => { if (!/^\d{4}-\d{2}-\d{2}$/.test(f || '')) return false; const t = Date.parse(f + 'T00:00:00Z'); return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === f }   // MER-R2: 2026-13-01 o 99-99 sin RangeError
   const malos = lista.filter(x => { const m = /^([A-Z]{6}):(.+)$/.exec(x); return !m || !PAIRS.includes(m[1].toLowerCase()) || !fechaOk(m[2]) })
   if (!lista.length || malos.length) return { error: `--objetivo: ${malos.length ? `no valido(s): ${malos.join(', ')} (PAR:AAAA-MM-DD, con el par entre los que se procesan)` : 'lista vacia'}` }
   return { lista: lista.map(x => ({ par: x.slice(0, 6), dia: x.slice(7) })) }

@@ -65,7 +65,8 @@ jobs:
         run: |
           # >>> valida-dia
           if [ -z "$DIA" ]; then DIA="EURUSD:$(node -e 'console.log(new Date(Date.now() - 864e5).toISOString().slice(0, 10))')"; fi
-          if ! [[ "$DIA" =~ ^[A-Z]{6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+          # mes 01-12 y dia 01-31 (Astra MER-R2); el script comprueba ademas el calendario
+          if ! [[ "$DIA" =~ ^[A-Z]{6}:[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$ ]]; then
             echo "dia: UN dia, PAR:AAAA-MM-DD (p. ej. EURUSD:2026-10-06). No se ha pedido nada."
             exit 4
           fi
@@ -91,7 +92,8 @@ jobs:
           fi
           # <<< valida-pares
           # >>> valida-objetivo
-          if [ -n "$OBJETIVO" ] && ! [[ "$OBJETIVO" =~ ^${PARES}:[0-9]{4}-[0-9]{2}-[0-9]{2}(,${PARES}:[0-9]{4}-[0-9]{2}-[0-9]{2})*$ ]]; then
+          # mes 01-12 y dia 01-31 (Astra MER-R2); el script comprueba ademas el calendario
+          if [ -n "$OBJETIVO" ] && ! [[ "$OBJETIVO" =~ ^${PARES}:[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(,${PARES}:[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))*$ ]]; then
             echo "objetivo: PAR:AAAA-MM-DD separados por comas, todos del par pedido. No se ha hecho nada."
             exit 4
           fi

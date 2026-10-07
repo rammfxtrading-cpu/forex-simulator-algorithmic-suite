@@ -23,7 +23,7 @@ const dukascopy = require('dukascopy-node')
 
 const PARES = ['AUDCAD', 'AUDUSD', 'EURUSD', 'GBPJPY', 'GBPUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY']
 const sleep = ms => new Promise(r => setTimeout(r, ms))
-const fecha = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s
+const fecha = f => { if (!/^\d{4}-\d{2}-\d{2}$/.test(f || '')) return false; const t = Date.parse(f + 'T00:00:00Z'); return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === f }   // MER-R2: 2026-13-01 o 99-99 sin RangeError
 
 // 'PAR:desde[..hasta]' → [{ par, dia }] | null
 function pedidos(argv) {

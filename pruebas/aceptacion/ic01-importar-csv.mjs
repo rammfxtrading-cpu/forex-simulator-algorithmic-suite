@@ -94,5 +94,7 @@ base()
 const conPlanas = velasDe('2026-07-20', 1440).map((v, i) => i >= 1380 ? { ...v, volume: 0 } : v)
 const r6 = await corre([...ARGS(fichero('planas.csv', csv(conPlanas))), '--subir'])
 oraculo('IC01', '60 velas planas con volumen 0: se quitan y se publican 1.380', r6.codigo === 0 && en(guardado('EURUSD/M1/2026').velas, '2026-07-20') === 1380, `codigo ${r6.codigo} · 20-jul ${en(guardado('EURUSD/M1/2026').velas, '2026-07-20')}`)
+// MER-R2: fechas imposibles en --dia y en --objetivo: 4 controlado, sin RangeError ni Storage
+for (const extra of [['--par', 'EURUSD', '--dia', '2026-99-99', '--csv', BUENO], [...ARGS(BUENO), '--objetivo', 'EURUSD:2026-13-01']]) { base(); const r = await corre(extra); oraculo('IC01', `${extra.join(' ').replace(/ --csv \S+/, '')}: 4 controlado`, r.codigo === 4 && !db.log.some(l => String(l.tabla).startsWith('storage')) && !r.salida.some(l => /RangeError|Invalid time/.test(l)), `codigo ${r.codigo} · ${r.salida.slice(-2).join(' | ')}`) }
 oraculo('IC01', 'ningun script por timeout', hay && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'))
 fin()

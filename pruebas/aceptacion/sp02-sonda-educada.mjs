@@ -66,5 +66,7 @@ escenario({}); proveedor.http = (url, n, { dia }) => dia === '2026-09-28' ? ok(d
 const r3b = await corre(['AUDUSD:2026-09-27..2026-09-29'])
 oraculo('SP02', 'red, bien, red: no son seguidos, no se para (3 peticiones)', hay && pedidas().length === 3, `${pedidas().length} peticiones`)
 proveedor.http = null
+// MER-R2: una fecha imposible es una entrada no valida (4), sin RangeError
+for (const mal of ['EURUSD:2026-99-99', 'EURUSD:2026-13-01']) { escenario({}); const r = await corre([mal]); oraculo('SP02', `${mal}: entrada no valida (4), sin pedir nada ni RangeError`, r.codigo === 4 && proveedor.llamadas.length === 0 && !r.salida.some(l => /RangeError|Invalid time/.test(l)), `codigo ${r.codigo} · ${r.salida.slice(-1)}`) }
 oraculo('SP02', 'ningun script por timeout', hay && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'))
 fin()

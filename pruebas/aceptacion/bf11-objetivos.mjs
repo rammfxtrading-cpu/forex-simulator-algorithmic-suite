@@ -47,10 +47,11 @@ const r2 = await corre(['--objetivo', 'AUDUSD:2026-02-02'])
 oraculo('BF11', '--objetivo AUDUSD:2026-02-02: «completo · 1440 velas · ultima 23:59» y sale con 0', r2.codigo === 0 && /AUDUSD 2026-02-02.*completo.*1440 velas.*ultima 23:59/.test(lineaObj(r2, 'AUDUSD 2026-02-02')) && !/incompleto/.test(lineaObj(r2, 'AUDUSD 2026-02-02')), `codigo ${r2.codigo} · ${lineaObj(r2, 'AUDUSD 2026-02-02')}`)
 
 titulo('4 · entrada que no vale')
-for (const mal of ['AUDUSD-2026-02-03', 'GBPUSD:2026-02-03', 'AUDUSD:2026-02-30']) {
+// MER-R2 (Astra, 7-oct): fechas imposibles (mes 13, 99-99) daban RangeError sin capturar
+for (const mal of ['AUDUSD-2026-02-03', 'GBPUSD:2026-02-03', 'AUDUSD:2026-02-30', 'AUDUSD:2026-99-99', 'AUDUSD:2026-13-01']) {
   prepara(); proveedor.llamadas.length = 0
   const r = await corre(['--objetivo', mal])
-  oraculo('BF11', `--objetivo ${mal}: no se hace nada y sale con 4`, r.codigo === 4 && proveedor.llamadas.length === 0, `codigo ${r.codigo} · ${proveedor.llamadas.length} peticiones · ${r.salida.slice(-2).join(' | ')}`)
+  oraculo('BF11', `--objetivo ${mal}: no se hace nada y sale con 4 (error controlado)`, r.codigo === 4 && proveedor.llamadas.length === 0 && !r.salida.some(l => /RangeError|Invalid time/.test(l)) && r.terminoPor !== 'timeout', `codigo ${r.codigo} · ${proveedor.llamadas.length} peticiones · ${r.salida.slice(-2).join(' | ')}`)
 }
 proveedor.http = null
 oraculo('BF11', 'ningun script por timeout', ejecucionesScripts.every(e => e.terminoPor !== 'timeout'))

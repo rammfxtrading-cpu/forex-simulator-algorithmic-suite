@@ -46,7 +46,7 @@ oraculo('WF01', 'la sonda pide UN dia, el de la entrada «dia» (por variable), 
 const bloqueDia = (String(sonda?.run ?? '').match(/# >>> valida-dia\n([\s\S]*?)# <<< valida-dia/) ?? [])[1] ?? ''
 const validaDia = d => spawnSync('bash', ['-c', bloqueDia + '\nprintf "%s" "$DIA"; exit 0'], { env: { PATH: process.env.PATH, DIA: d }, encoding: 'utf8' })
 const ayer = new Date(Date.now() - 864e5).toISOString().slice(0, 10)
-const casosDia = { '': 0, 'AUDUSD:2026-07-20': 0, 'AUDUSD': 4, 'AUDUSD:2026-07-20..2026-07-21': 4, 'AUDUSD:2026-07-20,EURUSD:2026-07-20': 4, 'audusd:2026-07-20': 4, 'AUDUSD:2026-07-20;rm -rf /': 4, 'AUDUSD:2026-07-20\nEURUSD:2026-07-20': 4 }
+const casosDia = { '': 0, 'AUDUSD:2026-07-20': 0, 'AUDUSD': 4, 'AUDUSD:2026-07-20..2026-07-21': 4, 'AUDUSD:2026-07-20,EURUSD:2026-07-20': 4, 'audusd:2026-07-20': 4, 'AUDUSD:2026-07-20;rm -rf /': 4, 'AUDUSD:2026-07-20\nEURUSD:2026-07-20': 4, 'AUDUSD:2026-99-99': 4, 'AUDUSD:2026-13-01': 4 }
 const vistosDia = Object.fromEntries(Object.keys(casosDia).map(k => [k, bloqueDia ? validaDia(k).status : null]))
 const porDefecto = bloqueDia ? validaDia('').stdout.trim() : ''
 oraculo('WF01', 'la validacion del dia (ejecutada con bash): un PAR:AAAA-MM-DD; vacio = EURUSD de ayer; lo demas, 4', !!bloqueDia && Object.entries(casosDia).every(([k, v]) => vistosDia[k] === v) && porDefecto === `EURUSD:${ayer}`, `${JSON.stringify(vistosDia)} · por defecto ${porDefecto}`)
@@ -65,7 +65,7 @@ titulo('3b · objetivo (Astra M-03, CTO 7-oct): la lista PAR:FECHA del modo recu
 oraculo('WF01', 'entrada «objetivo» (texto) y el paso la pasa por variable a --objetivo, solo si viene', ins.objetivo?.type === 'string' && /inputs\.objetivo/.test(String(recup?.env?.OBJETIVO ?? '')) && /\$\{OBJETIVO:\+--objetivo "\$OBJETIVO"\}/.test(String(recup?.run ?? '')), String(recup?.run ?? ''))
 const bloqueObj = (String(recup?.run ?? '').match(/# >>> valida-objetivo\n([\s\S]*?)# <<< valida-objetivo/) ?? [])[1] ?? ''
 const validaObj = (par, obj) => spawnSync('bash', ['-c', bloqueObj + '\nexit 0'], { env: { PATH: process.env.PATH, PARES: par, OBJETIVO: obj }, encoding: 'utf8' }).status
-const casosObj = { '': 0, 'AUDUSD:2026-07-20': 0, 'AUDUSD:2026-07-20,AUDUSD:2026-09-28': 0, 'GBPUSD:2026-07-20': 4, 'AUDUSD:2026-07-20,GBPUSD:2026-10-02': 4, 'AUDUSD:20260720': 4, 'AUDUSD:2026-07-20;rm -rf /': 4, 'AUDUSD:2026-07-20\nAUDUSD:2026-07-21': 4 }
+const casosObj = { '': 0, 'AUDUSD:2026-07-20': 0, 'AUDUSD:2026-07-20,AUDUSD:2026-09-28': 0, 'GBPUSD:2026-07-20': 4, 'AUDUSD:2026-07-20,GBPUSD:2026-10-02': 4, 'AUDUSD:20260720': 4, 'AUDUSD:2026-07-20;rm -rf /': 4, 'AUDUSD:2026-07-20\nAUDUSD:2026-07-21': 4, 'AUDUSD:2026-99-99': 4, 'AUDUSD:2026-13-01': 4, 'AUDUSD:2026-07-20,AUDUSD:2026-02-32': 4 }
 const vistosObj = Object.fromEntries(Object.keys(casosObj).map(k => [k, bloqueObj ? validaObj('AUDUSD', k) : null]))
 oraculo('WF01', 'la validacion del objetivo (ejecutada con bash): vacio o PAR:FECHA del mismo par; lo demas, 4', !!bloqueObj && Object.entries(casosObj).every(([k, v]) => vistosObj[k] === v), JSON.stringify(vistosObj))
 
