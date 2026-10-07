@@ -46,6 +46,12 @@ escenario({}); proveedor.http = (url, n, { dia }) => dia === '2026-09-28' ? { st
 const r2 = await corre(['AUDUSD:2026-09-27..2026-09-30'])
 oraculo('SP02', '429 en el 2.º dia: se para ahi (2 peticiones), dice el Retry-After y los restantes «no pedido»', pedidas().length === 2 && r2.salida.some(l => /Retry-After 120 s/.test(l)) && /no pedido/.test(fila(r2, 'AUDUSD', '2026-09-29')) && /no pedido/.test(fila(r2, 'AUDUSD', '2026-09-30')) && r2.codigo === 2, `${pedidas().length} peticiones · ${r2.salida.filter(l => /429|Retry|no pedido/.test(l)).join(' | ')}`)
 
+// CTO 7-oct (politica del 429): el actualizador espera un Retry-After que cabe y
+// reintenta; la sonda NO: corta siempre al primer 429, aunque el Retry-After sea corto
+escenario({}); proveedor.http = (url, n, { dia }) => dia === '2026-09-27' ? { status: 429, headers: { 'Retry-After': '1' }, body: '' } : ok(dia)
+const r2b = await corre(['AUDUSD:2026-09-27..2026-09-28'])
+oraculo('SP02', 'con un Retry-After de 1 s la sonda tampoco espera ni reintenta: una peticion y fin', pedidas().length === 1 && !r2b.esperas.includes(1000) && r2b.salida.some(l => /Retry-After 1 s/.test(l)), `${pedidas().length} peticion(es) · esperas ${JSON.stringify(r2b.esperas)}`)
+
 titulo('3 · se detiene al segundo fallo de conexion seguido')
 escenario({}); proveedor.http = () => red()
 const r3 = await corre(['AUDUSD:2026-09-27..2026-09-30'])

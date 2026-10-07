@@ -11,8 +11,10 @@
 // EDUCADA (CTO, 6-oct, tras la sonda 1: 69 de 75 peticiones con HTTP 429):
 //   · UN solo intento por dia, sin reintentos;
 //   · pausa entre peticiones: --pausa S segundos (por defecto 30);
-//   · se detiene entera al primer 429 (y enseña el Retry-After si viene) o al
-//     segundo fallo de conexion seguido; lo que queda sale «no pedido».
+//   · se detiene entera al PRIMER 429, SIEMPRE: aunque traiga un Retry-After
+//     corto no espera ni reintenta (el actualizador si, si cabe: CTO 7-oct);
+//     enseña el Retry-After si viene. Tambien se detiene al
+//     segundo fallo de conexion seguido. Lo que queda sale «no pedido».
 // Salida: el log de cada intento (con lo que tardo) y una tabla. Codigo 0 si
 // todos los dias estan disponibles, 2 si alguno no, 4 si la entrada no vale.
 const dukascopy = require('dukascopy-node')
