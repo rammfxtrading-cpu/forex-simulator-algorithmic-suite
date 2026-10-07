@@ -26,6 +26,8 @@
  *   un CSV con menos velas que lo guardado: no publica, codigo 1;
  *   cerrojo puesto: «ocupado», cero subidas de datos, codigo 1;
  *   CSV-01: 23:60, 24:00 y 50.06 (Date.UTC los lleva al 20-jul 00:00): 4, nada;
+ *   CSV-02: un maximo de 10⁹, el dia entero +3 %, una mecha de −4,5 % y una
+ *   deriva por escalones de 1,5 % hasta +16 % (mediana intacta): 4, nada;
  *   60 velas planas con volumen 0: se quitan (1.380 publicadas).
  */
 import { titulo, oraculo, fin, escenario, db, guardado, REPO } from '../lib.mjs'
@@ -99,6 +101,21 @@ for (const fecha of ['19.07.2026 23:60:00.000', '19.07.2026 24:00:00.000', '50.0
   const texto = csv(velasDe('2026-07-20')).replace('20.07.2026 00:00:00.000', fecha)
   const r = await corre([...ARGS(fichero(`fecha-${fecha.replace(/[ :.]/g, '_')}.csv`, texto)), ...SUBIR])
   oraculo('IC01', `CSV-01: «${fecha}» en una fila: 4 y cero subidas`, texto.includes(fecha) && r.codigo === 4 && subidasDatos() === 0, `codigo ${r.codigo} · ${r.salida.slice(-2).join(' | ')}`)
+}
+
+titulo('3c · CSV-02 (Astra, cierres-5): cada extremo y cada salto, plausibles')
+// lo guardado cierra en 1,1; umbrales: salto ≤ 2 % del cierre anterior (la primera vela, del ultimo guardado); extremos a ≤ 10 % del ultimo guardado
+const deriva = velasDe('2026-07-20').map((v, i) => { if (i < 1430) return v; const px = +(1.1 * 1.015 ** (i - 1429)).toFixed(5); return { ...v, open: px, high: px, low: px, close: px } })
+const anomalos = {
+  'un maximo de mil millones': csv(velasDe('2026-07-20').map((v, i) => (i === 10 ? { ...v, high: 1000000000 } : v))),
+  'todo el dia un 3 % por encima de lo guardado': csv(velasDe('2026-07-20', 1440, 0, 1.133)),
+  'una mecha suelta del −4,5 %': csv(velasDe('2026-07-20').map((v, i) => (i === 600 ? { ...v, low: 1.05 } : v))),
+  'escalones del 1,5 % que acaban un 16 % arriba': csv(deriva),
+}
+for (const [que, texto] of Object.entries(anomalos)) {
+  base()
+  const r = await corre([...ARGS(fichero(`anomalo-${que.replace(/[^a-z0-9]+/gi, '-')}.csv`, texto)), ...SUBIR])
+  oraculo('IC01', `CSV-02: ${que}: rechazado entero (4) y cero subidas`, r.codigo === 4 && subidasDatos() === 0, `codigo ${r.codigo} · ${r.salida.slice(-2).join(' | ')}`)
 }
 
 titulo('4 · nada mejor, cerrojo y velas planas')

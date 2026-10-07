@@ -21,6 +21,8 @@
 //     actualizador;
 //   · precio plausible para el par: la mediana del cierre a menos de un 10 %
 //     del ultimo cierre guardado antes de ese dia (descarta el CSV de otro par);
+//   · cada extremo a ≤ 2 % del cierre anterior y a ≤ 10 % del ultimo guardado
+//     (CSV-02); si no, el CSV entero se rechaza;
 //   · solo sustituye el dia si trae MAS velas que lo guardado (nunca menos).
 // Al terminar dice por cada objetivo (por defecto, el dia importado) si quedo
 // completo (calidad.estadoDia, con la lista de dias aceptados).
@@ -85,6 +87,9 @@ function leeCsv(texto, dia) {
   return { velas: velas.filter(x => !planas.includes(x)), planas: planas.length }
 }
 
+// CSV-02: umbrales de plausibilidad (fraccion). Un minuto de FX no se mueve un
+// 2 %; un dia no se aleja un 10 % del cierre anterior (como la mediana).
+const SALTO_MAX = 0.02, BANDA_MAX = 0.10
 const mediana = xs => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : NaN }
 const ymd = t => new Date(t * 1000).toISOString().slice(0, 10)
 const hm = t => new Date(t * 1000).toISOString().slice(11, 16)
@@ -116,9 +121,23 @@ async function main() {
   if (leido.estado === 'error') throw para(`no se pudo leer ${par} ${anio}: ${leido.motivo}`, 1)
   const guardadas = leido.estado === 'ok' ? leido.velas : []
   const previas = guardadas.filter(v => v.time < Date.parse(dia + 'T00:00:00Z') / 1000)
-  if (previas.length) {
-    const ref = previas[previas.length - 1].close, med = mediana(nuevas.map(v => v.close))
+  const ultimoGuardado = previas.length ? previas[previas.length - 1].close : null
+  if (ultimoGuardado != null) {
+    const ref = ultimoGuardado, med = mediana(nuevas.map(v => v.close))
     if (!(Math.abs(med / ref - 1) <= 0.10)) throw para(`precio no plausible para ${par}: mediana del CSV ${med} frente al ultimo cierre guardado ${ref} (¿es de otro par?)`)
+  }
+  // CSV-02 (Astra, cierres-5): la mediana no certifica cada fila. Cada extremo
+  // (O, H, L, C) a ≤ SALTO_MAX del cierre anterior (la primera vela, del
+  // ultimo cierre guardado) y a ≤ BANDA_MAX del ultimo cierre guardado. Lo
+  // anomalo se rechaza ENTERO: se revisa a mano, no se publica.
+  const fuera = (x, ref, max) => !(Math.abs(x / ref - 1) <= max)
+  let anterior = ultimoGuardado
+  for (const v of nuevas) {
+    for (const [k, x] of [['open', v.open], ['high', v.high], ['low', v.low], ['close', v.close]]) {
+      if (anterior != null && fuera(x, anterior, SALTO_MAX)) throw para(`vela ${hm(v.time)} UTC: ${k} ${x} salta mas de un ${SALTO_MAX * 100} % frente al cierre anterior ${anterior}: CSV rechazado entero, revisalo`)
+      if (ultimoGuardado != null && fuera(x, ultimoGuardado, BANDA_MAX)) throw para(`vela ${hm(v.time)} UTC: ${k} ${x} a mas de un ${BANDA_MAX * 100} % del ultimo cierre guardado ${ultimoGuardado}: CSV rechazado entero, revisalo`)
+    }
+    anterior = v.close
   }
   const delDia = g => (g || []).filter(v => ymd(v.time) === dia)
   const componer = g => {
