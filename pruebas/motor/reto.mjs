@@ -44,6 +44,8 @@
  *   C6-05: horizonte confirmado comun a resets y velas: una vela anterior o igual
  *   a el se rechaza; con fuente, un dato que falta detiene y no confirma nada
  *   despues (sin resets), y un dia declarado cerrado si.
+ *   C7-01: un breach en el precio del cierre prevalece sobre el objetivo (el
+ *   hueco de Astra, con costes cero y con costes@1, y sus fronteras de igualdad).
  *   Paso, salto y reanudacion (serializando) → mismo veredicto y eventos.
  */
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
@@ -58,8 +60,8 @@ const vs = filas => M.velas('EURUSD', filas.map(([iso, p]) => ({ time: U(iso), o
 const enTexto = x => JSON.stringify(x, (k, v) => (typeof v === 'bigint' ? `${v}n` : v))
 
 // un guion: [['avanza', iso] | ['abrir', lado, lotes] | ['cerrar', id]]; devuelve { reto, eventos }
-function corre(velas, inicioIso, guion, { fase = 1, partir = null } = {}) {
-  let r = RT.creaReto({ motor: M.crea({ par: 'EURUSD', costes: cero, capital: '100000' }), fase, inicio: U(inicioIso) })
+function corre(velas, inicioIso, guion, { fase = 1, partir = null, costes = cero } = {}) {
+  let r = RT.creaReto({ motor: M.crea({ par: 'EURUSD', costes, capital: '100000' }), fase, inicio: U(inicioIso) })
   const ev = []
   for (const paso of guion) {
     if (paso[0] === 'avanza') {
@@ -177,6 +179,34 @@ const vMano = vs([...d4.map(d => [`${d}T08:00:00Z`, '1.10000']), ['2026-10-08T08
 const mano = RT ? corre(vMano, '2026-10-05T07:00:00Z', gMano()) : null
 oraculo('RETO', 'C6-02 por comando: cerrar a mano hasta 110.000 con un BUY STOP vivo: superada y la pendiente anulada con su evento', !!mano && mano.reto.estado === 'superada' && mano.eventos.some(x => x.tipo === 'orden_cancelada' && x.motivo === 'objetivo') && mano.reto.motor.ordenes.length === 0, mano ? `${mano.reto.estado} · ${mano.reto.motor.ordenes.length} pendientes · ${mano.eventos.filter(x => x.tipo === 'orden_cancelada').map(x => x.motivo).join(',')}` : '')
 
+titulo('3c · C7-01 (Astra, cierres-7): un breach prevalece siempre sobre el objetivo')
+const { COSTES_1 } = await importa('lib/motor/costes.mjs')
+// lun 5 y mar 6: 1 lote abierto y cerrado a 1,10000; mie 7: 2 lotes de 1,10000 a C3 (saldo ≈ 120.000, 3 dias);
+// jue 8 (suelo diario ≈ 115.000): 08:00 a 1,10000 abre L lotes BUY con SL; la vela de las 08:01 abre en hueco en X (O=H=L=C)
+const vHueco = (c3, x) => vs([['2026-10-05T08:00:00Z', '1.10000'], ['2026-10-06T08:00:00Z', '1.10000'], ['2026-10-07T08:00:00Z', '1.10000'], ['2026-10-07T09:00:00Z', c3], ['2026-10-08T08:00:00Z', '1.10000'], ['2026-10-08T08:01:00Z', x], ['2026-10-08T09:00:00Z', x]])
+const gHueco = (lotes, sl) => [['avanza', '2026-10-05T08:00:00Z'], ['abrir', 'BUY', '1'], ['cerrar', 'p1'], ['avanza', '2026-10-06T08:00:00Z'], ['abrir', 'BUY', '1'], ['cerrar', 'p2'], ['avanza', '2026-10-07T08:00:00Z'], ['abrir', 'BUY', '2'], ['avanza', '2026-10-07T09:00:00Z'], ['cerrar', 'p3'], ['avanza', '2026-10-08T08:00:00Z'], ['abrir', 'BUY', lotes, { sl }], ['avanza', '2026-10-08T09:00:00Z']]
+const veredicto = x => (x ? `${x.reto.estado} · saldo ${enTexto(x.reto.motor.saldo_µ)} · ${x.eventos.filter(e => ['breach', 'fase_superada'].includes(e.tipo) || (e.tipo === 'cierre' && e.motivo !== 'manual')).map(e => e.tipo + (e.regla ? ' ' + e.regla : '') + (e.motivo ? ' ' + e.motivo : '')).join(', ')}` : '')
+const huecoA = RT ? corre(vHueco('1.20000', '1.08000'), '2026-10-05T07:00:00Z', gHueco('5', '1.09000')) : null
+const brA = huecoA && de(huecoA.eventos, 'breach')[0]
+oraculo('RETO', 'C7-01: el hueco de Astra (suelo 115.000; SL de 5 lotes ejecutado en 1,08000 → equity 110.000 = objetivo): breach «perdida_diaria», sin fase_superada', !!brA && brA.regla === 'perdida_diaria' && brA.equity_µ === µ(110000) && brA.limite_µ === µ(115000) && huecoA.reto.estado === 'breach' && de(huecoA.eventos, 'fase_superada').length === 0 && de(huecoA.eventos, 'reset_diario').at(-1)?.limite_diario_µ === µ(115000), veredicto(huecoA))
+const huecoC = RT ? corre(vHueco('1.20050', '1.08000'), '2026-10-05T07:00:00Z', gHueco('5', '1.09000'), { costes: COSTES_1 }) : null
+const brC = huecoC && de(huecoC.eventos, 'breach')[0]
+oraculo('RETO', 'C7-01 con costes@1: suelo 115.076 y equity 110.046 tras el hueco: breach «perdida_diaria», sin fase_superada', !!brC && brC.regla === 'perdida_diaria' && brC.equity_µ === µ(110046) && brC.limite_µ === µ(115076) && huecoC.reto.estado === 'breach' && de(huecoC.eventos, 'fase_superada').length === 0, veredicto(huecoC))
+// fronteras: 1 lote con SL 1,05000; el hueco deja el saldo en 115.000 (= suelo) o 1 USD por debajo
+const igualF = RT ? corre(vHueco('1.20000', '1.05000'), '2026-10-05T07:00:00Z', gHueco('1', '1.05000')) : null
+oraculo('RETO', 'C7-01 frontera: el hueco deja 115.000,00 = suelo (y ≥ objetivo): no hay breach y la fase se concede', !!igualF && igualF.reto.estado === 'superada' && igualF.reto.motor.saldo_µ === µ(115000) && de(igualF.eventos, 'breach').length === 0, veredicto(igualF))
+const bajoF = RT ? corre(vHueco('1.20000', '1.04999'), '2026-10-05T07:00:00Z', gHueco('1', '1.05000')) : null
+oraculo('RETO', 'C7-01 frontera: 1 tick mas abajo (114.999,00 < suelo): breach «perdida_diaria», sin fase', !!bajoF && bajoF.reto.estado === 'breach' && de(bajoF.eventos, 'breach')[0]?.equity_µ === µ(114999) && de(bajoF.eventos, 'fase_superada').length === 0, veredicto(bajoF))
+// cierre manual (motor): limites por encima de la equity sin evaluar (como los deja un reset) y alto que se cumpliria
+{
+  const s0 = M.aplica(M.crea({ par: 'EURUSD', costes: cero, capital: '100000' }), { tipo: 'avanzar', hasta: U('2026-10-08T08:00:00Z') }, vs([['2026-10-08T08:00:00Z', '1.10000'], ['2026-10-08T08:01:00Z', '1.08000']])).estado
+  let e = M.aplica(s0, { tipo: 'abrir', orden: 'mercado', lado: 'BUY', lotes: '5', cotizadoEn: s0.reloj.cursor }).estado
+  e = M.aplica(e, { tipo: 'avanzar', hasta: U('2026-10-08T08:01:00Z') }, vs([['2026-10-08T08:00:00Z', '1.10000'], ['2026-10-08T08:01:00Z', '1.08000'], ['2026-10-08T09:00:00Z', '1.08000']])).estado
+  e = { ...e, limites: [{ regla: 'perdida_diaria', limite_µ: µ(115000) }] }
+  const r = M.aplica(e, { tipo: 'cerrar', id: e.posiciones[0].id }, [], { alto: () => true })
+  oraculo('RETO', 'C7-01 cierre manual: equity 90.000 bajo un limite de 115.000 y alto cumplido: breach, no «objetivo»', r.estado.estado === 'breach' && r.eventos.some(x => x.tipo === 'breach') && r.estado.objetivo == null, `${r.estado.estado} · ${r.eventos.map(x => x.tipo).join(',')}`)
+}
+
 titulo('4 · paso, salto y reanudacion dan lo mismo')
 const porMinuto = (a, b) => { const o = []; for (let t = a + 60; t <= b; t += 60) o.push(t); return o.length ? o : [b] }
 const porHora = (a, b) => { const o = []; for (let t = a + 3600; t < b; t += 3600) o.push(t); o.push(b); return o }
@@ -225,4 +255,8 @@ const rCerr = cerrado ? de(cerrado.eventos, 'reset_diario').map(x => new Date(x.
 oraculo('RETO', 'C6-05 con fuente: el martes DECLARADO cerrado es mercado cerrado: sin detencion, resets del 2, 3 y 4-mar y horizonte en el destino', !!cerrado && !cerrado.detencion && JSON.stringify(rCerr) === '["2026-03-02T23:00","2026-03-03T23:00","2026-03-04T23:00"]' && cerrado.reto.horizonte === U('2026-03-05T12:00:00Z'), cerrado ? `${enTexto(cerrado.detencion)} · ${rCerr.join(' ')}` : '')
 const cerradoH = RT ? conFuente(['2026-03-03'], Array.from({ length: 84 }, (_, i) => U('2026-03-02T01:00:00Z') + 3600 * i)) : null
 oraculo('RETO', 'C6-05 con fuente: por horas (serializando) = de un salto: mismos eventos y mismo reto', !!cerradoH && enTexto(cerradoH.eventos) === enTexto(cerrado.eventos) && RT.serializaReto(cerradoH.reto) === RT.serializaReto(cerrado.reto), cerradoH ? `${cerradoH.eventos.length} / ${cerrado.eventos.length} eventos` : '')
+const huecoAM = RT ? corre(vHueco('1.20000', '1.08000'), '2026-10-05T07:00:00Z', gHueco('5', '1.09000'), { partir: porHora }) : null
+oraculo('RETO', 'C7-01: el hueco de Astra por horas (serializando) = de un salto: mismo breach y eventos', mismo(huecoA, huecoAM))
+const igualFM = RT ? corre(vHueco('1.20000', '1.05000'), '2026-10-05T07:00:00Z', gHueco('1', '1.05000'), { partir: porHora }) : null
+oraculo('RETO', 'C7-01: la frontera igual por horas = de un salto: misma fase superada', mismo(igualF, igualFM))
 fin()
