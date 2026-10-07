@@ -13,6 +13,8 @@
 //     «dd.mm.aaaa HH:MM:SS.mmm» (el export web, SIN COMPROBAR contra un fichero
 //     real), o «timestamp,open,high,low,close,volume» en milisegundos. «Local
 //     time» o cualquier otra cabecera: rechazado (la zona tiene que ser UTC);
+//   · fecha y hora de cada fila por rangos y por ida y vuelta (23:60, 24:00 o
+//     el 50 de junio: rechazados, no normalizados);
 //   · cada fila del dia pedido (UTC), en minutos enteros, estrictamente
 //     crecientes: como mucho 1.440; OHLC numerico, positivo y coherente;
 //   · velas planas con volumen 0 (O=H=L=C): fuera, como ignoreFlats del
@@ -60,7 +62,12 @@ function leeCsv(texto, dia) {
       const m = /^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?$/.exec(c[0])
       if (!m) throw para(`fila ${i + 2}: fecha no es «dd.mm.aaaa HH:MM:SS.mmm» (UTC)`)
       if (m[6] !== '00' || (m[7] && m[7] !== '000')) throw para(`fila ${i + 2}: no es un minuto entero`)
-      t = Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]) / 1000
+      // CSV-01 (Astra, cierres-5): rangos y vuelta exacta; Date.UTC normaliza
+      // 23:60, 24:00 o el 50 de junio en silencio
+      const [D, Mo, A, H, Mi] = [+m[1], +m[2], +m[3], +m[4], +m[5]]
+      t = Date.UTC(A, Mo - 1, D, H, Mi) / 1000
+      const f = new Date(t * 1000)
+      if (Mo < 1 || Mo > 12 || D < 1 || D > 31 || H > 23 || Mi > 59 || f.getUTCFullYear() !== A || f.getUTCMonth() !== Mo - 1 || f.getUTCDate() !== D || f.getUTCHours() !== H || f.getUTCMinutes() !== Mi) throw para(`fila ${i + 2}: fecha u hora inexistente («${c[0]}»)`)
     } else {
       const n = Number(c[0])
       if (!Number.isInteger(n) || n % 60000 !== 0) throw para(`fila ${i + 2}: timestamp no es un minuto entero en milisegundos`)

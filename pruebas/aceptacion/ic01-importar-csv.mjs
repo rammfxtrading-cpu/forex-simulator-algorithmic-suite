@@ -25,6 +25,7 @@
  *   EURUSD), un objetivo de otro par;
  *   un CSV con menos velas que lo guardado: no publica, codigo 1;
  *   cerrojo puesto: «ocupado», cero subidas de datos, codigo 1;
+ *   CSV-01: 23:60, 24:00 y 50.06 (Date.UTC los lleva al 20-jul 00:00): 4, nada;
  *   60 velas planas con volumen 0: se quitan (1.380 publicadas).
  */
 import { titulo, oraculo, fin, escenario, db, guardado, REPO } from '../lib.mjs'
@@ -90,6 +91,15 @@ for (const [que, texto] of Object.entries(malos)) {
 base()
 const rObj = await corre([...ARGS(BUENO), '--objetivo', 'GBPUSD:2026-07-20'])
 oraculo('IC01', 'un objetivo de otro par: 4 y nada leido ni subido', rObj.codigo === 4 && !db.log.some(l => String(l.tabla).startsWith('storage')), `codigo ${rObj.codigo}`)
+
+titulo('3b · CSV-01 (Astra, cierres-5): fechas y horas por rangos y por ida y vuelta')
+// la primera fila (20-jul 00:00) escrita de otra forma que Date.UTC normaliza al 20-jul 00:00
+for (const fecha of ['19.07.2026 23:60:00.000', '19.07.2026 24:00:00.000', '50.06.2026 00:00:00.000']) {
+  base()
+  const texto = csv(velasDe('2026-07-20')).replace('20.07.2026 00:00:00.000', fecha)
+  const r = await corre([...ARGS(fichero(`fecha-${fecha.replace(/[ :.]/g, '_')}.csv`, texto)), ...SUBIR])
+  oraculo('IC01', `CSV-01: «${fecha}» en una fila: 4 y cero subidas`, texto.includes(fecha) && r.codigo === 4 && subidasDatos() === 0, `codigo ${r.codigo} · ${r.salida.slice(-2).join(' | ')}`)
+}
 
 titulo('4 · nada mejor, cerrojo y velas planas')
 base()
