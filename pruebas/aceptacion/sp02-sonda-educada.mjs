@@ -52,6 +52,12 @@ escenario({}); proveedor.http = (url, n, { dia }) => dia === '2026-09-27' ? { st
 const r2b = await corre(['AUDUSD:2026-09-27..2026-09-28'])
 oraculo('SP02', 'con un Retry-After de 1 s la sonda tampoco espera ni reintenta: una peticion y fin', pedidas().length === 1 && !r2b.esperas.includes(1000) && r2b.salida.some(l => /Retry-After 1 s/.test(l)), `${pedidas().length} peticion(es) · esperas ${JSON.stringify(r2b.esperas)}`)
 
+titulo('2b · --cabeceras: solo las de limite (CTO 7-oct), sin URL')
+escenario({}); proveedor.http = () => ({ status: 429, headers: { 'Retry-After': '30', 'X-RateLimit-Limit': '100', 'X-RateLimit-Remaining': '0', Server: 'cloudflare', Via: '1.1 proxy', 'CF-Ray': 'abc123-FRA', 'CF-Cache-Status': 'MISS', 'Set-Cookie': 'sesion=SECRETO', Location: 'https://x.invalid/SECRETO', 'Content-Type': 'text/html' }, body: '' })
+const rc = await corre(['--cabeceras', 'EURUSD:2026-10-06'])
+const cab = rc.salida.filter(l => /cabeceras:/i.test(l)).join(' ')
+oraculo('SP02', 'imprime Retry-After, X-RateLimit-*, Server, Via y CF-*; nunca Set-Cookie, Location ni otras, ni URL', ['retry-after: 30', 'x-ratelimit-limit: 100', 'x-ratelimit-remaining: 0', 'server: cloudflare', 'via: 1.1 proxy', 'cf-ray: abc123-FRA', 'cf-cache-status: MISS'].every(x => cab.toLowerCase().includes(x.toLowerCase())) && !/SECRETO|set-cookie|location|content-type|https?:/i.test(rc.salida.join(' ')), cab || '(sin linea de cabeceras)')
+
 titulo('3 · se detiene al segundo fallo de conexion seguido')
 escenario({}); proveedor.http = () => red()
 const r3 = await corre(['AUDUSD:2026-09-27..2026-09-30'])

@@ -81,7 +81,7 @@ async function fetchFalsoSinSenal(url, signal) {
   const cab = Object.fromEntries(Object.entries(r.headers || {}).map(([k, v]) => [k.toLowerCase(), String(v)]))
   const cuerpo = Buffer.from(r.body ?? '')
   const leer = async () => { if (proveedor.cuerpoPausa) await proveedor.cuerpoPausa({ instrumento, dia }); return cuerpo.buffer.slice(cuerpo.byteOffset, cuerpo.byteOffset + cuerpo.length) }
-  return { status: r.status, ok: r.status >= 200 && r.status < 300, headers: { get: k => cab[String(k).toLowerCase()] ?? null }, arrayBuffer: () => abortable(leer(), signal) }
+  return { status: r.status, ok: r.status >= 200 && r.status < 300, headers: { get: k => cab[String(k).toLowerCase()] ?? null, entries: () => Object.entries(cab)[Symbol.iterator]() }, arrayBuffer: () => abortable(leer(), signal) }
 }
 
 // Velas M1 de un dia UTC (para programar respuestas): `n` velas desde las 00:00

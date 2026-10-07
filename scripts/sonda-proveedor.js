@@ -6,7 +6,9 @@
 // ⛔ No lee ni escribe Storage, no publica y no usa la clave de servicio: no
 //    crea cliente de Supabase ni lee .env.
 //
-//   node scripts/sonda-proveedor.js [--pausa S] PAR:AAAA-MM-DD[..AAAA-MM-DD] [...]
+//   node scripts/sonda-proveedor.js [--pausa S] [--cabeceras] PAR:AAAA-MM-DD[..AAAA-MM-DD] [...]
+//   --cabeceras (CTO 7-oct): imprime de cada respuesta SOLO las cabeceras de
+//   limite: Retry-After, X-RateLimit-*, Server, Via y CF-*. Nunca la URL.
 //   p. ej. node scripts/sonda-proveedor.js AUDUSD:2026-07-20 AUDUSD:2026-09-27 EURUSD:2026-07-20
 // EDUCADA (CTO, 6-oct, tras la sonda 1: 69 de 75 peticiones con HTTP 429):
 //   · UN solo intento por dia, sin reintentos;
@@ -34,8 +36,22 @@ function pedidos(argv) {
   return out.length ? out : null
 }
 
+// --cabeceras: solo las de limite, y sin nada que parezca una URL
+const DE_LIMITE = /^(retry-after|x-ratelimit-[a-z0-9-]+|server|via|cf-[a-z0-9-]+)$/i
+const fetchConCabeceras = ver => async (...a) => {
+  const r = await globalThis.fetch(...a)
+  if (ver) {
+    const vistas = []
+    for (const [k, v] of (r.headers?.entries?.() ?? [])) if (DE_LIMITE.test(k)) vistas.push(`${k.toLowerCase()}: ${String(v).replace(/[a-z]+:\/\/\S+/gi, '[url]')}`)
+    console.log(`    cabeceras: ${vistas.join(' · ') || '(ninguna de limite)'}`)
+  }
+  return r
+}
+
 async function main() {
   const args = process.argv.slice(2)
+  const ic = args.indexOf('--cabeceras'), verCabeceras = ic >= 0
+  if (verCabeceras) args.splice(ic, 1)
   let pausaS = 30
   const ip = args.indexOf('--pausa')
   if (ip >= 0) { pausaS = Number(args[ip + 1]); args.splice(ip, 2) }
@@ -56,7 +72,7 @@ async function main() {
     const t0 = Date.now(), p0 = performance.now()
     let res
     try {
-      const r = await DESC.bajaDia({ sdk: dukascopy, fetch: (...a) => globalThis.fetch(...a), espera: sleep, log: l => console.log('    ' + l), par, dia, intentos: 1 })
+      const r = await DESC.bajaDia({ sdk: dukascopy, fetch: fetchConCabeceras(verCabeceras), espera: sleep, log: l => console.log('    ' + l), par, dia, intentos: 1 })
       res = r.velas.length ? `disponible ${r.velas.length} velas` : 'sin datos'
       redSeguidas = 0
     } catch (e) {
