@@ -96,7 +96,9 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
     fs.promises.readFile = function (p, ...resto) { guarda(p, 'promises.readFile'); return orig.fs.promisesReadFile.call(this, p, ...resto) }
     fs.promises.open = function (p, ...resto) { guarda(p, 'promises.open'); return orig.fs.promisesOpen.call(this, p, ...resto) }
     // bloque N, punto 2: se apunta lo que PIDE cada espera (esperas, en ms) aunque corra al instante
-    globalThis.setTimeout = (f, ms, ...a) => { esperas.push(ms ?? 0); return orig.st(f, 0, ...a) }
+    // con reloj.alEsperar(ms) (opcional; Astra MER-R1): cada espera adelanta el reloj
+    // lo que devuelva (p. ej. un despertar TARDIO del temporizador)
+    globalThis.setTimeout = (f, ms, ...a) => { esperas.push(ms ?? 0); if (reloj?.alEsperar) reloj.ms += reloj.alEsperar(ms ?? 0); return orig.st(f, 0, ...a) }
     // el fetch del proveedor de los scripts (lib/mercado/conexion.mjs fetchDelJob): el doble
     globalThis.__dobleProveedor = proveedorFalso.fetchFalso
     // bloque F, punto 4: el fetch del script es el del proveedor falso (fuera, bloqueado)

@@ -18,7 +18,7 @@
  *   Con AUDCAD (antes) fallando al subir (403): codigo 1.
  *   Un 200 que llega tarde (sin 429) sigue descartandose como «presupuesto».
  */
-import { titulo, oraculo, fin, escenario, proveedor, guardado, db } from '../lib.mjs'
+import { titulo, oraculo, fin, escenario, proveedor, guardado, db, importa } from '../lib.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { correScript, ejecucionesScripts } from '../script-falso.mjs'
 const DIA = 86400000
@@ -49,6 +49,20 @@ db.falla = c => c.op === 'upload' && c.payload?.ruta === 'AUDCAD/M1/2026.json' ?
 const r2 = await corre('AUDCAD,AUDUSD,GBPUSD', reloj)
 db.falla = null
 oraculo('BF10', 'AUDCAD falla al subir y AUDUSD recibe el 429 al limite: codigo 1, y GBPUSD no se pide', r2.codigo === 1 && !pedidas().some(x => x.startsWith('GBPUSD')) && r2.salida.some(l => /PROVEEDOR LIMITA/.test(l)), `codigo ${r2.codigo} · ${pedidas().filter(x => x.startsWith('GBPUSD')).length} de GBPUSD`)
+
+titulo('2b · MER-R1 (Astra, 7-oct): 429 con Retry-After que cabe, pero el temporizador despierta tarde')
+// pideUrl aislado: 429 a los 230 s con Retry-After 7; la espera dura 10,001 s
+{
+  const D = await importa('lib/mercado/descarga.mjs').catch(() => null)
+  let t = 0, n = 0
+  const r = D ? await D.pideUrl('https://x.invalid/a', { fetch: async () => { n++; t += n === 1 ? 230000 : 0; return { status: n === 1 ? 429 : 200, headers: { get: k => (String(k).toLowerCase() === 'retry-after' ? '7' : null) }, arrayBuffer: async () => new TextEncoder().encode('[1]').buffer } }, espera: async ms => { t += ms + 3001 }, etiqueta: 'X', ahora: () => t, limite: 240000, intentos: 3 }).then(() => 'ok', e => e?.tipo) : 'sin modulo'
+  oraculo('BF10', 'pideUrl: si la espera del Retry-After acaba fuera del presupuesto, se propaga «limite» (no «presupuesto»), sin reintentar', r === 'limite' && n === 1, `${r} · ${n} peticion(es)`)
+}
+escenario({ storage: { 'forex-data': storage(['AUDUSD', 'GBPUSD']) } })
+reloj = { alEsperar: ms => (ms === 7000 ? ms + 3001 : 0) }
+proveedor.http = (url, n, { instrumento, dia }) => { if (instrumento === 'audusd' && dia === '2026-02-02' && n === 1) { reloj.ms += 230000; return { status: 429, headers: { 'Retry-After': '7' }, body: '' } } return ok(dia) }
+const r2b = await corre('AUDUSD,GBPUSD', reloj)
+oraculo('BF10', 'el script: corte global (codigo 2), GBPUSD nunca se pide y nada nuevo se publica', r2b.codigo === 2 && !pedidas().some(x => x.startsWith('GBPUSD')) && en(guardado('GBPUSD/M1/2026').velas, '2026-02-02') === 0 && r2b.salida.some(l => /PROVEEDOR LIMITA/.test(l)), `codigo ${r2b.codigo} · ${pedidas().join(' | ')}`)
 
 titulo('3 · control: un 200 que llega tarde sigue descartandose')
 escenario({ storage: { 'forex-data': storage(['AUDUSD']) } })
