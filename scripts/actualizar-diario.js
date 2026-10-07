@@ -319,8 +319,9 @@ async function main() {
   //   3  presupuesto agotado: un par sin tiempo, o una descarga cortada por
   //      el limite (ya no se cuenta como «proveedor no disponible»)
   //   4  error inesperado (Fatal)
-  // Si coinciden varias, manda la primera de 1, 3, 2; salvo un corte por HTTP
-  // 429 (CTO 6-oct): siempre 2, y el log dice el resto. «TODO OK» solo con 0.
+  // Si coinciden varias, manda la primera de 1, 3, 2. Un corte por HTTP 429 sale
+  // con 2 (CTO 6-oct) salvo que ademas falle una publicacion: entonces 1 (CTO
+  // 7-oct: la publicacion fallida no puede quedar oculta). «TODO OK» solo con 0.
   // El estado de los datos sale de lo que cada par ya leyo o verifico al
   // publicar (finales): no se vuelve a descargar ningun año.
   const MAX_DIAS_MERCADO_RETRASO = 2
@@ -394,9 +395,10 @@ async function main() {
   }
   console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes`)
   console.log(`  Tiempos de Storage (ms; plazos ${LIM.pequenaMs}/${LIM.grandeMs}): ${F.resumenTiempos(LIM.tiempos)}`)
-  // CTO 6-oct: un corte por 429 sale con el codigo de «proveedor no disponible»
+  // CTO 6-oct: un corte por 429 sale con el codigo de «proveedor no disponible»;
+  // CTO 7-oct: pero una publicacion fallida en la misma ejecucion gana (1)
   if (CORTE_429) console.log(`\n=== PROVEEDOR LIMITA (HTTP 429) — job cortado en ${CORTE_429}; no se ha pedido nada mas ===`)
-  const codigo = CORTE_429 ? 2 : descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
+  const codigo = CORTE_429 ? (publicaciones.length ? 1 : 2) : descolgados.length || publicaciones.length ? 1 : sinPresupuesto.length ? 3 : sinProveedor.length ? 2 : 0
   const motivos = [
     CORTE_429 ? 'job cortado: el proveedor limita (HTTP 429)' : '',
     descolgados.length ? `${descolgados.length} par(es) descolgado(s) o con dias incompletos` : '',

@@ -16,13 +16,14 @@
  * ORACULOS, a mano:
  *   AUDUSD 3-feb con 429 sin Retry-After: AUDCAD (antes) publica; AUDUSD
  *   publica su 2-feb y no su 3-feb; ninguna peticion despues (ni EURUSD ni
- *   los demas); codigo 2; el log dice 429.
+ *   los demas); codigo 2; el log dice 429. Si ademas falla una publicacion
+ *   (AUDCAD, 403), gana el 1 (CTO 7-oct): no queda oculta tras el 2.
  *   429 con Retry-After 7 que cabe: espera 7 s, reintenta y sigue; codigo 0.
  *   429 con Retry-After 3600 (no cabe en los 4 min del par): se corta; 2.
  *   503 sostenido: 3 peticiones para ese dia (no 5).
  *   Entre dias, una espera de 5 s (5000 ms); con PAUSA_DIA_S=2, de 2000 ms.
  */
-import { titulo, oraculo, fin, escenario, proveedor, guardado } from '../lib.mjs'
+import { titulo, oraculo, fin, escenario, proveedor, guardado, db } from '../lib.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { correScript, ejecucionesScripts } from '../script-falso.mjs'
 const DIA = 86400000
@@ -44,6 +45,14 @@ const p1 = pedidas()
 oraculo('BF08', 'despues del 429 no se pide nada mas: ni otro dia ni otro par', p1.at(-1) === 'AUDUSD 2026-02-03' && p1.filter(x => x === 'AUDUSD 2026-02-03').length === 1 && !p1.some(x => /^(EURUSD|GBPJPY|GBPUSD|NZDUSD|USDCAD|USDCHF|USDJPY)/.test(x)), p1.join(' | '))
 oraculo('BF08', 'lo contiguo ya descargado se publica: AUDCAD entero y el 2-feb de AUDUSD (no su 3-feb)', en(guardado('AUDCAD/M1/2026').velas, '2026-02-03') === 1440 && en(guardado('AUDUSD/M1/2026').velas, '2026-02-02') === 1440 && en(guardado('AUDUSD/M1/2026').velas, '2026-02-03') === 0, `AUDCAD 3-feb ${en(guardado('AUDCAD/M1/2026').velas, '2026-02-03')} · AUDUSD 2-feb ${en(guardado('AUDUSD/M1/2026').velas, '2026-02-02')} · 3-feb ${en(guardado('AUDUSD/M1/2026').velas, '2026-02-03')}`)
 oraculo('BF08', 'sale con el codigo de «proveedor no disponible» (2) y el log dice 429', r1.codigo === 2 && r1.salida.some(l => /429/.test(l) && /corta|cortado/i.test(l)), `codigo ${r1.codigo} · ${r1.salida.filter(l => /429/.test(l)).slice(-2).join(' | ')}`)
+
+// CTO 7-oct: si ademas falla una publicacion en la misma ejecucion, gana el 1
+escenario({ storage: { 'forex-data': todos() } })
+proveedor.http = (url, n, { instrumento, dia }) => instrumento === 'audusd' && dia === '2026-02-03' ? { status: 429, body: '' } : ok(dia)
+db.falla = c => c.op === 'upload' && c.payload?.ruta === 'AUDCAD/M1/2026.json' ? { message: 'denegado', statusCode: '403' } : null
+const r1b = await corre()
+db.falla = null
+oraculo('BF08', '429 y ademas una publicacion fallida (AUDCAD): gana el 1, y el log dice las dos cosas', r1b.codigo === 1 && r1b.salida.some(l => /✗ PUBLICACION/.test(l) && /AUDCAD/.test(l)) && r1b.salida.some(l => /429/.test(l) && /cortado/i.test(l)), `codigo ${r1b.codigo}`)
 
 titulo('2 · 429 con Retry-After que cabe: se espera y se sigue')
 escenario({ storage: { 'forex-data': todos() } })
