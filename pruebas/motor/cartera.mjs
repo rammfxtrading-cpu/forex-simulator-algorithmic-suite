@@ -44,7 +44,17 @@ function sesion({ pares, costes = aislado(), capital = '100000', limites = [], m
 const ap = (s, c, op) => { const r = CA.aplica(s.e, c, s.velas, op); s.e = r.estado; s.ev.push(...r.eventos); return r }
 const abre = (s, par, lado, lotes, extra = {}) => ap(s, { tipo: 'abrir', par, lado, orden: 'mercado', lotes, cotizadoEn: s.e.reloj.cursor, ...extra })
 const pend = (s, par, lado, orden, precio, lotes, extra = {}) => ap(s, { tipo: 'abrir', par, lado, orden, precio, lotes, ...extra })
-const avanza = (s, i, op) => ap(s, { tipo: 'avanzar', hasta: T0 + 60 * i }, op)
+// paso, salto y reanudacion (§ 3.8): cada avance se repite cortado por minutos, con un corte a mitad de minuto y
+// serializando en cada corte; el estado y los eventos tienen que ser los mismos que de un salto
+const PASO = { avances: 0, diferencias: [] }
+function pasoIgualSalto(estado, hasta, velas, op, salto, donde) {
+  let e = CA.deserializa(CA.serializa(estado)), ev = []
+  const cortes = []; for (let t = (estado.reloj.cursor ?? T0) + 30; t < hasta; t += 60) cortes.push(t, t + 30); cortes.push(hasta)
+  for (const h of cortes.filter((x, i, a) => x <= hasta && a.indexOf(x) === i)) { const r = CA.aplica(CA.deserializa(CA.serializa(e)), { tipo: 'avanzar', hasta: h }, velas, op); e = r.estado; ev.push(...r.eventos) }
+  PASO.avances++
+  if (CA.serializa(e) !== CA.serializa(salto.estado) || enTexto(ev) !== enTexto(salto.eventos)) PASO.diferencias.push(donde)
+}
+const avanza = (s, i, op) => { const antes = s.e, r = ap(s, { tipo: 'avanzar', hasta: T0 + 60 * i }, op); pasoIgualSalto(antes, T0 + 60 * i, s.velas, op, r, `avanza ${i}`); return r }
 const tx = (par, t) => M.precioTexto(par, t)
 const altoObjetivo = obj => (e, ev) => e.posiciones.length === 0 && e.saldo_µ >= µ(obj)
 const corre = f => { if (!CA) return null; try { return f() } catch (e) { return { error: String(e?.stack || e).slice(0, 300) } } }
@@ -134,7 +144,7 @@ function correEsc(esc, motor) {
   const v = M.velas(esc.par, esc.filas.map(([o, h, l, c], i) => ({ time: T0 + 60 * i, open: o, high: h, low: l, close: c })))
   const multi = motor === 'cartera'
   let e = multi ? CA.crea({ pares: [esc.par], costes: esc.costes, capital: esc.capital ?? '100000', limites: esc.limites ?? [] }) : M.crea({ par: esc.par, costes: esc.costes, capital: esc.capital ?? '100000', limites: esc.limites ?? [] })
-  const ap1 = c => { const r = multi ? CA.aplica(e, c, { [esc.par]: v }) : M.aplica(e, c, v); e = r.estado; return r }
+  const ap1 = c => { const antes = e, r = multi ? CA.aplica(e, c, { [esc.par]: v }) : M.aplica(e, c, v); if (multi && c.tipo === 'avanzar') pasoIgualSalto(antes, c.hasta, { [esc.par]: v }, undefined, r, `A37 ${esc.id}`); e = r.estado; return r }
   const ev = [], res = []
   const cursor0 = e => e.reloj.cursor
   ap1({ tipo: 'avanzar', hasta: T0 })
@@ -182,7 +192,17 @@ function retoEsc(esc, motor) {
   const ev = [], res = []
   for (const p of esc.guion) {
     let x
-    if (p[0] === 'avanza') x = RT.avanzaReto(RT.deserializaReto(RT.serializaReto(r)), U(p[1]), conVelas(v))
+    if (p[0] === 'avanza') {
+      x = RT.avanzaReto(RT.deserializaReto(RT.serializaReto(r)), U(p[1]), conVelas(v))
+      if (multi) {                                     // el mismo avance por horas y a mitad de minuto, serializando
+        let y = r, ev2 = []
+        const desde = r.motor.reloj.cursor ?? U(esc.inicio)
+        const cortes = []; for (let t = desde + 30; t < U(p[1]); t += 3600) cortes.push(t); cortes.push(U(p[1]))
+        for (const h of cortes) { const z = RT.avanzaReto(RT.deserializaReto(RT.serializaReto(y)), h, conVelas(v)); y = z.reto; ev2.push(...z.eventos) }
+        PASO.avances++
+        if (RT.serializaReto(y) !== RT.serializaReto(x.reto) || enTexto(ev2) !== enTexto(x.eventos)) PASO.diferencias.push(`reto ${esc.id}`)
+      }
+    }
     else if (p[0] === 'tarde') x = RT.avanzaReto(r, U(p[3]), conVelas(velasDe([[p[1], p[2]]])))
     else x = RT.aplicaReto(r, p[0] === 'abrir' ? { tipo: 'abrir', ...(multi ? { par: 'EURUSD' } : {}), lado: p[1], orden: 'mercado', lotes: p[2], cotizadoEn: r.motor.reloj.cursor, ...(p[3] || {}) } : { tipo: 'cerrar', id: p[1] })
     r = x.reto; ev.push(...x.eventos); res.push(enTexto(x.resultado ?? x.detencion))
@@ -216,6 +236,16 @@ const a38c = corre(() => {
 })
 const t38c = a38c?.r ? a38c.r.eventos.map(x => x.tipo + (x.motivo ? ' ' + x.motivo : '') + (x.regla ? ' ' + x.regla : '') + (x.par ? ' ' + x.par : '')) : []
 oraculo('A38', '(c) hueco: TP de EURUSD (+2.000) → limites con GBPUSD ya en 1,26499: 114.998 < 115.000 → breach; GBPUSD se cierra por breach (no por SL); saldo 114.998; sin objetivo', !!a38c?.s && a38c.s.e.estado === 'breach' && a38c.s.e.saldo_µ === µ('114998') && JSON.stringify(t38c) === JSON.stringify(['cierre TP EURUSD', 'breach perdida_diaria', 'cierre breach GBPUSD']), a38c?.error ?? t38c.join(', '))
+
+// Astra diseño-4 § D, prueba 3: la misma vela con el seq permutado (GBPUSD abierta primero): la prioridad declarada
+// cambia los MOTIVOS (no el dinero): el SL de GBPUSD primero → breach → EURUSD se cierra por breach, no por TP
+const a38p = corre(() => {
+  const s = sesion({ pares: ['EURUSD', 'GBPUSD'], capital: '120000', limites: [{ regla: 'perdida_diaria', limite: '115000' }], mins: { EURUSD: [plana('1.10000'), plana('1.12000')], GBPUSD: [plana('1.30000'), plana('1.26499')] } })
+  abre(s, 'GBPUSD', 'BUY', '2', { sl: '1.26500' }); abre(s, 'EURUSD', 'BUY', '1', { tp: '1.12000' })
+  const r = avanza(s, 1, { alto: altoObjetivo('110000') }); return { s, r }
+})
+const t38p = a38p?.r ? a38p.r.eventos.map(x => x.tipo + (x.motivo ? ' ' + x.motivo : '') + (x.regla ? ' ' + x.regla : '') + (x.par ? ' ' + x.par : '')) : []
+oraculo('A38', '(c) con el seq permutado: cierre SL de GBPUSD → breach → EURUSD por breach (no por TP); el mismo saldo 114.998', !!a38p?.s && a38p.s.e.saldo_µ === µ('114998') && JSON.stringify(t38p) === JSON.stringify(['cierre SL GBPUSD', 'breach perdida_diaria', 'cierre breach EURUSD']), a38p?.error ?? t38p.join(', '))
 
 titulo('A39 · frontera de fase 3→4 sin ticks: cambia la conversion y rompe el limite (V3-03)')
 // alcanzable con limites fijos (el saldo de medianoche de Astra, 105.480): capital 105.480 y suelo 100.480; minuto 1: el
@@ -289,9 +319,14 @@ const a43c = corre(() => {
 const f43 = a43c?.r ? de(a43c.r.eventos, 'fill').find(f => f.par === 'AUDCAD') : null
 const p43 = a43c?.s?.e.posiciones.find(p => p.par === 'AUDCAD')
 oraculo('A43', '(c) pendiente de AUDCAD llenada en la fase 3, s = 1/2, con AUDUSD (con exposicion) ya en 0,65500 en ese punto: margen 650,00 (apertura del minuto), no 655,00', !!f43 && f43.en?.fase === 3 && f43.en?.fraccion === '1/2' && p43?.margen_fijado_µ === µ('650'), a43c?.error ?? enTexto([f43?.en, p43?.margen_fijado_µ]))
+// Astra diseño-4 § D, prueba 5: el P&L de AUDCAD se convierte con USDCAD (cierre 1,37000), no con AUDUSD (0,66000).
+// Al cierre del minuto: AUDCAD 0,90000 frente a la entrada 0,90050 → −50 CAD / 1,37 = −36,496350 USD; AUDUSD 0,01 lote
+// de 0,65000 a 0,66000 → +10 USD; equity 100.000 + 10 − 36,496350 = 99.973,503650 (con AUDUSD seria −75,757576)
+oraculo('A43', '(c) el flotante de AUDCAD se convierte con USDCAD (1,37000), no con AUDUSD: equity 99.973,503650', !!a43c?.s && CA.equity_µ(a43c.s.e) === µ('99973.503650'), a43c?.error ?? String(a43c?.s && CA.equity_µ(a43c.s.e)))
 const a43d = serializa => corre(() => {
   const s = sesion({ pares: ['AUDCAD', 'USDCAD', 'AUDUSD'], mins: { AUDCAD: [plana('0.90000'), plana('0.90000')], USDCAD: [plana('1.36000'), plana('1.36000')], AUDUSD: [plana('0.65000'), plana('0.67000')] } })
   abre(s, 'AUDCAD', 'BUY', '1'); avanza(s, 1)
+  if (serializa) s.e = CA.deserializa(CA.serializa(s.e))       // Astra § D, prueba 7: el parcial, tras reanudar
   ap(s, { tipo: 'cerrar', id: 'p1', lotes: '0.25' }); const tras25 = CA.margenUsado_µ(s.e)
   if (serializa) s.e = CA.deserializa(CA.serializa(s.e))
   ap(s, { tipo: 'cerrar', id: 'p1' }); return { tras25, final: CA.margenUsado_µ(s.e) }
@@ -360,4 +395,25 @@ oraculo('NV', 'GBPUSD sin el martes: detencion «no_valorable» de GBPUSD el 202
 oraculo('NV', 'repetir el avance: la misma detencion, sin eventos y el estado igual', nv?.otra?.detencion?.dia === '2026-03-03' && nv.otra.eventos.length === 0 && CA.serializa(nv.otra.estado) === CA.serializa(nv.r.estado))
 const ajena = corre(() => { const e = CA.crea({ pares: ['EURUSD', 'GBPUSD'], costes: aislado(), capital: '100000', mercado: { EURUSD: MF.fija(nv.mEu), GBPUSD: 'GBPUSD@v1:otra' } }); return CA.avanza(e, S0('2026-03-02') + 600, nv.fuentes, { desde: S0('2026-03-02') }) })
 oraculo('NV', 'una fuente con otra huella que la fijada para su par: detencion «fuente_de_otra_version», sin tocar el estado', ajena?.detencion?.motivo === 'fuente_de_otra_version' && ajena.detencion.par === 'GBPUSD' && ajena.eventos.length === 0, enTexto(ajena?.detencion ?? ajena?.error))
+titulo('paso, salto y reanudacion en todos los avances de este fichero (§ 3.8)')
+oraculo('A15', `cada avance repetido por minutos, a mitad de minuto (y en el reto, por horas), serializando: ${PASO.avances} avances, 0 diferencias`, PASO.avances >= 40 && PASO.diferencias.length === 0, PASO.diferencias.join(' · '))
+
+titulo('D-12 · tamaño medido del estado multipar')
+{
+  const P = { AUDCAD: '0.90000', AUDUSD: '0.65000', EURUSD: '1.10000', GBPJPY: '190.000', GBPUSD: '1.25000', NZDUSD: '0.60000', USDCAD: '1.36000', USDCHF: '0.90000', USDJPY: '150.000' }
+  const pares = Object.keys(P)
+  const v = Object.fromEntries(pares.map(p => [p, M.velas(p, [{ time: T0, open: P[p], high: P[p], low: P[p], close: P[p] }])]))
+  const mercado = Object.fromEntries(pares.map(p => [p, `${p}@v1:${'a'.repeat(64)}`]))
+  let e = CA.crea({ pares, costes: COSTES_1, capital: '100000', mercado })
+  e = CA.aplica(e, { tipo: 'avanzar', hasta: T0 }, v).estado
+  for (let i = 0; i < 25; i++) e = CA.aplica(e, { tipo: 'abrir', par: pares[i % 9], lado: 'BUY', orden: 'mercado', lotes: '0.10', cotizadoEn: e.reloj.cursor }).estado
+  for (let i = 0; i < 25; i++) { const p = pares[i % 9], lejos = e.cotizaciones[p].bid / 2n; e = CA.aplica(e, { tipo: 'abrir', par: p, lado: 'BUY', orden: 'limit', precio: M.precioTexto(p, lejos), lotes: '0.10', sl: M.precioTexto(p, lejos / 2n) }).estado }
+  for (const x of [...e.posiciones, ...e.ordenes]) x.sincronizacion_modelada = true
+  e.sincronizacion = { ...e.sincronizacion, minutos: 1234, primero: T0, ultimo: T0 + 60 }
+  const bytes = Buffer.byteLength(CA.serializa(e))
+  const reto = RT.creaReto({ motor: CA.crea({ pares, costes: COSTES_1, capital: '100000', mercado }), inicio: T0 })
+  const env = Buffer.byteLength(RT.serializaReto(reto)) - Buffer.byteLength(CA.serializa(reto.motor))
+  ver(`control: el estado tiene el tope (25 posiciones + 25 ordenes en los 9 pares)`, e.posiciones.length === 25 && e.ordenes.length === 25)
+  oraculo('D-12', `estado multipar con el tope de 50 en 9 pares, marcas y mercado fijado: ${bytes} B; con la envoltura del reto (${env} B), ${bytes + env} B, dentro de la estimacion del diseño (≤ 20.000 B)`, bytes + env <= 20000, `${bytes} + ${env}`)
+}
 fin()

@@ -225,6 +225,11 @@ const porHora = (a, b) => { const o = []; for (let t = a + 3600; t < b; t += 360
 const mismo = (x, y) => !!x && !!y && enTexto(x.eventos) === enTexto(y.eventos) && RT.serializaReto(x.reto) === RT.serializaReto(y.reto)
 const a13m = RT ? corre(dia13('1.07000'), '2026-02-10T07:00:00Z', guion13(), { partir: porMinuto }) : null
 oraculo('RETO', 'A13 paso a paso (cada minuto, serializando) = de un salto', mismo(a13, a13m))
+// cortes a MITAD de minuto (Astra, § 3.8: cualquier frontera de persistencia): el breach del reset de las 23:00 cae en un
+// corte de las 23:00:30; el horizonte tiene que quedar en el breach (23:00), igual que de un salto
+const porMedioMinuto = (a, b) => { const o = []; for (let t = a + 30; t < b; t += 60) o.push(t); o.push(b); return o }
+const a13s = RT ? corre(dia13('1.07000'), '2026-02-10T07:00:00Z', guion13(), { partir: porMedioMinuto }) : null
+oraculo('RETO', 'A13 con cortes a mitad de minuto (serializando) = de un salto, horizonte incluido', mismo(a13, a13s), a13s ? `horizonte ${a13s.reto.horizonte} frente a ${a13?.reto.horizonte}` : '')
 const amarH = RT ? corre(vmar, '2026-03-27T19:00:00Z', [['avanza', '2026-03-27T20:00:00Z'], ['abrir', 'BUY', '1'], ['avanza', '2026-03-30T01:00:00Z']], { partir: porHora }) : null
 oraculo('RETO', 'marzo por horas (cruzando las tres medianoches) = de un salto', mismo(amar, amarH))
 const cerradaH = RT ? corre(vobj(4), '2026-02-09T07:00:00Z', gobj(4, true), { partir: porHora }) : null
