@@ -2,6 +2,8 @@
 
 **Fecha:** 7-oct-2026 · **Rama:** `auditoria-simulador` · **Solo diseño:** ni código ni SQL ejecutable. Nada de esto está aplicado ni se aplica sin orden expresa.
 
+**Revisión 4 (8-oct-2026):** decisiones del CTO tras `2026-10-08-astra-simulador-diseno-4.md`: D-16 con la huella del testigo (§ 4.2), V4-01 reloj y orden común de bloqueos del arrendamiento (§ 4.2, § 4.3), V4-03 límite de avances por alumno en el servidor y presupuesto con los resets (§ 4.4, § 9). Sigue sin SQL: faltan D-01 y aplicar esto.
+
 **Revisión 3 (8-oct-2026):** D-16 a D-18 y la FK de sesión a perfil (CTO). Cambian § 4.1, § 4.2, § 6.1, § 8, § 9.2, § 9.3 y § 10.
 
 **Revisión 2 (8-oct-2026):** decisiones del CTO sobre la revisión de Astra `2026-10-08-astra-simulador-diseno-3.md` (V3-01, V3-04 a V3-07, V3-10). Cambian § 2.2, § 4, § 6, § 6.1, § 7, § 8, § 9 y § 10.
@@ -129,8 +131,10 @@ Cada comando lleva: `session_id`, `command_id` (UUID del cliente), `tipo`, `epoc
 - **El testigo no se puede leer de la base** (V3-06): tabla `sim_arrendamientos (session_id PK → sim_sessions ON DELETE CASCADE, user_id, cliente_id, testigo_hash, hasta)`, **sin ningún grant a `authenticated` ni a `anon`**, y solo con el **hash** del testigo. `sim_sessions` solo expone, si se quiere enseñar, quién escribe y hasta cuándo (`cliente_id`, `hasta`), nunca el testigo. Otra pestaña del mismo alumno no puede obtenerlo leyendo filas.
 - **Dónde vive el testigo (D-16, CTO 8-oct):** en la **memoria de la pestaña**, en `sessionStorage` (no en una cookie: una cookie la comparten todas las pestañas). La pestaña lo envía en cada comando; la base guarda solo su hash y la RPC compara el hash.
 - **Testigo nuevo en cada toma:** `sim_tomar_escritor(actor_id, session_id, cliente_id, forzar)` genera un testigo aleatorio en la base, guarda su hash y devuelve el testigo a esa pestaña (por el servidor). Una toma nueva invalida el testigo anterior.
-- **Riesgo para Astra (D-16):** los navegadores **copian el `sessionStorage` al duplicar una pestaña** («Duplicar»), así que la pestaña duplicada nace con el mismo testigo y la base no puede distinguirlas. Propuesta, sin cambiar la decisión: al arrancar, cada pestaña anuncia su testigo por `BroadcastChannel` con un identificador de instancia nuevo; si dos instancias tienen el mismo testigo, la más nueva lo borra de su `sessionStorage` y queda en solo lectura (puede pedir «Usar aquí», que genera otro). Una recarga de la misma pestaña conserva el testigo, como se quiere.
-- **Caducidad con el reloj de la base** (V3-06): `hasta = now() + 60 s` calculado en la RPC; la comprobación es `hasta > now()` **en el commit**, nunca con el reloj del servidor de Next ni del navegador.
+- **Pestaña duplicada (D-16, CTO 8-oct):** los navegadores **copian el `sessionStorage` al duplicar una pestaña**, así que la duplicada nace con el mismo testigo. **Comodidad, no garantía:** al arrancar, cada pestaña difunde por `BroadcastChannel` una **huella del testigo** (sha256 truncado) con un identificador de instancia nuevo, **nunca el testigo**; si dos instancias tienen la misma huella, la más nueva borra el testigo de su `sessionStorage` y queda en solo lectura (puede pedir «Usar aquí», que genera otro). Una recarga de la misma pestaña conserva el testigo.
+- **La seguridad no depende del canal** (Astra, diseño-4 § C): pestañas suspendidas, mensajes perdidos o un cliente modificado pueden saltárselo. La garantía económica sigue en la RPC: actor = dueño, versión CAS, testigo y estado vigente. Si dos copias envían comandos distintos desde N, como mucho uno que cambie el estado confirma y el otro recibe `409 conflicto`; si reenvían el mismo, reciben el mismo recibo.
+- **Caducidad con el reloj de la base, tomado después de los bloqueos (V4-01, CTO 8-oct):** `now()` en PostgreSQL es la hora de **inicio** de la transacción; una RPC que esperó un bloqueo podría aceptar con él un testigo ya caducado (Astra: caduca en t = 60, la RPC empieza en t = 59 y obtiene el bloqueo en t = 62; con `now()` = 59, acepta y renueva). Por eso la RPC, **después de adquirir todos sus bloqueos**, captura **una** hora `t_decision = clock_timestamp()` y con ella comprueba `hasta > t_decision` y renueva `hasta = t_decision + 60 s`. Como la fila del arrendamiento queda bloqueada hasta el commit, nadie puede tomarlo ni transferirlo entre esa hora y el commit: es el **punto de aceptación atómico**. El fencing por hash del testigo se mantiene: cambiar el reloj no lo sustituye.
+- **Orden común de bloqueos (V4-01, D-18):** toda RPC que compruebe, renueve o transfiera un arrendamiento bloquea en este orden: **(1) el perfil del actor** (barrera por usuario), **(2) las filas de `sim_arrendamientos` que toque, por `session_id` ascendente**, **(3) la sesión padre** y **(4) la sesión hija** (§ 4.3). `sim_comando`, `sim_tomar_escritor` (incluida la transferencia forzada de D-18, que toca el arrendamiento de **otra** sesión) y `sim_crear_sesion` siguen el mismo orden, así que entre ellas no hay interbloqueos; con el DELETE del hub, sí puede haberlos (§ 6.1, I3).
 - **Fencing:** la RPC final comprueba el testigo y la caducidad **dentro** de la transacción que escribe. Un cálculo que terminó cuando el arrendamiento ya había caducado o cambiado de dueño se rechaza en el commit (`409 sin_arrendamiento`), aunque el cálculo se haya hecho.
 - **Tomar:** sin escritor o con el arrendamiento caducado, lo da. Con uno vigente de otra pestaña, solo con `forzar` («Usar aquí», con confirmación en la pestaña que lo toma, D-04); la otra pasa a solo lectura en su siguiente `409 sin_arrendamiento`. Tomar es un comando con recibo `economico` (cambia quién puede escribir).
 - **Renovar:** cada comando que llega a la RPC con el testigo vigente renueva `hasta`, también un rechazo puro (es actividad del escritor); renovar **no** sube la versión (§ 4.3).
@@ -139,7 +143,7 @@ Cada comando lleva: `session_id`, `command_id` (UUID del cliente), `tipo`, `epoc
 
 Dentro de una transacción, en este orden:
 
-1. **Bloqueos, siempre padre y después hija** (V3-05): si la sesión es una fase 2 enlazada, primero `SELECT … FOR UPDATE` del reto padre y después el de la sesión; si no, solo la sesión. Ninguna RPC bloquea dos sesiones que no sean padre e hija.
+1. **Bloqueos en el orden común** (V4-01, § 4.2): perfil del actor → arrendamiento de esta sesión → reto padre → sesión (padre y después hija, V3-05). Ninguna RPC bloquea dos sesiones que no sean padre e hija; la transferencia de D-18 bloquea dos **arrendamientos**, en orden de `session_id`. Después de los bloqueos, `t_decision = clock_timestamp()`.
 2. **Sesión inexistente** → `410 sesion_borrada`, sin efectos. **Actor distinto del dueño** → `404`, sin efectos.
 3. **Idempotencia:** si existe `sim_recibos (session_id, command_id)`:
    - mismo digest → devolver ese recibo tal cual, **sin ejecutar**;
@@ -178,6 +182,8 @@ La transición de fase (`sim_avanzar_fase`) sigue la misma regla: el id de la hi
 ### 4.4 Una petición en vuelo por sesión
 
 El cliente no envía el comando N+1 hasta tener respuesta del N (§ 12.4). El avance se agrupa: un `avanzar` cada varios segundos de reproducción o antes de cualquier orden (§ 12.7), y nunca más de 7 días de mercado por comando (§ 1.7).
+
+**Límite de avances por alumno, impuesto en el servidor (V4-03, CTO 8-oct):** como mucho **un `avanzar`/`checkpoint` cada 5 s por alumno, sumando todas sus sesiones** (la tasa de antes, ahora por alumno). Se guarda en el perfil bloqueado (paso 1 del orden común) un `siguiente_avance_desde`; si `t_decision` es anterior, `429 demasiados_avances`, sin efectos (rechazo puro: no sube la versión ni deja recibo). Así la alternancia entre sesiones con «Usar aquí» (Astra: A en 0, B en 1, A en 5, B en 6…) no duplica la tasa: es una cota real, no una disciplina del cliente. Los comandos económicos no cuentan en este límite.
 
 ---
 
@@ -328,30 +334,27 @@ Roles: `anon`, alumno (`authenticated`, dueño), alumno ajeno, revocado (`simula
 
 Eventos: **≈ 152 B** de `datos` por evento (media medida sobre `fill` y `orden_creada`).
 
-### 9.2 Estimado con la regla nueva de recibos (V3-07, V3-10; hipótesis explícitas, no medidas en Postgres)
+### 9.2 Estimado (hipótesis explícitas, no medidas en Postgres; V4-03: uso normal y cota, separados)
 
-**Hipótesis:** fila de `sim_recibos` o `sim_eventos` ≈ **0,35 KB** con índices; fila de `sim_trades` ≈ 0,5 KB; snapshot ≤ **15 KB** medido con un par (§ 9.1). **El estado multipar no está medido** (D-12): con 50 posiciones + órdenes y 9 pares de cotización estimo ≤ **20 KB**; se medirá con la pieza 7.
+**Hipótesis:** fila de `sim_recibos` o `sim_eventos` ≈ **0,35 KB** con índices; fila de `sim_trades` ≈ 0,5 KB; snapshot ≤ **15 KB** medido con un par (§ 9.1); multipar, medido en la pieza 7 (D-12).
 
-**Estado estable** (lo que queda guardado; los avances sin eventos ya no dejan filas, solo el `ultimo_avance`):
+**Filas permanentes (crecen con el uso):**
+- **Comandos económicos:** cada `abrir`, `cerrar`, `modificar`, `cancelar`, `tomar_escritor` y cada rechazo de un comando económico deja su recibo (≈ 0,35 KB) y sus eventos.
+- **Resets diarios del reto (V4-03):** cada medianoche de Praga que un reto cruza deja un `reset_diario` (evento, ≈ 0,35 KB) y su avance pasa a ser económico (recibo, ≈ 0,35 KB): **≈ 0,7 KB por día de mercado recorrido**, aunque no se opere. 1.000 días recorridos ≈ **0,7 MB** por reto.
+- **Avances sin eventos económicos:** no dejan filas (un único `ultimo_avance`, sobrescrito).
 
-| Sesión | Recibos `economico` | Eventos | Trades | Snapshot + `ultimo_avance` | Total |
-|---|---|---|---|---|---|
-| Ligera: 50 operaciones (≈ 100 comandos, ≈ 200 eventos) | ≈ 35 KB | ≈ 70 KB | ≈ 25 KB | ≈ 20 KB | **≈ 0,15 MB** |
-| Intensa: 500 operaciones (≈ 1.000 comandos, ≈ 2.000 eventos) | ≈ 350 KB | ≈ 700 KB | ≈ 250 KB | ≈ 20 KB | **≈ 1,3 MB** |
+**Uso normal (estimación, no cota):**
 
-Con 5 alumnos y su cupo máximo (12 sesiones Extra): 60 sesiones intensas ≈ **78 MB**. Ya **no depende de las horas reproducidas**: la reproducción no deja filas.
+| Sesión | Recibos económicos | Eventos | Trades | Resets (reto, 250 días) | Snapshot | Total |
+|---|---|---|---|---|---|---|
+| Ligera: 50 operaciones | ≈ 35 KB | ≈ 70 KB | ≈ 25 KB | ≈ 175 KB | ≈ 20 KB | **≈ 0,33 MB** |
+| Intensa: 500 operaciones | ≈ 350 KB | ≈ 700 KB | ≈ 250 KB | ≈ 175 KB | ≈ 20 KB | **≈ 1,5 MB** |
 
-**Pico de 24 h:** lo que crece con la reproducción ya no son filas vivas, sino **versiones muertas** de las filas que se reescriben en cada avance: `sim_sessions` (snapshot ≤ 20 KB, en TOAST) y el `ultimo_avance` (0,35 KB). Autovacuum las marca reutilizables, pero mientras no pasa ocupan, y el fichero no se encoge solo.
+Con 5 alumnos y su cupo máximo (12 sesiones Extra): 60 sesiones intensas ≈ **90 MB**.
 
-| Escenario | Avances por hora (1 cada 5 s por sesión, § 4.4) | Escrito por hora (≈ 20,35 KB por avance) |
-|---|---|---|
-| **Con D-18 (máximo):** los 5 alumnos reproduciendo a la vez, **una sesión v1 cada uno** | 5 × 720 = 3.600 | **≈ 73 MB/h** |
-| En general, *N* alumnos con acceso | *N* × 720 | **≈ 14,7 MB/h por alumno** |
-| ~~60 sesiones a la vez (todo el cupo)~~: ya no es posible con D-18 | — | — |
-
-**D-18 (CTO 8-oct): una sola sesión v1 en reproducción a la vez por alumno.** El pico de escritura deja de depender del cupo de sesiones y depende solo del número de alumnos: con los 5 de hoy, **≈ 73 MB/h como máximo**, y en 24 h de reproducción continua de los 5, ≈ 1,75 GB **escritos** (no ocupados: autovacuum recicla esas versiones). El espacio muerto que queda en un momento dado depende de la frecuencia de autovacuum en `sim_sessions` y su TOAST: con una pasada cada pocos minutos, unos MB; con una hora de retraso, ≈ 73 MB. Es una **cota de escritura**, no una previsión de ocupación (la compresión de TOAST no está medida).
-
-**Cómo se hace cumplir D-18:** el arrendamiento (§ 4.2) es la «reproducción»: `sim_tomar_escritor` bloquea la fila del **perfil** del actor (la misma barrera por usuario que la creación, § 4.3.2) y, si el alumno tiene un arrendamiento vigente en **otra** sesión, responde `409 otra_sesion_activa`; con `forzar` («Usar aquí»), cierra el de la otra sesión y toma este. Un `avanzar` sin arrendamiento vigente no se acepta (§ 4.3). La caducidad es la de siempre, 60 s con el reloj de la base.
+**Cotas (lo que el servidor impone):**
+- **Reescrituras por reproducción:** como mucho **720 avances por hora y alumno** (V4-03, § 4.4), con cualquier número de sesiones. Cada avance reescribe el snapshot (≤ 20 KB, en TOAST) y el `ultimo_avance` (0,35 KB): ≈ **14,65 MB/h por alumno**; con 5 alumnos, **≈ 73,3 MB/h** escritos como máximo. Son versiones muertas que recicla autovacuum, no ocupación viva.
+- **Filas permanentes:** no tienen cota por tiempo; crecen con las operaciones y los días recorridos, al ritmo de arriba. Lo que las acota es la tasa de avances (como mucho 7 días de mercado por comando, § 1.7) y el tope de 50 posiciones + órdenes.
 
 ### 9.3 Frente al plan
 
@@ -359,8 +362,8 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 
 - **La base ocupa hoy unos 170 MB** (captura de Ramón, D-07): quedan **≈ 330 MB** para todo el proyecto (hub y journal incluidos, que también crecen).
 - **Estado estable:** ≈ 78 MB en el peor caso del cupo actual: cabe.
-- **Pico de 24 h (con D-18):** como máximo ≈ 73 MB/h de escritura con los 5 alumnos a la vez, que autovacuum recicla; con una hora de retraso de autovacuum, ≈ 73 MB de espacio muerto: cabe en el margen de ≈ 330 MB junto al estado estable (≈ 78 + 73 ≈ 151 MB). La retención ya no es el problema; lo son las reescrituras del snapshot, y D-18 las acota por alumno.
-- **Límites que lo acotan:** un avance cada ≥ 5 s y una petición en vuelo por sesión (§ 4.4); un escritor por sesión (§ 4.2); **una sola sesión v1 en reproducción a la vez por alumno** (D-18, aprobada).
+- **Pico de escritura (cota, V4-03):** ≈ 73,3 MB/h como máximo con los 5 alumnos, impuesto por el límite de avances por alumno (no por D-18 sola, que no impedía alternar sesiones). Con una hora de retraso de autovacuum, ≈ 73 MB de espacio muerto: junto al uso normal de 60 sesiones intensas (≈ 90 MB), ≈ 163 MB de los ≈ 330 MB de margen. **Es una suma de escenario, no una garantía de ocupación**: autovacuum, WAL y compresión TOAST no están medidos.
+- **Límites que lo acotan:** un avance cada ≥ 5 s **por alumno** (§ 4.4, en el servidor); una petición en vuelo por sesión; un escritor por sesión (§ 4.2); una sola sesión v1 en reproducción a la vez por alumno (D-18).
 - **Pro sigue siendo condición para encender la v1** (§ 12.7, CTO 8-oct).
 
 ---
@@ -392,7 +395,9 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 |---|---|---|
 | D-16 | Dónde vive el testigo de cada pestaña | **En la memoria de la pestaña (`sessionStorage`), enviado en cada comando; la base guarda solo su hash** en `sim_arrendamientos` (no en cookie: la comparten todas las pestañas). Riesgo de pestaña duplicada y propuesta, para Astra (§ 4.2) |
 | D-17 | `ON DELETE` de `challenge_parent_id` | **Aprobada:** borrar un reto padre borra sus fases (CASCADE) |
-| D-18 | Una sola sesión v1 en reproducción a la vez por alumno | **Aprobada:** se hace cumplir con el arrendamiento (`otra_sesion_activa`); pico recalculado (§ 9.2, § 9.3) |
+| D-18 | Una sola sesión v1 en reproducción a la vez por alumno | **Aprobada:** se hace cumplir con el arrendamiento (`otra_sesion_activa`), con el orden común de bloqueos (V4-01) |
+| V4-01 | Reloj y bloqueos del arrendamiento | **`clock_timestamp()` tras los bloqueos, una hora de decisión; orden común perfil → arrendamientos → padre → hija** (§ 4.2, § 4.3) |
+| V4-03 | Tasa de avances y presupuesto | **Un avance cada 5 s por alumno, sumando sus sesiones, en el servidor; resets como filas permanentes; uso normal y cota separados** (§ 4.4, § 9) |
 | FK | `sim_sessions.user_id` → `profiles(id)` ON DELETE CASCADE | **Aprobada por el CTO; pendiente del sí de Ramón** (cambio de esquema en `sim_sessions`) |
 
 **De Ramón:**
