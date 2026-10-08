@@ -2,6 +2,8 @@
 
 **Fecha:** 7-oct-2026 · **Rama:** `auditoria-simulador` · **Solo diseño:** ni código ni SQL ejecutable. Nada de esto está aplicado ni se aplica sin orden expresa.
 
+**Revisión 3 (8-oct-2026):** D-16 a D-18 y la FK de sesión a perfil (CTO). Cambian § 4.1, § 4.2, § 6.1, § 8, § 9.2, § 9.3 y § 10.
+
 **Revisión 2 (8-oct-2026):** decisiones del CTO sobre la revisión de Astra `2026-10-08-astra-simulador-diseno-3.md` (V3-01, V3-04 a V3-07, V3-10). Cambian § 2.2, § 4, § 6, § 6.1, § 7, § 8, § 9 y § 10.
 
 **Encargo (CTO, 7-oct, tras Astra cierres-8):** tablas y columnas; quién escribe; recibo por comando; CAS con testigo de arrendamiento; identidad versionada del mercado en el estado; respuesta perdida; sesiones antiguas en solo lectura; permisos y RLS; tamaño por sesión frente al plan gratuito; decisiones que hacen falta.
@@ -116,7 +118,7 @@ Restricciones: `unique (session_id, seq)`, `unique (session_id, command_id, ordi
 
 ### 4.1 El comando
 
-Cada comando lleva: `session_id`, `command_id` (UUID del cliente), `tipo`, `epoca`, `version_esperada`, `cliente_id` de la pestaña y el payload normalizado (números como texto, lotes en centésimas, precios en ticks). **El testigo del arrendamiento no viaja en el comando** ni lo conoce el navegador (§ 4.2). El servidor calcula el **digest** del sobre canónico `{tipo, payload}` (§ 12.4: `cancelar` y `cerrar` con la misma carga no colisionan).
+Cada comando lleva: `session_id`, `command_id` (UUID del cliente), `tipo`, `epoca`, `version_esperada`, `cliente_id` de la pestaña, el **testigo** del arrendamiento de esa pestaña (§ 4.2, D-16) y el payload normalizado (números como texto, lotes en centésimas, precios en ticks). El servidor calcula el **digest** del sobre canónico `{tipo, payload}` (§ 12.4: `cancelar` y `cerrar` con la misma carga no colisionan).
 
 **El servidor solo acepta intención** (V3-04, V3-06): tipo, instrumento, lado, lotes, precios pedidos, SL/TP, `cotizadoEn`, `hasta`. Nunca acepta del cuerpo estado, saldo, eventos, versión resultante ni dueño.
 
@@ -124,8 +126,10 @@ Cada comando lleva: `session_id`, `command_id` (UUID del cliente), `tipo`, `epoc
 
 ### 4.2 El arrendamiento (un solo escritor por sesión)
 
-- **El testigo está fuera del alcance del navegador** (V3-06): tabla `sim_arrendamientos (session_id PK → sim_sessions ON DELETE CASCADE, cliente_id, testigo_hash, hasta)`, **sin ningún grant a `authenticated` ni a `anon`**. `sim_sessions` solo expone, si se quiere enseñar, quién escribe y hasta cuándo (`cliente_id`, `hasta`), nunca el testigo.
-- **Testigo nuevo en cada toma:** `sim_tomar_escritor(actor_id, session_id, cliente_id, forzar)` genera un testigo aleatorio en la base, guarda su hash y lo devuelve **al servidor**, que lo guarda asociado a esa pestaña en su lado (cookie de servidor `HttpOnly` por pestaña, o tabla del servidor: D-16). Una toma nueva invalida el testigo anterior.
+- **El testigo no se puede leer de la base** (V3-06): tabla `sim_arrendamientos (session_id PK → sim_sessions ON DELETE CASCADE, user_id, cliente_id, testigo_hash, hasta)`, **sin ningún grant a `authenticated` ni a `anon`**, y solo con el **hash** del testigo. `sim_sessions` solo expone, si se quiere enseñar, quién escribe y hasta cuándo (`cliente_id`, `hasta`), nunca el testigo. Otra pestaña del mismo alumno no puede obtenerlo leyendo filas.
+- **Dónde vive el testigo (D-16, CTO 8-oct):** en la **memoria de la pestaña**, en `sessionStorage` (no en una cookie: una cookie la comparten todas las pestañas). La pestaña lo envía en cada comando; la base guarda solo su hash y la RPC compara el hash.
+- **Testigo nuevo en cada toma:** `sim_tomar_escritor(actor_id, session_id, cliente_id, forzar)` genera un testigo aleatorio en la base, guarda su hash y devuelve el testigo a esa pestaña (por el servidor). Una toma nueva invalida el testigo anterior.
+- **Riesgo para Astra (D-16):** los navegadores **copian el `sessionStorage` al duplicar una pestaña** («Duplicar»), así que la pestaña duplicada nace con el mismo testigo y la base no puede distinguirlas. Propuesta, sin cambiar la decisión: al arrancar, cada pestaña anuncia su testigo por `BroadcastChannel` con un identificador de instancia nuevo; si dos instancias tienen el mismo testigo, la más nueva lo borra de su `sessionStorage` y queda en solo lectura (puede pedir «Usar aquí», que genera otro). Una recarga de la misma pestaña conserva el testigo, como se quiere.
 - **Caducidad con el reloj de la base** (V3-06): `hasta = now() + 60 s` calculado en la RPC; la comprobación es `hasta > now()` **en el commit**, nunca con el reloj del servidor de Next ni del navegador.
 - **Fencing:** la RPC final comprueba el testigo y la caducidad **dentro** de la transacción que escribe. Un cálculo que terminó cuando el arrendamiento ya había caducado o cambiado de dueño se rechaza en el commit (`409 sin_arrendamiento`), aunque el cálculo se haya hecho.
 - **Tomar:** sin escritor o con el arrendamiento caducado, lo da. Con uno vigente de otra pestaña, solo con `forzar` («Usar aquí», con confirmación en la pestaña que lo toma, D-04); la otra pasa a solo lectura en su siguiente `409 sin_arrendamiento`. Tomar es un comando con recibo `economico` (cambia quién puede escribir).
@@ -217,8 +221,8 @@ El cliente guarda dos cosas separadas (§ 1.5): el **estado confirmado** (versi�
 
 | Hija → padre | ON DELETE | Estado |
 |---|---|---|
-| `sim_sessions.user_id` → `profiles(id)` | **CASCADE** | **nueva** (V3-05, CTO 8-oct). Hoy, según el resumen de s04, las tablas «caen con auth.users»; no consta la FK exacta (D-01) |
-| `sim_sessions.challenge_parent_id` → `sim_sessions(id)` | **CASCADE** (propuesta) | nueva; hoy no consta (D-01). Borrar un reto padre borra sus fases → D-17 |
+| `sim_sessions.user_id` → `profiles(id)` | **CASCADE** | **nueva** (V3-05). **Aprobada por el CTO (8-oct); pendiente del sí de Ramón** (cambio de esquema en `sim_sessions`, CLAUDE.md § 3, regla 1), que el CTO pide aparte. Hoy, según el resumen de s04, las tablas «caen con auth.users»; no consta la FK exacta (D-01) |
+| `sim_sessions.challenge_parent_id` → `sim_sessions(id)` | **CASCADE** | nueva; hoy no consta (D-01). Borrar un reto padre borra sus fases (**D-17, aprobada por el CTO** el 8-oct) |
 | `sim_recibos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
 | `sim_eventos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
 | `sim_arrendamientos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
@@ -301,7 +305,7 @@ Roles: `anon`, alumno (`authenticated`, dueño), alumno ajeno, revocado (`simula
 **RLS:**
 - `sim_sessions`, `sim_recibos`, `sim_eventos`, `sim_trades`: política **SELECT** `auth.uid() = user_id` para `authenticated`; **ninguna** política de INSERT/UPDATE/DELETE para `authenticated` en las tres nuevas y en `sim_trades`.
 - **`name` (y `timeframe`) exigen acceso vigente** (V3-06, CTO 8-oct): política UPDATE de `sim_sessions` con `USING` y `WITH CHECK` = `auth.uid() = user_id` **y** el perfil del usuario con `simulador_activo = true`; grant de columna limitado a `name` y `timeframe`. Un revocado no puede escribir ni eso.
-- **`sim_arrendamientos`:** sin grants para `authenticated` ni `anon`; solo las RPC.
+- **`sim_arrendamientos`:** sin grants para `authenticated` ni `anon`; solo las RPC. Guarda el **hash** del testigo, nunca el testigo (D-16).
 - **Se retiran** los grants y políticas heredados que hoy permiten ALL al dueño, y `EXECUTE` de las RPC a `PUBLIC` (solo `service_role`). La RLS por dueño, sola, no basta (Astra, diseño-3 § B).
 - Las RPC son `SECURITY DEFINER` con `search_path` vacío; derivan `user_id` de la sesión bloqueada, nunca del payload (una RPC de A no puede apuntar a la sesión de B, A23).
 - Se prueba en PostgreSQL de ensayo real (A28), no con el doble: anon, A, B, revocado y admin contra esta matriz; la migración dos veces; un fallo a mitad.
@@ -341,10 +345,13 @@ Con 5 alumnos y su cupo máximo (12 sesiones Extra): 60 sesiones intensas ≈ **
 
 | Escenario | Avances por hora (1 cada 5 s por sesión, § 4.4) | Escrito por hora (≈ 20,35 KB por avance) |
 |---|---|---|
-| Los 5 alumnos reproduciendo a la vez, una sesión cada uno | 5 × 720 = 3.600 | **≈ 73 MB/h** |
-| 60 sesiones reproduciendo a la vez (todo el cupo) | 43.200 | **≈ 880 MB/h** |
+| **Con D-18 (máximo):** los 5 alumnos reproduciendo a la vez, **una sesión v1 cada uno** | 5 × 720 = 3.600 | **≈ 73 MB/h** |
+| En general, *N* alumnos con acceso | *N* × 720 | **≈ 14,7 MB/h por alumno** |
+| ~~60 sesiones a la vez (todo el cupo)~~: ya no es posible con D-18 | — | — |
 
-El espacio muerto que queda en un momento dado depende de la frecuencia de autovacuum en `sim_sessions` y su TOAST: con una pasada cada pocos minutos, son unos MB; con una hora de retraso en el peor escenario, del orden de cientos de MB. Es una **cota de escritura**, no una previsión de ocupación (la compresión de TOAST no está medida).
+**D-18 (CTO 8-oct): una sola sesión v1 en reproducción a la vez por alumno.** El pico de escritura deja de depender del cupo de sesiones y depende solo del número de alumnos: con los 5 de hoy, **≈ 73 MB/h como máximo**, y en 24 h de reproducción continua de los 5, ≈ 1,75 GB **escritos** (no ocupados: autovacuum recicla esas versiones). El espacio muerto que queda en un momento dado depende de la frecuencia de autovacuum en `sim_sessions` y su TOAST: con una pasada cada pocos minutos, unos MB; con una hora de retraso, ≈ 73 MB. Es una **cota de escritura**, no una previsión de ocupación (la compresión de TOAST no está medida).
+
+**Cómo se hace cumplir D-18:** el arrendamiento (§ 4.2) es la «reproducción»: `sim_tomar_escritor` bloquea la fila del **perfil** del actor (la misma barrera por usuario que la creación, § 4.3.2) y, si el alumno tiene un arrendamiento vigente en **otra** sesión, responde `409 otra_sesion_activa`; con `forzar` («Usar aquí»), cierra el de la otra sesión y toma este. Un `avanzar` sin arrendamiento vigente no se acepta (§ 4.3). La caducidad es la de siempre, 60 s con el reloj de la base.
 
 ### 9.3 Frente al plan
 
@@ -352,8 +359,8 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 
 - **La base ocupa hoy unos 170 MB** (captura de Ramón, D-07): quedan **≈ 330 MB** para todo el proyecto (hub y journal incluidos, que también crecen).
 - **Estado estable:** ≈ 78 MB en el peor caso del cupo actual: cabe.
-- **Pico de 24 h:** con los 5 alumnos a la vez, ≈ 73 MB/h de escritura que autovacuum tiene que reciclar al ritmo; con el cupo entero a la vez, ≈ 880 MB/h, que **no cabe** si autovacuum se retrasa. La retención ya no es el problema; el problema son las reescrituras del snapshot.
-- **Límites que lo acotan:** un avance cada ≥ 5 s y una petición en vuelo por sesión (§ 4.4); un escritor por sesión (§ 4.2); propuesta de **una sola sesión v1 en reproducción a la vez por alumno** (D-18).
+- **Pico de 24 h (con D-18):** como máximo ≈ 73 MB/h de escritura con los 5 alumnos a la vez, que autovacuum recicla; con una hora de retraso de autovacuum, ≈ 73 MB de espacio muerto: cabe en el margen de ≈ 330 MB junto al estado estable (≈ 78 + 73 ≈ 151 MB). La retención ya no es el problema; lo son las reescrituras del snapshot, y D-18 las acota por alumno.
+- **Límites que lo acotan:** un avance cada ≥ 5 s y una petición en vuelo por sesión (§ 4.4); un escritor por sesión (§ 4.2); **una sola sesión v1 en reproducción a la vez por alumno** (D-18, aprobada).
 - **Pro sigue siendo condición para encender la v1** (§ 12.7, CTO 8-oct).
 
 ---
@@ -377,15 +384,16 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 | D-12 | Forma multipar del estado | **A la espera** de la v2.3 de la especificación (§ 13) |
 | V3-04 | Escritores económicos antiguos en el corte | **Rechazan legado y v1 o delegan en las RPC**; pruebas llamando a las URL (§ 7.0) |
 | V3-05 | Grafo de claves, bloqueos e interbloqueo | **FK sesión → perfil en cascada; padre y después hija; interbloqueo = reintento idempotente; I1–I3 como pruebas** (§ 6.1) |
-| V3-06 | Testigo, actor y creación | **Testigo fuera del navegador, nuevo en cada toma, caducidad con `now()`; `actor_id` comparado con el dueño; id de sesión del cliente; `name` con acceso vigente** (§ 4, § 8) |
+| V3-06 | Testigo, actor y creación | **Testigo no legible desde la base (solo su hash; vive en la pestaña, D-16), nuevo en cada toma, caducidad con `now()`; `actor_id` comparado con el dueño; id de sesión del cliente; `name` con acceso vigente** (§ 4, § 8) |
 
-**Nuevas, del CTO (propuestas de este documento):**
+**Nuevas (CTO, 8-oct):**
 
-| # | Decisión | Propuesta |
+| # | Decisión | Estado |
 |---|---|---|
-| D-16 | Dónde guarda el servidor el testigo de cada pestaña | cookie de servidor `HttpOnly` por pestaña (`cliente_id`), firmada; el navegador no puede leerla |
-| D-17 | `ON DELETE` de `challenge_parent_id` | CASCADE: borrar un reto padre borra sus fases (hoy no consta qué pasa) |
-| D-18 | Una sola sesión v1 en reproducción a la vez por alumno | sí: acota el pico de escritura (§ 9.3) |
+| D-16 | Dónde vive el testigo de cada pestaña | **En la memoria de la pestaña (`sessionStorage`), enviado en cada comando; la base guarda solo su hash** en `sim_arrendamientos` (no en cookie: la comparten todas las pestañas). Riesgo de pestaña duplicada y propuesta, para Astra (§ 4.2) |
+| D-17 | `ON DELETE` de `challenge_parent_id` | **Aprobada:** borrar un reto padre borra sus fases (CASCADE) |
+| D-18 | Una sola sesión v1 en reproducción a la vez por alumno | **Aprobada:** se hace cumplir con el arrendamiento (`otra_sesion_activa`); pico recalculado (§ 9.2, § 9.3) |
+| FK | `sim_sessions.user_id` → `profiles(id)` ON DELETE CASCADE | **Aprobada por el CTO; pendiente del sí de Ramón** (cambio de esquema en `sim_sessions`) |
 
 **De Ramón:**
 
