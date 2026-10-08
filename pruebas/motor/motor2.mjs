@@ -54,6 +54,14 @@ titulo('§ 13.9 · limites tras cada cierre (motor@2)')
   oraculo('§13.9', 'cierre SL → breach; la pendiente se cancela (breach); ningun fill; saldo 94.994 (motor@1 daba 94.988)', JSON.stringify(tipos(r)) === JSON.stringify(['cierre SL', 'breach', 'orden_cancelada breach']) && s.e.saldo_µ === µ('94994'), `${tipos(r).join(', ')} · ${s.e.saldo_µ}`)
 }
 
+{
+  // dos protecciones en el mismo precio: tras el PRIMER cierre ya hay breach; la segunda posicion se cierra por breach, no por su SL
+  const s = sesion({ limites: suelo('95000'), filas: [plana('1.10000'), plana('1.05000')] })
+  for (let i = 0; i < 2; i++) ap(s, { tipo: 'abrir', orden: 'mercado', lado: 'BUY', lotes: '1', sl: '1.05000', cotizadoEn: s.e.reloj.cursor })
+  const r = ap(s, { tipo: 'avanzar', hasta: T0 + 60 })
+  oraculo('§13.9', 'dos SL en el mismo precio: cierre SL de p1 → breach (89.988 < 95.000) → p2 se cierra por breach, no por SL', JSON.stringify(tipos(r)) === JSON.stringify(['cierre SL', 'breach', 'cierre breach']) && r.eventos[2].posicion === 'p2' && s.e.saldo_µ === µ('89988'), `${tipos(r).join(', ')} · ${s.e.saldo_µ}`)
+}
+
 titulo('P-23a · limites antes de la primera apertura')
 {
   const s = sesion({ limites: suelo('95000'), filas: [plana('1.10000'), plana('1.05000')] })
