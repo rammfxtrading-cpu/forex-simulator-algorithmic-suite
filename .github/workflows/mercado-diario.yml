@@ -1,0 +1,120 @@
+name: Mercado diario (programado)
+
+# CTO, 9-oct-2026 (mercado diario): actualizacion diaria de los nueve pares
+# desde Actions, sin descargar el año entero cada dia.
+#   · horario fijo a las 03:17 UTC, fuera de 21:00-23:59 UTC. El retraso del
+#     cron de Actions no cambia el dia que se pide: actualizar-diario.js pide
+#     hasta AYER segun su reloj, y a esa hora quedan horas hasta medianoche;
+#   · los nueve pares en secuencia, UN PAR POR PASO (scripts/mercado-diario.sh):
+#     2 min de pausa entre pares, corte total ante cualquier 429, un reintento
+#     final de los que dieron 2 (503, red o plazo) y un tope de descarga por
+#     ejecucion (variable del repo MERCADO_TOPE_BYTES);
+#   · cache de Actions con los ficheros anuales (MERCADO_CACHE): cada año se
+#     usa de la copia si info() da la misma huella; si no, se descarga.
+#   · mismo grupo de concurrencia que el workflow manual (actualizar-velas):
+#     nunca corren a la vez. El manual (sonda / recuperar) no cambia.
+# Ninguna clave ni URL en el log. Desde aqui no se libera ningun cerrojo.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+
+concurrency:
+  group: actualizar-velas
+  cancel-in-progress: false
+
+jobs:
+  diario:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      MERCADO_CACHE: ${{ github.workspace }}/.cache-mercado
+      MERCADO_ESTADO: ${{ runner.temp }}/mercado-diario
+      MERCADO_TOPE_BYTES: ${{ vars.MERCADO_TOPE_BYTES }}
+    steps:
+      - name: Descargar el repo
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Restaurar la cache de los ficheros anuales
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache-mercado
+          key: mercado-anual-${{ github.run_id }}
+          restore-keys: mercado-anual-
+
+      - name: Comprobar el tope de descarga
+        id: tope
+        run: |
+          if ! [[ "$MERCADO_TOPE_BYTES" =~ ^[0-9]+$ ]]; then
+            echo "Falta la variable del repo MERCADO_TOPE_BYTES (entero de bytes): no se pide nada."
+            exit 4
+          fi
+
+      - name: EURUSD
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso EURUSD
+
+      - name: GBPUSD
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso GBPUSD
+
+      - name: USDJPY
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso USDJPY
+
+      - name: USDCHF
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso USDCHF
+
+      - name: AUDUSD
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso AUDUSD
+
+      - name: USDCAD
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso USDCAD
+
+      - name: NZDUSD
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso NZDUSD
+
+      - name: AUDCAD
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso AUDCAD
+
+      - name: GBPJPY
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        timeout-minutes: 30
+        run: sh scripts/mercado-diario.sh paso GBPJPY
+
+      - name: Reintento final (503, red o plazo)
+        if: ${{ !cancelled() && steps.tope.outcome == 'success' }}
+        run: sh scripts/mercado-diario.sh reintento
+
+      - name: Guardar la cache de los ficheros anuales
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache-mercado
+          key: mercado-anual-${{ github.run_id }}
+
+      - name: Resumen
+        if: ${{ !cancelled() }}
+        run: sh scripts/mercado-diario.sh resumen
