@@ -157,7 +157,41 @@ const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 const TRANSFERENCIA = { n: 0, bytes: 0 }
 // LIM: los plazos de Storage y la lista de tiempos reales de esta pasada (se imprime)
 let LIM
-const leerAnio = async (pair, year) => { const x = await F.leerConFirma(sb, pair, year, LIM); if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 } return x }
+// CACHE y TOPE (mercado diario, CTO 9-oct-2026; lib/mercado/cache-anual.mjs):
+//   MERCADO_CACHE=carpeta  copia local de cada año; antes de usarla, info() (sin
+//                          descargar) tiene que dar la misma huella; si no, se
+//                          descarga y se reescribe. Tras publicar se guarda lo
+//                          subido: el dia siguiente no descarga nada.
+//   MERCADO_TOPE_BYTES=N   tope de bytes de objetos anuales descargados en esta
+//                          ejecucion: una descarga que lo pasaria no se hace
+//                          (el par queda sin comprobar, codigo 3).
+// Sin ninguna de las dos (el modo manual), se lee como siempre.
+let CACHE = null, TOPE = null
+const CACHE_LOG = []   // una linea por año leido con la cache: valida (0 bytes) o por que se descargo y cuanto
+const cabe = (size, extra = 0) => TOPE == null || (Number.isFinite(size) && TRANSFERENCIA.bytes + extra + size <= TOPE)
+const leerAnio = async (pair, year) => {
+  if (!CACHE && TOPE == null) { const x = await F.leerConFirma(sb, pair, year, LIM); if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 } return x }
+  const P = `${pair.toUpperCase()} ${year}`
+  const i = await F.infoVigente(sb, pair, year, LIM)
+  let porque = 'sin copia'
+  if (CACHE && i.estado === 'ok') {
+    const c = CACHE.lee(pair, year, i)
+    if (c.crudo) {
+      const d = F.decodifica(c.crudo, i.ruta)
+      if (d.estado === 'ok') { CACHE_LOG.push(`${P}: cache valida (misma huella que ${i.ruta}), 0 bytes descargados`); return { ...d, ruta: i.ruta, firma: i.firma, bytes: 0 } }
+      porque = 'copia ilegible'; CACHE.olvida(pair, year)
+    } else porque = c.motivo
+  }
+  if (i.estado === 'ok' && !cabe(Number(i.size))) { CACHE_LOG.push(`${P}: ${porque}; NO se descarga: tope de descarga (${i.size} bytes; ya ${TRANSFERENCIA.bytes} de ${TOPE})`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: ${i.ruta} (${i.size} bytes) no cabe (ya descargados ${TRANSFERENCIA.bytes} de ${TOPE})` } }
+  if (i.estado === 'error' && TOPE != null) return { estado: 'tope', ruta: F.rutaEscritura(pair, year), motivo: `tope de descarga: info() fallo (${i.motivo}) y sin el tamaño no se descarga` }
+  const x = await F.leerVigente(sb, pair, year, LIM, { crudo: true })
+  if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 }
+  const firma = i.estado === 'ok' && x.estado === 'ok' && i.ruta === x.ruta ? i.firma : null
+  if (x.estado !== 'no-existe') CACHE_LOG.push(`${P}: ${porque}, descargados ${x.bytes || 0} bytes de ${x.ruta}`)
+  if (CACHE && x.estado === 'ok' && !CACHE.guarda(pair, year, { ruta: x.ruta, firma, crudo: x.crudo, shaRemoto: i.metadata?.sha256 ?? null })) CACHE_LOG.push(`${P}: la copia no se guarda (sin firma, o el objeto cambio durante la descarga)`)
+  delete x.crudo
+  return { ...x, firma }
+}
 
 // Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los dias del
 // interior PENDIENTES (bloque G, punto 7: laborables cortos y, desde BF-01,
@@ -226,6 +260,7 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   // conocido (lo verificado al publicar o, si no se publico, lo leido): el
   // veredicto se calcula con el, sin volver a descargar el año.
   if (leido.estado === 'error') return { keyFile, anio: year, final: null, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
+  if (leido.estado === 'tope') return { keyFile, anio: year, final: null, tope: true, presupuesto: [`${leido.ruta} sin leer (${leido.motivo})`], estado: `✗ TOPE DE DESCARGA ${keyFile}: no se lee el año ni se pide nada al proveedor (${leido.motivo})` }
   const nuevoAnio = leido.estado === 'no-existe'
   const velas = nuevoAnio ? [] : leido.velas
   const pendientes = diasPendientes(pair, velas, year, ayerMs)
@@ -274,8 +309,15 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   }
   // BF-03: no se empieza a publicar sin la reserva para terminar (ni se toma el cerrojo)
   if (Date.now() + RESERVA_MS > finJob) return { ...base, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
-  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido, limites: LIM })
+  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido, limites: LIM, ...(TOPE != null ? { permiteDescarga: (size, ya) => cabe(size, ya) } : {}) })
   TRANSFERENCIA.n += r.descargado?.n || 0; TRANSFERENCIA.bytes += r.descargado?.bytes || 0
+  if (r.descargado?.n) CACHE_LOG.push(`${pair.toUpperCase()} ${year}: al publicar, descargados ${r.descargado.bytes} bytes (relectura o verificacion)`)
+  // la copia del dia siguiente: el cuerpo subido y la firma de la verificacion (por metadatos)
+  if (CACHE && r.estado === 'publicado') {
+    if (r.cuerpo && r.firma && CACHE.guarda(pair, year, { ruta: r.ruta, firma: r.firma, crudo: r.cuerpo })) CACHE_LOG.push(`${pair.toUpperCase()} ${year}: copia actualizada con lo publicado (${r.cuerpo.length} bytes)`)
+    else { CACHE.olvida(pair, year); CACHE_LOG.push(`${pair.toUpperCase()} ${year}: publicado sin firma verificada por metadatos: la copia se borra`) }
+  }
+  if (r.estado === 'tope') return { ...base, tope: true, presupuesto: [...presupuesto, `${keyFile}: ${r.problemas.join(' · ')}`], estado: `✗ TOPE DE DESCARGA ${keyFile}: el año cambio bajo el cerrojo y releerlo pasaria el tope; lo bajado se descarta y se repite en la pasada siguiente${nota}` }
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
   if (r.estado === 'publicado') return { ...base, final: r.final, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
   if (r.estado === 'sin-cambios') return { ...base, final: r.final ?? velas, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir${nota}` }
@@ -290,7 +332,7 @@ async function procesarPar(pair, finJob = Infinity) {
   const year = hoy.getUTCFullYear()
   const anios = hoy.getUTCMonth() === 0 ? [year - 1, year] : [year]   // en enero, tambien el 31-dic anterior
   const partes = [], fallidos = [], presupuesto = [], finales = []
-  let sinTiempoPublicar = false, publicacion = false
+  let sinTiempoPublicar = false, publicacion = false, tope = false
   for (const y of anios) {
     if (CORTE_429) break
     if (Date.UTC(y, 0, 1) > ayerMs) continue           // el 1-ene aun no ha cerrado: nada que pedir de ese año
@@ -298,10 +340,11 @@ async function procesarPar(pair, finJob = Infinity) {
     partes.push(r.estado); fallidos.push(...(r.fallidos || [])); presupuesto.push(...(r.presupuesto || []))
     if (r.sinTiempo) sinTiempoPublicar = true
     if (r.publicacion) publicacion = true
+    if (r.tope) tope = true
     finales.push({ anio: y, velas: r.final })
   }
   const fallo = partes.find(p => p.startsWith('✗'))
-  return { pair, fallidos, presupuesto, publicacion, finales, sinTiempo: sinTiempoPublicar, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
+  return { pair, fallidos, presupuesto, publicacion, finales, tope, sinTiempo: sinTiempoPublicar, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
 }
 
 async function main() {
@@ -329,6 +372,16 @@ async function main() {
   sb = createClient(url, key, { global: { fetch: L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs) } })
   LIM = { ...F.LIMITES, tiempos: [] }
   RESERVA_MS = segs(process.env.RESERVA_PUBLICAR_S, F.tiempoMaximoPublicar() / 1000) * 1000
+  if (process.env.MERCADO_TOPE_BYTES != null && process.env.MERCADO_TOPE_BYTES !== '') {
+    if (!/^\d+$/.test(process.env.MERCADO_TOPE_BYTES)) {
+      console.log('MERCADO_TOPE_BYTES no valido: tiene que ser un entero de bytes (0 o mas)')
+      console.log('\n=== ⚠️ ATENCION: no se ha hecho nada (MERCADO_TOPE_BYTES no valido) (codigo 4) ===')
+      process.exitCode = 4
+      return
+    }
+    TOPE = Number(process.env.MERCADO_TOPE_BYTES)
+  }
+  if (process.env.MERCADO_CACHE) CACHE = (await import('../lib/mercado/cache-anual.mjs')).creaCache(process.env.MERCADO_CACHE)
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()}${PAIRS.length < TODOS.length ? ` — solo ${PAIRS.map(p => p.toUpperCase()).join(', ')}` : ''} ===\n`)
   const resultados = []
   const finJob = Date.now() + PRESUPUESTO_JOB_MS
@@ -404,6 +457,7 @@ async function main() {
     // el año mas reciente con datos de los que proceso el par
     const fin = [...(r.finales || [])].reverse().find(f => f.velas?.length)
     if (!fin) {
+      if (r.tope) { console.log(`  ${P} — sin comprobar (tope de descarga)`); continue }
       if (r.sinTiempo && !(r.finales || []).length) { console.log(`  ${P} — sin comprobar (sin tiempo)`); continue }
       if (r.cortado429) { console.log(`  ${P} — sin comprobar (job cortado por HTTP 429)`); continue }
       console.log(`  ${P} ✗ no legible`); descolgados.push(`${pair.toUpperCase()}: archivo no legible${r.error ? ' (error)' : ''}`); continue
@@ -426,7 +480,8 @@ async function main() {
     console.log(`\n=== DESCOLGADO(S) O INCOMPLETO(S) — ${descolgados.length} ===`)
     descolgados.forEach(d=>console.log(`  ${d}`))
   }
-  console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes`)
+  console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes${TOPE != null ? ` (tope ${TOPE})` : ''}`)
+  if (CACHE || TOPE != null) { console.log(`  Cache de años (${CACHE ? 'MERCADO_CACHE' : 'sin cache'}):`); CACHE_LOG.forEach(l => console.log(`    ${l}`)) }
   console.log(`  Tiempos de Storage (ms; plazos ${LIM.pequenaMs}/${LIM.grandeMs}): ${F.resumenTiempos(LIM.tiempos)}`)
   // M-03: los objetivos, con lo que cada par ya leyo o verifico (sin descargar)
   const objetivosMal = []
@@ -437,7 +492,7 @@ async function main() {
       const r = resultados.find(x => x.pair === par.toLowerCase()) || {}
       const fin = (r.finales || []).find(f => f.anio === Number(dia.slice(0, 4)))
       let linea, ok = false
-      if (!fin || !Array.isArray(fin.velas)) linea = `✗ no comprobado (${r.cortado429 ? 'job cortado por HTTP 429' : r.sinTiempo ? 'sin tiempo' : 'año no leido'})`
+      if (!fin || !Array.isArray(fin.velas)) linea = `✗ no comprobado (${r.cortado429 ? 'job cortado por HTTP 429' : r.tope ? 'tope de descarga' : r.sinTiempo ? 'sin tiempo' : 'año no leido'})`
       else {
         const vd = fin.velas.filter(v => ymd(v.time * 1000) === dia)
         const e = estadoDe(par.toLowerCase(), dia, vd)
