@@ -58,7 +58,7 @@ oraculo('BF04', 'descolgado: codigo 1 y sin TODO OK', r3.codigo === 1 && !todoOk
 
 titulo('4 · publicacion fallida: Storage rechaza la subida de AUDUSD (403)')
 escenario({ storage: { 'forex-data': todos() } }); bien()
-db.falla = c => c.op === 'upload' && c.payload?.ruta === 'AUDUSD/M1/2026.json' ? { message: 'denegado', statusCode: '403' } : null
+db.falla = c => c.op === 'upload' && String(c.payload?.ruta).startsWith('AUDUSD/M1/2026.json') ? { message: 'denegado', statusCode: '403' } : null
 const r4 = await corre(); db.falla = null; codigos.publicacion = r4.codigo
 oraculo('BF04', 'publicacion fallida: codigo 1 (como descolgado) y sin TODO OK', r4.codigo === 1 && !todoOk(r4) && r4.salida.some(l => /✗ PUBLICACION/.test(l)), `codigo ${r4.codigo}`)
 

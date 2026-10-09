@@ -126,7 +126,9 @@ const velasDe = (dia, n) => diaM1(dia, n).map(c => ({ time: c.timestamp / 1000, 
 const BASE = JSON.stringify(velasDe('2026-01-02', 1200))
 const RUTA = 'EURUSD/M1/2026.json', CERROJO = '_cerrojos/EURUSD_2026.json'
 const hayCerrojo = () => Object.hasOwn(db.storage['forex-data'] ?? {}, CERROJO)
-const subidasDatos = () => db.log.filter(l => l.op === 'upload' && l.payload?.ruta === RUTA).length
+// lo escrito: desde el 9-oct (un solo formato) el .json.gz; el codigo viejo escribia el .json
+const esDatos = r => r === RUTA || r === RUTA + '.gz'
+const subidasDatos = () => db.log.filter(l => l.op === 'upload' && esDatos(l.payload?.ruta)).length
 const LIM = { pequenaMs: 20000, grandeMs: 120000 }
 let tiemposR = null
 const publica = (R, dueno = 'A') => { tiemposR = []; return !F ? Promise.resolve({ estado: 'sin-modulo', problemas: [] }) : F.publicarAnio(sb, { pair: 'EURUSD', year: 2026, dueno, componer: () => velasDe('2026-01-02', 1440), ahoraMs: () => Date.parse('2026-01-02T12:00:00Z'), limites: { ...LIM, plazo: R.plazo, tiempos: tiemposR } }) }
@@ -142,7 +144,7 @@ const retiene = pred => { let pillada = false; db.pausa = async c => { if (!pill
   db.pausa = null; suelta?.(); await ticks(200) }
 
 { escenario({ storage: { 'forex-data': { [RUTA]: BASE } } }); const R = relojManual()
-  const pillada = retiene(c => c.op === 'upload' && c.payload?.ruta === RUTA)
+  const pillada = retiene(c => c.op === 'upload' && esDatos(c.payload?.ruta))
   const p = publica(R); await ticks(); ver('control: la subida esta retenida antes de aplicarse', !F || pillada())
   R.avanza(LIM.grandeMs); const h = await termino(p, 200)
   oraculo('BF03', 'subida colgada sin aplicar: «incierto», el cerrojo se CONSERVA y lo dice', h?.ok?.estado === 'incierto' && hayCerrojo() && /cerrojo/.test(h.ok.problemas.join(' ')), h ? JSON.stringify({ e: h.ok?.estado, p: h.ok?.problemas, c: hayCerrojo() }) : 'sigue pendiente')
@@ -151,7 +153,7 @@ const retiene = pred => { let pillada = false; db.pausa = async c => { if (!pill
   oraculo('BF03', 'la subida se aplica tarde: el cerrojo sigue puesto y otro escritor no publica encima', guardado('EURUSD/M1/2026').velas?.length === 1440 && hayCerrojo() && b.estado === 'ocupado', `quedan ${guardado('EURUSD/M1/2026').velas?.length} · B ${b.estado}`) }
 
 { escenario({ storage: { 'forex-data': { [RUTA]: BASE } } }); const R = relojManual(); let retenida = false
-  db.trasAplicar = async c => { if (c.payload === RUTA && !retenida) { retenida = true; await new Promise(r => { suelta = r }) } }
+  db.trasAplicar = async c => { if (esDatos(c.payload) && !retenida) { retenida = true; await new Promise(r => { suelta = r }) } }
   const p = publica(R); await ticks(); ver('control: la subida se aplico y su respuesta esta retenida', !F || (retenida && guardado('EURUSD/M1/2026').velas?.length === 1440))
   R.avanza(LIM.grandeMs); const h = await termino(p, 200)
   oraculo('BF03', 'subida aplicada con la respuesta retenida: se reconcilia (lo vigente es lo subido), publicado y cerrojo suelto', h?.ok?.estado === 'publicado' && !hayCerrojo(), h ? JSON.stringify({ e: h.ok?.estado, p: h.ok?.problemas, a: h.ok?.avisos, c: hayCerrojo() }) : 'sigue pendiente')
@@ -161,7 +163,7 @@ const retiene = pred => { let pillada = false; db.pausa = async c => { if (!pill
   // bloque G, punto 11: la verificacion es info() (metadatos) y, si no, una
   // descarga: se retienen LAS DOS despues de la subida
   const sueltas = []; let retenidas = 0
-  db.pausa = async c => { if ((c.op === 'download' || c.op === 'info') && c.payload === RUTA && db.log.some(l => l.op === 'upload' && l.payload?.ruta === RUTA)) { retenidas++; await new Promise(r => sueltas.push(r)) } }
+  db.pausa = async c => { if ((c.op === 'download' || c.op === 'info') && esDatos(c.payload) && db.log.some(l => l.op === 'upload' && esDatos(l.payload?.ruta))) { retenidas++; await new Promise(r => sueltas.push(r)) } }
   suelta = () => sueltas.forEach(f => f())
   const pillada = () => retenidas > 0
   const p = publica(R); await ticks(60); ver('control: la verificacion esta retenida tras subir', !F || (pillada() && guardado('EURUSD/M1/2026').velas?.length === 1440))

@@ -254,7 +254,7 @@ function componer(pair, guardadas, bajados) {
 
 // Baja los dias pendientes y los publica por la funcion comun.
 async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = Infinity) {
-  const keyFile = F.rutaEscritura(pair, year)     // .json; .json.gz solo con MERCADO_GZIP=1
+  const keyFile = F.rutaEscritura(pair, year)     // .json.gz (un solo formato, CTO 9-oct)
   const leido = await leerAnio(pair, year)
   // Bloque G, punto 10: cada resultado lleva el año y su contenido FINAL
   // conocido (lo verificado al publicar o, si no se publico, lo leido): el

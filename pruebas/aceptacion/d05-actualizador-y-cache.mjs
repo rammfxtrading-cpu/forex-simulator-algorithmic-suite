@@ -82,9 +82,9 @@ ver('control: primera peticion, 1.440 velas del 30-sep y una descarga', a.cuerpo
 const d0 = cuenta('download'), i0 = cuenta('info')
 const a2 = await llama(candles, { method: 'GET', token: tok(A), query: q })
 oraculo('D05', 'dos peticiones seguidas sin cambio: la segunda hace CERO descargas', a2.cuerpo?.count === 1440 && cuenta('download') === d0, `${cuenta('download') - d0} descargas`)
-// con la compresion APAGADA (bloque E, punto 6, por defecto) se consulta solo el
-// .json: 1 llamada info (encendida serian 2: .json.gz y luego .json; ver gz01)
-oraculo('D05', 'y lo sabe consultando la version (una llamada info, sin descargar)', cuenta('info') === i0 + 1, `${cuenta('info') - i0} info`)
+// un solo formato (CTO 9-oct): se consulta el .json.gz (aqui no existe: 404) y
+// luego el .json: 2 llamadas info, ninguna descarga (antes, apagado, era 1)
+oraculo('D05', 'y lo sabe consultando la version (info del .json.gz, que no existe, y del .json; sin descargar)', cuenta('info') === i0 + 2, `${cuenta('info') - i0} info`)
 db.storage['forex-data']['NZDUSD/M1/2026.json'] = JSON.stringify([...velasDe('2026-09-30'), ...velasDe('2026-10-01')])   // el cron añade el 1-oct
 const d1 = cuenta('download')
 const b = await llama(candles, { method: 'GET', token: tok(A), query: q })

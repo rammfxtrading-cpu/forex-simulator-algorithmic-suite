@@ -33,6 +33,7 @@ import { createClient } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { correScript, ejecucionesScripts } from '../script-falso.mjs'
 import fs from 'node:fs'
+import { gzipSync, gunzipSync } from 'node:zlib'
 import os from 'node:os'
 import path from 'node:path'
 const DIA = 86400000
@@ -44,13 +45,22 @@ const inicial = () => ({ [AUD]: JSON.stringify(historial('2026-02-01')) })
 const filas = dia => JSON.stringify(new Date(dia + 'T00:00:00Z').getUTCDay() === 0 ? diaM1(dia).slice(22 * 60) : diaM1(dia))
 const bien = () => { proveedor.http = (url, n, { dia }) => ({ status: 200, body: filas(dia) }) }
 const corre = (env = {}, ahora = '2026-02-03T06:00:00Z') => correScript('scripts/actualizar-diario.js', { ahora, argv: ['--subir', '--pares', 'AUDUSD'], env: { ...ENV, ...env } })
-const descargas = () => db.log.filter(l => l.op === 'download' && l.payload === AUD).length
-const subidas = () => db.log.filter(l => l.op === 'upload' && l.payload?.ruta === AUD).length
+// el año en cualquiera de los dos formatos (desde el 9-oct se publica .json.gz); un 404 no es descarga
+const esAUD = r => r === AUD || r === AUD + '.gz'
+const descargas = () => db.log.filter(l => l.op === 'download' && esAUD(l.payload) && l.encontrado !== false).length
+const subidas = () => db.log.filter(l => l.op === 'upload' && esAUD(l.payload?.ruta)).length
+const vigente = () => (Object.hasOwn(db.storage['forex-data'], AUD + '.gz') ? AUD + '.gz' : AUD)
 const linea = r => r.salida.find(l => l.includes('AUDUSD/M1')) ?? ''
 const transf = r => r.salida.find(l => /Transferencia/.test(l)) ?? '(sin linea de transferencia)'
 const en = (arr, d) => arr.filter(v => new Date(v.time * 1000).toISOString().startsWith(d)).length
 const nuevaCache = () => fs.mkdtempSync(path.join(os.tmpdir(), 'md01-cache-'))
 const ficheros = dir => fs.readdirSync(dir).filter(f => !f.startsWith('.')).sort()
+
+titulo('0 · control del contador: una descarga que da 404 no cuenta')
+escenario({ storage: { 'forex-data': inicial() } })
+await createClient('https://falso.supabase.co', 'falsa').storage.from('forex-data').download('AUDUSD/M1/1999.json')
+await createClient('https://falso.supabase.co', 'falsa').storage.from('forex-data').download(AUD)
+ver('control: el doble marca el 404 (encontrado: false) y no la descarga real', db.log.filter(l => l.op === 'download').map(l => l.encontrado !== false).join() === 'false,true', JSON.stringify(db.log.filter(l => l.op === 'download').map(l => [l.payload, l.encontrado])))
 
 titulo('1 · copia valida: no se descarga')
 const C1 = nuevaCache()
@@ -71,10 +81,12 @@ oraculo('MD01', 'dia siguiente: 0 descargas y publica el 3-feb sobre la copia (e
 titulo('2 · otro escritor cambia el objeto: huella distinta, se descarga')
 {
   const otro = createClient('https://falso.supabase.co', 'falsa')
-  const v = JSON.parse(db.storage['forex-data'][AUD]).filter(x => !new Date(x.time * 1000).toISOString().startsWith('2026-01-25'))
+  // el otro escritor cambia lo VIGENTE (tras la seccion 1, el .json.gz)
+  const R = vigente(), crudo = Buffer.from(db.storage['forex-data'][R]), gz = crudo[0] === 0x1f && crudo[1] === 0x8b
+  const v = JSON.parse((gz ? gunzipSync(crudo) : crudo).toString('utf8')).filter(x => !new Date(x.time * 1000).toISOString().startsWith('2026-01-25'))
   v.push(...velasDe('2026-01-25').slice(21 * 60)); v.sort((p, q) => p.time - q.time)
-  await otro.storage.from('forex-data').upload(AUD, JSON.stringify(v), { upsert: true })
-  const tam = Buffer.byteLength(db.storage['forex-data'][AUD])
+  await otro.storage.from('forex-data').upload(R, gz ? gzipSync(Buffer.from(JSON.stringify(v))) : JSON.stringify(v), { upsert: true })
+  const tam = Buffer.byteLength(db.storage['forex-data'][R])
   db.log.length = 0; bien()
   const d = await corre({ MERCADO_CACHE: C1 }, '2026-02-05T06:00:00Z')
   const g = guardado('AUDUSD/M1/2026').velas ?? []

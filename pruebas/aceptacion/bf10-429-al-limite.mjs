@@ -48,7 +48,7 @@ titulo('2 · prioridad: con una publicacion fallida antes, gana el 1')
 escenario({ storage: { 'forex-data': storage(['AUDCAD', 'AUDUSD', 'GBPUSD']) } })
 reloj = {}
 proveedor.http = (url, n, { instrumento, dia }) => { if (instrumento === 'audusd' && dia === '2026-02-02') { reloj.ms += 240001; return { status: 429, body: '' } } return ok(dia) }
-db.falla = c => c.op === 'upload' && c.payload?.ruta === 'AUDCAD/M1/2026.json' ? { message: 'denegado', statusCode: '403' } : null
+db.falla = c => c.op === 'upload' && String(c.payload?.ruta).startsWith('AUDCAD/M1/2026.json') ? { message: 'denegado', statusCode: '403' } : null
 const r2 = await corre('AUDCAD,AUDUSD,GBPUSD', reloj)
 db.falla = null
 oraculo('BF10', 'AUDCAD falla al subir y AUDUSD recibe el 429 al limite: codigo 1, y GBPUSD no se pide', r2.codigo === 1 && !pedidas().some(x => x.startsWith('GBPUSD')) && r2.salida.some(l => /PROVEEDOR LIMITA/.test(l)), `codigo ${r2.codigo} · ${pedidas().filter(x => x.startsWith('GBPUSD')).length} de GBPUSD`)

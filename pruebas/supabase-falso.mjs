@@ -157,9 +157,10 @@ class Q {
 // que no esta da error. Los errores se DEVUELVEN ({ data, error }), no se lanzan.
 function bucket(nombre) {
   const objetos = () => db.storage[nombre]
-  const op = async (tipo, payload) => {
+  const op = async (tipo, payload, marca = null) => {
     await tick()
     const ctx = { cliente: quien, tabla: 'storage:' + nombre, op: tipo, payload, filtros: [] }
+    if (marca) marca.ctx = ctx
     db.log.push(ctx)
     if (db.pausa) await db.pausa(ctx)
     return (db.falla && await db.falla(ctx)) || null
@@ -167,12 +168,15 @@ function bucket(nombre) {
   const noExiste = { data: null, error: { message: 'Bucket not found', statusCode: '404' } }
   const NO_ENCONTRADO = { name: 'StorageApiError', message: 'Object not found', status: 400, statusCode: '404' }
   return {
+    // en el log, encontrado: false si la descarga dio 404 (lo que no existe no
+    // se descarga: las pruebas de transferencia cuentan solo las reales)
     async download(ruta) {
-      const err = await op('download', ruta); if (err) return { data: null, error: err }
-      if (!objetos()) return noExiste
+      const m = {}
+      const err = await op('download', ruta, m); if (err) return { data: null, error: err }
+      if (!objetos()) { m.ctx.encontrado = false; return noExiste }
       // como storage-js 2.102: la API responde 400 con cuerpo { statusCode: '404',
       // error: 'not_found', message: 'Object not found' } → StorageApiError
-      if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: NO_ENCONTRADO }
+      if (!Object.hasOwn(objetos(), ruta)) { m.ctx.encontrado = false; return { data: null, error: NO_ENCONTRADO } }
       const blob = new Blob([objetos()[ruta]], { type: 'application/octet-stream' })
       // db.entrega(ctx): retiene la ENTREGA de un contenido ya leido (la lectura
       // vio la version de ese instante; la respuesta llega despues)

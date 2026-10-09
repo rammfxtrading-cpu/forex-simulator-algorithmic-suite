@@ -32,8 +32,8 @@ import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { correScript, ejecucionesScripts } from '../script-falso.mjs'
 
-// esta prueba es del modo COMPRIMIDO: interruptor encendido (bloque E, punto 6;
-// apagado por defecto: ver gz00). Lo ven el handler y los scripts (mismo proceso).
+// (el 5-oct esta prueba encendia el interruptor MERCADO_GZIP; desde el 9-oct,
+// un solo formato, ya no decide nada: se deja encendido como estaba)
 process.env.MERCADO_GZIP = '1'
 const DIA = 86400000
 const velasDe = (dia, n = 1440) => diaM1(dia, n).map(c => ({ time: c.timestamp / 1000, open: c.open, high: c.high, low: c.low, close: c.close, volume: 1 }))

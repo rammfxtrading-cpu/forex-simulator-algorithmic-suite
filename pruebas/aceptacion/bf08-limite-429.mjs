@@ -49,7 +49,7 @@ oraculo('BF08', 'sale con el codigo de «proveedor no disponible» (2) y el log 
 // CTO 7-oct: si ademas falla una publicacion en la misma ejecucion, gana el 1
 escenario({ storage: { 'forex-data': todos() } })
 proveedor.http = (url, n, { instrumento, dia }) => instrumento === 'audusd' && dia === '2026-02-03' ? { status: 429, body: '' } : ok(dia)
-db.falla = c => c.op === 'upload' && c.payload?.ruta === 'AUDCAD/M1/2026.json' ? { message: 'denegado', statusCode: '403' } : null
+db.falla = c => c.op === 'upload' && String(c.payload?.ruta).startsWith('AUDCAD/M1/2026.json') ? { message: 'denegado', statusCode: '403' } : null
 const r1b = await corre()
 db.falla = null
 oraculo('BF08', '429 y ademas una publicacion fallida (AUDCAD): gana el 1, y el log dice las dos cosas', r1b.codigo === 1 && r1b.salida.some(l => /✗ PUBLICACION/.test(l) && /AUDCAD/.test(l)) && r1b.salida.some(l => /429/.test(l) && /cortado/i.test(l)), `codigo ${r1b.codigo}`)
