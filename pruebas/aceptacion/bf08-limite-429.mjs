@@ -18,7 +18,10 @@
  *   publica su 2-feb y no su 3-feb; ninguna peticion despues (ni EURUSD ni
  *   los demas); codigo 2; el log dice 429. Si ademas falla una publicacion
  *   (AUDCAD, 403), gana el 1 (CTO 7-oct): no queda oculta tras el 2.
- *   429 con Retry-After 7 que cabe: espera 7 s, reintenta y sigue; codigo 0.
+ *   429 con Retry-After 7 que cabe: CAMBIO DE CONTRATO (CTO 9-oct, Astra
+ *   MD-03; antes: espera 7 s, reintenta y sigue, codigo 0): cualquier 429,
+ *   tambien con Retry-After, corta todo en ese momento: no espera ni reintenta;
+ *   AUDUSD publica su 2-feb; codigo 2.
  *   429 con Retry-After 3600 (no cabe en los 4 min del par): se corta; 2.
  *   503 sostenido: 3 peticiones para ese dia (no 5).
  *   Entre dias, una espera de 5 s (5000 ms); con PAUSA_DIA_S=2, de 2000 ms.
@@ -54,11 +57,11 @@ const r1b = await corre()
 db.falla = null
 oraculo('BF08', '429 y ademas una publicacion fallida (AUDCAD): gana el 1, y el log dice las dos cosas', r1b.codigo === 1 && r1b.salida.some(l => /✗ PUBLICACION/.test(l) && /AUDCAD/.test(l)) && r1b.salida.some(l => /429/.test(l) && /cortado/i.test(l)), `codigo ${r1b.codigo}`)
 
-titulo('2 · 429 con Retry-After que cabe: se espera y se sigue')
+titulo('2 · 429 con Retry-After que cabe: tambien corta (CTO 9-oct, MD-03)')
 escenario({ storage: { 'forex-data': todos() } })
 proveedor.http = (url, n, { instrumento, dia }) => instrumento === 'audusd' && dia === '2026-02-03' && n === 1 ? { status: 429, headers: { 'Retry-After': '7' }, body: '' } : ok(dia)
 const r2 = await corre()
-oraculo('BF08', 'espera los 7 s del Retry-After, reintenta y el job acaba bien (0)', r2.esperas.includes(7000) && pedidas().filter(x => x === 'AUDUSD 2026-02-03').length === 2 && en(guardado('AUDUSD/M1/2026').velas, '2026-02-03') === 1440 && r2.codigo === 0, `codigo ${r2.codigo} · esperas ${[...new Set(r2.esperas)].join(',')}`)
+oraculo('BF08', 'Retry-After de 7 s que cabe: no espera ni reintenta; corta todo (nada de EURUSD), publica el 2-feb de AUDUSD y sale con 2', !r2.esperas.includes(7000) && pedidas().filter(x => x === 'AUDUSD 2026-02-03').length === 1 && !pedidas().some(x => /^EURUSD/.test(x)) && en(guardado('AUDUSD/M1/2026').velas, '2026-02-02') === 1440 && en(guardado('AUDUSD/M1/2026').velas, '2026-02-03') === 0 && r2.codigo === 2, `codigo ${r2.codigo} · esperas ${[...new Set(r2.esperas)].join(',')} · ${pedidas().filter(x => /AUDUSD/.test(x)).join(', ')}`)
 
 titulo('3 · 429 con Retry-After que no cabe: se corta')
 escenario({ storage: { 'forex-data': todos() } })

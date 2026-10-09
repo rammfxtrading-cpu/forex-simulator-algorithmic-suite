@@ -67,7 +67,7 @@ proveedor.http = (url, n, { instrumento, dia }) => { if (instrumento === 'audusd
 const r2b = await corre('AUDUSD,GBPUSD', reloj)
 oraculo('BF10', 'el script: corte global (codigo 2), GBPUSD nunca se pide y nada nuevo se publica', r2b.codigo === 2 && !pedidas().some(x => x.startsWith('GBPUSD')) && en(guardado('GBPUSD/M1/2026').velas, '2026-02-02') === 0 && r2b.salida.some(l => /PROVEEDOR LIMITA/.test(l)), `codigo ${r2b.codigo} · ${pedidas().join(' | ')}`)
 
-titulo('2c · MER-R1 variante (Astra, cierres-5): 429, espera, 503 y la siguiente espera no cabe')
+titulo('2c · MER-R1 variante (Astra, cierres-5): 429, espera, 503… — desde el 9-oct (MD-03) el primer 429 corta')
 // pideUrl aislado: 429 a los 230 s con Retry-After 1; se espera 1 s; el reintento da 503 a los 239 s; la pausa siguiente (≥ 2 s) no cabe
 {
   const D = await importa('lib/mercado/descarga.mjs').catch(() => null)
@@ -77,9 +77,10 @@ titulo('2c · MER-R1 variante (Astra, cierres-5): 429, espera, 503 y la siguient
     return { r, n }
   }
   const a = await prueba([429, 503], [230000, 8000])
-  oraculo('BF10', 'pideUrl: 429 → espera → 503 → la espera siguiente pasaria del limite: «limite» con estado 429 (no «presupuesto»)', a.r === 'limite 429' && a.n === 2, `${a.r} · ${a.n} peticion(es)`)
+  // CTO 9-oct (MD-03): el 429 ya no se espera; el escenario 429 → espera → 503 no puede darse
+oraculo('BF10', 'pideUrl: 429 con Retry-After a los 230 s: «limite» con estado 429 en la primera peticion (sin espera ni 503)', a.r === 'limite 429' && a.n === 1, `${a.r} · ${a.n} peticion(es)`)
   const b = await prueba([429, 503, 503], [0, 0, 0])
-  oraculo('BF10', 'pideUrl: 429 → espera → 503 → 503 en el ultimo intento: tambien «limite» con estado 429 (el 429 visto no se olvida)', b.r === 'limite 429' && b.n === 3, `${b.r} · ${b.n} peticion(es)`)
+  oraculo('BF10', 'pideUrl: 429 con Retry-After en el primer intento (con dos por delante): «limite» con estado 429 y una sola peticion', b.r === 'limite 429' && b.n === 1, `${b.r} · ${b.n} peticion(es)`)
 }
 escenario({ storage: { 'forex-data': storage(['AUDUSD', 'GBPUSD']) } })
 reloj = { alEsperar: ms => (ms === 1000 ? 1000 : 0) }

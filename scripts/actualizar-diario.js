@@ -94,10 +94,10 @@ const PRESUPUESTO_PAR_MS = segs(process.env.PRESUPUESTO_PAR_S, 4 * 60) * 1000
 // (checkout y npm ci dentro) quedan ~6 min para el estado final.
 let RESERVA_MS
 // CTO 6-oct (tras la sonda 1: 69 de 75 peticiones con HTTP 429): 3 intentos por
-// dia y una pausa entre dias (PAUSA_DIA_S, 5 s por defecto). Un 429 que no se
-// puede esperar (sin Retry-After o sin presupuesto) CORTA EL JOB ENTERO: ni otros
-// dias ni otros pares; lo contiguo ya descargado se publica y el job sale con
-// el codigo de «proveedor no disponible» (2).
+// dia y una pausa entre dias (PAUSA_DIA_S, 5 s por defecto). CTO 9-oct (Astra
+// MD-03): CUALQUIER 429, tambien con Retry-After, CORTA EL JOB ENTERO en ese
+// momento: ni otros dias ni otros pares; lo contiguo ya descargado se publica
+// y el job sale con el codigo de «proveedor no disponible» (2).
 const INTENTOS_DIA = 3
 const PAUSA_DIA_MS = segs(process.env.PAUSA_DIA_S, 5) * 1000
 let CORTE_429 = null      // 'PAR dia: motivo' cuando el proveedor limita
