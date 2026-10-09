@@ -54,7 +54,8 @@ const linea = r => r.salida.find(l => l.includes('AUDUSD/M1')) ?? ''
 const transf = r => r.salida.find(l => /Transferencia/.test(l)) ?? '(sin linea de transferencia)'
 const en = (arr, d) => arr.filter(v => new Date(v.time * 1000).toISOString().startsWith(d)).length
 const nuevaCache = () => fs.mkdtempSync(path.join(os.tmpdir(), 'md01-cache-'))
-const ficheros = dir => fs.readdirSync(dir).filter(f => !f.startsWith('.')).sort()
+// recursivo: desde MD-05 la copia vive en una subcarpeta por proyecto y bucket
+const ficheros = dir => fs.readdirSync(dir, { recursive: true }).map(String).filter(f => !path.basename(f).startsWith('.') && fs.statSync(path.join(dir, f)).isFile()).sort()
 
 titulo('0 · control del contador: una descarga que da 404 no cuenta')
 escenario({ storage: { 'forex-data': inicial() } })

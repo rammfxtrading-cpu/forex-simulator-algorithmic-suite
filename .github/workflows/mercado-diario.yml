@@ -45,12 +45,19 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      # MD-05: la clave de la cache, por proyecto y bucket. La huella es el
+      # sha256 de la URL de Supabase (la URL no se imprime); dentro, el
+      # actualizador separa ademas una subcarpeta por proyecto y bucket.
+      - name: Espacio de la cache (proyecto y bucket)
+        id: espacio
+        run: echo "proyecto=$(printf '%s' "$NEXT_PUBLIC_SUPABASE_URL" | sha256sum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
       - name: Restaurar la cache de los ficheros anuales
         uses: actions/cache/restore@v4
         with:
           path: .cache-mercado
-          key: mercado-anual-${{ github.run_id }}
-          restore-keys: mercado-anual-
+          key: mercado-anual-${{ steps.espacio.outputs.proyecto }}-forex-data-${{ github.run_id }}
+          restore-keys: mercado-anual-${{ steps.espacio.outputs.proyecto }}-forex-data-
 
       - name: Comprobar el tope de descarga
         id: tope
@@ -114,7 +121,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache-mercado
-          key: mercado-anual-${{ github.run_id }}
+          key: mercado-anual-${{ steps.espacio.outputs.proyecto }}-forex-data-${{ github.run_id }}
 
       - name: Resumen
         if: ${{ !cancelled() }}

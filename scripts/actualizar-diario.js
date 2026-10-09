@@ -170,7 +170,7 @@ let CACHE = null, TOPE = null
 const CACHE_LOG = []   // una linea por año leido con la cache: valida (0 bytes) o por que se descargo y cuanto
 const cabe = (size, extra = 0) => TOPE == null || (Number.isFinite(size) && TRANSFERENCIA.bytes + extra + size <= TOPE)
 const leerAnio = async (pair, year) => {
-  if (!CACHE && TOPE == null) { const x = await F.leerConFirma(sb, pair, year, LIM); if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 } return x }
+  // (sin cache ni tope, el modo manual: info() y lo vigente, como leerConFirma, con la comprobacion del sha256 de MD-05)
   const P = `${pair.toUpperCase()} ${year}`
   const i = await F.infoVigente(sb, pair, year, LIM)
   let porque = 'sin copia'
@@ -192,10 +192,20 @@ const leerAnio = async (pair, year) => {
     if (i.size == null) { CACHE_LOG.push(`${P}: ${porque}; NO se descarga: info() sin tamaño`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: info() de ${i.ruta} sin tamaño; no se descarga` } }
     if (!cabe(i.size)) { CACHE_LOG.push(`${P}: ${porque}; NO se descarga: tope de descarga (${i.size} bytes; ya ${TRANSFERENCIA.bytes} de ${TOPE})`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: ${i.ruta} (${i.size} bytes) no cabe (ya descargados ${TRANSFERENCIA.bytes} de ${TOPE})` } }
   }
-  const x = TOPE != null ? { ...(await F.leerRuta(sb, i.ruta, LIM, { crudo: true, tope: { max: i.size, etag: i.etag, size: i.size } })), ruta: i.ruta } : await F.leerVigente(sb, pair, year, LIM, { crudo: true })
+  // MD-05: el sha256 del cuerpo tiene que ser el de los metadatos (si los hay)
+  const shaMeta = i.estado === 'ok' ? i.metadata?.sha256 ?? null : null
+  const lee = () => TOPE != null ? F.leerRuta(sb, i.ruta, LIM, { crudo: true, tope: { max: i.size, etag: i.etag, size: i.size }, sha256: shaMeta }).then(r => ({ ...r, ruta: i.ruta })) : F.leerVigente(sb, pair, year, LIM, { crudo: true, sha256: shaMeta })
   // un intento fallido cuenta lo recibido y, si no se sabe, el tamaño esperado (MD-01)
-  const contados = x.bytes ?? (x.estado === 'error' && i.estado === 'ok' ? i.size ?? 0 : 0)
-  if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += contados }
+  const cuenta = r => { const c = r.bytes ?? (r.estado === 'error' && i.estado === 'ok' ? i.size ?? 0 : 0); if (r.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += c } return c }
+  let x = await lee()
+  let contados = cuenta(x)
+  if (x.shaDistinto) {
+    // UN reintento, dentro del tope; si sigue sin cuadrar: «no verificado» (codigo 1)
+    if (TOPE != null && !cabe(i.size)) { CACHE_LOG.push(`${P}: el sha256 no cuadra y el reintento no cabe en el tope`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: el reintento por sha256 de ${i.ruta} no cabe` } }
+    CACHE_LOG.push(`${P}: el sha256 del cuerpo no es el de los metadatos; un reintento`)
+    x = await lee(); contados += cuenta(x)
+    if (x.shaDistinto) x = { estado: 'error', ruta: x.ruta ?? i.ruta, motivo: `no verificado: el sha256 del cuerpo no es el de los metadatos (dos descargas)` }
+  }
   if (x.estado === 'tope') { CACHE_LOG.push(`${P}: ${porque}; descarga CORTADA (${x.motivo}); contados ${contados} bytes`); return { estado: 'tope', ruta: i.ruta, motivo: x.motivo } }
   const firma = i.estado === 'ok' && x.estado === 'ok' && i.ruta === x.ruta ? i.firma : null
   if (x.estado !== 'no-existe') CACHE_LOG.push(`${P}: ${porque}, descargados ${contados} bytes de ${x.ruta}`)
@@ -393,7 +403,8 @@ async function main() {
     }
     TOPE = Number(process.env.MERCADO_TOPE_BYTES)
   }
-  if (process.env.MERCADO_CACHE) CACHE = (await import('../lib/mercado/cache-anual.mjs')).creaCache(process.env.MERCADO_CACHE)
+  // MD-05: la cache, por proyecto (el host de la URL, que no se escribe) y bucket
+  if (process.env.MERCADO_CACHE) CACHE = (await import('../lib/mercado/cache-anual.mjs')).creaCache(process.env.MERCADO_CACHE, { proyecto: new URL(url).host })
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()}${PAIRS.length < TODOS.length ? ` — solo ${PAIRS.map(p => p.toUpperCase()).join(', ')}` : ''} ===\n`)
   const resultados = []
   const finJob = Date.now() + PRESUPUESTO_JOB_MS
