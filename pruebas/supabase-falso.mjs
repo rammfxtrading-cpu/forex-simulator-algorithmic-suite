@@ -23,6 +23,7 @@
 //                     (upload con options.metadata; info los devuelve en
 //                     `metadata`, como el tipo FileObjectV2 de storage-js 2.102)
 //   db.infoSinMetadatos → true: info no devuelve `metadata` (bloque G, punto 11)
+//   db.infoSinTamano  → true: info devuelve size null (Astra MD-01)
 //                       (se devuelve un error de transporte, como supabase-js ante
 //                       un fetch roto a la vuelta)
 //   db.log            cada operacion: { cliente, tabla, op, payload, filtros }
@@ -30,7 +31,7 @@ import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, infoSinTamano: false, log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -192,7 +193,7 @@ function bucket(nombre) {
       const c = objetos()[ruta]
       const etag = createHash('sha256').update(c).digest('hex').slice(0, 32)
       const metadata = db.infoSinMetadatos ? undefined : (db.metadatos[nombre]?.[ruta] ?? null)
-      return { data: { name: ruta, etag, version: etag, size: Buffer.byteLength(c), lastModified: null, contentType: null, ...(metadata === undefined ? {} : { metadata }) }, error: null }
+      return { data: { name: ruta, etag, version: etag, size: db.infoSinTamano ? null : Buffer.byteLength(c), lastModified: null, contentType: null, ...(metadata === undefined ? {} : { metadata }) }, error: null }
     },
     // texto o binario (Blob, Buffer, Uint8Array), como el real
     async upload(ruta, cuerpo, o = {}) {

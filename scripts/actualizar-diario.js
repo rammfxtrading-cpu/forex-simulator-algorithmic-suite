@@ -182,12 +182,23 @@ const leerAnio = async (pair, year) => {
       porque = 'copia ilegible'; CACHE.olvida(pair, year)
     } else porque = c.motivo
   }
-  if (i.estado === 'ok' && !cabe(Number(i.size))) { CACHE_LOG.push(`${P}: ${porque}; NO se descarga: tope de descarga (${i.size} bytes; ya ${TRANSFERENCIA.bytes} de ${TOPE})`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: ${i.ruta} (${i.size} bytes) no cabe (ya descargados ${TRANSFERENCIA.bytes} de ${TOPE})` } }
-  if (i.estado === 'error' && TOPE != null) return { estado: 'tope', ruta: F.rutaEscritura(pair, year), motivo: `tope de descarga: info() fallo (${i.motivo}) y sin el tamaño no se descarga` }
-  const x = await F.leerVigente(sb, pair, year, LIM, { crudo: true })
-  if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 }
+  // Astra MD-01: con tope, la descarga va ATADA a esta info(): su ruta, su
+  // tamaño (cortada al pasar de el) y su identidad. Sin objeto, no se descarga
+  // (si aparece despues, lo vera el publicador bajo el cerrojo, tambien atado);
+  // sin tamaño, o si no cabe, tampoco (codigo 3).
+  if (TOPE != null) {
+    if (i.estado === 'no-existe') return { estado: 'no-existe' }
+    if (i.estado === 'error') return { estado: 'tope', ruta: F.rutaEscritura(pair, year), motivo: `tope de descarga: info() fallo (${i.motivo}) y sin el tamaño no se descarga` }
+    if (i.size == null) { CACHE_LOG.push(`${P}: ${porque}; NO se descarga: info() sin tamaño`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: info() de ${i.ruta} sin tamaño; no se descarga` } }
+    if (!cabe(i.size)) { CACHE_LOG.push(`${P}: ${porque}; NO se descarga: tope de descarga (${i.size} bytes; ya ${TRANSFERENCIA.bytes} de ${TOPE})`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: ${i.ruta} (${i.size} bytes) no cabe (ya descargados ${TRANSFERENCIA.bytes} de ${TOPE})` } }
+  }
+  const x = TOPE != null ? { ...(await F.leerRuta(sb, i.ruta, LIM, { crudo: true, tope: { max: i.size, etag: i.etag, size: i.size } })), ruta: i.ruta } : await F.leerVigente(sb, pair, year, LIM, { crudo: true })
+  // un intento fallido cuenta lo recibido y, si no se sabe, el tamaño esperado (MD-01)
+  const contados = x.bytes ?? (x.estado === 'error' && i.estado === 'ok' ? i.size ?? 0 : 0)
+  if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += contados }
+  if (x.estado === 'tope') { CACHE_LOG.push(`${P}: ${porque}; descarga CORTADA (${x.motivo}); contados ${contados} bytes`); return { estado: 'tope', ruta: i.ruta, motivo: x.motivo } }
   const firma = i.estado === 'ok' && x.estado === 'ok' && i.ruta === x.ruta ? i.firma : null
-  if (x.estado !== 'no-existe') CACHE_LOG.push(`${P}: ${porque}, descargados ${x.bytes || 0} bytes de ${x.ruta}`)
+  if (x.estado !== 'no-existe') CACHE_LOG.push(`${P}: ${porque}, descargados ${contados} bytes de ${x.ruta}`)
   if (CACHE && x.estado === 'ok' && !CACHE.guarda(pair, year, { ruta: x.ruta, firma, crudo: x.crudo, shaRemoto: i.metadata?.sha256 ?? null })) CACHE_LOG.push(`${P}: la copia no se guarda (sin firma, o el objeto cambio durante la descarga)`)
   delete x.crudo
   return { ...x, firma }
@@ -309,7 +320,7 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   }
   // BF-03: no se empieza a publicar sin la reserva para terminar (ni se toma el cerrojo)
   if (Date.now() + RESERVA_MS > finJob) return { ...base, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
-  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido, limites: LIM, ...(TOPE != null ? { permiteDescarga: (size, ya) => cabe(size, ya) } : {}) })
+  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido, limites: LIM, ...(TOPE != null ? { topeRestante: ya => TOPE - TRANSFERENCIA.bytes - ya } : {}) })
   TRANSFERENCIA.n += r.descargado?.n || 0; TRANSFERENCIA.bytes += r.descargado?.bytes || 0
   if (r.descargado?.n) CACHE_LOG.push(`${pair.toUpperCase()} ${year}: al publicar, descargados ${r.descargado.bytes} bytes (relectura o verificacion)`)
   // la copia del dia siguiente: el cuerpo subido y la firma de la verificacion (por metadatos)
@@ -369,7 +380,8 @@ async function main() {
   const L = await import('../lib/mercado/limites.mjs')
   // BF-03: cada peticion HTTP a Storage se corta a su plazo (storage-js solo
   // acepta señal en download; asi tambien upload, info y remove)
-  sb = createClient(url, key, { global: { fetch: L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs) } })
+  // MD-01: por fuera, el tope en la recepcion de las descargas atadas (fetchConTope)
+  sb = createClient(url, key, { global: { fetch: L.fetchConTope(L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs)) } })
   LIM = { ...F.LIMITES, tiempos: [] }
   RESERVA_MS = segs(process.env.RESERVA_PUBLICAR_S, F.tiempoMaximoPublicar() / 1000) * 1000
   if (process.env.MERCADO_TOPE_BYTES != null && process.env.MERCADO_TOPE_BYTES !== '') {
