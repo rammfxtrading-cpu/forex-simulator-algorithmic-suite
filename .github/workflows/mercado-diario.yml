@@ -8,7 +8,8 @@ name: Mercado diario (programado)
 #   · los nueve pares en secuencia, UN PAR POR PASO (scripts/mercado-diario.sh):
 #     2 min de pausa entre pares, corte total ante cualquier 429, un reintento
 #     final de los que dieron 2 (503, red o plazo) y un tope de descarga por
-#     ejecucion (variable del repo MERCADO_TOPE_BYTES);
+#     ejecucion: 45 MB (45.000.000 bytes) por defecto, aqui mismo (CTO 9-oct);
+#     la variable del repo MERCADO_TOPE_BYTES, opcional, solo lo sobrescribe;
 #   · cache de Actions con los ficheros anuales (MERCADO_CACHE): cada año se
 #     usa de la copia si info() da la misma huella; si no, se descarga.
 #   · mismo grupo de concurrencia que el workflow manual (actualizar-velas):
@@ -31,7 +32,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       MERCADO_CACHE: ${{ github.workspace }}/.cache-mercado
       MERCADO_ESTADO: ${{ runner.temp }}/mercado-diario
-      MERCADO_TOPE_BYTES: ${{ vars.MERCADO_TOPE_BYTES }}
+      MERCADO_TOPE_BYTES: ${{ vars.MERCADO_TOPE_BYTES || '45000000' }}
     steps:
       - name: Descargar el repo
         uses: actions/checkout@v4
@@ -55,7 +56,7 @@ jobs:
         id: tope
         run: |
           if ! [[ "$MERCADO_TOPE_BYTES" =~ ^[0-9]+$ ]]; then
-            echo "Falta la variable del repo MERCADO_TOPE_BYTES (entero de bytes): no se pide nada."
+            echo "MERCADO_TOPE_BYTES no valido (entero de bytes): no se pide nada."
             exit 4
           fi
 
