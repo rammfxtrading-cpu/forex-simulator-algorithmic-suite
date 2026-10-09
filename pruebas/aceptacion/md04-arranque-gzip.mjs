@@ -59,7 +59,8 @@ oraculo('MD04', 'codigo 0, cada par «verificado» con sus velas, y sin cerrojos
 titulo('3 · un par que ya tiene .json.gz se salta sin descargar')
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'EURUSD/M1/2026.json.gz': gzipSync(Buffer.from(J.EURUSD)), 'GBPUSD/M1/2026.json': J.GBPUSD } } })
 const b = await corre(['--subir', '--pares', 'EURUSD,GBPUSD'])
-oraculo('MD04', 'EURUSD ya en .json.gz: ni descarga ni subida; GBPUSD se migra; codigo 0', !reales().some(l => String(l.payload).startsWith('EURUSD/')) && datos('upload').map(l => l.payload.ruta).join() === 'GBPUSD/M1/2026.json.gz' && b.codigo === 0 && /EURUSD.*ya.*\.json\.gz/i.test(b.salida.join('\n')), `codigo ${b.codigo} · ${datos('upload').map(l => l.payload.ruta).join(' ')} · ${lineas(b, /EURUSD/)}`)
+// Astra MD-04 (CTO 9-oct): un .gz existente ya no se salta sin mirarlo: se descarga y se certifica contra el .json
+oraculo('MD04', 'EURUSD ya en .json.gz: se certifica (se bajan su .gz y su .json, no se sube nada); GBPUSD se migra; codigo 0', reales().filter(l => String(l.payload).startsWith('EURUSD/')).map(l => l.payload).sort().join() === 'EURUSD/M1/2026.json,EURUSD/M1/2026.json.gz' && datos('upload').map(l => l.payload.ruta).join() === 'GBPUSD/M1/2026.json.gz' && b.codigo === 0 && /EURUSD ✓.*certificad/i.test(b.salida.join('\n')), `codigo ${b.codigo} · ${datos('upload').map(l => l.payload.ruta).join(' ')} · ${lineas(b, /EURUSD/)}`)
 
 titulo('4 · lo que no se puede migrar sale con 1')
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD } } })
@@ -67,7 +68,8 @@ const c = await corre(['--subir', '--pares', 'EURUSD,GBPUSD'])
 oraculo('MD04', 'GBPUSD sin ningun fichero de 2026: ✗ y codigo 1 (EURUSD se migra igual)', c.codigo === 1 && /GBPUSD.*✗/.test(c.salida.join('\n')) && datos('upload').map(l => l.payload.ruta).join() === 'EURUSD/M1/2026.json.gz', `codigo ${c.codigo} · ${lineas(c, /GBPUSD/)}`)
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, '_cerrojos/EURUSD_2026.json': JSON.stringify({ dueno: 'otro', desde: '2026-10-10T07:00:00Z' }) } } })
 const d = await corre(['--subir', '--pares', 'EURUSD'])
-oraculo('MD04', 'cerrojo puesto por otro: no sube nada, lo dice y codigo 1 (el cerrojo no se toca)', d.codigo === 1 && datos('upload').length === 0 && /cerrojo/.test(d.salida.join('\n')) && Object.hasOwn(db.storage['forex-data'], '_cerrojos/EURUSD_2026.json'), `codigo ${d.codigo} · ${lineas(d, /EURUSD/)}`)
+// Astra MD-04: un cerrojo para el arranque con su propio codigo (5), no 1
+oraculo('MD04', 'cerrojo puesto por otro: no sube nada, lo dice y codigo 5 (el cerrojo no se toca)', d.codigo === 5 && datos('upload').length === 0 && /cerrojo/.test(d.salida.join('\n')) && Object.hasOwn(db.storage['forex-data'], '_cerrojos/EURUSD_2026.json'), `codigo ${d.codigo} · ${lineas(d, /EURUSD/)}`)
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD } } })
 const otro = createClient('https://falso.supabase.co', 'falsa')
 let pisa = false
