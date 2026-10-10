@@ -210,6 +210,69 @@ cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprob
      - ningún cerrojo pendiente.
    - Ante 429, el corte; ante 1, 3 o 4, no suponer que todo está al día.
 
+## Ejecutado el 10-oct-2026 (pasos 4 a 7)
+
+Registros completos en `~/Desktop/revisiones-suite/2026-10-10-arranque-gzip-registros/`
+(fuera del repo; sin claves ni URL):
+
+| Registro | sha256 |
+|---|---|
+| `1-congelacion-y-bytes-antes.log` | `cb292ab43c7c0433d11b260689035f4f3ba6bfce446b772fcb3d8c0e1e59a2ab` |
+| `2-arranque.log` | `ba5e35542aa94332ba39b946e7d69ad6668d33dd18758dc1bc0e7552603dd776` |
+| `3-verificacion.log` | `5442e9e58ba9dc916d980fb267b23315c727937f2c7e80d582ff9699a6a14567` |
+| `4-comprueba-descarga.log` | `e4ae76293f6ef4d4d2be841aac676e2778e7b4796e5fc3bccaa83d28c34857bb` |
+
+- **Paso 1, repetido a las 21:19 CEST:** workflow manual `disabled_manually`; cero
+  ejecuciones en curso, en cola, en espera o pendientes; ningún proceso escritor en el
+  Mac; ningún cerrojo en los 9 pares (`liberar-cerrojo.js`, sin `--confirmo`).
+- **Paso 4:** arranque de 4dc32d3 con `--subir --copia` (la copia de la tabla del paso 3),
+  de 21:20:28 a 21:23:59 CEST, un solo proceso. **Código 0**, nueve «migrado». Descarga:
+  18 objetos anuales, 309.281.303 B.
+- **Paso 5:** verificación de solo lectura par a par, más el seco y el listado:
+
+  | Par | Estado | `.gz` (B) | Velas | 7-oct | sha256 del `.gz` |
+  |---|---|---:|---:|---|---|
+  | EURUSD | migrado | 4.287.470 | 285.516 | completo (1.438) | `b60cd8836306e362f2e0ba183566acf26087bf1bf021ed8fc49500b9a3377832` |
+  | GBPUSD | migrado | 4.472.316 | 285.370 | completo (1.438) | `9827de467729284ca6b1188d2936aed0a46999403fba14cf8ab5988264ae0a45` |
+  | USDJPY | migrado | 4.561.747 | 285.554 | completo (1.437) | `3faa71fe06637b3d639ca4d8416563dc24973fa5ba87e16d9de313adfe018f36` |
+  | USDCHF | migrado | 4.263.601 | 285.032 | completo (1.439) | `f45a486ff4e8190ddaf99293f3dcea8ccecf7e9dd0c939f7516e0e51ffd70848` |
+  | AUDUSD | migrado | 4.379.555 | 285.202 | completo (1.439) | `2f29bc0fb9777c8ed7634026d69574d6eb7775509154b8548b83799fd1448071` |
+  | USDCAD | migrado | 4.240.817 | 285.058 | completo (1.432) | `217e7797c770a36b595e3cabcedfa0b927cfe682ea41af2bb4e3124f34e4a016` |
+  | NZDUSD | migrado | 4.210.510 | 285.030 | completo (1.433) | `2ee62a69d4fc9cb84ec87d7509aa1695038956d771cab3dc2294ded5c4ef6f33` |
+  | AUDCAD | migrado | 4.236.283 | 285.517 | completo (1.436) | `4347ae7842952bc08d5a0664481fa2da4a61dd60ce310365446735cca65e9659` |
+  | GBPJPY | migrado | 4.621.588 | 285.402 | completo (1.422) | `5f08029de183793961ead7fd48f895fd32854a50ba82c48e5f5a21b9817ba21a` |
+
+  - En los nueve: el `.json` de 2026 ya no existe; el sha256 del cuerpo descargado es
+    el de sus metadatos; las velas son exactamente las de la copia local (su sha256 es
+    el de la tabla del paso 3); primera vela el 1-ene hacia las 22:00 UTC y última el
+    7-oct a las 23:59 UTC; ningún cerrojo.
+  - Seco después: código 0, «ya hay .json.gz» en los nueve, 0 bytes descargados.
+  - **Bytes de `forex-data`:** antes 27 objetos y 976.121.058 B; después 27 objetos y
+    745.387.529 B (−270.007.416 de los nueve `.json` de 2026, +39.273.887 de los nueve
+    `.gz`).
+  - Pendiente: que Ramón vea el gráfico de un par con sesión, con datos hasta el 7-oct.
+- **Paso 6:** `comprueba-descarga.js EURUSD`, a las 21:36 CEST, **código 0**:
+
+  ```
+  info(): etag con comillas "09300fd6fdb177bf6ae0ae3003c6a0ad" · tamaño 4287470 · metadatos: sha256, velas
+  GET: HTTP 200 · misma etag, coincide con la de info() · recibidos 4287470 bytes de 4287470
+  ✓ sha256 del cuerpo coincide con el de los metadatos
+  velas: metadatos 285516 · cuerpo 285516
+  ✓ identidad verificada por etag y sha256
+  ```
+
+  Es la evidencia de UN objeto en ese momento, no una verificación del bucket.
+- **Paso 7:**
+  - main = 76f06b4 (21:43 CEST), fusión con el árbol de 4dc32d3. **GitHub rechazó
+    `mercado-diario.yml`**: una ejecución «push» fallida con 0 jobs (no corrió nada).
+    Causa, confirmada con actionlint: `${{ runner.temp }}` en el `env` del job, donde
+    el contexto `runner` no existe.
+  - Arreglo: ec9f365 (`MERCADO_ESTADO` en un primer paso con `$GITHUB_ENV`; md02 lo
+    exige) y 529c198 (la tanda pasa actionlint si está instalado). main = 963eeef
+    (22:24 CEST): GitHub muestra «Mercado diario (programado)», activo, cron
+    `17 3 * * *`, sin ejecución fallida.
+  - El workflow manual sigue desactivado y se queda así.
+
 ## Rollback
 
 - **Nunca a lectores anteriores al gzip** una vez que el commit nuevo está en main
@@ -229,6 +292,7 @@ cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprob
   la `etag` del GET de Supabase coincida en formato con la de esa consulta no está
   comprobado contra producción. Si no coincidiera, cada descarga se rechazaría con
   código 3 de forma visible; no se descargaría nada de más.
+  Comprobado el 10-oct en un objeto (paso 6, EURUSD): coincide, con comillas.
 
 ## Cifras (medidas el 9-oct sobre la copia local del 5-oct; no medidas desde Actions)
 
