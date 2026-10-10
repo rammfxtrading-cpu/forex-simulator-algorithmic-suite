@@ -147,8 +147,9 @@ async function main() {
     const { gz, json } = F.rutasAnio(par, ANIO)
     if (await miraCerrojo(par, 'antes de empezar')) break
     const i = await F.infoVigente(sb, par, ANIO, LIM)
-    if (i.estado === 'error') { console.log(`  ${par} ✗ no se pudo consultar (${i.motivo})`); mal.push(par); continue }
-    if (i.estado === 'no-existe') { console.log(`  ${par} ✗ no hay ${json} ni ${gz}: nada que migrar`); mal.push(par); continue }
+    // MA-GZ-02 (Astra): en real, un estado inicial fallido PARA (error o ningun objeto); en seco se sigue mirando
+    if (i.estado === 'error') { console.log(`  ${par} ✗ no se pudo consultar (${i.motivo})${SUBIR ? '. El arranque PARA' : ''}`); mal.push(par); if (SUBIR) break; continue }
+    if (i.estado === 'no-existe') { console.log(`  ${par} ✗ no hay ${json} ni ${gz}: nada que migrar${SUBIR ? '. El arranque PARA' : ''}`); mal.push(par); if (SUBIR) break; continue }
     if (i.ruta === gz) {
       if (!SUBIR) { const cp = COPIA ? miraCopia(COPIA, par) : null; console.log(`  ${par} [SECO] ya hay ${gz} (${i.size} bytes): con --subir se certificaria contra el .json (se bajan los dos) y despues se borraria el .json${cp ? ` · copia: ${cp.ok ? 'ok' : cp.motivo}` : ''}`); continue }
       const ij = await infoRuta(json)

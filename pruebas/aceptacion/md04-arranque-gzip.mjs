@@ -134,5 +134,24 @@ oraculo('MD04', 'el borrado del .json falla: el .json sigue, lo dice, codigo 1 y
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD } } })
 const z = await corre(['--copia', copia({ EURUSD: J.EURUSD }), '--pares', 'EURUSD'])
 oraculo('MD04', 'en seco con --copia: dice que borraria el .json y el estado de la copia, sin tocar nada', z.codigo === 0 && /EURUSD \[SECO\] migraria.*borraria el \.json · copia: ok/.test(z.salida.join('\n')) && datos('upload').length === 0 && datos('remove').length === 0 && reales().length === 0, `codigo ${z.codigo} · ${lineas(z, /EURUSD/)}`)
+
+titulo('6 · MA-GZ-02 (Astra): un fallo en el estado inicial de un par PARA el arranque real')
+const J3 = { ...J, USDJPY: JSON.stringify(historial('2026-02-06')) }
+const CP3 = copia(J3)
+const tocados = (par, desde) => db.log.slice(desde).filter(l => String(l.tabla).startsWith('storage') && JSON.stringify(l.payload ?? '').includes(par)).map(l => l.op)
+const falla503 = par => ctx => (ctx.op === 'info' && String(ctx.payload).startsWith(`${par}/`) ? { message: 'Service Unavailable', statusCode: '503' } : null)
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'GBPUSD/M1/2026.json': J.GBPUSD } } })
+db.falla = falla503('EURUSD')
+const m1 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD'])
+db.falla = null
+oraculo('MA-GZ-02', 'info() del PRIMER par con 503: PARA con codigo 1 y GBPUSD no se toca (cero operaciones, su .json intacto)', m1.codigo === 1 && tocados('GBPUSD', 0).length === 0 && intacto('GBPUSD') && datos('upload').length === 0 && datos('remove').length === 0, `codigo ${m1.codigo} · GBPUSD: ${tocados('GBPUSD', 0).join(',') || 'nada'} · ${lineas(m1, /EURUSD|GBPUSD/)}`)
+escenario({ storage: { 'forex-data': { 'GBPUSD/M1/2026.json': J.GBPUSD } } })
+const m2 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD'])
+oraculo('MA-GZ-02', 'el PRIMER par sin ninguno de sus dos objetos: PARA con codigo 1 y GBPUSD no se toca', m2.codigo === 1 && tocados('GBPUSD', 0).length === 0 && intacto('GBPUSD') && datos('remove').length === 0, `codigo ${m2.codigo} · GBPUSD: ${tocados('GBPUSD', 0).join(',') || 'nada'}`)
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'GBPUSD/M1/2026.json': J.GBPUSD, 'USDJPY/M1/2026.json': J3.USDJPY } } })
+db.falla = falla503('GBPUSD')
+const m3 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD,USDJPY'])
+db.falla = null
+oraculo('MA-GZ-02', 'fallo en el par INTERMEDIO (GBPUSD): EURUSD migrado antes, PARA en GBPUSD y USDJPY no se toca', m3.codigo === 1 && !Object.hasOwn(db.storage['forex-data'], 'EURUSD/M1/2026.json') && intacto('GBPUSD') && tocados('USDJPY', 0).length === 0 && db.storage['forex-data']['USDJPY/M1/2026.json'] === J3.USDJPY, `codigo ${m3.codigo} · USDJPY: ${tocados('USDJPY', 0).join(',') || 'nada'}`)
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(x => x.terminoPor !== 'timeout'))
 fin()
