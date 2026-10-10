@@ -128,6 +128,17 @@ const ESC = [
   { id: 'A16', par: 'EURUSD', costes: aislado(0n), filas: [plana('1.10000'), plana('1.10000'), ['1.10000', '1.10000', '1.09800', '1.09800']], pasos: [['abrir', 'BUY', 'mercado', '1', null, { sl: '1.09900' }], ['avanza', 1], ['avanza', 2], ['avanza', 3]] },
   { id: 'A17', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), plana('1.10500')], pasos: [['avanza', 1], ['abrir-viejo', 'BUY', '1'], ['abrir', 'BUY', 'mercado', '1']] },
   { id: 'C6-07', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), plana('1.10000')], pasos: [['abrir', 'BUY', 'limit', '1', '1.09000'], ['modificar', 'o1', { precio: '1.11000' }], ['avanza', 1]] },
+  // P7-04 (Astra): el subconjunto que faltaba — A01 (c), (e) y SELL inmediatas, A03 (a) y (c), y los rechazos de C6-07
+  { id: 'A01 c', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), ['1.10000', '1.10120', '1.09990', '1.10050']], pasos: [['abrir', 'SELL', 'limit', '1', '1.10100'], ['avanza', 1]] },
+  { id: 'A01 c hueco', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), ['1.10200', '1.10250', '1.10150', '1.10200']], pasos: [['abrir', 'SELL', 'limit', '1', '1.10100'], ['avanza', 1]] },
+  { id: 'A01 e', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), ['1.10000', '1.10010', '1.09880', '1.09950']], pasos: [['abrir', 'SELL', 'stop', '1', '1.09900'], ['avanza', 1]] },
+  { id: 'A01 e hueco', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), ['1.09800', '1.09850', '1.09750', '1.09800']], pasos: [['abrir', 'SELL', 'stop', '1', '1.09900'], ['avanza', 1]] },
+  { id: 'A01 f SELL', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), plana('1.10000')], pasos: [['abrir', 'SELL', 'limit', '1', '1.09900'], ['abrir', 'SELL', 'stop', '1', '1.10100'], ['avanza', 1]] },
+  { id: 'A03 a', par: 'EURUSD', costes: aislado(3_000_000n), filas: [plana('1.10200'), ['1.10100', '1.10150', '1.09800', '1.09900'], plana('1.09900')], pasos: [['abrir', 'BUY', 'limit', '1', '1.10000', { sl: '1.09900', tp: '1.10500' }], ['avanza', 1], ['avanza', 2]] },
+  { id: 'A03 c', par: 'EURUSD', costes: aislado(3_000_000n), filas: [plana('1.10000'), ['1.09950', '1.09980', '1.09850', '1.09870']], pasos: [['abrir', 'SELL', 'stop', '1', '1.09900', { sl: '1.10000' }], ['avanza', 1]] },
+  { id: 'C6-07 stop', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), plana('1.10000')], pasos: [['abrir', 'BUY', 'stop', '1', '1.10100'], ['modificar', 'o1', { precio: '1.09900' }], ['avanza', 1]] },
+  { id: 'C6-07 lado', par: 'EURUSD', costes: COSTES_1, filas: [plana('1.10000'), plana('1.10000')], pasos: [['abrir', 'BUY', 'limit', '1', '1.09000'], ['modificar', 'o1', { precio: '1.11000', sl: '1.20000' }], ['avanza', 1]] },
+  { id: 'C6-07 margen', par: 'EURUSD', costes: COSTES_1, capital: '500', filas: [plana('1.10000'), plana('1.10000')], pasos: [['abrir', 'BUY', 'limit', '1', '1.09000'], ['modificar', 'o1', { precio: '1.11000' }], ['avanza', 1]] },
   { id: '§ 13.9', par: 'EURUSD', costes: COSTES_1, limites: [{ regla: 'perdida_diaria', limite: '95000' }], filas: [plana('1.10000'), plana('1.05000')], pasos: [['abrir', 'BUY', 'mercado', '1', null, { sl: '1.05000' }], ['abrir', 'BUY', 'limit', '1', '1.05003'], ['avanza', 1]] },
   { id: 'dos SL', par: 'EURUSD', costes: COSTES_1, limites: [{ regla: 'perdida_diaria', limite: '95000' }], filas: [plana('1.10000'), plana('1.05000')], pasos: [['abrir', 'BUY', 'mercado', '1', null, { sl: '1.05000' }], ['abrir', 'BUY', 'mercado', '1', null, { sl: '1.05000' }], ['avanza', 1]] },
   { id: 'P-23a', par: 'EURUSD', costes: COSTES_1, limites: [{ regla: 'perdida_diaria', limite: '95000' }], filas: [plana('1.10000'), plana('1.05000')], pasos: [['abrir', 'BUY', 'mercado', '1'], ['abrir', 'BUY', 'limit', '1', '1.05003'], ['avanza', 1]] },
@@ -138,15 +149,19 @@ const fase = en => en?.t != null ? 'cmd' : en?.fase ?? (en?.tramo != null ? en.t
 // el breach de la cartera guarda los precios de todos sus pares (precios); con un solo par, es el precio del motor de un par
 const precioDe = x => x.precio ?? (x.precios && Object.values(x.precios).length === 1 ? Object.values(x.precios)[0] : null)
 const proyEv = ev => ev.map(x => [x.tipo, x.posicion ?? null, x.orden ?? null, x.motivo ?? x.regla ?? null, precioDe(x), x.lotes_c ?? null, x.bruto_µ ?? null, x.comision_µ ?? null, x.equity_µ ?? null, x.en?.vela ?? x.en?.t ?? null, fase(x.en), !!x.ambigua])
-const proyPos = p => [p.id, p.lado, p.lotes_c, p.entrada, p.sl, p.tp, p.margen_fijado_µ ?? null, p.comision_devengada_µ]
-const proyEst = e => enTexto({ saldo: e.saldo_µ, estado: e.estado, cursor: e.reloj.cursor, pos: e.posiciones.map(proyPos), ord: e.ordenes.map(o => [o.id, o.lado, o.tipo, o.precio, o.lotes_c]), cot: e.cotizacion?.bid ?? e.cotizaciones?.[Object.keys(e.cotizaciones ?? {})[0]]?.bid ?? null })
+// P7-04 (Astra): la proyeccion economica COMPLETA de cada posicion y orden: margen fijado y liberado, comisiones
+// devengada y asignada, cerrados, P&L exacto y redondeado acumulados (los residuos), ids y seq, y el momento
+const proyPos = p => [p.id, p.seq, p.lado, p.lotes_iniciales_c, p.lotes_c, p.cerrados_c, p.entrada, p.sl, p.tp, p.margen_fijado_µ ?? null, p.margen_liberado_µ ?? null, p.comision_devengada_µ, p.comision_asignada_µ, [p.pnl_exacto_cerrado?.n, p.pnl_exacto_cerrado?.d], p.pnl_redondeado_cerrado_µ, p.abierta_en?.vela ?? p.abierta_en?.t ?? null, fase(p.abierta_en)]
+const proyOrd = o => [o.id, o.seq, o.lado, o.tipo, o.precio, o.sl, o.tp, o.lotes_c]
+const proyEst = e => enTexto({ saldo: e.saldo_µ, estado: e.estado, cursor: e.reloj.cursor, seq: e.siguiente_seq, pos: e.posiciones.map(proyPos), ord: e.ordenes.map(proyOrd), breach: e.breach ? [e.breach.regla, e.breach.equity_µ, e.breach.en?.vela ?? e.breach.en?.t ?? null] : null, cot: e.cotizacion?.bid ?? e.cotizaciones?.[Object.keys(e.cotizaciones ?? {})[0]]?.bid ?? null })
 function correEsc(esc, motor) {
   const v = M.velas(esc.par, esc.filas.map(([o, h, l, c], i) => ({ time: T0 + 60 * i, open: o, high: h, low: l, close: c })))
   const multi = motor === 'cartera'
   let e = multi ? CA.crea({ pares: [esc.par], costes: esc.costes, capital: esc.capital ?? '100000', limites: esc.limites ?? [] }) : M.crea({ par: esc.par, costes: esc.costes, capital: esc.capital ?? '100000', limites: esc.limites ?? [] })
   const ap1 = c => { const antes = e, r = multi ? CA.aplica(e, c, { [esc.par]: v }) : M.aplica(e, c, v); if (multi && c.tipo === 'avanzar') pasoIgualSalto(antes, c.hasta, { [esc.par]: v }, undefined, r, `A37 ${esc.id}`); e = r.estado; return r }
-  const ev = [], res = []
+  const ev = [], res = [], porComando = []
   const cursor0 = e => e.reloj.cursor
+  const MO = multi ? CA : M
   ap1({ tipo: 'avanzar', hasta: T0 })
   for (const p of esc.pasos) {
     let r
@@ -155,15 +170,22 @@ function correEsc(esc, motor) {
     else if (p[0] === 'abrir-viejo') r = ap1({ tipo: 'abrir', ...(multi ? { par: esc.par } : {}), lado: p[1], orden: 'mercado', lotes: p[2], cotizadoEn: T0 })
     else if (p[0] === 'cerrar') r = ap1({ tipo: 'cerrar', id: p[1], ...(p[2] ? { lotes: p[2] } : {}) })
     else if (p[0] === 'modificar') r = ap1({ tipo: 'modificar', id: p[1], ...p[2] })
-    else if (p[0] === 'serializa') { e = (multi ? CA : M).deserializa((multi ? CA : M).serializa(e)); continue }
+    else if (p[0] === 'serializa') { e = MO.deserializa(MO.serializa(e)); continue }
     ev.push(...r.eventos); res.push(enTexto(r.resultado))
+    // P7-04: tras CADA comando, la proyeccion antes y despues de serializar (y se sigue con el deserializado)
+    const antes = proyEst(e)
+    e = MO.deserializa(MO.serializa(e))
+    porComando.push(`${p[0]} ${p[1] ?? ''}: ${enTexto(proyEv(r.eventos))} ${enTexto(r.resultado)} ${antes}${proyEst(e) === antes ? '' : ' ≠ serializado ' + proyEst(e)}`)
   }
-  return { proyeccion: proyEst(e), eventos: enTexto(proyEv(ev)), resultados: res.join(' ') }
+  return { proyeccion: proyEst(e), eventos: enTexto(proyEv(ev)), resultados: res.join(' '), porComando }
 }
 for (const esc of ESC) {
   const uno = corre(() => correEsc(esc, 'motor')), multi = corre(() => correEsc(esc, 'cartera'))
-  const igual = !!uno && !!multi && !uno.error && !multi.error && uno.proyeccion === multi.proyeccion && uno.eventos === multi.eventos && uno.resultados === multi.resultados
-  oraculo('A37', `${esc.id}: misma proyeccion economica, eventos y resultados que el motor de un par`, igual, igual ? '' : enTexto({ uno: uno?.error ?? uno?.proyeccion, multi: multi?.error ?? multi?.proyeccion }).slice(0, 400))
+  // P7-04: comando a comando (antes y despues de serializar), no solo al final
+  const k = !uno?.porComando || !multi?.porComando ? 0 : uno.porComando.findIndex((x, i) => x !== multi.porComando[i])
+  const igual = !!uno && !!multi && !uno.error && !multi.error && uno.proyeccion === multi.proyeccion && uno.eventos === multi.eventos && uno.resultados === multi.resultados && uno.porComando.length === multi.porComando.length && k === -1 && !uno.porComando.some(x => x.includes('≠ serializado')) && !multi.porComando.some(x => x.includes('≠ serializado'))
+  const ser = [...(uno?.porComando ?? []), ...(multi?.porComando ?? [])].find(x => x.includes('≠ serializado'))
+  oraculo('A37', `${esc.id}: misma proyeccion economica completa, eventos y resultados que el motor de un par, comando a comando y tras serializar`, igual, igual ? '' : enTexto({ k, ser, uno: uno?.error ?? uno?.porComando?.[k], multi: multi?.error ?? multi?.porComando?.[k] }).slice(0, 700))
 }
 
 titulo('A37 · el reto sobre la cartera de un par = el reto sobre el motor de un par (A13, A14, C6-02, C6-05, C7-01)')
@@ -387,12 +409,16 @@ const nv = corre(() => {
   let r = CA.avanza(e, S0('2026-03-02') + 600, fuentes, { desde: S0('2026-03-02') }); e = r.estado
   e = CA.aplica(e, { tipo: 'abrir', par: 'EURUSD', lado: 'BUY', orden: 'mercado', lotes: '1', cotizadoEn: e.reloj.cursor }).estado
   const antes = CA.serializa(e)
+  // P7-04 (Astra): paso, salto y reanudacion tambien ante el no_valorable: cada 25 min, serializando, hasta pasar la detencion
+  let p = CA.deserializa(antes), detP = null
+  for (let t = e.reloj.cursor + 1500; t <= S0('2026-03-04') + 3600; t += 1500) { const x = CA.avanza(CA.deserializa(CA.serializa(p)), t, fuentes); p = x.estado; detP = x.detencion ?? detP }
   r = CA.avanza(e, S0('2026-03-04') + 3600, fuentes)
   const otra = CA.avanza(r.estado, S0('2026-03-04') + 3600, fuentes)
-  return { r, otra, antes, fuentes, mEu, mGb }
+  return { r, otra, antes, fuentes, mEu, mGb, paso: CA.serializa(p), detP }
 })
 oraculo('NV', 'GBPUSD sin el martes: detencion «no_valorable» de GBPUSD el 2026-03-03; EURUSD tampoco consume el martes (cursor y cotizacion al final del lunes)', nv?.r?.detencion?.motivo === 'no_valorable' && nv.r.detencion.par === 'GBPUSD' && nv.r.detencion.dia === '2026-03-03' && nv.r.estado.reloj.cursor === S0('2026-03-03') - 60 && tx('EURUSD', nv.r.estado.cotizaciones.EURUSD.bid) === '1.10000', nv?.error ?? enTexto([nv?.r?.detencion, nv?.r?.estado.reloj.cursor]))
 oraculo('NV', 'repetir el avance: la misma detencion, sin eventos y el estado igual', nv?.otra?.detencion?.dia === '2026-03-03' && nv.otra.eventos.length === 0 && CA.serializa(nv.otra.estado) === CA.serializa(nv.r.estado))
+oraculo('NV', 'paso a paso (cada 25 min, serializando y reanudando, con reintentos sobre la detencion) = de un salto, con la misma detencion', nv?.paso === CA.serializa(nv.r.estado) && nv.detP?.dia === '2026-03-03' && nv.detP?.par === 'GBPUSD', nv?.error ?? enTexto(nv?.detP))
 const ajena = corre(() => { const e = CA.crea({ pares: ['EURUSD', 'GBPUSD'], costes: aislado(), capital: '100000', mercado: { EURUSD: MF.fija(nv.mEu), GBPUSD: 'GBPUSD@v1:otra' } }); return CA.avanza(e, S0('2026-03-02') + 600, nv.fuentes, { desde: S0('2026-03-02') }) })
 oraculo('NV', 'una fuente con otra huella que la fijada para su par: detencion «fuente_de_otra_version», sin tocar el estado', ajena?.detencion?.motivo === 'fuente_de_otra_version' && ajena.detencion.par === 'GBPUSD' && ajena.eventos.length === 0, enTexto(ajena?.detencion ?? ajena?.error))
 titulo('paso, salto y reanudacion en todos los avances de este fichero (§ 3.8)')
