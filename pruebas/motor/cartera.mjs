@@ -20,7 +20,7 @@
  * margen con la APERTURA del par base→USD. Por lo mismo, en A42 b el nivel de
  * la fase 4 es el SL de una posicion abierta en la fase 3, no un TP previo.
  */
-import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, importa, fuente } from '../lib.mjs'
 const M = await importa('lib/motor/motor.mjs')
 const { COSTES_1 } = await importa('lib/motor/costes.mjs')
 let CA = null
@@ -440,22 +440,43 @@ oraculo('NV', 'una fuente con otra huella que la fijada para su par: detencion �
 titulo('paso, salto y reanudacion en todos los avances de este fichero (§ 3.8)')
 oraculo('A15', `cada avance repetido por minutos, a mitad de minuto (y en el reto, por horas), serializando: ${PASO.avances} avances, 0 diferencias`, PASO.avances >= 40 && PASO.diferencias.length === 0, PASO.diferencias.join(' · '))
 
-titulo('D-12 · tamaño medido del estado multipar')
-{
+titulo('D-12 / P7-03 · tamaño medido del estado multipar: 0/50, 25/25 y 50/0 (sin ningun limite de 20 KB)')
+// Astra P7-03: la medida de 25/25 con marcas puestas a mano no era el techo (50 posiciones pasan de 20 KB). Ahora, por
+// la ruta real y con comandos admitidos: 9 pares con mercado fijado, costes@1; las posiciones, llenadas DENTRO de la
+// vela en un minuto en que se mueven todos los pares (marca V4-02 real) y la mitad con un cierre parcial; las
+// pendientes, lejos y con SL; la envoltura del reto vacia y con 250 dias con apertura (añadidos a la lista solo para
+// medir). El documento de persistencia (§ 9.2) tiene que citar EXACTAMENTE estas medidas: si el estado crece, la
+// prueba sale en rojo hasta que se corrija el presupuesto. 20 KB no es un limite de nada.
+const fmtB = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+const mide = (nPos, nPend) => corre(() => {
   const P = { AUDCAD: '0.90000', AUDUSD: '0.65000', EURUSD: '1.10000', GBPJPY: '190.000', GBPUSD: '1.25000', NZDUSD: '0.60000', USDCAD: '1.36000', USDCHF: '0.90000', USDJPY: '150.000' }
   const pares = Object.keys(P)
-  const v = Object.fromEntries(pares.map(p => [p, M.velas(p, [{ time: T0, open: P[p], high: P[p], low: P[p], close: P[p] }])]))
+  const menos = (p, n) => M.precioTexto(p, M.velas(p, [{ time: T0, open: P[p], high: P[p], low: P[p], close: P[p] }])[0].open - BigInt(n))
+  const tick = p => menos(p, 2)          // el limite, 2 ticks por debajo; la vela baja 30 (el ask llega con cualquier spread de costes@1)
+  const v = Object.fromEntries(pares.map(p => [p, M.velas(p, [{ time: T0, open: P[p], high: P[p], low: P[p], close: P[p] }, { time: T0 + 60, open: P[p], high: P[p], low: menos(p, 30), close: menos(p, 30) }])]))
   const mercado = Object.fromEntries(pares.map(p => [p, `${p}@v1:${'a'.repeat(64)}`]))
-  let e = CA.crea({ pares, costes: COSTES_1, capital: '100000', mercado })
+  let e = CA.crea({ pares, costes: COSTES_1, capital: '1000000', mercado })
   e = CA.aplica(e, { tipo: 'avanzar', hasta: T0 }, v).estado
-  for (let i = 0; i < 25; i++) e = CA.aplica(e, { tipo: 'abrir', par: pares[i % 9], lado: 'BUY', orden: 'mercado', lotes: '0.10', cotizadoEn: e.reloj.cursor }).estado
-  for (let i = 0; i < 25; i++) { const p = pares[i % 9], lejos = e.cotizaciones[p].bid / 2n; e = CA.aplica(e, { tipo: 'abrir', par: p, lado: 'BUY', orden: 'limit', precio: M.precioTexto(p, lejos), lotes: '0.10', sl: M.precioTexto(p, lejos / 2n) }).estado }
-  for (const x of [...e.posiciones, ...e.ordenes]) x.sincronizacion_modelada = true
-  e.sincronizacion = { ...e.sincronizacion, minutos: 1234, primero: T0, ultimo: T0 + 60 }
+  // las que se llenaran dentro de la vela: BUY LIMIT dos ticks por debajo (el minimo de la vela siguiente)
+  for (let i = 0; i < nPos; i++) { const p = pares[i % 9]; e = CA.aplica(e, { tipo: 'abrir', par: p, lado: 'BUY', orden: 'limit', precio: tick(p), lotes: '0.10', sl: M.precioTexto(p, e.cotizaciones[p].bid / 2n) }).estado }
+  for (let i = 0; i < nPend; i++) { const p = pares[i % 9], lejos = e.cotizaciones[p].bid / 2n; e = CA.aplica(e, { tipo: 'abrir', par: p, lado: 'BUY', orden: 'limit', precio: M.precioTexto(p, lejos), lotes: '0.10', sl: M.precioTexto(p, lejos / 2n) }).estado }
+  e = CA.aplica(e, { tipo: 'avanzar', hasta: T0 + 60 }, v).estado          // los 9 pares se mueven: minuto modelado
+  for (const pos of e.posiciones.filter((_, k) => k % 2 === 0)) e = CA.aplica(e, { tipo: 'cerrar', id: pos.id, lotes: '0.05' }).estado
   const bytes = Buffer.byteLength(CA.serializa(e))
+  // la envoltura del reto (lo que añade a su motor), medida sobre una cartera nueva de los mismos 9 pares
   const reto = RT.creaReto({ motor: CA.crea({ pares, costes: COSTES_1, capital: '100000', mercado }), inicio: T0 })
-  const env = Buffer.byteLength(RT.serializaReto(reto)) - Buffer.byteLength(CA.serializa(reto.motor))
-  ver(`control: el estado tiene el tope (25 posiciones + 25 ordenes en los 9 pares)`, e.posiciones.length === 25 && e.ordenes.length === 25)
-  oraculo('D-12', `estado multipar con el tope de 50 en 9 pares, marcas y mercado fijado: ${bytes} B; con la envoltura del reto (${env} B), ${bytes + env} B, dentro de la estimacion del diseño (≤ 20.000 B)`, bytes + env <= 20000, `${bytes} + ${env}`)
-}
+  const base = Buffer.byteLength(CA.serializa(reto.motor))
+  const env0 = Buffer.byteLength(RT.serializaReto(reto)) - base
+  const largo = { ...reto, dias_con_apertura: Array.from({ length: 250 }, (_, k) => new Date((T0 + 86400 * k) * 1000).toISOString().slice(0, 10)) }
+  const env250 = Buffer.byteLength(RT.serializaReto(largo)) - base
+  return { bytes, env0, env250, pos: e.posiciones.length, ord: e.ordenes.length, marcas: e.posiciones.every(x => x.sincronizacion_modelada === true), parciales: e.posiciones.filter(x => x.cerrados_c > 0n).length, minutos: e.sincronizacion.minutos }
+})
+const MED = { '0/50': mide(0, 50), '25/25': mide(25, 25), '50/0': mide(50, 0) }
+ver('control: cada composicion tiene su tope (posiciones/ordenes), las posiciones llevan la marca de un minuto modelado real y la mitad tienen un parcial', Object.entries(MED).every(([k, m]) => { const [p, o] = k.split('/').map(Number); return !m.error && m.pos === p && m.ord === o && m.minutos === 1 && (p === 0 || (m.marcas && m.parciales === Math.ceil(p / 2))) }), enTexto(MED))
+const PERS = (() => { try { return fuente('revisiones/2026-10-07-diseno-persistencia.md') } catch { return '' } })()
+const max = Math.max(...Object.values(MED).map(m => m.bytes + m.env250))
+const mbh = Math.round(720 * 5 * (max + 350) / 1e4) / 100                // 720 avances/h × 5 alumnos × (snapshot + 0,35 KB de ultimo_avance), en MB/h con 2 decimales
+const cita = `${Object.entries(MED).map(([k, m]) => `${k}: ${m.bytes} B`).join(' · ')} · envoltura ${MED['50/0'].env0} B (vacia) / ${MED['50/0'].env250} B (250 dias) · maximo ${max} B · ${mbh} MB/h`
+oraculo('P7-03', `el documento de persistencia cita las tres medidas exactas (${Object.entries(MED).map(([k, m]) => `${k} ${fmtB(m.bytes)} B`).join(', ')}) y las dos envolturas`, Object.values(MED).every(m => PERS.includes(`${fmtB(m.bytes)} B`)) && PERS.includes(`${fmtB(MED['50/0'].env0)} B`) && PERS.includes(`${fmtB(MED['50/0'].env250)} B`), cita)
+oraculo('P7-03', `y el pico de escritura con el maximo medido (${fmtB(max)} B): ${String(mbh).replace('.', ',')} MB/h; ya no presenta 20 KB como limite ni 73,3 MB/h`, PERS.includes(`${String(mbh).replace('.', ',')} MB/h`) && !/≤ 20 KB/.test(PERS) && !/73,3 MB\/h/.test(PERS), cita)
 fin()

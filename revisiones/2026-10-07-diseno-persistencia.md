@@ -336,7 +336,21 @@ Eventos: **≈ 152 B** de `datos` por evento (media medida sobre `fill` y `orden
 
 ### 9.2 Estimado (hipótesis explícitas, no medidas en Postgres; V4-03: uso normal y cota, separados)
 
-**Hipótesis:** fila de `sim_recibos` o `sim_eventos` ≈ **0,35 KB** con índices; fila de `sim_trades` ≈ 0,5 KB; snapshot ≤ **15 KB** medido con un par (§ 9.1); multipar, medido en la pieza 7 (D-12).
+**Hipótesis:** fila de `sim_recibos` o `sim_eventos` ≈ **0,35 KB** con índices; fila de `sim_trades` ≈ 0,5 KB; snapshot de un par ≤ 15 KB (§ 9.1).
+
+**Snapshot multipar MEDIDO (P7-03, CTO 10-oct; `pruebas/motor/cartera.mjs`, D-12 / P7-03).** Son ejemplos medidos, **no límites**: ningún tamaño se valida ni se recorta en SQL. Condiciones de la medida:
+- serializado canónico de la cartera, por la ruta real con comandos admitidos;
+- 9 pares con mercado fijado y costes@1;
+- las posiciones se llenan dentro de la vela, en un minuto modelado (marca V4-02), y la mitad lleva un cierre parcial; las pendientes van con SL.
+
+| Composición (posiciones / pendientes) | Estado de la cartera |
+|---|---|
+| 0 / 50 | **12.191 B** |
+| 25 / 25 | **20.619 B** |
+| 50 / 0 | **29.032 B** |
+
+- **La envoltura del reto añade 336 B** vacía y **3.585 B** con 250 días con apertura. Esos días se añadieron a la lista solo para medir, y la envoltura crece unos 13 B por día con apertura.
+- **El mayor de estos ejemplos** (50 posiciones con 250 días) es **32.617 B**. No es una cota máxima: más días, fracciones más largas o metadatos nuevos lo hacen crecer. La medida anterior de 25/25 (18.920 + 336 B) no era el techo; 50 posiciones ya pasan de 20 KB (Astra P7-03).
 
 **Filas permanentes (crecen con el uso):**
 - **Comandos económicos:** cada `abrir`, `cerrar`, `modificar`, `cancelar`, `tomar_escritor` y cada rechazo de un comando económico deja su recibo (≈ 0,35 KB) y sus eventos.
@@ -347,13 +361,13 @@ Eventos: **≈ 152 B** de `datos` por evento (media medida sobre `fill` y `orden
 
 | Sesión | Recibos económicos | Eventos | Trades | Resets (reto, 250 días) | Snapshot | Total |
 |---|---|---|---|---|---|---|
-| Ligera: 50 operaciones | ≈ 35 KB | ≈ 70 KB | ≈ 25 KB | ≈ 175 KB | ≈ 20 KB | **≈ 0,33 MB** |
-| Intensa: 500 operaciones | ≈ 350 KB | ≈ 700 KB | ≈ 250 KB | ≈ 175 KB | ≈ 20 KB | **≈ 1,5 MB** |
+| Ligera: 50 operaciones | ≈ 35 KB | ≈ 70 KB | ≈ 25 KB | ≈ 175 KB | ≈ 33 KB (el mayor medido) | **≈ 0,34 MB** |
+| Intensa: 500 operaciones | ≈ 350 KB | ≈ 700 KB | ≈ 250 KB | ≈ 175 KB | ≈ 33 KB (el mayor medido) | **≈ 1,5 MB** |
 
 Con 5 alumnos y su cupo máximo (12 sesiones Extra): 60 sesiones intensas ≈ **90 MB**.
 
 **Cotas (lo que el servidor impone):**
-- **Reescrituras por reproducción:** como mucho **720 avances por hora y alumno** (V4-03, § 4.4), con cualquier número de sesiones. Cada avance reescribe el snapshot (≤ 20 KB, en TOAST) y el `ultimo_avance` (0,35 KB): ≈ **14,65 MB/h por alumno**; con 5 alumnos, **≈ 73,3 MB/h** escritos como máximo. Son versiones muertas que recicla autovacuum, no ocupación viva.
+- **Reescrituras por reproducción:** como mucho **720 avances por hora y alumno** (V4-03, § 4.4), con cualquier número de sesiones. Cada avance reescribe el snapshot (en TOAST) y el `ultimo_avance` (0,35 KB). Con el mayor snapshot medido (32.617 B), son 720 × (32.617 + 350) B ≈ **23,74 MB/h por alumno**; con 5 alumnos, ≈ **118,68 MB/h**. Es volumen lógico serializado con un ejemplo medido, **no una cota**: un estado mayor (más días de reto) lo sube, y no está medido en PostgreSQL (TOAST, WAL, espacio muerto). Son versiones muertas que recicla autovacuum, no ocupación viva.
 - **Filas permanentes:** no tienen cota por tiempo; crecen con las operaciones y los días recorridos, al ritmo de arriba. Lo que las acota es la tasa de avances (como mucho 7 días de mercado por comando, § 1.7) y el tope de 50 posiciones + órdenes.
 
 ### 9.3 Frente al plan
@@ -362,7 +376,7 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 
 - **La base ocupa hoy unos 170 MB** (captura de Ramón, D-07): quedan **≈ 330 MB** para todo el proyecto (hub y journal incluidos, que también crecen).
 - **Estado estable:** ≈ 78 MB en el peor caso del cupo actual: cabe.
-- **Pico de escritura (cota, V4-03):** ≈ 73,3 MB/h como máximo con los 5 alumnos, impuesto por el límite de avances por alumno (no por D-18 sola, que no impedía alternar sesiones). Con una hora de retraso de autovacuum, ≈ 73 MB de espacio muerto: junto al uso normal de 60 sesiones intensas (≈ 90 MB), ≈ 163 MB de los ≈ 330 MB de margen. **Es una suma de escenario, no una garantía de ocupación**: autovacuum, WAL y compresión TOAST no están medidos.
+- **Pico de escritura (V4-03, con el mayor snapshot medido, P7-03):** ≈ 118,68 MB/h con los 5 alumnos. Lo limita la tasa de avances por alumno (no D-18 sola, que no impedía alternar sesiones), pero el tamaño por avance es un ejemplo medido, no una cota. Con una hora de retraso de autovacuum, ≈ 119 MB de espacio muerto: junto al uso normal de 60 sesiones intensas (≈ 90 MB), ≈ 209 MB de los ≈ 330 MB de margen. **Es una suma de escenario, no una garantía de ocupación**: autovacuum, WAL y compresión TOAST no están medidos.
 - **Límites que lo acotan:** un avance cada ≥ 5 s **por alumno** (§ 4.4, en el servidor); una petición en vuelo por sesión; un escritor por sesión (§ 4.2); una sola sesión v1 en reproducción a la vez por alumno (D-18).
 - **Pro sigue siendo condición para encender la v1** (§ 12.7, CTO 8-oct).
 
