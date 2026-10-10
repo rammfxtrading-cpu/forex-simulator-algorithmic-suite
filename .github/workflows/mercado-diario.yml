@@ -31,9 +31,13 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       MERCADO_CACHE: ${{ github.workspace }}/.cache-mercado
-      MERCADO_ESTADO: ${{ runner.temp }}/mercado-diario
       MERCADO_TOPE_BYTES: ${{ vars.MERCADO_TOPE_BYTES || '45000000' }}
     steps:
+      # El contexto runner no existe en el env del job (GitHub rechazo el fichero
+      # el 10-oct): la carpeta de estado se fija aqui, desde $RUNNER_TEMP.
+      - name: Carpeta de estado
+        run: echo "MERCADO_ESTADO=$RUNNER_TEMP/mercado-diario" >> "$GITHUB_ENV"
+
       - name: Descargar el repo
         uses: actions/checkout@v4
 
