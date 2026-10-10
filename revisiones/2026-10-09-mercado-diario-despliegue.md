@@ -34,7 +34,12 @@ cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprob
 
 ## Orden
 
-1. **Congelar todos los escritores**, antes de tocar main.
+1. **Congelar todos los escritores**, antes de tocar main. **Es condición de seguridad del
+   arranque, no una precaución** (Astra MA-GZ-01): el DELETE de cada `.json` **no es
+   condicional** (borra por ruta, no por versión) y el cerrojo del par solo frena a los
+   escritores que lo respetan, no al panel de Supabase ni a código antiguo. La congelación
+   se mantiene hasta confirmar el borrado del último par, incluidas tareas pendientes y
+   operaciones manuales en el bucket.
    - Ninguna ejecución manual en curso del workflow `actualizar-velas` (Actions →
      ejecuciones en curso: ninguna) y ninguna nueva hasta terminar el paso 5.
    - **Las ejecuciones ya encoladas también cuentan como congeladas.** Una ejecución en
@@ -106,6 +111,11 @@ cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprob
        exactamente las velas del `.json`;
      - comprueba con `info()` que el `.json` sigue siendo el que leyó, **lo borra** y
        comprueba que ya no existe.
+     - Esta fase final (verificar el `.gz`, comprobar el `.json`, borrar y confirmar) se
+       hace **con el cerrojo del par tomado** por el arranque, y lo suelta al acabar. Si
+       el cerrojo está puesto por otro, o no se puede tomar: código 5, sin tocar nada más
+       del par. No es atómica: entre la última consulta y el DELETE solo la congelación
+       del paso 1 impide que otro escritor cambie el `.json`.
    - Cualquier fallo en un par: **para ahí** y los pares siguientes no se tocan. Lo que se
      puede afirmar del `.json` de ese par depende de cuándo falló (Astra MA-GZ-04):
      - **antes de enviar el DELETE** (copia, publicación, verificación del `.gz` o el

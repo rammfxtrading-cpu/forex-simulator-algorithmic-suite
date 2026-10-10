@@ -174,5 +174,36 @@ db.falla = ctx => (ctx.op === 'download' && ctx.payload === 'EURUSD/M1/2026.json
 const p3 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD'])
 db.falla = null
 oraculo('MA-GZ-04', 'rechazado ANTES del DELETE (verificacion fallida): «no se ha intentado borrar», el .json sigue, sin «INCIERTO»', p3.codigo === 1 && /no se ha intentado borrar/.test(p3.salida.join('\n')) && !/INCIERTO/.test(p3.salida.join('\n')) && intacto('EURUSD') && datos('remove').length === 0, `codigo ${p3.codigo} · ${lineas(p3, /EURUSD/)}`)
+
+titulo('8 · MA-GZ-01 (Astra): la fase final de cada par, con el cerrojo del par tomado')
+const CE = '_cerrojos/EURUSD_2026.json'
+const conCerrojoAlBorrar = []
+const mira = ctx => { if (ctx.op === 'remove' && JSON.stringify(ctx.payload) === '["EURUSD/M1/2026.json"]') conCerrojoAlBorrar.push(Object.hasOwn(db.storage['forex-data'], CE) ? JSON.parse(String(db.storage['forex-data'][CE])).dueno : null); return null }
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD } } })
+db.falla = mira
+const q1 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD'])
+db.falla = null
+oraculo('MA-GZ-01', 'migracion: al borrar el .json, el cerrojo del par esta puesto y es del arranque; al acabar, suelto; codigo 0', q1.codigo === 0 && conCerrojoAlBorrar.length === 1 && /arranque-gzip/.test(String(conCerrojoAlBorrar[0])) && !Object.hasOwn(db.storage['forex-data'], CE), `codigo ${q1.codigo} · al borrar: ${conCerrojoAlBorrar.join(',') || 'sin cerrojo'}`)
+conCerrojoAlBorrar.length = 0
+const GZ_E2 = gzipSync(Buffer.from(J.EURUSD))
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'EURUSD/M1/2026.json.gz': GZ_E2 } } })
+;(db.metadatos['forex-data'] ??= {})['EURUSD/M1/2026.json.gz'] = { sha256: createHash('sha256').update(GZ_E2).digest('hex') }
+db.falla = mira
+const q2 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD'])
+db.falla = null
+oraculo('MA-GZ-01', '.gz previo con .json: tambien con el cerrojo del arranque puesto al borrar, y suelto al acabar', q2.codigo === 0 && conCerrojoAlBorrar.length === 1 && /arranque-gzip/.test(String(conCerrojoAlBorrar[0])) && !Object.hasOwn(db.storage['forex-data'], CE), `codigo ${q2.codigo} · al borrar: ${conCerrojoAlBorrar.join(',') || 'sin cerrojo'}`)
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'GBPUSD/M1/2026.json': J.GBPUSD } } })
+// otro proceso toma el cerrojo de EURUSD justo cuando el arranque va a tomarlo para la fase final (despues de publicar)
+db.falla = ctx => {
+  if (ctx.op === 'upload' && ctx.payload?.ruta === CE && db.log.some(l => l.op === 'upload' && l.payload?.ruta === 'EURUSD/M1/2026.json.gz') && !Object.hasOwn(db.storage['forex-data'], CE))
+    db.storage['forex-data'][CE] = JSON.stringify({ dueno: 'otro-proceso', desde: '2026-10-10T08:00:00Z' })
+  return null
+}
+const n8 = db.log.length
+const q3 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD'])
+db.falla = null
+const trasTomar = db.log.slice(n8).filter(l => String(l.tabla).startsWith('storage'))
+const iTomar = trasTomar.findLastIndex(l => l.op === 'upload' && l.payload?.ruta === CE)
+oraculo('MA-GZ-01', 'cerrojo puesto por otro al ir a la fase final: codigo 5, el .json sigue, nada mas sobre EURUSD (ni verificacion ni DELETE), GBPUSD sin tocar y el cerrojo ajeno intacto', q3.codigo === 5 && intacto('EURUSD') && datos('remove').length === 0 && iTomar >= 0 && !trasTomar.slice(iTomar + 1).some(l => /EURUSD\/M1/.test(JSON.stringify(l.payload ?? ''))) && tocados('GBPUSD', n8).length === 0 && JSON.parse(String(db.storage['forex-data'][CE] ?? '{}')).dueno === 'otro-proceso', `codigo ${q3.codigo} · ${lineas(q3, /EURUSD|cerrojo/i)}`)
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(x => x.terminoPor !== 'timeout'))
 fin()

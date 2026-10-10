@@ -151,10 +151,31 @@ async function main() {
     if (tras.estado === 'no-existe') return { estado: 'confirmado', motivo: null }
     return incierto(tras.estado === 'ok' ? 'tras un DELETE correcto, info() todavia da el objeto' : `la comprobacion posterior fallo (${tras.motivo ?? tras.estado})`)
   }
+  // MA-GZ-01 (Astra): la fase final (verificar el .gz → comprobar el .json → DELETE → confirmar) con el
+  // CERROJO DEL PAR tomado, y suelto al acabar. Si esta puesto (o no se puede tomar), codigo 5 sin tocar nada
+  // mas del par. Protege frente a los escritores que respetan el cerrojo; el DELETE sigue sin ser condicional
+  // (borra por ruta, no por version): la congelacion de TODOS los escritores es condicion de seguridad (paso 1).
+  const DUENO = `arranque-gzip:borrado:${crypto.randomBytes(3).toString('hex')}`
+  const faseFinal = async (par, gz, json, velas, firma) => {
+    const t = await F.tomaCerrojo(sb, par, ANIO, DUENO, () => Date.now(), LIM)
+    if (!t.ok) {
+      cerrojo = `${par}: no se pudo tomar el cerrojo para verificar y borrar (${t.motivo})`
+      console.log(`  ${cerrojo}. No se ha tocado nada mas de ${par}: ${json} no se ha intentado borrar. El arranque PARA`)
+      return { estado: 'cerrojo' }
+    }
+    let b
+    try { b = await verificaYBorra(par, gz, json, velas, firma) }
+    finally {
+      const su = await F.sueltaCerrojo(sb, par, ANIO, DUENO, LIM)
+      if (!su.ok) { cerrojo = `${par}: el cerrojo del arranque no se pudo soltar (${su.motivo})`; console.log(`  ${cerrojo}. Comprobarlo con node scripts/liberar-cerrojo.js ${par}_${ANIO}`) }
+    }
+    return b
+  }
   const inciertos = []
   // el resultado de verificaYBorra, dicho tal cual; → true si hay que parar
   const informaBorrado = (par, json, b) => {
-    if (b.estado === 'confirmado') return false
+    if (b.estado === 'cerrojo') return true
+    if (b.estado === 'confirmado') return !!cerrojo
     if (b.estado === 'incierto') { console.log(`  ${par} ⚠️ ${b.motivo}. El arranque PARA`); inciertos.push(par) }
     else console.log(`  ${par} ✗ ${b.motivo}. ${json} no se ha intentado borrar. El arranque PARA`)
     mal.push(par)
@@ -192,7 +213,7 @@ async function main() {
       // el .json de un par certificado tambien se borra, con su copia y con el .gz ya verificado
       const cp = miraCopia(COPIA, par, F.huella(j.velas))
       if (!cp.ok) { console.log(`  ${par} ✗ ${cp.motivo}: no se borra ${json}. El arranque PARA`); mal.push(par); break }
-      if (informaBorrado(par, json, await verificaYBorra(par, gz, json, j.velas, ij.estado === 'ok' ? ij.firma : null))) break
+      if (informaBorrado(par, json, await faseFinal(par, gz, json, j.velas, ij.estado === 'ok' ? ij.firma : null))) break
       console.log(`  ${par} ✓ ${json} borrado y confirmado (copia local ${cp.fichero}, sha256 ${cp.sha})`)
       continue
     }
@@ -211,7 +232,7 @@ async function main() {
     if (F.huella(r.final) !== F.huella(x.velas)) { console.log(`  ${par} ✗ lo publicado no es lo leido del .json (${r.velas} velas frente a ${x.velas.length}): el .json cambio durante el arranque. ${json} no se ha intentado borrar. El arranque PARA${avisos}`); mal.push(par); break }
     console.log(`  ${par} ✓ ${gz}: ${r.velas} velas, ${r.bytes} bytes (el .json, ${x.bytes} bytes), publicado${avisos}`)
     if (await miraCerrojo(par, 'despues de publicar')) break
-    if (informaBorrado(par, json, await verificaYBorra(par, gz, json, x.velas, x.firma))) break
+    if (informaBorrado(par, json, await faseFinal(par, gz, json, x.velas, x.firma))) break
     console.log(`  ${par} ✓ ${gz} verificado bajandolo (sha256 y velas) · ${json} borrado y confirmado (copia local ${cp.fichero}, sha256 ${cp.sha})`)
   }
   console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${T.n} descarga(s), ${T.bytes} bytes`)
