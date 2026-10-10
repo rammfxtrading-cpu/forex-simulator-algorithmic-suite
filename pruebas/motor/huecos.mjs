@@ -193,4 +193,60 @@ const w = corre(() => {
 })
 ver('control: el tramo del fin de semana trae velas del viernes y del domingo', !!w?.velas && w.velas.some(v => v.time < U('2026-03-07T00:00:00Z')) && w.velas.some(v => v.time > U('2026-03-08T21:00:00Z')), w?.error ?? '')
 oraculo('P7-01', 'el fin de semana (viernes 20:59 → domingo 21:05) no detiene', w?.detencion === null, w?.error ?? enTexto(w?.detencion))
+
+titulo('7 · P7C-01: la marca llega al confirmar el hueco, aunque no haya vela')
+// Astra (pieza 7, cierres): los dos pares sin velas en 10:01-10:16, ambos huecos aceptados. El horizonte cruza el
+// hueco sin que llegue ninguna vela (cursor 10:00): la marca tiene que estar ya, persistirse y no repetirse
+const T1005 = T1000 + 5 * 60, T1010 = T1000 + 10 * 60, T1020 = T1000 + 20 * 60
+const ambos16 = () => fuentes({ EURUSD: EU(sinMin('1.10000', 601, 16)), GBPUSD: GB(sinMin('1.30000', 601, 16)) }, { EURUSD: acept, GBPUSD: acept })
+const marcasDe = e => enTexto(e?.huecos_aceptados)
+const dosMarcas = enTexto([{ inicio: `${MA}T10:01Z`, minutos: 16, motivo: 'corte_del_proveedor', par: 'EURUSD' }, { inicio: `${MA}T10:01Z`, minutos: 16, motivo: 'corte_del_proveedor', par: 'GBPUSD' }])
+const k = corre(() => {
+  const f = ambos16()
+  const r5 = RT.avanzaReto(retoAmbos(f), T1005, f.fuentes)
+  const s5 = RT.serializaReto(r5.reto)
+  const r10 = RT.avanzaReto(RT.deserializaReto(s5), T1010, f.fuentes)
+  const r20 = RT.avanzaReto(RT.deserializaReto(RT.serializaReto(r10.reto)), T1020, f.fuentes)
+  const salto = RT.avanzaReto(retoAmbos(f), T1020, f.fuentes)
+  return { r5, s5, r10, r20, salto }
+})
+oraculo('P7C-01', 'reto, los dos pares sin velas: avanzar a 10:05 confirma el horizonte 10:05 (cursor 10:00) y ya trae las dos marcas y sus dos eventos', k.r5?.detencion === null && k.r5.reto.horizonte === T1005 && k.r5.reto.motor.reloj.cursor === T1000 && marcasDe(k.r5.reto.motor) === dosMarcas && de(k.r5.eventos, 'hueco_aceptado').length === 2, k.error ?? enTexto([k.r5?.detencion, k.r5?.reto?.horizonte, k.r5?.reto?.motor?.huecos_aceptados, de(k.r5?.eventos, 'hueco_aceptado')]))
+oraculo('P7C-01', 'reto: la marca se persiste (serializada a las 10:05) y al reanudar dentro del hueco (10:10) y al salir (10:20) ni se pierde ni se repite', !!k.s5 && marcasDe(RT.deserializaReto(k.s5).motor) === dosMarcas && de(k.r10.eventos, 'hueco_aceptado').length === 0 && marcasDe(k.r10.reto.motor) === dosMarcas && de(k.r20.eventos, 'hueco_aceptado').length === 0 && marcasDe(k.r20.reto.motor) === dosMarcas && k.r20.reto.motor.reloj.cursor === T1020, k.error ?? enTexto([de(k.r10?.eventos, 'hueco_aceptado'), de(k.r20?.eventos, 'hueco_aceptado'), k.r20?.reto?.motor?.huecos_aceptados]))
+oraculo('P7C-01', 'reto: paso (10:05 → 10:10 → 10:20 reanudando) = salto (10:20), y el salto trae las dos marcas una vez', !!k.salto && RT.serializaReto(k.r20.reto) === RT.serializaReto(k.salto.reto) && de(k.salto.eventos, 'hueco_aceptado').length === 2, k.error ?? '')
+const kc = corre(() => {
+  const f = ambos16()
+  const c5 = CA.avanza(abreAmbos(f), T1005, f.fuentes)
+  const c10 = CA.avanza(CA.deserializa(CA.serializa(c5.estado)), T1010, f.fuentes)
+  const c20 = CA.avanza(CA.deserializa(CA.serializa(c10.estado)), T1020, f.fuentes)
+  const salto = CA.avanza(abreAmbos(f), T1020, f.fuentes)
+  return { c5, c10, c20, salto }
+})
+oraculo('P7C-01', 'cartera, los dos pares sin velas: avanzar a 10:05 ya marca (cursor 10:00); reanudar en 10:10 y 10:20 no repite; paso = salto', kc.c5?.detencion === null && kc.c5.estado.reloj.cursor === T1000 && marcasDe(kc.c5.estado) === dosMarcas && de(kc.c5.eventos, 'hueco_aceptado').length === 2 && de(kc.c10.eventos, 'hueco_aceptado').length === 0 && de(kc.c20.eventos, 'hueco_aceptado').length === 0 && CA.serializa(kc.c20.estado) === CA.serializa(kc.salto.estado), kc.error ?? enTexto([kc.c5?.estado?.huecos_aceptados, de(kc.c10?.eventos, 'hueco_aceptado'), de(kc.c20?.eventos, 'hueco_aceptado')]))
+const k1 = corre(() => {
+  const ts = EU(sinMin('1.10000', 601, 16))
+  const m = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: ts, huecosAceptados: acept })
+  const fu = FU.creaFuente({ manifiesto: m, fijado: MF.fija(m), leeTrozo: dd => ts.find(t => t.dia === dd)?.buffer ?? null })
+  const motor = () => M.crea({ par: 'EURUSD', costes: cero, capital: '100000', mercado: MF.fija(m) })
+  let e = FU.avanza(motor(), T1000, fu, { desde: S0(L) }).estado
+  const f5 = FU.avanza(e, T1005, fu)
+  const f10 = FU.avanza(M.deserializa(M.serializa(f5.estado)), T1010, fu)
+  let r = RT.avanzaReto(RT.creaReto({ motor: motor(), inicio: S0(L) }), T1000, fu).reto
+  const r5 = RT.avanzaReto(r, T1005, fu)
+  const r10 = RT.avanzaReto(RT.deserializaReto(RT.serializaReto(r5.reto)), T1010, fu)
+  return { f5, f10, r5, r10 }
+})
+const unaMarca = enTexto([{ inicio: `${MA}T10:01Z`, minutos: 16, motivo: 'corte_del_proveedor', par: 'EURUSD' }])
+oraculo('P7C-01', 'un par solo (fuente.avanza): a las 10:05 ya marca, sin vela; al reanudar en 10:10 no repite', k1.f5?.detencion === null && k1.f5.estado.reloj.cursor === T1000 && marcasDe(k1.f5.estado) === unaMarca && de(k1.f5.eventos, 'hueco_aceptado').length === 1 && de(k1.f10.eventos, 'hueco_aceptado').length === 0 && marcasDe(k1.f10.estado) === unaMarca, k1.error ?? enTexto([k1.f5?.estado?.huecos_aceptados, de(k1.f10?.eventos, 'hueco_aceptado')]))
+oraculo('P7C-01', 'un par solo en el reto: horizonte 10:05 con la marca; al reanudar en 10:10 no repite', k1.r5?.reto?.horizonte === T1005 && marcasDe(k1.r5.reto.motor) === unaMarca && de(k1.r5.eventos, 'hueco_aceptado').length === 1 && de(k1.r10.eventos, 'hueco_aceptado').length === 0 && marcasDe(k1.r10.reto.motor) === unaMarca, k1.error ?? enTexto([k1.r5?.reto?.horizonte, k1.r5?.reto?.motor?.huecos_aceptados, de(k1.r10?.eventos, 'hueco_aceptado')]))
+const kt = corre(() => {
+  // acotada al instante terminal: EURUSD cae a 0,90000 a las 10:05 (breach) y el hueco aceptado de los dos pares empieza a las 10:11
+  const cae = sinMin('1.10000', 611, 16)
+  const eu = i => (i >= 605 && cae(i) != null ? '0.90000' : cae(i))
+  const a11 = [{ inicio: `${MA}T10:11Z`, minutos: 16, motivo: 'corte_del_proveedor' }]
+  const f = fuentes({ EURUSD: EU(eu), GBPUSD: GB(sinMin('1.30000', 611, 16)) }, { EURUSD: a11, GBPUSD: a11 })
+  const c = CA.avanza(abreAmbos(f, [{ regla: 'perdida_diaria', limite: '95000' }]), T1000 + 30 * 60, f.fuentes)
+  const r = RT.avanzaReto(retoAmbos(f), T1000 + 30 * 60, f.fuentes)
+  return { c, r }
+})
+oraculo('P7C-01', 'acotada al instante terminal: con breach a las 10:05, el hueco de las 10:11 no se marca (cartera y reto)', kt.c?.estado?.estado === 'breach' && kt.c.estado.reloj.cursor === T1005 && kt.c.estado.huecos_aceptados === undefined && de(kt.c.eventos, 'hueco_aceptado').length === 0 && kt.r?.reto?.estado === 'breach' && kt.r.reto.motor.huecos_aceptados === undefined && de(kt.r.eventos, 'hueco_aceptado').length === 0, kt.error ?? enTexto([kt.c?.estado?.estado, kt.c?.estado?.reloj, kt.c?.estado?.huecos_aceptados, kt.r?.reto?.estado, kt.r?.reto?.motor?.huecos_aceptados]))
 fin()
