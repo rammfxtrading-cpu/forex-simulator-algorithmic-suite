@@ -89,6 +89,20 @@ cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprob
      NZDUSD AUDCAD GBPJPY`. Deja una carpeta nueva con `{PAR}_2026.json` y su `.sha256`;
      se apuntan aquí los nueve sha256. En seco, `--copia DIR` dice por par si la copia
      está bien.
+   - **Copia hecha el 10-oct** (`~/copias-suite/2026-10-10T14-09-43-117Z-mercado-2026-531efd`,
+     9 copias verificadas; datos hasta el 7-oct a las 23:59 UTC):
+
+     | Par | Velas | Bytes | sha256 de la copia |
+     |---|---:|---:|---|
+     | EURUSD | 285.516 | 30.016.510 | `36b472748a865f63ff6d82608a8f519fecb528b55d7c02f9b142f0f572cc08ee` |
+     | GBPUSD | 285.370 | 30.094.962 | `88c8c7cb4e0e943c1614e4041a783fd0676c59ab3c08ac71f4cd598354984322` |
+     | USDJPY | 285.554 | 30.055.950 | `6d8eca21d73f478fae4e28d381004fe5df38f5b38133b130d17c88ba1de5106f` |
+     | USDCHF | 285.032 | 30.015.895 | `85ad20d3f96b06b70a50686e9805d4c64416d777f3a28b6c2e029f79c5e53776` |
+     | AUDUSD | 285.202 | 30.199.003 | `c999938bcdc2f329612e3d2021332521bc317526394d1689ee281627cbb178c3` |
+     | USDCAD | 285.058 | 29.882.448 | `9a3ffb4e968f1ca63c3ce87361c3cce878a4fb48262c1c03ff16591c31b4813a` |
+     | NZDUSD | 285.030 | 29.944.413 | `e004589a57ea7e6ebff45d9a6488cfc51a053372fb0f952fd11c4ac938f385e6` |
+     | AUDCAD | 285.517 | 29.866.104 | `150ab8ef7899b55214e72939ef9d30e12c149b8a0666c4205eeaacc31f86262e` |
+     | GBPJPY | 285.402 | 29.932.131 | `0288e4447ea9adcdf5a4323faa4962c9b86b8a85f180da3ff8b89ae02c294210` |
    - **Storage al límite (Ramón, 10-oct: 0,963 GB de 1 GB).** El bucket ocupa
      976.121.058 B; con los nueve `.gz` encima de los `.json` serían unos 1,015 GB. Por
      eso el arranque borra cada `.json` en cuanto su `.gz` está verificado: el pico es
@@ -134,8 +148,12 @@ cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprob
        queda ninguna subida en curso.
 5. **Verificación de los nueve pares, uno a uno.** Un `.gz` presente o un código 0 no
    bastan; por cada par:
-   - su línea del arranque: «✓ … publicado» (o «✓ … certificado») y «✓ … verificado
-     bajándolo … borrado», con las velas, los bytes y el sha256 de su copia local;
+   - su fila del **resumen por par** que imprime el arranque al final (Astra MA-GZ-05),
+     con sus cuatro campos: **par · estado · sha256 del `.gz` · sha256 de la copia
+     local**. El estado tiene que ser `migrado` (su `.json` borrado y confirmado) o `ya
+     convertido y certificado`; `fallo`, `fallo (cerrojo)`, `incierto` o `no tocado` no
+     valen. El sha256 de la copia es el de la tabla de copias de este documento, y se
+     apuntan aquí los nueve sha256 de los `.gz`;
    - `node scripts/arranque-gzip.js` en seco otra vez: los 9 pares con «ya hay .json.gz»
      y ningún cerrojo (código 0);
    - el listado del bucket: ningún `{PAR}/M1/2026.json`, nueve `2026.json.gz`;

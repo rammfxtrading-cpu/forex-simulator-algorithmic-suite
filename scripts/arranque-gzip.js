@@ -134,6 +134,7 @@ async function main() {
     const ig = await infoRuta(gz)
     if (ig.estado !== 'ok') return rechazado(`no se pudo consultar ${gz} para verificarlo (${ig.motivo ?? ig.estado})`)
     if (!ig.metadata?.sha256) return rechazado(`${gz} no trae sha256 en sus metadatos: no se puede verificar`)
+    if (RES[par]) RES[par].gz = ig.metadata.sha256
     const g = await F.leerRuta(sb, gz, LIM, { sha256: ig.metadata.sha256 })
     T.n++; T.bytes += g.bytes || 0
     if (g.estado !== 'ok') return rechazado(`la verificacion de ${gz} bajandolo fallo: ${g.motivo ?? g.estado}`)
@@ -174,17 +175,21 @@ async function main() {
   const inciertos = []
   // el resultado de verificaYBorra, dicho tal cual; → true si hay que parar
   const informaBorrado = (par, json, b) => {
-    if (b.estado === 'cerrojo') return true
+    if (b.estado === 'cerrojo') { RES[par].estado = 'fallo (cerrojo)'; return true }
     if (b.estado === 'confirmado') return !!cerrojo
-    if (b.estado === 'incierto') { console.log(`  ${par} ⚠️ ${b.motivo}. El arranque PARA`); inciertos.push(par) }
+    if (b.estado === 'incierto') { console.log(`  ${par} ⚠️ ${b.motivo}. El arranque PARA`); inciertos.push(par); RES[par].estado = 'incierto' }
     else console.log(`  ${par} ✗ ${b.motivo}. ${json} no se ha intentado borrar. El arranque PARA`)
     mal.push(par)
     return true
   }
+  // MA-GZ-05 (Astra): el resumen final por par, con estado explicito y los dos sha256 (el del .gz y el de la copia)
+  const RES = Object.fromEntries(P.lista.map(p => [p, { estado: 'no tocado', gz: '-', copia: '-', detalle: '' }]))
   console.log(`\n=== ARRANQUE .json → .json.gz ${ANIO} ${SUBIR ? '⚠️ REAL' : '🔍 SECO'} — ${new Date().toISOString()} — ${P.lista.join(', ')}${COPIA ? ` — copia ${COPIA}` : ''} ===\n`)
   for (const par of P.lista) {
     const { gz, json } = F.rutasAnio(par, ANIO)
-    if (await miraCerrojo(par, 'antes de empezar')) break
+    const R = RES[par]
+    R.estado = SUBIR ? 'fallo' : 'seco'              // lo que quede si el par se interrumpe; se corrige al acabar bien
+    if (await miraCerrojo(par, 'antes de empezar')) { R.estado = 'fallo (cerrojo)'; break }
     const i = await F.infoVigente(sb, par, ANIO, LIM)
     // MA-GZ-02 (Astra): en real, un estado inicial fallido PARA (error o ningun objeto); en seco se sigue mirando
     if (i.estado === 'error') { console.log(`  ${par} ✗ no se pudo consultar (${i.motivo})${SUBIR ? '. El arranque PARA' : ''}`); mal.push(par); if (SUBIR) break; continue }
@@ -207,14 +212,18 @@ async function main() {
         const cpg = miraCopia(COPIA, par, F.huella(g.velas))
         if (!cpg.ok) { console.log(`  ${par} ✗ ${gz} con su sha256 correcto, pero ${cpg.motivo}: pendiente de reconciliar. El arranque PARA`); mal.push(par); break }
         console.log(`  ${par} ✓ ${gz} ya convertido y certificado: sha256 ${ig.metadata.sha256}, ${g.velas.length} velas = copia local ${cpg.fichero} (sha256 ${cpg.sha})`)
+        Object.assign(R, { estado: 'ya convertido y certificado', gz: ig.metadata.sha256, copia: cpg.sha, detalle: 'sin .json' })
         continue
       }
       console.log(`  ${par} ✓ ${gz} certificado: sha256 ${ig.metadata.sha256}, ${g.velas.length} velas, validado y sin ningun dia con menos velas que ${json} (${j.velas.length} velas)${v.avisos.length ? ` (aviso: ${v.avisos.join(' · ')})` : ''}`)
       // el .json de un par certificado tambien se borra, con su copia y con el .gz ya verificado
+      R.gz = ig.metadata.sha256
       const cp = miraCopia(COPIA, par, F.huella(j.velas))
       if (!cp.ok) { console.log(`  ${par} ✗ ${cp.motivo}: no se borra ${json}. El arranque PARA`); mal.push(par); break }
+      R.copia = cp.sha
       if (informaBorrado(par, json, await faseFinal(par, gz, json, j.velas, ij.estado === 'ok' ? ij.firma : null))) break
       console.log(`  ${par} ✓ ${json} borrado y confirmado (copia local ${cp.fichero}, sha256 ${cp.sha})`)
+      Object.assign(R, { estado: 'ya convertido y certificado', detalle: '.json borrado y confirmado' })
       continue
     }
     if (!SUBIR) { const cp = COPIA ? miraCopia(COPIA, par) : null; console.log(`  ${par} [SECO] migraria ${json} (${i.size} bytes) a ${gz} y despues borraria el .json${cp ? ` · copia: ${cp.ok ? 'ok' : cp.motivo}` : ''}`); continue }
@@ -224,6 +233,7 @@ async function main() {
     // 1 · la copia local, ANTES de subir nada: si falta o no es lo leido, el par no se toca
     const cp = miraCopia(COPIA, par, F.huella(x.velas))
     if (!cp.ok) { console.log(`  ${par} ✗ ${cp.motivo}: no se sube ni se borra nada de ${par}. El arranque PARA`); mal.push(par); break }
+    R.copia = cp.sha
     const r = await F.publicarAnio(sb, { pair: par, year: ANIO, componer: g => g, dueno: 'arranque-gzip', previo: x, limites: LIM })
     T.n += r.descargado?.n || 0; T.bytes += r.descargado?.bytes || 0
     const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
@@ -234,7 +244,10 @@ async function main() {
     if (await miraCerrojo(par, 'despues de publicar')) break
     if (informaBorrado(par, json, await faseFinal(par, gz, json, x.velas, x.firma))) break
     console.log(`  ${par} ✓ ${gz} verificado bajandolo (sha256 y velas) · ${json} borrado y confirmado (copia local ${cp.fichero}, sha256 ${cp.sha})`)
+    Object.assign(R, { estado: 'migrado', detalle: '.json borrado y confirmado' })
   }
+  console.log('\n  Resumen por par (estado · sha256 del .gz · sha256 de la copia local):')
+  for (const p of P.lista) { const r = RES[p]; console.log(`    ${p} · ${r.estado} · sha256 .gz ${r.gz} · sha256 copia ${r.copia}${r.detalle ? ' · ' + r.detalle : ''}`) }
   console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${T.n} descarga(s), ${T.bytes} bytes`)
   console.log(`  Tiempos de Storage (ms): ${F.resumenTiempos(LIM.tiempos)}`)
   if (cerrojo) { console.log(`\n=== ⚠️ ATENCION: arranque parado por un cerrojo: ${cerrojo}${mal.length ? `; ademas, fallo en ${mal.join(', ')}` : ''} (codigo 5) ===`); process.exitCode = 5 }

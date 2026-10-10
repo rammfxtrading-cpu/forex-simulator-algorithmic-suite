@@ -205,5 +205,26 @@ db.falla = null
 const trasTomar = db.log.slice(n8).filter(l => String(l.tabla).startsWith('storage'))
 const iTomar = trasTomar.findLastIndex(l => l.op === 'upload' && l.payload?.ruta === CE)
 oraculo('MA-GZ-01', 'cerrojo puesto por otro al ir a la fase final: codigo 5, el .json sigue, nada mas sobre EURUSD (ni verificacion ni DELETE), GBPUSD sin tocar y el cerrojo ajeno intacto', q3.codigo === 5 && intacto('EURUSD') && datos('remove').length === 0 && iTomar >= 0 && !trasTomar.slice(iTomar + 1).some(l => /EURUSD\/M1/.test(JSON.stringify(l.payload ?? ''))) && tocados('GBPUSD', n8).length === 0 && JSON.parse(String(db.storage['forex-data'][CE] ?? '{}')).dueno === 'otro-proceso', `codigo ${q3.codigo} · ${lineas(q3, /EURUSD|cerrojo/i)}`)
+
+titulo('9 · MA-GZ-05 (Astra): resumen final por par, con estado explicito y los dos sha256')
+const shaDe = x => createHash('sha256').update(x).digest('hex')
+const resumenDe = r => { const i = r.salida.findIndex(l => /Resumen por par/.test(l)); if (i < 0) return {}; const o = {}; for (const l of r.salida.slice(i + 1)) { const m = /^\s+([A-Z]{6}) · ([^·]+?) · sha256 \.gz (\S+) · sha256 copia (\S+)/.exec(l); if (!m) break; o[m[1]] = { estado: m[2].trim(), gz: m[3], copia: m[4] } } return o }
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'GBPUSD/M1/2026.json': J.GBPUSD } } })
+const r1 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD'])
+const R1 = resumenDe(r1), gzE = shaDe(Buffer.from(db.storage['forex-data']['EURUSD/M1/2026.json.gz'] ?? ''))
+oraculo('MA-GZ-05', 'migracion completa: cada par «migrado» con el sha256 de su .gz (el del bucket) y el de su copia', R1.EURUSD?.estado === 'migrado' && R1.EURUSD.gz === gzE && R1.EURUSD.copia === shaDe(J.EURUSD) && R1.GBPUSD?.estado === 'migrado' && R1.GBPUSD.copia === shaDe(J.GBPUSD), JSON.stringify(R1))
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json.gz': GZ_E2, 'GBPUSD/M1/2026.json': J.GBPUSD } } })
+;(db.metadatos['forex-data'] ??= {})['EURUSD/M1/2026.json.gz'] = { sha256: shaDe(GZ_E2) }
+db.falla = ctx => (ctx.op === 'download' && ctx.payload === 'GBPUSD/M1/2026.json.gz' && db.log.some(l => l.op === 'upload' && l.payload?.ruta === 'GBPUSD/M1/2026.json.gz') ? { message: 'Service Unavailable', statusCode: '503' } : null)
+const r2 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD,USDJPY'])
+db.falla = null
+const R2 = resumenDe(r2)
+oraculo('MA-GZ-05', 'ya convertido + fallo + no tocado: EURUSD «ya convertido y certificado» (sus dos sha256), GBPUSD «fallo», USDJPY «no tocado»', R2.EURUSD?.estado === 'ya convertido y certificado' && R2.EURUSD.gz === shaDe(GZ_E2) && R2.EURUSD.copia === shaDe(J.EURUSD) && /^fallo/.test(R2.GBPUSD?.estado ?? '') && R2.USDJPY?.estado === 'no tocado', JSON.stringify(R2))
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD } } })
+db.falla = ctx => { if (ctx.op === 'remove' && JSON.stringify(ctx.payload) === '["EURUSD/M1/2026.json"]') { delete db.storage['forex-data']['EURUSD/M1/2026.json']; return { message: 'Internal Server Error', statusCode: '500' } } return null }
+const r3 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD'])
+db.falla = null
+const R3 = resumenDe(r3)
+oraculo('MA-GZ-05', 'DELETE incierto: EURUSD «incierto», con el sha256 del .gz verificado y el de la copia', R3.EURUSD?.estado === 'incierto' && /^[0-9a-f]{64}$/.test(R3.EURUSD.gz) && R3.EURUSD.copia === shaDe(J.EURUSD), JSON.stringify(R3))
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(x => x.terminoPor !== 'timeout'))
 fin()
