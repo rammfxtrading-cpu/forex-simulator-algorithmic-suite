@@ -1,4 +1,4 @@
-# Mercado diario: orden de despliegue (9-oct-2026; revisado tras Astra MD-01..MD-05)
+# Mercado diario: orden de despliegue (9-oct-2026; revisado tras Astra MD-01..MD-05 y sus cierres del 10-oct)
 
 Rama `mercado-diario` (desde main 6ab5ba9). **Nada de esto se ejecuta sin autorización
 expresa del CTO.** Ningún paso borra datos en Storage; ningún cerrojo se borra sin la
@@ -36,6 +36,11 @@ comprobación humana del paso 1.
 1. **Congelar todos los escritores**, antes de tocar main.
    - Ninguna ejecución manual en curso del workflow `actualizar-velas` (Actions →
      ejecuciones en curso: ninguna) y ninguna nueva hasta terminar el paso 5.
+   - **Las ejecuciones ya encoladas también cuentan como congeladas.** Una ejecución en
+     cola («Queued» o «Waiting»: el grupo de concurrencia la retiene) arrancaría dentro
+     de la ventana con el código de su commit. Se cancelan, o se espera a que terminen,
+     antes de seguir. En la lista de ejecuciones del workflow no puede quedar ninguna en
+     curso ni en cola.
    - Ningún proceso de escritura en el Mac ni en otro checkout: `actualizar-diario`,
      `restore-2026`, `importar-csv` o `arranque-gzip`.
      - Comprobación en cada equipo: `ps aux | grep -E "actualizar-diario|restore-2026|importar-csv|arranque-gzip" | grep -v grep`
@@ -53,7 +58,7 @@ comprobación humana del paso 1.
    - Desde aquí, solo se ejecutan escritores del commit nuevo.
 2. **Lectores y escritores nuevos en main, SIN `mercado-diario.yml`.**
    - Se lleva a main todo lo de la rama **salvo** `.github/workflows/mercado-diario.yml`,
-     que entra en el paso 6. Si entrara aquí, el cron de las 03:17 podría correr antes
+     que entra en el paso 7. Si entrara aquí, el cron de las 03:17 podría correr antes
      del arranque y gastar el tope en los `.json`, unos 29 MB por par.
    - Comprobación, cuando Vercel sirva el commit:
      - el gráfico de un par carga igual que antes. Todavía no hay ningún `.gz`, así que
@@ -83,7 +88,7 @@ comprobación humana del paso 1.
      - si ya hay `.json.gz`, lo certifica: lo baja, lo descomprime, lo valida y
        comprueba que no tiene menos velas por día que el `.json`.
    - Se espera código 0.
-   - Con código 1 o 5, o con cualquier incertidumbre, no se pasa al paso 6:
+   - Con código 1 o 5, o con cualquier incertidumbre, no se pasa al paso 7:
      - los `.gz` correctos ya convertidos pueden quedarse;
      - se reconcilia según el paso 1 y se repite el arranque solo cuando consta que no
        queda ninguna subida en curso.
@@ -97,7 +102,34 @@ comprobación humana del paso 1.
      antes estaban y ahora no;
    - ningún cerrojo pendiente: `node scripts/liberar-cerrojo.js PAR_2026`, sin
      `--confirmo`.
-6. **Solo entonces, el workflow diario.** Se lleva a main `mercado-diario.yml` antes de
+6. **Contrato de la descarga limitada, en una lectura acotada.** Propuesto; no
+   ejecutado.
+   - **Por qué hace falta:**
+     - el arranque y el gráfico no pasan por `fetchConTope`;
+     - que la etag del GET de Supabase llegue y coincida con la de `info()`, que llegue
+       el tamaño y que existan los metadatos (`sha256`, `velas`) no está comprobado
+       contra producción;
+     - si algo de eso no cuadra, el primer diario saldría con 3 en todos los pares.
+   - **Cómo (propuesta):** un script de solo lectura,
+     `node scripts/comprueba-descarga.js EURUSD` (por escribir, con su prueba, cuando el
+     CTO lo apruebe). Lo ejecuta una vez desde el Mac una persona autorizada, para UN
+     par y su año, sin publicar nada y sin pedir nada al proveedor. Hace:
+     1. `infoVigente`; dice si trae etag y en qué forma (con comillas, con `W/`), el
+        tamaño y qué claves de metadatos llegan (sin imprimir la URL);
+     2. una descarga atada por el camino limitado (`fetchConTope` sobre
+        `fetchConLimite`, como el diario), con el tope igual al tamaño. Dice si el GET
+        trajo etag, si coincide con la de `info()`, los bytes recibidos y si el sha256
+        del cuerpo es el de los metadatos;
+     3. código 0 si todo cuadra; 3 si falta o no coincide la etag o el tamaño; 1 si el
+        sha256 no cuadra.
+   - **Gasto:** un `.json.gz` (unos 4,1–4,5 MB), no los nueve años.
+   - **Resultado:** se apunta en este documento. Si no da 0, no se pasa al paso 7: se
+     revisa el contrato de cabeceras antes de activar el cron.
+   - **Alternativas peores:**
+     - el actualizador en seco también pasa por el camino limitado, pero puede pedir
+       días al proveedor;
+     - el propio cron ya publicaría.
+7. **Solo entonces, el workflow diario.** Se lleva a main `mercado-diario.yml` antes de
    las 03:17 UTC del día en que deba correr por primera vez.
    - La primera ejecución tiene la caché vacía y baja los 9 `.gz`, unos 38,5 MB: cabe en
      el tope de 45 MB.
