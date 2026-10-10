@@ -7,9 +7,11 @@
 //   node scripts/actualizar-diario.js          -> SECO (no sube, dice qué haría)
 //   node scripts/actualizar-diario.js --subir   -> SUBE de verdad
 //   ... --pares AUDUSD,GBPUSD                   -> solo esos pares (bloque G, punto 11)
-// Transferencia (bloque G, punto 11): cada par descarga su año como mucho DOS
-// veces por pasada (lectura inicial; relectura solo si cambio bajo el cerrojo;
-// verificacion por metadatos). El estado final no descarga nada.
+// Transferencia (bloque G, punto 11): en los intentos ORDINARIOS cada par
+// descarga su año como mucho DOS veces por pasada (lectura inicial; relectura
+// solo si cambio bajo el cerrojo; verificacion por metadatos); un sha256 que no
+// cuadra añade UN reintento por descarga (MD-05/MDC-02), contado en el tope si
+// lo hay. El estado final no descarga nada.
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
 
@@ -205,7 +207,7 @@ const leerAnio = async (pair, year) => {
     if (TOPE != null && !cabe(i.size)) { CACHE_LOG.push(`${P}: el sha256 no cuadra y el reintento no cabe en el tope`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: el reintento por sha256 de ${i.ruta} no cabe` } }
     CACHE_LOG.push(`${P}: el sha256 del cuerpo no es el de los metadatos; un reintento`)
     x = await lee(); contados += cuenta(x)
-    if (x.shaDistinto) x = { estado: 'error', ruta: x.ruta ?? i.ruta, motivo: `no verificado: el sha256 del cuerpo no es el de los metadatos (dos descargas)` }
+    if (x.shaDistinto) x = { estado: 'error', ruta: x.ruta ?? i.ruta, motivo: `no verificado: el sha256 del cuerpo no es el de los metadatos (la descarga y su reintento)` }
   }
   if (x.estado === 'tope') { CACHE_LOG.push(`${P}: ${porque}; descarga CORTADA (${x.motivo}); contados ${contados} bytes`); return { estado: 'tope', ruta: i.ruta, motivo: x.motivo } }
   const firma = i.estado === 'ok' && x.estado === 'ok' && i.ruta === x.ruta ? i.firma : null
