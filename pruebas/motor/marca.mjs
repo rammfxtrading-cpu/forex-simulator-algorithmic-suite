@@ -64,6 +64,20 @@ titulo('una pendiente que existia en el minuto modelado pasa la marca a su posic
   oraculo('V4-02', 'la BUY LIMIT creada antes del minuto modelado y llenada despues, en un minuto no modelado: su posicion lleva la marca', !!pos && pos.sincronizacion_modelada === true, enTexto(r.estado.posiciones.map(p => [p.id, p.sincronizacion_modelada])))
 }
 
+titulo('P7-02: la marca pasa al fill tambien al modificar una pendiente hasta hacerla ejecutable')
+{
+  // Astra: A45 con la BUY LIMIT 1,06000 (marcada en el minuto modelado); serializar y reanudar; con EURUSD aun a
+  // 1,10000, modificarla a 1,11000 (ejecutable al precio vigente): su posicion y su cierre llevan la marca
+  let e = CA.deserializa(CA.serializa(av(base({ pendiente: true }), 1).estado))
+  ver('control: la pendiente quedo marcada en el minuto modelado y sigue viva', e.ordenes.length === 1 && e.ordenes[0].sincronizacion_modelada === true)
+  const m = CA.aplica(e, { tipo: 'modificar', id: e.ordenes[0].id, precio: '1.11000' })
+  const fill = de(m.eventos, 'fill')[0]
+  const pos = m.estado.posiciones.find(p => p.id === fill?.posicion)
+  const c = pos ? CA.aplica(m.estado, { tipo: 'cerrar', id: pos.id }) : null
+  oraculo('V4-02', 'modificar la pendiente marcada hasta llenarla: la posicion nueva lleva sincronizacion_modelada', m.resultado === 'aceptado' && !!pos && pos.sincronizacion_modelada === true, enTexto([m.resultado, fill?.posicion, pos?.sincronizacion_modelada]))
+  oraculo('V4-02', 'y su cierre posterior lleva sincronizacion: "modelada"; el resumen de la sesion sigue en minutos = 1', !!c && de(c.eventos, 'cierre')[0]?.sincronizacion === 'modelada' && c.estado.sincronizacion?.minutos === 1, enTexto([de(c?.eventos, 'cierre')[0]?.sincronizacion, c?.estado?.sincronizacion]))
+}
+
 titulo('el breach posterior lleva el resumen')
 {
   const r = av(av(base({ limites: [{ regla: 'perdida_diaria', limite: '96000' }] }), 3).estado, 4)
