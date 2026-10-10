@@ -1,8 +1,9 @@
 # Mercado diario: orden de despliegue (9-oct-2026; revisado tras Astra MD-01..MD-05 y sus cierres del 10-oct)
 
 Rama `mercado-diario` (desde main 6ab5ba9). **Nada de esto se ejecuta sin autorización
-expresa del CTO.** Ningún paso borra datos en Storage; ningún cerrojo se borra sin la
-comprobación humana del paso 1.
+expresa del CTO.** El único paso que borra datos en Storage es el arranque (paso 4):
+cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprobada (CTO
+10-oct). Ningún cerrojo se borra sin la comprobación humana del paso 1.
 
 ## Qué cambia al desplegar
 
@@ -33,7 +34,12 @@ comprobación humana del paso 1.
 
 ## Orden
 
-1. **Congelar todos los escritores**, antes de tocar main.
+1. **Congelar todos los escritores**, antes de tocar main. **Es condición de seguridad del
+   arranque, no una precaución** (Astra MA-GZ-01): el DELETE de cada `.json` **no es
+   condicional** (borra por ruta, no por versión) y el cerrojo del par solo frena a los
+   escritores que lo respetan, no al panel de Supabase ni a código antiguo. La congelación
+   se mantiene hasta confirmar el borrado del último par, incluidas tareas pendientes y
+   operaciones manuales en el bucket.
    - Ninguna ejecución manual en curso del workflow `actualizar-velas` (Actions →
      ejecuciones en curso: ninguna) y ninguna nueva hasta terminar el paso 5.
    - **Las ejecuciones ya encoladas también cuentan como congeladas.** Una ejecución en
@@ -74,30 +80,83 @@ comprobación humana del paso 1.
    - Un cerrojo hace que pare con **código 5**: se vuelve al paso 1.
    - Se revisa cualquier `.json.gz` que ya exista: el paso 4 lo certificará, no lo
      saltará.
-   - Se confirman la copia de respaldo y el presupuesto del paso 4. Son unos 264 MB de
-     `.json`, más los `.gz` que ya existan y el `.json` de esos pares. Pueden sumarse
-     relecturas si algo cambia durante el arranque, que no tiene tope en bytes: está
-     autorizado aparte.
-4. **Arranque desde el Mac, una sola vez:** `node scripts/arranque-gzip.js --subir`, sin
-   ningún otro escritor.
-   - Por par:
+   - Se confirman la copia de respaldo y el presupuesto del paso 4. Son unos 270 MB de
+     `.json`, más los `.gz` que ya existan y el `.json` de esos pares, más la descarga
+     de verificación de cada `.gz` (unos 39 MB). Pueden sumarse relecturas si algo
+     cambia durante el arranque, que no tiene tope en bytes: está autorizado aparte.
+   - **La copia local, antes del paso 4 (CTO 10-oct, autorizada una vez, unos 270 MB):**
+     `ANIO=2026 node scripts/copia-mercado.js EURUSD GBPUSD USDJPY USDCHF AUDUSD USDCAD
+     NZDUSD AUDCAD GBPJPY`. Deja una carpeta nueva con `{PAR}_2026.json` y su `.sha256`;
+     se apuntan aquí los nueve sha256. En seco, `--copia DIR` dice por par si la copia
+     está bien.
+   - **Copia hecha el 10-oct** (`~/copias-suite/2026-10-10T14-09-43-117Z-mercado-2026-531efd`,
+     9 copias verificadas; datos hasta el 7-oct a las 23:59 UTC):
+
+     | Par | Velas | Bytes | sha256 de la copia |
+     |---|---:|---:|---|
+     | EURUSD | 285.516 | 30.016.510 | `36b472748a865f63ff6d82608a8f519fecb528b55d7c02f9b142f0f572cc08ee` |
+     | GBPUSD | 285.370 | 30.094.962 | `88c8c7cb4e0e943c1614e4041a783fd0676c59ab3c08ac71f4cd598354984322` |
+     | USDJPY | 285.554 | 30.055.950 | `6d8eca21d73f478fae4e28d381004fe5df38f5b38133b130d17c88ba1de5106f` |
+     | USDCHF | 285.032 | 30.015.895 | `85ad20d3f96b06b70a50686e9805d4c64416d777f3a28b6c2e029f79c5e53776` |
+     | AUDUSD | 285.202 | 30.199.003 | `c999938bcdc2f329612e3d2021332521bc317526394d1689ee281627cbb178c3` |
+     | USDCAD | 285.058 | 29.882.448 | `9a3ffb4e968f1ca63c3ce87361c3cce878a4fb48262c1c03ff16591c31b4813a` |
+     | NZDUSD | 285.030 | 29.944.413 | `e004589a57ea7e6ebff45d9a6488cfc51a053372fb0f952fd11c4ac938f385e6` |
+     | AUDCAD | 285.517 | 29.866.104 | `150ab8ef7899b55214e72939ef9d30e12c149b8a0666c4205eeaacc31f86262e` |
+     | GBPJPY | 285.402 | 29.932.131 | `0288e4447ea9adcdf5a4323faa4962c9b86b8a85f180da3ff8b89ae02c294210` |
+   - **Storage al límite (Ramón, 10-oct: 0,963 GB de 1 GB).** El bucket ocupa
+     976.121.058 B; con los nueve `.gz` encima de los `.json` serían unos 1,015 GB. Por
+     eso el arranque borra cada `.json` en cuanto su `.gz` está verificado: el pico es
+     lo actual más un `.gz` (unos 4,6 MB).
+4. **Arranque desde el Mac, una sola vez:** `node scripts/arranque-gzip.js --subir --copia
+   DIR` (la carpeta de la copia local), sin ningún otro escritor. **Sin `--copia`, código
+   4 y no hace nada.**
+   - Por par, en serie (nunca dos pares en vuelo):
      - mira el cerrojo; con uno puesto, para con código 5 y no lo libera;
-     - si hay `.json`, lo baja y publica el `.json.gz` con el publicador común (cerrojo
-       y verificación por metadatos), comprueba que son exactamente las mismas velas y
-       que el cerrojo quedó suelto;
+     - si hay `.json`, lo baja y comprueba **antes de subir nada** que la copia local de
+       ese par existe, coincide con su `.sha256` y es exactamente lo que hay en el
+       `.json`; si no, no toca ese par y para;
+     - publica el `.json.gz` con el publicador común (cerrojo y verificación por
+       metadatos) y comprueba que son exactamente las mismas velas y que el cerrojo
+       quedó suelto;
      - si ya hay `.json.gz`, lo certifica: lo baja, lo descomprime, lo valida y
-       comprueba que no tiene menos velas por día que el `.json`.
+       comprueba que no tiene menos velas por día que el `.json`;
+     - **verifica el `.gz` bajándolo**: el sha256 del cuerpo tiene que ser el de sus
+       metadatos (sin sha256 en los metadatos, no se verifica y para) y, descomprimido,
+       exactamente las velas del `.json`;
+     - comprueba con `info()` que el `.json` sigue siendo el que leyó, **lo borra** y
+       comprueba que ya no existe.
+     - Esta fase final (verificar el `.gz`, comprobar el `.json`, borrar y confirmar) se
+       hace **con el cerrojo del par tomado** por el arranque, y lo suelta al acabar. Si
+       el cerrojo está puesto por otro, o no se puede tomar: código 5, sin tocar nada más
+       del par. No es atómica: entre la última consulta y el DELETE solo la congelación
+       del paso 1 impide que otro escritor cambie el `.json`.
+   - Cualquier fallo en un par: **para ahí** y los pares siguientes no se tocan. Lo que se
+     puede afirmar del `.json` de ese par depende de cuándo falló (Astra MA-GZ-04):
+     - **antes de enviar el DELETE** (copia, publicación, verificación del `.gz` o el
+       `.json` cambiado): no se ha intentado borrar; el `.json` sigue;
+     - **DELETE confirmado**: respuesta correcta y una consulta posterior que dice que ya
+       no existe;
+     - **incierto**: el DELETE se envió y su respuesta se perdió o dio error, o la
+       consulta posterior falló. **No se sabe si el `.json` existe.** Un DELETE remoto
+       no se puede deshacer; la reconciliación es releer (`info()` o el listado), nunca
+       volver a escribir a ciegas. El `.gz` verificado y la copia local siguen ahí.
    - Se espera código 0.
    - Con código 1 o 5, o con cualquier incertidumbre, no se pasa al paso 7:
-     - los `.gz` correctos ya convertidos pueden quedarse;
+     - los `.gz` correctos ya convertidos pueden quedarse, y los `.json` ya borrados
+       están en la copia local;
      - se reconcilia según el paso 1 y se repite el arranque solo cuando consta que no
        queda ninguna subida en curso.
 5. **Verificación de los nueve pares, uno a uno.** Un `.gz` presente o un código 0 no
    bastan; por cada par:
-   - su línea del arranque: «✓ … verificado», con las velas y los bytes, o «✓ …
-     certificado»;
+   - su fila del **resumen por par** que imprime el arranque al final (Astra MA-GZ-05),
+     con sus cuatro campos: **par · estado · sha256 del `.gz` · sha256 de la copia
+     local**. El estado tiene que ser `migrado` (su `.json` borrado y confirmado) o `ya
+     convertido y certificado`; `fallo`, `fallo (cerrojo)`, `incierto` o `no tocado` no
+     valen. El sha256 de la copia es el de la tabla de copias de este documento, y se
+     apuntan aquí los nueve sha256 de los `.gz`;
    - `node scripts/arranque-gzip.js` en seco otra vez: los 9 pares con «ya hay .json.gz»
      y ningún cerrojo (código 0);
+   - el listado del bucket: ningún `{PAR}/M1/2026.json`, nueve `2026.json.gz`;
    - el gráfico del par en la web carga con la última fecha esperada y sin días que
      antes estaban y ahora no;
    - ningún cerrojo pendiente: `node scripts/liberar-cerrojo.js PAR_2026`, sin
@@ -206,5 +265,6 @@ ejecución concreta de restore se autoriza aparte.
 
 ## Después (no en esta tarea)
 
-- **Borrar los `.json` de 2026.** Es un paso aparte y revisado, con la copia local
-  verificada.
+- **Borrar los `.json` de 2026:** ya no es un paso aparte. Lo hace el arranque (paso 4),
+  par a par, con la copia local comprobada (CTO 10-oct). Quedan los `.json` de 2024 y
+  2025 (unos 706 MB), que el arranque no toca.
