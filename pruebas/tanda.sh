@@ -70,6 +70,23 @@ for f in pruebas/motor/*.mjs; do
   corre "motor/$(basename "$f" .mjs)" $NODO "$f"
 done
 
+# Los workflows, contra las reglas de GitHub (CTO 10-oct: 76f06b4 llego a main con
+# un yml que GitHub rechazo y la tanda en verde). Con actionlint instalado, un
+# error es rojo; sin el, aviso visible y no cuenta (brew install actionlint).
+echo "workflows (actionlint):"
+if command -v actionlint > /dev/null 2>&1; then
+  n=$((n + 1))
+  printf '\n######## actionlint\n' >> "$LOG"
+  if actionlint -no-color .github/workflows/*.yml >> "$LOG" 2>&1; then
+    echo "  ✓ actionlint ($(ls .github/workflows/*.yml | wc -l | tr -d ' ') workflows)"
+  else
+    echo "  ✗ actionlint   (ver $LOG)"
+    fallos="$fallos actionlint"
+  fi
+else
+  echo "  ⚠️  actionlint no esta instalado: los workflows NO se han validado (brew install actionlint)"
+fi
+
 echo "contraste historico (obligatorio):"
 n=$((n + 1))
 printf '\n######## historicas\n' >> "$LOG"
