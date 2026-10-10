@@ -102,26 +102,28 @@ comprobación humana del paso 1.
      antes estaban y ahora no;
    - ningún cerrojo pendiente: `node scripts/liberar-cerrojo.js PAR_2026`, sin
      `--confirmo`.
-6. **Contrato de la descarga limitada, en una lectura acotada.** Propuesto; no
-   ejecutado.
+6. **Contrato de la descarga limitada, en una lectura acotada.** Script aprobado y
+   escrito (CTO 10-oct, prueba MC04); no ejecutado contra Storage.
    - **Por qué hace falta:**
      - el arranque y el gráfico no pasan por `fetchConTope`;
      - que la etag del GET de Supabase llegue y coincida con la de `info()`, que llegue
        el tamaño y que existan los metadatos (`sha256`, `velas`) no está comprobado
        contra producción;
      - si algo de eso no cuadra, el primer diario saldría con 3 en todos los pares.
-   - **Cómo (propuesta):** un script de solo lectura,
-     `node scripts/comprueba-descarga.js EURUSD` (por escribir, con su prueba, cuando el
-     CTO lo apruebe). Lo ejecuta una vez desde el Mac una persona autorizada, para UN
-     par y su año, sin publicar nada y sin pedir nada al proveedor. Hace:
+   - **Cómo:** el script de solo lectura `node scripts/comprueba-descarga.js EURUSD`
+     (lógica en `lib/mercado/comprueba.mjs`). Lo ejecuta una vez desde el Mac una
+     persona autorizada, para UN par y su año, sin publicar nada y sin pedir nada al
+     proveedor. Hace:
      1. `infoVigente`; dice si trae etag y en qué forma (con comillas, con `W/`), el
         tamaño y qué claves de metadatos llegan (sin imprimir la URL);
      2. una descarga atada por el camino limitado (`fetchConTope` sobre
         `fetchConLimite`, como el diario), con el tope igual al tamaño. Dice si el GET
         trajo etag, si coincide con la de `info()`, los bytes recibidos y si el sha256
         del cuerpo es el de los metadatos;
-     3. código 0 si todo cuadra; 3 si falta o no coincide la etag o el tamaño; 1 si el
-        sha256 no cuadra.
+     3. código 0 si el diario funcionaría (con aviso si el GET no trae etag pero el
+        sha256 la sustituye, o si faltan los metadatos); 3 si el diario saldría con 3
+        (sin objeto, sin tamaño, etag distinta o ausente sin sha256); 1 si el sha256 no
+        cuadra; 4 si el par no es válido.
    - **Gasto:** un `.json.gz` (unos 4,1–4,5 MB), no los nueve años.
    - **Resultado:** se apunta en este documento. Si no da 0, no se pasa al paso 7: se
      revisa el contrato de cabeceras antes de activar el cron.
