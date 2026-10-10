@@ -10,6 +10,11 @@
  * Decision del CTO: la relectura bajo cerrojo comprueba siempre el sha256 y
  * reintenta con la misma politica, haya tope o no; el tope solo decide el saldo.
  *
+ * MDC2-01 (Astra cierres-2; CTO 10-oct): si hay lectura previa y la info()
+ * bajo el cerrojo FALLA (503, excepcion o plazo), no se publica nunca, haya
+ * tope o no: error visible, codigo 1, «no verificado», cero subidas (antes, el
+ * manual caia en leerVigente sin sha256 y publicaba el cuerpo contradictorio).
+ *
  * ORACULOS (Storage y proveedor falsos), en manual y en diario: ninguna subida
  * de AUDUSD, el cierre 1,6 no llega a lo publicado, «no verificado» y codigo 1;
  * la relectura con su reintento (3 descargas del año en total).
@@ -32,7 +37,9 @@ const filas = dia => JSON.stringify(new Date(dia + 'T00:00:00Z').getUTCDay() ===
 const reales = () => db.log.filter(l => l.op === 'download' && String(l.payload).startsWith('AUDUSD/M1/2026') && l.encontrado !== false)
 const delActualizador = () => db.log.filter(l => l.op === 'upload' && String(l.payload?.ruta).startsWith('AUDUSD/M1/2026') && l.payload?.contentType === 'application/gzip')
 
-for (const [nombre, env] of [['manual (sin cache ni tope)', () => ({})], ['diario (cache y tope)', () => ({ MERCADO_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), 'mc03-')), MERCADO_TOPE_BYTES: '45000000' })]]) {
+const MODOS = [['manual (sin cache ni tope)', () => ({})], ['diario (cache y tope)', () => ({ MERCADO_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), 'mc03-')), MERCADO_TOPE_BYTES: '45000000' })]]
+for (const [modo, env] of MODOS) for (const fallo of [null, '503', 'excepcion']) {
+  const nombre = fallo ? `${modo}, info() bajo el cerrojo con ${fallo === '503' ? 'HTTP 503' : 'excepcion (plazo)'}` : modo
   titulo(nombre)
   const v = historial('2026-02-01')
   const bueno = gzipSync(Buffer.from(JSON.stringify(v)))
@@ -45,8 +52,18 @@ for (const [nombre, env] of [['manual (sin cache ni tope)', () => ({})], ['diari
     if (!hecho) { hecho = true; db.storage['forex-data'][GZ] = gzipSync(Buffer.from(JSON.stringify(malo))) }
     return { status: 200, body: filas(dia) }
   }
+  // MDC2-01: solo la PRIMERA info() bajo el cerrojo falla (la de la verificacion, despues, funcionaria)
+  let fallada = false
+  const conCerrojo = () => db.log.some(l => l.op === 'upload' && String(l.payload?.ruta).startsWith('_cerrojos/'))
+  db.falla = c => (fallo === '503' && hecho && !fallada && c.op === 'info' && conCerrojo() ? ((fallada = true), { statusCode: '503', message: 'Service Unavailable' }) : null)
+  db.pausa = async c => { if (fallo === 'excepcion' && hecho && !fallada && c.op === 'info' && conCerrojo()) { fallada = true; throw Object.assign(new Error('sin respuesta en 20 s (tiempo agotado)'), { name: 'TimeoutError' }) } }
   const r = await correScript('scripts/actualizar-diario.js', { ahora: '2026-02-03T06:00:00Z', argv: ['--subir', '--pares', 'AUDUSD'], env: { ...ENV, ...env() } })
+  db.falla = null; db.pausa = null
   const linea = r.salida.find(l => /AUDUSD\/M1/.test(l)) ?? ''
+  if (fallo) {
+    oraculo('MDC2-01', `${nombre}: ninguna subida, codigo 1 y «no verificado» en el log`, hecho && fallada && delActualizador().length === 0 && r.codigo === 1 && /no verificado/.test(linea), `fallada ${fallada} · codigo ${r.codigo} · ${delActualizador().length} subidas · ${linea}`)
+    continue
+  }
   oraculo('MDC-02', `${nombre}: no se publica el cuerpo contradictorio (ninguna subida de AUDUSD) y sale con 1 «no verificado»`, hecho && delActualizador().length === 0 && r.codigo === 1 && /no verificado/.test(linea), `codigo ${r.codigo} · ${delActualizador().length} subidas · ${linea}`)
   oraculo('MDC-02', `${nombre}: la relectura con su reintento: 3 descargas del año (inicial + 2 bajo el cerrojo)`, reales().length === 3, `${reales().length} descargas`)
 }
