@@ -149,7 +149,7 @@ Dentro de una transacción, en este orden:
    - mismo digest → devolver ese recibo tal cual, **sin ejecutar**;
    - digest distinto → `409 clave_reutilizada`.
 4. **Avance caducado** (V3-07): `avanzar`/`checkpoint` sin recibo y con `version_esperada` distinta de la vigente → `409 comando_caducado` (§ 6). Para los demás tipos, la misma situación es un `409 conflicto` normal.
-5. Verificaciones, cada una con su respuesta y **sin efectos**: `terminal` (`410` / `403`); acceso de producto vigente (`profiles.simulador_activo`, dentro de la RPC, § 12.4); `legado` (`409 solo_lectura`); `epoca` (`426 actualizar_cliente`); testigo y caducidad con `now()` (`409 sin_arrendamiento`); `version = version_esperada` (`409 conflicto`).
+5. Verificaciones, cada una con su respuesta y **sin efectos**: `terminal` (`410` / `403`); acceso de producto vigente (`profiles.simulador_activo`, dentro de la RPC, § 12.4); `legado` (`409 solo_lectura`); `epoca` (`426 actualizar_cliente`); testigo y caducidad con la **hora de decisión** `t_decision` de § 4.2 (`clock_timestamp()` capturado una vez, después de todos los bloqueos; `409 sin_arrendamiento`); `version = version_esperada` (`409 conflicto`).
 6. Escribir: recibo, eventos con `seq` consecutivo (lo asigna la RPC bajo el bloqueo), trades de los `cierre`, `estado`, proyecciones (`balance`, `last_timestamp`, `challenge_*`), renovar `hasta` y, según § 4.3.1, `version`.
 
 #### 4.3.1 Cuándo sube la versión (V3-01, CTO 8-oct)
@@ -375,7 +375,7 @@ Con 5 alumnos y su cupo máximo (12 sesiones Extra): 60 sesiones intensas ≈ **
 Según la página de precios de Supabase (consultada el 7-oct-2026, <https://supabase.com/pricing>): el plan **gratuito** incluye «500 MB database size per project»; **Pro**, 8 GB de disco por proyecto (después, 0,125 USD/GB).
 
 - **La base ocupa hoy unos 170 MB** (captura de Ramón, D-07): quedan **≈ 330 MB** para todo el proyecto (hub y journal incluidos, que también crecen).
-- **Estado estable:** ≈ 78 MB en el peor caso del cupo actual: cabe.
+- **Estado estable:** el uso normal estimado arriba (60 sesiones intensas, ≈ 90 MB) cabe. Es un escenario, no un peor caso: no hay cota de ocupación (P7-06).
 - **Pico de escritura (V4-03, con el mayor snapshot medido, P7-03):** ≈ 118,68 MB/h con los 5 alumnos. Lo limita la tasa de avances por alumno (no D-18 sola, que no impedía alternar sesiones), pero el tamaño por avance es un ejemplo medido, no una cota. Con una hora de retraso de autovacuum, ≈ 119 MB de espacio muerto: junto al uso normal de 60 sesiones intensas (≈ 90 MB), ≈ 209 MB de los ≈ 330 MB de margen. **Es una suma de escenario, no una garantía de ocupación**: autovacuum, WAL y compresión TOAST no están medidos.
 - **Límites que lo acotan:** un avance cada ≥ 5 s **por alumno** (§ 4.4, en el servidor); una petición en vuelo por sesión; un escritor por sesión (§ 4.2); una sola sesión v1 en reproducción a la vez por alumno (D-18).
 - **Pro sigue siendo condición para encender la v1** (§ 12.7, CTO 8-oct).
@@ -401,7 +401,7 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 | D-12 | Forma multipar del estado | **A la espera** de la v2.3 de la especificación (§ 13) |
 | V3-04 | Escritores económicos antiguos en el corte | **Rechazan legado y v1 o delegan en las RPC**; pruebas llamando a las URL (§ 7.0) |
 | V3-05 | Grafo de claves, bloqueos e interbloqueo | **FK sesión → perfil en cascada; padre y después hija; interbloqueo = reintento idempotente; I1–I3 como pruebas** (§ 6.1) |
-| V3-06 | Testigo, actor y creación | **Testigo no legible desde la base (solo su hash; vive en la pestaña, D-16), nuevo en cada toma, caducidad con `now()`; `actor_id` comparado con el dueño; id de sesión del cliente; `name` con acceso vigente** (§ 4, § 8) |
+| V3-06 | Testigo, actor y creación | **Testigo no legible desde la base (solo su hash; vive en la pestaña, D-16), nuevo en cada toma, caducidad con `t_decision` (§ 4.2, V4-01); `actor_id` comparado con el dueño; id de sesión del cliente; `name` con acceso vigente** (§ 4, § 8) |
 
 **Nuevas (CTO, 8-oct):**
 
