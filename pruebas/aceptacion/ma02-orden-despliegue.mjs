@@ -36,6 +36,10 @@ titulo('Astra, cierres de mercado-diario (CTO 10-oct)')
 oraculo('MDC', 'congelar: las ejecuciones ya encoladas tambien cuentan (se cancelan o se esperan; no pueden arrancar en la ventana)', !!congelar && /encolad/i.test(congelar.texto), '')
 oraculo('MDC', 'paso nuevo entre la verificacion y el cron: una lectura acotada, sin publicar y sin bajar los nueve años, comprueba etag, tamaño y metadatos reales por el camino limitado (propuesto, no ejecutado)', !!contrato && !!verif && !!cron && contrato.n > verif.n && cron.n > contrato.n && /sin publicar/i.test(contrato.texto) && /etag/i.test(contrato.texto) && /tama[nñ]o/i.test(contrato.texto) && /metadatos/i.test(contrato.texto) && /fetchConTope|camino limitado/i.test(contrato.texto), pasos.map(p => `${p.n}. ${p.titulo}`).join(' | '))
 
+titulo('Astra cierres-2 (CTO 10-oct)')
+oraculo('MDC2', 'paso 6: exige codigo 0 Y la linea «identidad verificada por etag» o «por sha256»; si no, no se activa el cron', !!contrato && /identidad\s+verificada\s+por\s+etag/.test(contrato.texto) && /por\s+sha256/.test(contrato.texto) && /no\s+se\s+activa\s+el\s+cron/i.test(contrato.texto) && /c[oó]digo\s+0/.test(contrato.texto), '')
+oraculo('MDC2', 'nota: restore reemplaza el objeto viejo sin verificar su sha256; aceptado solo como restauracion manual', /restore/i.test(t) && /sin\s+verificar\s+su\s+sha256/i.test(t) && /restauraci[oó]n\s+manual/i.test(t), (t.match(/.*restore.*/i) ?? [''])[0])
+
 titulo('rollback')
 oraculo('MD-02', 'rollback: nunca a lectores anteriores al gzip', /rollback/i.test(t) && /nunca.{0,80}(lectores|lector).{0,60}anterior(es)? al gzip/i.test(t), (t.match(/.*rollback.*/i) ?? [''])[0])
 fin()

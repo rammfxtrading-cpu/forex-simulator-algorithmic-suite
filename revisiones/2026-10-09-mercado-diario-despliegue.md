@@ -120,13 +120,20 @@ comprobación humana del paso 1.
         `fetchConLimite`, como el diario), con el tope igual al tamaño. Dice si el GET
         trajo etag, si coincide con la de `info()`, los bytes recibidos y si el sha256
         del cuerpo es el de los metadatos;
-     3. código 0 si el diario funcionaría (con aviso si el GET no trae etag pero el
-        sha256 la sustituye, o si faltan los metadatos); 3 si el diario saldría con 3
-        (sin objeto, sin tamaño, etag distinta o ausente sin sha256); 1 si el sha256 no
-        cuadra; 4 si el par no es válido.
+     3. la identidad: solo se acepta comprobada, con la etag recibida igual a la de
+        `info()` o con el sha256 del cuerpo igual al de los metadatos (Astra MDC2-02). Lo
+        dice en una línea, «identidad verificada por etag», «por sha256» o «por etag y
+        sha256»;
+     4. las velas de los metadatos frente a las del cuerpo; si no coinciden, código 3;
+     5. código 0 con identidad comprobada; 3 sin identidad comprobada, etag distinta,
+        sin objeto, sin tamaño o velas distintas; 1 si el sha256 no cuadra; 4 si el par
+        no es válido.
    - **Gasto:** un `.json.gz` (unos 4,1–4,5 MB), no los nueve años.
-   - **Resultado:** se apunta en este documento. Si no da 0, no se pasa al paso 7: se
-     revisa el contrato de cabeceras antes de activar el cron.
+   - **Resultado:** se apunta en este documento, con el informe entero, como evidencia
+     de UN objeto en ese momento; no es una verificación del bucket. **Para pasar al
+     paso 7 hacen falta las dos cosas:** código 0 y la línea «identidad verificada por
+     etag» o «por sha256» (o «por etag y sha256»). Si falta cualquiera de las dos, no se
+     activa el cron: se revisa el contrato de cabeceras y metadatos.
    - **Alternativas peores:**
      - el actualizador en seco también pasa por el camino limitado, pero puede pedir
        días al proveedor;
@@ -186,6 +193,16 @@ Compresión con zlib nivel 6, el mismo nivel que `gzipSync` por defecto:
   - Solo cuentan los cuerpos anuales de Storage. Quedan fuera las consultas de
     información, las fichas de cerrojo, las subidas, las descargas del proveedor y el
     tráfico de la caché de Actions.
+
+## Nota: `restore-2026.js` y el sha256 del objeto viejo
+
+`restore-2026.js` publica con el publicador común: el cuerpo nuevo lleva su sha256 y sus
+velas en los metadatos y se verifica después de subir. **Pero reemplaza el objeto viejo
+sin verificar su sha256**: no hace lectura previa, y bajo el cerrojo lee lo vigente sin
+comprobar la identidad (Astra cierres-2, D). Se acepta **solo como restauración manual**:
+reemplaza a propósito el contenido con una fuente independiente, la del proveedor. Queda
+fuera de la garantía de lectura verificada del diario, que nunca llama a restore. Una
+ejecución concreta de restore se autoriza aparte.
 
 ## Después (no en esta tarea)
 
