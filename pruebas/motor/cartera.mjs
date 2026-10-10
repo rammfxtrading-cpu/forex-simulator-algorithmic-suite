@@ -211,7 +211,7 @@ function retoEsc(esc, motor) {
   const base = multi ? CA.crea({ pares: ['EURUSD'], costes: esc.costes ?? aislado(), capital: '100000' }) : M.crea({ par: 'EURUSD', costes: esc.costes ?? aislado(), capital: '100000' })
   let r = RT.creaReto({ motor: base, inicio: U(esc.inicio) })
   const conVelas = vs => (multi ? { EURUSD: vs } : vs)
-  const ev = [], res = []
+  const ev = [], res = [], porComando = []
   for (const p of esc.guion) {
     let x
     if (p[0] === 'avanza') {
@@ -228,13 +228,30 @@ function retoEsc(esc, motor) {
     else if (p[0] === 'tarde') x = RT.avanzaReto(r, U(p[3]), conVelas(velasDe([[p[1], p[2]]])))
     else x = RT.aplicaReto(r, p[0] === 'abrir' ? { tipo: 'abrir', ...(multi ? { par: 'EURUSD' } : {}), lado: p[1], orden: 'mercado', lotes: p[2], cotizadoEn: r.motor.reloj.cursor, ...(p[3] || {}) } : { tipo: 'cerrar', id: p[1] })
     r = x.reto; ev.push(...x.eventos); res.push(enTexto(x.resultado ?? x.detencion))
+    // P7C-02 (Astra): tras CADA comando, la proyeccion completa del reto y de su motor, antes y despues de
+    // serializar (y se sigue con el deserializado): el estado intermedio tambien se confirma en base
+    const antes = proyReto(r)
+    r = RT.deserializaReto(RT.serializaReto(r))
+    porComando.push(`${p[0]} ${p[1] ?? ''}: ${enTexto(proyEv(x.eventos))} ${enTexto(x.resultado ?? x.detencion)} ${antes}${proyReto(r) === antes ? '' : ' ≠ serializado ' + proyReto(r)}`)
   }
-  return { proy: enTexto({ estado: r.estado, dias: r.dias_con_apertura, reset: r.ultimo_reset, horizonte: r.horizonte, smn: r.saldo_medianoche_µ, motor: proyEst(r.motor) }), ev: enTexto(proyEv(ev)), res: res.join(' ') }
+  return { proy: proyReto(r), ev: enTexto(proyEv(ev)), res: res.join(' '), porComando }
+}
+// el reto entero (horizonte, resets, dias, saldo de medianoche, breach, superada, objetivo...) salvo el motor, que va
+// por su proyeccion economica, con los limites que el reto le fija y sus marcas (claves en orden: el estado
+// deserializado las ordena). breach y superada, con la misma normalizacion que proyEv: el precio (precio o
+// precios de un par) y el momento como (minuto, fase)
+const ordenado = x => (Array.isArray(x) ? x.map(ordenado) : x && typeof x === 'object' ? Object.fromEntries(Object.keys(x).sort().map(k => [k, ordenado(x[k])])) : x)
+const momentoDe = en => [en?.vela ?? en?.t ?? null, fase(en)]
+function proyReto(r) {
+  const { motor, breach, superada, ...resto } = r
+  return enTexto(ordenado({ ...resto, breach: breach && [breach.regla, breach.limite_µ, breach.equity_µ, precioDe(breach), momentoDe(breach.en)], superada: superada && [superada.dias, superada.saldo_µ, momentoDe(superada.en)], motor: proyEst(motor), limites: motor.limites, huecos: motor.huecos_aceptados ?? null }))
 }
 for (const esc of RESC) {
   const uno = corre(() => retoEsc(esc, 'motor')), multi = corre(() => retoEsc(esc, 'cartera'))
-  const igual = !!uno && !!multi && !uno.error && !multi.error && uno.proy === multi.proy && uno.ev === multi.ev && uno.res === multi.res
-  oraculo('A37', `reto ${esc.id}: mismo reto, eventos y resultados con la cartera de un par que con el motor de un par`, igual, igual ? '' : enTexto({ uno: uno?.error ?? [uno?.proy, uno?.res], multi: multi?.error ?? [multi?.proy, multi?.res] }).slice(0, 500))
+  const k = !uno?.porComando || !multi?.porComando ? 0 : uno.porComando.findIndex((x, i) => x !== multi.porComando[i])
+  const ser = [...(uno?.porComando ?? []), ...(multi?.porComando ?? [])].find(x => x.includes('≠ serializado'))
+  const igual = !!uno && !!multi && !uno.error && !multi.error && uno.proy === multi.proy && uno.ev === multi.ev && uno.res === multi.res && uno.porComando.length === multi.porComando.length && k === -1 && !ser
+  oraculo('A37', `reto ${esc.id}: mismo reto (y motor) con la cartera de un par que con el motor de un par, comando a comando y tras serializar`, igual, igual ? '' : enTexto({ k, ser, uno: uno?.error ?? uno?.porComando?.[k], multi: multi?.error ?? multi?.porComando?.[k] }).slice(0, 900))
 }
 
 titulo('A38 · objetivo y pendiente en la misma fraccion; breach que prevalece (V3-02)')
