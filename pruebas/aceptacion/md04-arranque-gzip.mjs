@@ -124,13 +124,14 @@ escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'GBPUSD/
 db.falla = ctx => (ctx.op === 'download' && ctx.payload === 'EURUSD/M1/2026.json.gz' && db.log.some(l => l.op === 'upload' && l.payload?.ruta === 'EURUSD/M1/2026.json.gz') ? { message: 'Service Unavailable', statusCode: '503' } : null)
 const v = await corre(['--subir', '--copia', CP, '--pares', 'EURUSD,GBPUSD'])
 db.falla = null
-oraculo('MD04', 'falla la verificacion bajando el .gz (503): el .json SIGUE, PARA antes de GBPUSD y codigo 1', v.codigo === 1 && intacto('EURUSD') && intacto('GBPUSD') && datos('remove').length === 0 && datos('upload').map(l => l.payload.ruta).join() === 'EURUSD/M1/2026.json.gz' && /EURUSD.*verificacion.*NO se borra/.test(v.salida.join('\n')), `codigo ${v.codigo} · ${lineas(v, /EURUSD|GBPUSD/)}`)
+oraculo('MD04', 'falla la verificacion bajando el .gz (503): el .json SIGUE, PARA antes de GBPUSD y codigo 1', v.codigo === 1 && intacto('EURUSD') && intacto('GBPUSD') && datos('remove').length === 0 && datos('upload').map(l => l.payload.ruta).join() === 'EURUSD/M1/2026.json.gz' && /EURUSD.*verificacion.*no se ha intentado borrar/.test(v.salida.join('\n')), `codigo ${v.codigo} · ${lineas(v, /EURUSD|GBPUSD/)}`)
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD } } })
 // solo el borrado del .json (el cerrojo tambien se suelta con remove: ese no falla)
 db.falla = ctx => (ctx.op === 'remove' && JSON.stringify(ctx.payload) === '["EURUSD/M1/2026.json"]' ? { message: 'Internal Server Error', statusCode: '500' } : null)
 const w = await corre(['--subir', '--copia', CP, '--pares', 'EURUSD'])
 db.falla = null
-oraculo('MD04', 'el borrado del .json falla: el .json sigue, lo dice, codigo 1 y sin cerrojo puesto', w.codigo === 1 && intacto('EURUSD') && /no se pudo borrar/.test(w.salida.join('\n')) && !Object.keys(db.storage['forex-data']).some(x => x.startsWith('_cerrojos/')), `codigo ${w.codigo} · ${lineas(w, /EURUSD/)}`)
+// MA-GZ-04: un DELETE que responde error puede haberse aplicado: INCIERTO, sin afirmar que el .json sigue
+oraculo('MD04', 'el DELETE del .json responde error: INCIERTO (sin afirmar que sigue), codigo 1 y sin cerrojo puesto', w.codigo === 1 && /INCIERTO/.test(w.salida.join('\n')) && !/NO se borra|no se ha borrado|sigue existiendo/.test(w.salida.join('\n')) && !Object.keys(db.storage['forex-data']).some(x => x.startsWith('_cerrojos/')), `codigo ${w.codigo} · ${lineas(w, /EURUSD/)}`)
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD } } })
 const z = await corre(['--copia', copia({ EURUSD: J.EURUSD }), '--pares', 'EURUSD'])
 oraculo('MD04', 'en seco con --copia: dice que borraria el .json y el estado de la copia, sin tocar nada', z.codigo === 0 && /EURUSD \[SECO\] migraria.*borraria el \.json · copia: ok/.test(z.salida.join('\n')) && datos('upload').length === 0 && datos('remove').length === 0 && reales().length === 0, `codigo ${z.codigo} · ${lineas(z, /EURUSD/)}`)
@@ -153,5 +154,25 @@ db.falla = falla503('GBPUSD')
 const m3 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD,USDJPY'])
 db.falla = null
 oraculo('MA-GZ-02', 'fallo en el par INTERMEDIO (GBPUSD): EURUSD migrado antes, PARA en GBPUSD y USDJPY no se toca', m3.codigo === 1 && !Object.hasOwn(db.storage['forex-data'], 'EURUSD/M1/2026.json') && intacto('GBPUSD') && tocados('USDJPY', 0).length === 0 && db.storage['forex-data']['USDJPY/M1/2026.json'] === J3.USDJPY, `codigo ${m3.codigo} · USDJPY: ${tocados('USDJPY', 0).join(',') || 'nada'}`)
+
+titulo('7 · MA-GZ-04 (Astra): tres estados del DELETE; en el incierto, ni presencia ni ausencia')
+const incierto = (r, par) => r.codigo === 1 && new RegExp(`${par}.*INCIERTO`).test(r.salida.join('\n')) && /reconciliar/.test(r.salida.join('\n')) && !/NO se borra|no se ha borrado|sigue existiendo|ya no existe/.test(r.salida.join('\n'))
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'GBPUSD/M1/2026.json': J.GBPUSD } } })
+// la respuesta se pierde: el DELETE SI se aplica, pero vuelve un 500
+db.falla = ctx => { if (ctx.op === 'remove' && JSON.stringify(ctx.payload) === '["EURUSD/M1/2026.json"]') { delete db.storage['forex-data']['EURUSD/M1/2026.json']; return { message: 'Internal Server Error', statusCode: '500' } } return null }
+const p1 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD'])
+db.falla = null
+oraculo('MA-GZ-04', 'respuesta perdida tras un DELETE aplicado: INCIERTO, PARA, no dice que el .json siga (ya no esta) y GBPUSD no se toca', incierto(p1, 'EURUSD') && !Object.hasOwn(db.storage['forex-data'], 'EURUSD/M1/2026.json') && tocados('GBPUSD', 0).length === 0, `codigo ${p1.codigo} · ${lineas(p1, /EURUSD|ATENCION/)}`)
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD, 'GBPUSD/M1/2026.json': J.GBPUSD } } })
+// el DELETE va bien, pero la comprobacion posterior (info del .json) da 503
+db.falla = ctx => (ctx.op === 'info' && ctx.payload === 'EURUSD/M1/2026.json' && db.log.some(l => l.op === 'remove' && JSON.stringify(l.payload) === '["EURUSD/M1/2026.json"]') ? { message: 'Service Unavailable', statusCode: '503' } : null)
+const p2 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD,GBPUSD'])
+db.falla = null
+oraculo('MA-GZ-04', '503 en la comprobacion tras un DELETE correcto: INCIERTO, PARA, sin afirmar presencia ni ausencia, y GBPUSD no se toca', incierto(p2, 'EURUSD') && tocados('GBPUSD', 0).length === 0, `codigo ${p2.codigo} · ${lineas(p2, /EURUSD|ATENCION/)}`)
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J.EURUSD } } })
+db.falla = ctx => (ctx.op === 'download' && ctx.payload === 'EURUSD/M1/2026.json.gz' && db.log.some(l => l.op === 'upload' && l.payload?.ruta === 'EURUSD/M1/2026.json.gz') ? { message: 'Service Unavailable', statusCode: '503' } : null)
+const p3 = await corre(['--subir', '--copia', CP3, '--pares', 'EURUSD'])
+db.falla = null
+oraculo('MA-GZ-04', 'rechazado ANTES del DELETE (verificacion fallida): «no se ha intentado borrar», el .json sigue, sin «INCIERTO»', p3.codigo === 1 && /no se ha intentado borrar/.test(p3.salida.join('\n')) && !/INCIERTO/.test(p3.salida.join('\n')) && intacto('EURUSD') && datos('remove').length === 0, `codigo ${p3.codigo} · ${lineas(p3, /EURUSD/)}`)
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(x => x.terminoPor !== 'timeout'))
 fin()

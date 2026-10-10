@@ -122,25 +122,43 @@ async function main() {
     const d = r.data ?? {}
     return { estado: 'ok', firma: d.version || d.etag ? `${d.version ?? ''}|${d.etag ?? ''}|${d.size ?? ''}` : null, size: d.size ?? null, metadata: d.metadata ?? null }
   }
-  // pasos 3-5: verificar el .gz bajandolo, y borrar el .json si sigue siendo el leido. → null si todo bien, o el motivo
+  // pasos 3-5: verificar el .gz bajandolo, y borrar el .json si sigue siendo el leido.
+  // MA-GZ-04 (Astra): TRES estados, porque un DELETE remoto no se puede deshacer ni su respuesta perdida se puede leer:
+  //   · rechazado  → no se llego a enviar el DELETE: el .json sigue (lo que se leyo);
+  //   · confirmado → DELETE con respuesta correcta y una info() posterior que dice que ya no existe;
+  //   · incierto   → DELETE enviado y su respuesta perdida o con error, o la comprobacion posterior fallida o
+  //                  contradictoria: NO se sabe si el .json existe. Se para; la reconciliacion es releer.
+  // → { estado, motivo }
   const verificaYBorra = async (par, gz, json, velas, firmaJson) => {
+    const rechazado = motivo => ({ estado: 'rechazado', motivo })
     const ig = await infoRuta(gz)
-    if (ig.estado !== 'ok') return `no se pudo consultar ${gz} para verificarlo (${ig.motivo ?? ig.estado})`
-    if (!ig.metadata?.sha256) return `${gz} no trae sha256 en sus metadatos: no se puede verificar`
+    if (ig.estado !== 'ok') return rechazado(`no se pudo consultar ${gz} para verificarlo (${ig.motivo ?? ig.estado})`)
+    if (!ig.metadata?.sha256) return rechazado(`${gz} no trae sha256 en sus metadatos: no se puede verificar`)
     const g = await F.leerRuta(sb, gz, LIM, { sha256: ig.metadata.sha256 })
     T.n++; T.bytes += g.bytes || 0
-    if (g.estado !== 'ok') return `la verificacion de ${gz} bajandolo fallo: ${g.motivo ?? g.estado}`
-    if (F.huella(g.velas) !== F.huella(velas)) return `${gz} bajado no son las velas del .json (${g.velas.length} frente a ${velas.length})`
-    if (!firmaJson) return `${json} sin firma (version/etag) en info(): no se puede comprobar que sigue siendo el leido`
+    if (g.estado !== 'ok') return rechazado(`la verificacion de ${gz} bajandolo fallo: ${g.motivo ?? g.estado}`)
+    if (F.huella(g.velas) !== F.huella(velas)) return rechazado(`${gz} bajado no son las velas del .json (${g.velas.length} frente a ${velas.length})`)
+    if (!firmaJson) return rechazado(`${json} sin firma (version/etag) en info(): no se puede comprobar que sigue siendo el leido`)
     const ij = await infoRuta(json)
-    if (ij.estado !== 'ok') return `no se pudo consultar ${json} antes de borrarlo (${ij.motivo ?? ij.estado})`
-    if (ij.firma !== firmaJson) return `${json} cambio desde que se leyo: no se borra`
+    if (ij.estado !== 'ok') return rechazado(`no se pudo consultar ${json} antes de borrarlo (${ij.motivo ?? ij.estado})`)
+    if (ij.firma !== firmaJson) return rechazado(`${json} cambio desde que se leyo`)
+    // desde aqui el DELETE puede haberse aplicado: cualquier duda es INCIERTO
+    const incierto = motivo => ({ estado: 'incierto', motivo: `${motivo}: el resultado del DELETE de ${json} es INCIERTO (no se sabe si existe). Reconciliar releyendo: info() o el listado del bucket` })
     let rm
-    try { rm = await sb.storage.from(F.BUCKET).remove([json]) } catch (e) { return `no se pudo borrar ${json} (${e?.name ?? 'Error'})` }
-    if (rm.error) return `no se pudo borrar ${json} (${rm.error.message ?? rm.error.statusCode})`
+    try { rm = await sb.storage.from(F.BUCKET).remove([json]) } catch (e) { return incierto(`el DELETE no devolvio respuesta (${e?.name ?? 'Error'})`) }
+    if (rm.error) return incierto(`el DELETE respondio error (${rm.error.message ?? rm.error.statusCode})`)
     const tras = await infoRuta(json)
-    if (tras.estado !== 'no-existe') return `${json} sigue existiendo despues de borrarlo (${tras.estado}${tras.motivo ? ': ' + tras.motivo : ''})`
-    return null
+    if (tras.estado === 'no-existe') return { estado: 'confirmado', motivo: null }
+    return incierto(tras.estado === 'ok' ? 'tras un DELETE correcto, info() todavia da el objeto' : `la comprobacion posterior fallo (${tras.motivo ?? tras.estado})`)
+  }
+  const inciertos = []
+  // el resultado de verificaYBorra, dicho tal cual; → true si hay que parar
+  const informaBorrado = (par, json, b) => {
+    if (b.estado === 'confirmado') return false
+    if (b.estado === 'incierto') { console.log(`  ${par} ⚠️ ${b.motivo}. El arranque PARA`); inciertos.push(par) }
+    else console.log(`  ${par} ✗ ${b.motivo}. ${json} no se ha intentado borrar. El arranque PARA`)
+    mal.push(par)
+    return true
   }
   console.log(`\n=== ARRANQUE .json → .json.gz ${ANIO} ${SUBIR ? '⚠️ REAL' : '🔍 SECO'} — ${new Date().toISOString()} — ${P.lista.join(', ')}${COPIA ? ` — copia ${COPIA}` : ''} ===\n`)
   for (const par of P.lista) {
@@ -174,9 +192,8 @@ async function main() {
       // el .json de un par certificado tambien se borra, con su copia y con el .gz ya verificado
       const cp = miraCopia(COPIA, par, F.huella(j.velas))
       if (!cp.ok) { console.log(`  ${par} ✗ ${cp.motivo}: no se borra ${json}. El arranque PARA`); mal.push(par); break }
-      const fallo = await verificaYBorra(par, gz, json, j.velas, ij.estado === 'ok' ? ij.firma : null)
-      if (fallo) { console.log(`  ${par} ✗ ${fallo}. ${json} NO se borra. El arranque PARA`); mal.push(par); break }
-      console.log(`  ${par} ✓ ${json} borrado (copia local ${cp.fichero}, sha256 ${cp.sha})`)
+      if (informaBorrado(par, json, await verificaYBorra(par, gz, json, j.velas, ij.estado === 'ok' ? ij.firma : null))) break
+      console.log(`  ${par} ✓ ${json} borrado y confirmado (copia local ${cp.fichero}, sha256 ${cp.sha})`)
       continue
     }
     if (!SUBIR) { const cp = COPIA ? miraCopia(COPIA, par) : null; console.log(`  ${par} [SECO] migraria ${json} (${i.size} bytes) a ${gz} y despues borraria el .json${cp ? ` · copia: ${cp.ok ? 'ok' : cp.motivo}` : ''}`); continue }
@@ -189,19 +206,19 @@ async function main() {
     const r = await F.publicarAnio(sb, { pair: par, year: ANIO, componer: g => g, dueno: 'arranque-gzip', previo: x, limites: LIM })
     T.n += r.descargado?.n || 0; T.bytes += r.descargado?.bytes || 0
     const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
-    if (r.estado !== 'publicado') { console.log(`  ${par} ✗ ${r.estado}: ${(r.problemas || []).join(' · ')}${avisos}. ${json} NO se borra. El arranque PARA`); mal.push(par); break }
+    if (r.estado !== 'publicado') { console.log(`  ${par} ✗ ${r.estado}: ${(r.problemas || []).join(' · ')}${avisos}. ${json} no se ha intentado borrar. El arranque PARA`); mal.push(par); break }
     // lo publicado tiene que ser EXACTAMENTE lo del .json: si el .json cambio durante el arranque, no se borra nada
-    if (F.huella(r.final) !== F.huella(x.velas)) { console.log(`  ${par} ✗ lo publicado no es lo leido del .json (${r.velas} velas frente a ${x.velas.length}): el .json cambio durante el arranque. ${json} NO se borra. El arranque PARA${avisos}`); mal.push(par); break }
+    if (F.huella(r.final) !== F.huella(x.velas)) { console.log(`  ${par} ✗ lo publicado no es lo leido del .json (${r.velas} velas frente a ${x.velas.length}): el .json cambio durante el arranque. ${json} no se ha intentado borrar. El arranque PARA${avisos}`); mal.push(par); break }
     console.log(`  ${par} ✓ ${gz}: ${r.velas} velas, ${r.bytes} bytes (el .json, ${x.bytes} bytes), publicado${avisos}`)
     if (await miraCerrojo(par, 'despues de publicar')) break
-    const fallo = await verificaYBorra(par, gz, json, x.velas, x.firma)
-    if (fallo) { console.log(`  ${par} ✗ ${fallo}. ${json} NO se borra. El arranque PARA`); mal.push(par); break }
-    console.log(`  ${par} ✓ ${gz} verificado bajandolo (sha256 y velas) · ${json} borrado (copia local ${cp.fichero}, sha256 ${cp.sha})`)
+    if (informaBorrado(par, json, await verificaYBorra(par, gz, json, x.velas, x.firma))) break
+    console.log(`  ${par} ✓ ${gz} verificado bajandolo (sha256 y velas) · ${json} borrado y confirmado (copia local ${cp.fichero}, sha256 ${cp.sha})`)
   }
   console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${T.n} descarga(s), ${T.bytes} bytes`)
   console.log(`  Tiempos de Storage (ms): ${F.resumenTiempos(LIM.tiempos)}`)
   if (cerrojo) { console.log(`\n=== ⚠️ ATENCION: arranque parado por un cerrojo: ${cerrojo}${mal.length ? `; ademas, fallo en ${mal.join(', ')}` : ''} (codigo 5) ===`); process.exitCode = 5 }
-  else if (mal.length) { console.log(`\n=== ⚠️ ATENCION: arranque PARADO en ${mal.join(', ')}: su .json no se ha borrado; los pares siguientes no se han tocado (codigo 1) ===`); process.exitCode = 1 }
+  else if (inciertos.length) { console.log(`\n=== ⚠️ ATENCION: arranque PARADO en ${mal.join(', ')}: el resultado del DELETE de su .json es INCIERTO; reconciliar releyendo antes de nada; los pares siguientes no se han tocado (codigo 1) ===`); process.exitCode = 1 }
+  else if (mal.length) { console.log(`\n=== ⚠️ ATENCION: arranque PARADO en ${mal.join(', ')}: su .json no se ha intentado borrar; los pares siguientes no se han tocado (codigo 1) ===`); process.exitCode = 1 }
   else console.log(`\n=== ✓ TODO OK — ${SUBIR ? 'migrados (o certificados), verificados y sus .json borrados' : 'seco: nada tocado'} ===`)
 }
 

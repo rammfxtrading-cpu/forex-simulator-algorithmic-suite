@@ -106,8 +106,16 @@ cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprob
        exactamente las velas del `.json`;
      - comprueba con `info()` que el `.json` sigue siendo el que leyó, **lo borra** y
        comprueba que ya no existe.
-   - Cualquier fallo en un par: **para ahí, sin borrar el `.json` de ese par**, y los
-     pares siguientes no se tocan.
+   - Cualquier fallo en un par: **para ahí** y los pares siguientes no se tocan. Lo que se
+     puede afirmar del `.json` de ese par depende de cuándo falló (Astra MA-GZ-04):
+     - **antes de enviar el DELETE** (copia, publicación, verificación del `.gz` o el
+       `.json` cambiado): no se ha intentado borrar; el `.json` sigue;
+     - **DELETE confirmado**: respuesta correcta y una consulta posterior que dice que ya
+       no existe;
+     - **incierto**: el DELETE se envió y su respuesta se perdió o dio error, o la
+       consulta posterior falló. **No se sabe si el `.json` existe.** Un DELETE remoto
+       no se puede deshacer; la reconciliación es releer (`info()` o el listado), nunca
+       volver a escribir a ciegas. El `.gz` verificado y la copia local siguen ahí.
    - Se espera código 0.
    - Con código 1 o 5, o con cualquier incertidumbre, no se pasa al paso 7:
      - los `.gz` correctos ya convertidos pueden quedarse, y los `.json` ya borrados
