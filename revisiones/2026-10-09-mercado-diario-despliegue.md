@@ -1,8 +1,9 @@
 # Mercado diario: orden de despliegue (9-oct-2026; revisado tras Astra MD-01..MD-05 y sus cierres del 10-oct)
 
 Rama `mercado-diario` (desde main 6ab5ba9). **Nada de esto se ejecuta sin autorización
-expresa del CTO.** Ningún paso borra datos en Storage; ningún cerrojo se borra sin la
-comprobación humana del paso 1.
+expresa del CTO.** El único paso que borra datos en Storage es el arranque (paso 4):
+cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprobada (CTO
+10-oct). Ningún cerrojo se borra sin la comprobación humana del paso 1.
 
 ## Qué cambia al desplegar
 
@@ -74,30 +75,52 @@ comprobación humana del paso 1.
    - Un cerrojo hace que pare con **código 5**: se vuelve al paso 1.
    - Se revisa cualquier `.json.gz` que ya exista: el paso 4 lo certificará, no lo
      saltará.
-   - Se confirman la copia de respaldo y el presupuesto del paso 4. Son unos 264 MB de
-     `.json`, más los `.gz` que ya existan y el `.json` de esos pares. Pueden sumarse
-     relecturas si algo cambia durante el arranque, que no tiene tope en bytes: está
-     autorizado aparte.
-4. **Arranque desde el Mac, una sola vez:** `node scripts/arranque-gzip.js --subir`, sin
-   ningún otro escritor.
-   - Por par:
+   - Se confirman la copia de respaldo y el presupuesto del paso 4. Son unos 270 MB de
+     `.json`, más los `.gz` que ya existan y el `.json` de esos pares, más la descarga
+     de verificación de cada `.gz` (unos 39 MB). Pueden sumarse relecturas si algo
+     cambia durante el arranque, que no tiene tope en bytes: está autorizado aparte.
+   - **La copia local, antes del paso 4 (CTO 10-oct, autorizada una vez, unos 270 MB):**
+     `ANIO=2026 node scripts/copia-mercado.js EURUSD GBPUSD USDJPY USDCHF AUDUSD USDCAD
+     NZDUSD AUDCAD GBPJPY`. Deja una carpeta nueva con `{PAR}_2026.json` y su `.sha256`;
+     se apuntan aquí los nueve sha256. En seco, `--copia DIR` dice por par si la copia
+     está bien.
+   - **Storage al límite (Ramón, 10-oct: 0,963 GB de 1 GB).** El bucket ocupa
+     976.121.058 B; con los nueve `.gz` encima de los `.json` serían unos 1,015 GB. Por
+     eso el arranque borra cada `.json` en cuanto su `.gz` está verificado: el pico es
+     lo actual más un `.gz` (unos 4,6 MB).
+4. **Arranque desde el Mac, una sola vez:** `node scripts/arranque-gzip.js --subir --copia
+   DIR` (la carpeta de la copia local), sin ningún otro escritor. **Sin `--copia`, código
+   4 y no hace nada.**
+   - Por par, en serie (nunca dos pares en vuelo):
      - mira el cerrojo; con uno puesto, para con código 5 y no lo libera;
-     - si hay `.json`, lo baja y publica el `.json.gz` con el publicador común (cerrojo
-       y verificación por metadatos), comprueba que son exactamente las mismas velas y
-       que el cerrojo quedó suelto;
+     - si hay `.json`, lo baja y comprueba **antes de subir nada** que la copia local de
+       ese par existe, coincide con su `.sha256` y es exactamente lo que hay en el
+       `.json`; si no, no toca ese par y para;
+     - publica el `.json.gz` con el publicador común (cerrojo y verificación por
+       metadatos) y comprueba que son exactamente las mismas velas y que el cerrojo
+       quedó suelto;
      - si ya hay `.json.gz`, lo certifica: lo baja, lo descomprime, lo valida y
-       comprueba que no tiene menos velas por día que el `.json`.
+       comprueba que no tiene menos velas por día que el `.json`;
+     - **verifica el `.gz` bajándolo**: el sha256 del cuerpo tiene que ser el de sus
+       metadatos (sin sha256 en los metadatos, no se verifica y para) y, descomprimido,
+       exactamente las velas del `.json`;
+     - comprueba con `info()` que el `.json` sigue siendo el que leyó, **lo borra** y
+       comprueba que ya no existe.
+   - Cualquier fallo en un par: **para ahí, sin borrar el `.json` de ese par**, y los
+     pares siguientes no se tocan.
    - Se espera código 0.
    - Con código 1 o 5, o con cualquier incertidumbre, no se pasa al paso 7:
-     - los `.gz` correctos ya convertidos pueden quedarse;
+     - los `.gz` correctos ya convertidos pueden quedarse, y los `.json` ya borrados
+       están en la copia local;
      - se reconcilia según el paso 1 y se repite el arranque solo cuando consta que no
        queda ninguna subida en curso.
 5. **Verificación de los nueve pares, uno a uno.** Un `.gz` presente o un código 0 no
    bastan; por cada par:
-   - su línea del arranque: «✓ … verificado», con las velas y los bytes, o «✓ …
-     certificado»;
+   - su línea del arranque: «✓ … publicado» (o «✓ … certificado») y «✓ … verificado
+     bajándolo … borrado», con las velas, los bytes y el sha256 de su copia local;
    - `node scripts/arranque-gzip.js` en seco otra vez: los 9 pares con «ya hay .json.gz»
      y ningún cerrojo (código 0);
+   - el listado del bucket: ningún `{PAR}/M1/2026.json`, nueve `2026.json.gz`;
    - el gráfico del par en la web carga con la última fecha esperada y sin días que
      antes estaban y ahora no;
    - ningún cerrojo pendiente: `node scripts/liberar-cerrojo.js PAR_2026`, sin
@@ -206,5 +229,6 @@ ejecución concreta de restore se autoriza aparte.
 
 ## Después (no en esta tarea)
 
-- **Borrar los `.json` de 2026.** Es un paso aparte y revisado, con la copia local
-  verificada.
+- **Borrar los `.json` de 2026:** ya no es un paso aparte. Lo hace el arranque (paso 4),
+  par a par, con la copia local comprobada (CTO 10-oct). Quedan los `.json` de 2024 y
+  2025 (unos 706 MB), que el arranque no toca.
