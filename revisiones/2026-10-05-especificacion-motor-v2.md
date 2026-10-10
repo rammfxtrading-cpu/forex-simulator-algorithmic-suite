@@ -252,6 +252,7 @@ Dentro de un tramo monótono:
   3. el **segundo extremo**;
   4. todos los **cierres**.
 - En cada fase **se actualizan todas las cotizaciones antes de valorar**. El snapshot de equity de la fase usa la misma instantánea para todos: la imagen de E04 (+4.000 y −6.000 en la misma fase) da 98.000 se llamen como se llamen los pares.
+- **v2.4 (P7-01, § 14):** dentro de un día admitido, un minuto ausente es un minuto sin negociación (vela plana implícita, se valora); solo un hueco interior de más de 15 minutos seguidos, no declarado aceptado, es `no_valorable`, con detención exacta en su primer minuto.
 - **Mercado cerrado esperado** (calendario por instrumento: fin de semana, cierre diario) **no es dato obsoleto**: se valora al último precio. `no_valorable` solo si falta dato **en horario de mercado**, y entonces el cursor queda **sin consumir** (el minuto se reintenta entero).
 - **Fin de semana:** no se generan velas; el reloj salta al siguiente minuto con datos de cualquier par de la sesión. `reset_diario` se emite igual (§ 5), valorado al último precio.
 
@@ -601,7 +602,7 @@ Las cifras de los casos están hechas a mano y comprobadas con aritmética exact
 
 ### 13.1 El camino sincronizado dentro de una fase
 
-Por cada minuto, los pares de la sesión con vela en ese minuto tienen su vela bid (O, H, L, C) en ticks y su camino elegido (§ 13.4): A = O→H→L→C o B = O→L→H→C. Los puntos del camino de un par son P0 = O, P1, P2, P3 = C. Un par **sin vela** porque su mercado está cerrado (calendario o manifiesto, § 12.2, § 12.10) se queda en su último precio en todo el minuto; uno sin vela **en horario de mercado** deja el minuto entero sin consumir (`no_valorable`, § 3.5).
+Por cada minuto, los pares de la sesión con vela en ese minuto tienen su vela bid (O, H, L, C) en ticks y su camino elegido (§ 13.4): A = O→H→L→C o B = O→L→H→C. Los puntos del camino de un par son P0 = O, P1, P2, P3 = C. Un par **sin vela** porque su mercado está cerrado (calendario o manifiesto, § 12.2, § 12.10) se queda en su último precio en todo el minuto; uno sin vela **en horario de mercado** deja el minuto entero sin consumir (`no_valorable`, § 3.5). **v2.4 (§ 14) sustituye esta última regla:** sin vela en horario de mercado dentro de un día admitido, el par se queda en su cierre anterior y el minuto se valora, salvo un hueco de más de 15 minutos seguidos no aceptado.
 
 **Fases** (§ 12.1): fase 1 = apertura; fase 2 = tramo P0→P1; fase 3 = tramo P1→P2; fase 4 = tramo P2→P3.
 
@@ -744,3 +745,19 @@ Diferencia: **6 USD** (comisión 3 + spread 0,3 pips de un lote, del fill que ya
 - **Versiones:** el motor pasa a **`motor@2`** (orden de límites de V3-02 y margen@2 de P-13b/V3-08); el estado lo dice en `versiones.motor` y `versiones.margen`. No hay sesiones v1 en uso que recalcular.
 - **A37** compara la cartera de un solo par con el motor de un par **ya ajustado** a motor@2, no con motor@1.
 - Por lectura de las pruebas aprobadas (`pruebas/motor/`), ningún oráculo aprobado depende del orden cambiado (en C7-01, el SL cierra y el breach llega con ese mismo cierre: igual con las dos reglas); se comprobará al implementar.
+
+## 14. v2.4 — huecos interiores (P7-01; decisión del CTO, 10-oct-2026, tras `2026-10-09-astra-simulador-pieza-7.md`)
+
+**Cambia el contrato de § 3.5 y § 13.1** (minuto entero no valorable por un minuto que falta).
+
+- **Minuto sin negociación.** Dentro de un día admitido por el manifiesto, un minuto ausente con el mercado abierto es un minuto sin negociación: el par conserva el cierre anterior (vela plana implícita) y el minuto se valora. Así funcionan los brókers y así son los datos reales (días de 1.428 velas).
+- **N = 15.** Un hueco interior de hasta 15 minutos seguidos se valora plano. N lo fijó el CTO con la medición del 9-oct (copia local de los 9 pares, 2024–2026): el 99,9 % de los huecos naturales cabe en 32 minutos; con el máximo de 15 se cubre el 99,69 % (98 de 31.859 huecos son mayores).
+- **Más de 15: no valorable.** Un hueco interior de más de 15 minutos seguidos en **cualquier par necesario de la sesión** (conversores y pares de margen incluidos) detiene: `no_valorable` con **frontera = su primer minuto**, para todos los pares, en cartera y en reto. Sin TP, sin eventos, sin precios nuevos. El reto confirma su horizonte hasta el último segundo antes de la frontera (`frontera − 1 s`): en ese tramo no hay vela, y es lo que hace iguales el paso a mitad de minuto y el salto. El hueco nunca queda confirmado. La detención de un día que falta lleva también su frontera (su 00:00).
+- **Interior.** El hueco se mide entre dos velas consecutivas del par, también a través de la medianoche, y es interior si el mercado está abierto en todo él. Si toca un minuto cerrado (horario de Nueva York o un día que el manifiesto declara cerrado), es un cierre, no un hueco.
+- **Aceptados.** El manifiesto puede declararlos en `huecos_aceptados: [{ inicio: 'AAAA-MM-DDTHH:MMZ', minutos, motivo }]`, con `motivo` ∈ { `festivo`, `cambio_de_sesion`, `corte_del_proveedor` }.
+  - Es una lista explícita y versionada: entra en la huella del manifiesto (otra lista, otra versión fijada) y, vacía, la huella no cambia.
+  - Cada hueco declarado tiene que existir tal cual en los trozos (mismo inicio, mismos minutos) y ser de más de 15.
+  - Un hueco aceptado se valora plano y lleva una **marca visible**: en el estado (`huecos_aceptados: [{ inicio, minutos, motivo, par }]`, sin repetir, sobrevive a serializar) y un evento `hueco_aceptado` la primera vez que se cruza.
+  - **Un día corto aceptado** (`dias-aceptados`) **no acepta por sí solo sus huecos**: si deja un hueco interior de más de 15 minutos, ese hueco también tiene que estar declarado.
+- **La lista real** se calculará con la descarga del arranque de mercado-diario (decisión del CTO), sobre los datos actuales, no sobre la copia del 5-oct, y se enseñará al CTO antes de darla por buena. Hasta entonces, vacía.
+- **Pruebas:** `pruebas/motor/huecos.mjs` (17 oráculos). Cambian FUE (día corto aceptado: ahora detiene en su hueco salvo declarado) y RETO C6-05 (horizonte 23:59:59 en vez de 23:59:00).

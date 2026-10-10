@@ -264,7 +264,8 @@ const conFuente = (cerrados, cortes, hasta = U('2026-03-05T12:00:00Z')) => {
 }
 const falta = RT ? conFuente([]) : null
 const rFalta = falta ? de(falta.eventos, 'reset_diario').map(x => new Date(x.en.t * 1000).toISOString().slice(0, 16)) : []
-oraculo('RETO', 'C6-05 con fuente: el martes sin trozo detiene («no_valorable»); horizonte al final del lunes y solo el reset de esa medianoche (2-mar 23:00)', !!falta && falta.detencion?.motivo === 'no_valorable' && falta.detencion?.dia === '2026-03-03' && falta.reto.horizonte === S0('2026-03-03') - 60 && JSON.stringify(rFalta) === '["2026-03-02T23:00"]', falta ? `${enTexto(falta.detencion)} · horizonte ${falta.reto.horizonte} · ${rFalta.join(' ')}` : '')
+// P7-01 (CTO 10-oct): una detencion confirma hasta el ultimo segundo antes de su frontera (lunes 23:59:59; antes 23:59:00)
+oraculo('RETO', 'C6-05 con fuente: el martes sin trozo detiene («no_valorable»); horizonte al final del lunes y solo el reset de esa medianoche (2-mar 23:00)', !!falta && falta.detencion?.motivo === 'no_valorable' && falta.detencion?.dia === '2026-03-03' && falta.reto.horizonte === S0('2026-03-03') - 1 && JSON.stringify(rFalta) === '["2026-03-02T23:00"]', falta ? `${enTexto(falta.detencion)} · horizonte ${falta.reto.horizonte} · ${rFalta.join(' ')}` : '')
 const otra = falta ? RT.avanzaReto(falta.reto, U('2026-03-05T12:00:00Z'), falta.f) : null
 oraculo('RETO', 'C6-05 con fuente: repetir el avance da la misma detencion, sin eventos ni resets', !!otra && otra.detencion?.dia === '2026-03-03' && otra.eventos.length === 0 && RT.serializaReto(otra.reto) === RT.serializaReto(falta.reto))
 const cerrado = RT ? conFuente(['2026-03-03']) : null

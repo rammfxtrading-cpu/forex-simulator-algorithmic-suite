@@ -112,7 +112,13 @@ const fK = FU?.creaFuente({ manifiesto: mCorto, fijado: MF.fija(mCorto), leeTroz
 const rK = FU ? FU.avanza(sesion(mCorto), S('2026-03-05') + 3600, fK, { desde: S('2026-03-02') }) : null
 const fKa = FU?.creaFuente({ manifiesto: mCorto, fijado: MF.fija(mCorto), leeTrozo: lector([LUN, MAR, corto, JUE]), aceptados: new Map([['2026-03-04', 600]]) })
 const rKa = FU ? FU.avanza(sesion(mCorto), S('2026-03-05') + 3600, fKa, { desde: S('2026-03-02') }) : null
-oraculo('FUE', 'dia corto (600/1200): no_valorable; aceptado con 600 velas: se avanza hasta el jueves', rK?.detencion?.motivo === 'no_valorable' && rK?.detencion?.dia === '2026-03-04' && !rKa?.detencion && rKa?.estado.reloj.cursor === S('2026-03-05') + 3600, `${enTexto(rK?.detencion)} · ${enTexto(rKa?.detencion)}`)
+// P7-01 (CTO 10-oct; cambio de contrato, marcado para Astra): aceptar el DIA corto ya no basta; sus 840 minutos
+// sin velas (miercoles 10:00 → jueves 00:00, mercado abierto) son un hueco interior que detiene salvo que el
+// manifiesto lo declare en huecos_aceptados
+const mCortoH = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [LUN, MAR, corto, JUE], huecosAceptados: [{ inicio: '2026-03-04T10:00Z', minutos: 840, motivo: 'festivo' }] })
+const fKh = FU?.creaFuente({ manifiesto: mCortoH, fijado: MF.fija(mCortoH), leeTrozo: lector([LUN, MAR, corto, JUE]), aceptados: new Map([['2026-03-04', 600]]) })
+const rKh = FU ? FU.avanza(sesion(mCortoH), S('2026-03-05') + 3600, fKh, { desde: S('2026-03-02') }) : null
+oraculo('FUE', 'dia corto (600/1200): no_valorable; aceptado con 600 velas: detiene en su hueco interior (miercoles 10:00, 840 min); con el hueco declarado en el manifiesto: se avanza hasta el jueves', rK?.detencion?.motivo === 'no_valorable' && rK?.detencion?.dia === '2026-03-04' && rKa?.detencion?.frontera === S('2026-03-04') + 600 * 60 && rKa.detencion.minutos === 840 && !rKh?.detencion && rKh?.estado.reloj.cursor === S('2026-03-05') + 3600, `${enTexto(rK?.detencion)} · ${enTexto(rKa?.detencion)} · ${enTexto(rKh?.detencion)}`)
 
 titulo('5 · trozos que no se pueden leer')
 const alterado = Buffer.from(MAR.buffer); alterado[40] ^= 1
