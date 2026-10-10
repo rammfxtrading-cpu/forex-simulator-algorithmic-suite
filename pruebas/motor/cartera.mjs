@@ -300,6 +300,22 @@ for (const [gbp, x] of [[true, a40(true)], [false, a40(false)]]) {
   oraculo('A40', `${gbp ? 'GBPUSD' : 'EURUSD'} con seq menor: se llena en s = 1/2 con margen ${margen}; la otra, margen_insuficiente`, fills.length === 1 && fills[0].par === llena && fills[0].en?.fraccion === '1/2' && x.s.e.posiciones[0]?.margen_fijado_µ === µ(margen) && canc.length === 1 && canc[0].motivo === 'margen_insuficiente', x?.error ?? enTexto([fills.map(f => [f.par, f.en]), canc.map(c => c.motivo)]))
 }
 
+titulo('P7-05 · la ejecucion conjunta explica en que difiere de la aislada (§ 13.4)')
+// A40, positivo: en las simulaciones aisladas los dos limits se llenan; en la conjunta, el de seq mayor se cancela por
+// margen. El evento lo tiene que decir (que fill aislado no ocurrio y por que), sin confundirlo con A/B intrapar
+for (const [gbp, x] of [[true, a40(true)], [false, a40(false)]]) {
+  const otro = gbp ? 'EURUSD' : 'GBPUSD'
+  const canc = x?.r ? de(x.r.eventos, 'orden_cancelada')[0] : null
+  oraculo('P7-05', `A40 (${gbp ? 'GBPUSD' : 'EURUSD'} primero): la cancelacion de ${otro} explica que su fill de la simulacion aislada no ocurrio en la conjunta, por margen; y no la marca como ambigua A/B`, !!canc && canc.par === otro && /aislada/.test(canc.causa_ambiguedad ?? '') && /fill/.test(canc.causa_ambiguedad ?? '') && /margen/.test(canc.causa_ambiguedad ?? '') && canc.ambigua !== true, enTexto(canc))
+}
+// negativo: dos pares que no se tocan (cada SL en su par, margen sobrado): la conjunta = las aisladas, sin explicacion
+const sinDif = corre(() => {
+  const s = sesion({ pares: ['EURUSD', 'GBPUSD'], mins: { EURUSD: [plana('1.10000'), ['1.10000', '1.10000', '1.09800', '1.09800']], GBPUSD: [plana('1.30000'), ['1.30000', '1.30000', '1.29800', '1.29800']] } })
+  abre(s, 'EURUSD', 'BUY', '1', { sl: '1.09900' }); abre(s, 'GBPUSD', 'BUY', '1', { sl: '1.29900' })
+  return { r: avanza(s, 1) }
+})
+oraculo('P7-05', 'negativo: dos SL independientes en dos pares: los dos cierres ocurren como en las aisladas y ningun evento lleva la explicacion de diferencia', !!sinDif?.r && de(sinDif.r.eventos, 'cierre').length === 2 && !sinDif.r.eventos.some(x => /aislada/.test(x.causa_ambiguedad ?? '')), sinDif?.error ?? enTexto(sinDif?.r?.eventos?.map(x => [x.tipo, x.causa_ambiguedad])))
+
 titulo('A41 · n = 0, fracciones que no coinciden y precio que baja (redondeo hacia el inicio)')
 const a41 = corre(() => {
   const s = sesion({ pares: ['EURUSD', 'GBPUSD', 'USDCHF'], mins: { EURUSD: [plana('1.10003'), ['1.10003', '1.10003', '1.10000', '1.10000']], GBPUSD: [plana('1.30000'), ['1.30000', '1.30002', '1.30000', '1.30002']], USDCHF: [plana('0.90000'), plana('0.90000')] } })
