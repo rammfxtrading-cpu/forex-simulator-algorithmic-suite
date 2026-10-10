@@ -27,7 +27,7 @@ export const puerta = () => { let abrir; const p = new Promise(r => { abrir = r 
 export const espera = ms => new Promise(r => setTimeout(r, ms))
 export const asienta = async (n = 40) => { for (let k = 0; k < n; k++) await new Promise(r => setImmediate(r)) }
 
-let controlesMal = 0, rojos = 0, verdes = 0
+let controlesMal = 0, rojos = 0, verdes = 0, omitidas = 0
 // Una excepcion no capturada NO es un hallazgo reproducido: node saldria con 1,
 // que es el codigo de «en rojo». Se fuerza el 3 (fallo del arnes o de la prueba).
 // (Un process.exit de un script corrido por script-falso.mjs es una SalidaDeScript
@@ -46,19 +46,29 @@ export function oraculo(id, desc, correcto, cifras = '') {
   appendFileSync(REPO + '.pruebas/fase1.jsonl', JSON.stringify({ id, desc, reproducido: !correcto, cifras: String(cifras), fichero: path.basename(process.argv[1]) }) + '\n')
   return correcto
 }
+// Una comprobacion que NO puede correr porque su fichero falta A PROPOSITO (CTO
+// 10-oct: mercado-diario.yml no entra en main hasta el paso 7 del despliegue).
+// Se dice en la salida, con su motivo, y cuenta en la linea final y para el
+// minimo de H04; pero no es un oraculo: una prueba solo de omitidas no aprueba.
+// Quien la llama tiene que comprobar ANTES que el fichero falta: si esta y esta
+// mal, es un oraculo en rojo, nunca una omitida.
+export function omitido(id, desc, motivo) {
+  omitidas++
+  console.log(`  ⚪ OMITIDA [${id}] ${desc}  · ${motivo}`)
+}
 // H04 (Astra, 5-oct; bloque D, punto 8): una prueba de aceptacion/, fase1/ o
 // historicas/ sin oraculos NO aprueba (codigo 2); y en aceptacion/ tiene que
 // llegar al minimo que declara su minimos.json (un fichero sin minimo
 // declarado tampoco vale). En el contraste historico (copia en .pruebas/) el
 // minimo no se aplica: contra el codigo viejo basta con que haya oraculos.
 export const fin = () => {
-  console.log(`\n${rojos} en rojo · ${verdes} en verde · ${controlesMal} controles rotos`)
+  console.log(`\n${rojos} en rojo · ${verdes} en verde · ${controlesMal} controles rotos${omitidas ? ` · ${omitidas} omitidas` : ''}`)
   const fichero = process.argv[1] ? path.resolve(process.argv[1]) : ''
   const carpeta = path.basename(path.dirname(fichero))
   let invalida = ''
   if (['aceptacion', 'fase1', 'historicas', 'motor'].includes(carpeta)) {
-    const n = rojos + verdes
-    if (n === 0) invalida = 'ningun oraculo: una prueba vacia no aprueba'
+    const n = rojos + verdes + omitidas
+    if (rojos + verdes === 0) invalida = 'ningun oraculo: una prueba vacia no aprueba'
     else if ((carpeta === 'aceptacion' || carpeta === 'motor') && !fichero.includes(`${path.sep}.pruebas${path.sep}`)) {
       let minimos = null
       try { minimos = JSON.parse(readFileSync(path.join(path.dirname(fichero), 'minimos.json'), 'utf8')) } catch { minimos = null }

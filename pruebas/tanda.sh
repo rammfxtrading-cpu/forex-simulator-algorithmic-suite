@@ -34,10 +34,13 @@ corre() {  # corre ETIQUETA COMANDO...
   etiqueta=$1; shift
   n=$((n + 1))
   printf '\n######## %s\n' "$etiqueta" >> "$LOG"
+  desde=$(wc -l < "$LOG")
   # perl alarm: macOS no trae `timeout`
   if env -i PATH="$PATH" HOME="$HOME" TZ="Europe/Madrid" NODE_OPTIONS="$NODE_OPTS_RED" PRUEBAS_AISLADO="$AISLA_MODO" \
        perl -e 'alarm shift; exec @ARGV' 300 $AISLA "$@" < /dev/null >> "$LOG" 2>&1; then
-    echo "  ✓ $etiqueta"
+    # comprobaciones omitidas a proposito (pruebas/lib.mjs, omitido): a la vista tambien aqui
+    om=$(tail -n +$((desde + 1)) "$LOG" | grep -c '⚪ OMITIDA')
+    if [ "$om" -gt 0 ]; then echo "  ✓ $etiqueta   ($om omitidas: ver $LOG)"; else echo "  ✓ $etiqueta"; fi
   else
     echo "  ✗ $etiqueta   (ver $LOG)"
     fallos="$fallos $etiqueta"

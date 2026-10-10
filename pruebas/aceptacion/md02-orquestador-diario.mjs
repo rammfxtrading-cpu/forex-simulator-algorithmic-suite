@@ -18,7 +18,7 @@
  * ORACULOS con un node FALSO (un guion de codigo y bytes por par y llamada)
  * y una espera falsa que apunta los segundos: ni proveedor ni Storage.
  */
-import { titulo, ver, oraculo, fin, fuente, REPO } from '../lib.mjs'
+import { titulo, ver, oraculo, omitido, fin, fuente, REPO } from '../lib.mjs'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
@@ -98,6 +98,10 @@ const d3 = hayScript ? corre(NUEVE.map(ok)) : null
 oraculo('MD02', 'sin tope configurado no se pasa ninguno (cadena vacia)', !!d3 && d3.topes.every(t => t === ''), d3?.topes.join(',') ?? '')
 
 titulo('5 · el workflow diario')
+// CTO 10-oct: el fichero falta A PROPOSITO en la rama de despliegue (entra en main en el paso 7). Solo entonces
+// sus comprobaciones salen omitidas, visibles; si esta y esta mal, son rojas
+const ausente = !fs.existsSync(REPO + '.github/workflows/mercado-diario.yml')
+const delYml = (id, desc, correcto, cifras) => (ausente ? omitido(id, desc, 'fichero ausente hasta el paso 7 (CTO 10-oct: mercado-diario.yml entra en main en el paso 7 del despliegue)') : oraculo(id, desc, correcto, cifras))
 let wf = null, texto = ''
 try { texto = fuente('.github/workflows/mercado-diario.yml'); wf = YAML.parse(texto) } catch { wf = null }
 const on = wf?.on ?? wf?.[true] ?? {}
@@ -105,14 +109,14 @@ const job = Object.values(wf?.jobs ?? {})[0] ?? {}
 const pasos = job.steps ?? []
 const crons = (on.schedule ?? []).map(s => s.cron)
 const horaOk = c => { const [m, h] = String(c).split(/\s+/); return /^\d+$/.test(m) && /^\d+$/.test(h) && Number(h) < 21 }
-oraculo('MD02', 'un solo horario diario fijo, fuera de 21:00-23:59 UTC', crons.length === 1 && horaOk(crons[0]) && /^\d+ \d+ \* \* \*$/.test(crons[0]), crons.join(' | ') || '(sin schedule)')
-oraculo('MD02', 'mismo grupo de concurrencia que el manual (actualizar-velas), sin cancelar lo que esta en curso', wf?.concurrency?.group === 'actualizar-velas' && wf.concurrency['cancel-in-progress'] === false, JSON.stringify(wf?.concurrency ?? null))
+delYml('MD02', 'un solo horario diario fijo, fuera de 21:00-23:59 UTC', crons.length === 1 && horaOk(crons[0]) && /^\d+ \d+ \* \* \*$/.test(crons[0]), crons.join(' | ') || '(sin schedule)')
+delYml('MD02', 'mismo grupo de concurrencia que el manual (actualizar-velas), sin cancelar lo que esta en curso', wf?.concurrency?.group === 'actualizar-velas' && wf.concurrency['cancel-in-progress'] === false, JSON.stringify(wf?.concurrency ?? null))
 const pasosPar = pasos.filter(p => /mercado-diario\.sh paso [A-Z]{6}/.test(String(p.run ?? '')))
-oraculo('MD02', 'un paso por par, los nueve en orden; despues reintento y resumen', JSON.stringify(pasosPar.map(p => String(p.run).match(/paso ([A-Z]{6})/)[1])) === JSON.stringify(NUEVE) && pasos.some(p => /mercado-diario\.sh reintento/.test(String(p.run ?? ''))) && /mercado-diario\.sh resumen/.test(String(pasos[pasos.length - 1]?.run ?? '')), pasosPar.map(p => p.name).join(', '))
-oraculo('MD02', 'cache de Actions de los ficheros anuales (restaurar antes, guardar despues) y MERCADO_CACHE en esa carpeta', pasos.some(p => /actions\/cache\/restore@/.test(String(p.uses ?? ''))) && pasos.some(p => /actions\/cache\/save@/.test(String(p.uses ?? ''))) && /MERCADO_CACHE/.test(texto), pasos.map(p => p.uses ?? p.name).join(', '))
+delYml('MD02', 'un paso por par, los nueve en orden; despues reintento y resumen', JSON.stringify(pasosPar.map(p => String(p.run).match(/paso ([A-Z]{6})/)[1])) === JSON.stringify(NUEVE) && pasos.some(p => /mercado-diario\.sh reintento/.test(String(p.run ?? ''))) && /mercado-diario\.sh resumen/.test(String(pasos[pasos.length - 1]?.run ?? '')), pasosPar.map(p => p.name).join(', '))
+delYml('MD02', 'cache de Actions de los ficheros anuales (restaurar antes, guardar despues) y MERCADO_CACHE en esa carpeta', pasos.some(p => /actions\/cache\/restore@/.test(String(p.uses ?? ''))) && pasos.some(p => /actions\/cache\/save@/.test(String(p.uses ?? ''))) && /MERCADO_CACHE/.test(texto), pasos.map(p => p.uses ?? p.name).join(', '))
 const tope = pasos.find(p => p.id === 'tope')
 // CTO 9-oct: 45 MB por ejecucion por defecto en el propio workflow; la variable del repo solo sobrescribe
-oraculo('MD02', 'tope por defecto 45 MB (45.000.000 bytes) en el workflow; la variable del repo MERCADO_TOPE_BYTES solo lo sobrescribe', /^\$\{\{\s*vars\.MERCADO_TOPE_BYTES\s*\|\|\s*'45000000'\s*\}\}$/.test(String(job.env?.MERCADO_TOPE_BYTES ?? '')), String(job.env?.MERCADO_TOPE_BYTES ?? '(sin)'))
-oraculo('MD02', 'un tope no valido no deja correr ningun par: los pasos de par y el reintento dependen del paso que lo comprueba', !!tope && /\^\[0-9\]\+\$/.test(String(tope.run)) && /exit 4/.test(String(tope.run)) && [...pasosPar, pasos.find(p => /reintento/.test(String(p.run ?? '')))].every(p => /steps\.tope\.outcome == 'success'/.test(String(p?.if ?? ''))), pasosPar.map(p => p.if).join(' · '))
+delYml('MD02', 'tope por defecto 45 MB (45.000.000 bytes) en el workflow; la variable del repo MERCADO_TOPE_BYTES solo lo sobrescribe', /^\$\{\{\s*vars\.MERCADO_TOPE_BYTES\s*\|\|\s*'45000000'\s*\}\}$/.test(String(job.env?.MERCADO_TOPE_BYTES ?? '')), String(job.env?.MERCADO_TOPE_BYTES ?? '(sin)'))
+delYml('MD02', 'un tope no valido no deja correr ningun par: los pasos de par y el reintento dependen del paso que lo comprueba', !!tope && /\^\[0-9\]\+\$/.test(String(tope.run)) && /exit 4/.test(String(tope.run)) && [...pasosPar, pasos.find(p => /reintento/.test(String(p.run ?? '')))].every(p => /steps\.tope\.outcome == 'success'/.test(String(p?.if ?? ''))), pasosPar.map(p => p.if).join(' · '))
 oraculo('MD02', 'el workflow manual no cambia: sigue sin horario y con sus dos modos', (() => { try { const m = YAML.parse(fuente('.github/workflows/actualizar-velas.yml')); const o = m.on ?? m[true]; return Object.keys(o).join() === 'workflow_dispatch' && JSON.stringify(o.workflow_dispatch.inputs.modo.options) === '["sonda","recuperar"]' } catch { return false } })(), '')
 fin()

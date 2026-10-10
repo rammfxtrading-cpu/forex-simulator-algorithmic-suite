@@ -17,7 +17,7 @@
  * cache; contradictorio y bien al reintentar (manual) → codigo 0; la copia
  * del proyecto A no vale para el B y sigue valiendo para el A.
  */
-import { titulo, ver, oraculo, fin, escenario, proveedor, db, fuente, REPO } from '../lib.mjs'
+import { titulo, ver, oraculo, omitido, fin, escenario, proveedor, db, fuente, REPO } from '../lib.mjs'
 import { createRequire } from 'node:module'
 import { diaM1 } from '../proveedor-falso.mjs'
 import { correScript, ejecucionesScripts } from '../script-falso.mjs'
@@ -85,7 +85,9 @@ titulo('3b · la clave de la cache de Actions, tambien por proyecto y bucket')
   try { pasos = Object.values(YAML.parse(fuente('.github/workflows/mercado-diario.yml')).jobs)[0].steps ?? [] } catch { pasos = [] }
   const esp = pasos.find(p => p.id === 'espacio')
   const claves = pasos.filter(p => /actions\/cache\/(restore|save)@/.test(String(p.uses ?? ''))).map(p => [p.with?.key, p.with?.['restore-keys']].filter(Boolean).join(' '))
-  oraculo('MD-05', 'un paso calcula la huella del proyecto (sha256 de la URL, sin imprimirla) y las claves de restaurar y guardar llevan esa huella y el bucket', !!esp && /sha256sum/.test(String(esp.run)) && !/echo "\$NEXT_PUBLIC_SUPABASE_URL"/.test(String(esp.run)) && claves.length === 2 && claves.every(k => /steps\.espacio\.outputs\.proyecto/.test(k) && /forex-data/.test(k)), claves.join(' | ') || '(sin pasos de cache)')
+  const DESC = 'un paso calcula la huella del proyecto (sha256 de la URL, sin imprimirla) y las claves de restaurar y guardar llevan esa huella y el bucket'
+  if (!fs.existsSync(REPO + '.github/workflows/mercado-diario.yml')) omitido('MD-05', DESC, 'fichero ausente hasta el paso 7 (CTO 10-oct: mercado-diario.yml entra en main en el paso 7 del despliegue)')
+  else oraculo('MD-05', DESC, !!esp && /sha256sum/.test(String(esp.run)) && !/echo "\$NEXT_PUBLIC_SUPABASE_URL"/.test(String(esp.run)) && claves.length === 2 && claves.every(k => /steps\.espacio\.outputs\.proyecto/.test(k) && /forex-data/.test(k)), claves.join(' | ') || '(sin pasos de cache)')
 }
 
 titulo('4 · el comentario de la reserva')
