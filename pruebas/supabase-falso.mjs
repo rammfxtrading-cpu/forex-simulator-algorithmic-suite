@@ -24,6 +24,10 @@
 //                     `metadata`, como el tipo FileObjectV2 de storage-js 2.102)
 //   db.infoSinMetadatos → true: info no devuelve `metadata` (bloque G, punto 11)
 //   db.infoSinTamano  → true: info devuelve size null (Astra MD-01)
+//   db.infoSinEtag    → true: info no devuelve etag (Astra MDC2-02; la version sigue)
+//   db.getSinEtag     → true: la descarga no lleva etag. Si no, una descarga atada
+//                       (lib/mercado/limites.mjs, con señal) recibe la etag del
+//                       contenido servido, como el GET real (apuntaRespuesta)
 //                       (se devuelve un error de transporte, como supabase-js ante
 //                       un fetch roto a la vuelta)
 //   db.log            cada operacion: { cliente, tabla, op, payload, filtros }
@@ -31,7 +35,7 @@ import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, infoSinTamano: false, log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, infoSinTamano: false, infoSinEtag: false, getSinEtag: false, log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -171,7 +175,7 @@ function bucket(nombre) {
   return {
     // en el log, encontrado: false si la descarga dio 404 (lo que no existe no
     // se descarga: las pruebas de transferencia cuentan solo las reales)
-    async download(ruta) {
+    async download(ruta, opciones, parametros) {
       const m = {}
       const err = await op('download', ruta, m); if (err) return { data: null, error: err }
       if (!objetos()) { m.ctx.encontrado = false; return noExiste }
@@ -179,6 +183,12 @@ function bucket(nombre) {
       // error: 'not_found', message: 'Object not found' } → StorageApiError
       if (!Object.hasOwn(objetos(), ruta)) { m.ctx.encontrado = false; return { data: null, error: NO_ENCONTRADO } }
       const blob = new Blob([objetos()[ruta]], { type: 'application/octet-stream' })
+      // la descarga atada ve el estado, la etag y los bytes como el envoltorio real (MDC2-02)
+      if (parametros?.signal) {
+        const L = await import('../lib/mercado/limites.mjs').catch(() => null)
+        const c = objetos()[ruta]
+        L?.apuntaRespuesta?.(parametros.signal, { status: 200, etag: db.getSinEtag ? null : `"${createHash('sha256').update(c).digest('hex').slice(0, 32)}"`, bytes: Buffer.byteLength(c) })
+      }
       // db.entrega(ctx): retiene la ENTREGA de un contenido ya leido (la lectura
       // vio la version de ese instante; la respuesta llega despues)
       if (db.entrega) await db.entrega({ cliente: quien, tabla: 'storage:' + nombre, op: 'download', payload: ruta })
@@ -193,7 +203,7 @@ function bucket(nombre) {
       const c = objetos()[ruta]
       const etag = createHash('sha256').update(c).digest('hex').slice(0, 32)
       const metadata = db.infoSinMetadatos ? undefined : (db.metadatos[nombre]?.[ruta] ?? null)
-      return { data: { name: ruta, etag, version: etag, size: db.infoSinTamano ? null : Buffer.byteLength(c), lastModified: null, contentType: null, ...(metadata === undefined ? {} : { metadata }) }, error: null }
+      return { data: { name: ruta, ...(db.infoSinEtag ? {} : { etag }), version: etag, size: db.infoSinTamano ? null : Buffer.byteLength(c), lastModified: null, contentType: null, ...(metadata === undefined ? {} : { metadata }) }, error: null }
     },
     // texto o binario (Blob, Buffer, Uint8Array), como el real
     async upload(ruta, cuerpo, o = {}) {

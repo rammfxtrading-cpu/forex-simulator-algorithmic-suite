@@ -79,6 +79,24 @@ oraculo('Paso 6', 'sin sha256 en los metadatos pero con etag y tamaño: 0, y el 
 const h = await comprueba({ info: null, get: () => ({ cuerpo: CUERPO }) })
 oraculo('Paso 6', 'sin objeto (.json.gz ni .json): 3 y ningun GET del objeto', h.codigo === 3 && unGet(h.pedidas) === 0, h.texto.replace(/\n/g, ' | '))
 
+titulo('A2 · MDC2-02: solo con identidad comprobada (etag igual o sha256 igual); velas de metadatos = velas del cuerpo')
+// Astra cierres-2: info() sin etag ni sha256 y un GET de igual tamaño con otro contenido daba 0
+const OTRO = gzipSync(Buffer.from(JSON.stringify([{ time: 1767312000, open: 1.9, high: 1.9, low: 1.9, close: 1.9, volume: 1 }])))
+ver('control: la sustitucion tiene el mismo tamaño que el cuerpo esperado', OTRO.length === CUERPO.length, `${OTRO.length} / ${CUERPO.length}`)
+const sinId = { name: GZ, version: 'v1', size: CUERPO.length, metadata: {} }
+const i1 = await comprueba({ info: sinId, get: () => ({ cuerpo: CUERPO, cab: { etag: '"abc"' } }) })
+oraculo('MDC2-02', 'info() sin etag ni sha256, GET con etag: no hay con que contrastar → 3', i1.codigo === 3 && /identidad/i.test(i1.texto), i1.texto.replace(/\n/g, ' | '))
+const i2 = await comprueba({ info: sinId, get: () => ({ cuerpo: CUERPO }) })
+oraculo('MDC2-02', 'info() sin etag ni sha256, GET sin etag → 3', i2.codigo === 3, i2.texto.replace(/\n/g, ' | '))
+const i3 = await comprueba({ info: sinId, get: () => ({ cuerpo: OTRO }) })
+oraculo('MDC2-02', 'sustitucion de igual tamaño (OHLC 1,9 en vez de 1,1) sin etag ni sha256 → 3', i3.codigo === 3, i3.texto.replace(/\n/g, ' | '))
+const i4 = await comprueba({ info: infoBuena({ metadata: { sha256: sha(CUERPO), velas: '999' } }), get: () => ({ cuerpo: CUERPO, cab: { etag: '"abc"' } }) })
+oraculo('MDC2-02', 'el informe muestra velas de metadatos (999) frente a las del cuerpo (1); no coinciden → 3', i4.codigo === 3 && /999/.test(i4.texto) && /velas/.test(i4.texto), i4.texto.replace(/\n/g, ' | '))
+const i5 = await comprueba({ info: infoBuena({ metadata: { velas: '1' } }), get: () => ({ cuerpo: CUERPO, cab: { etag: '"abc"' } }) })
+oraculo('MDC2-02', 'positivo: etag igual sin sha256 → 0 y «identidad verificada por etag»', i5.codigo === 0 && /identidad verificada por etag/.test(i5.texto), i5.texto.replace(/\n/g, ' | '))
+const i6 = await comprueba({ info: { name: GZ, version: 'v1', size: CUERPO.length, metadata: { sha256: sha(CUERPO), velas: '1' } }, get: () => ({ cuerpo: CUERPO }) })
+oraculo('MDC2-02', 'positivo: sha256 igual sin etag (ni en info() ni en el GET) → 0 y «identidad verificada por sha256»', i6.codigo === 0 && /identidad verificada por sha256/.test(i6.texto), i6.texto.replace(/\n/g, ' | '))
+
 titulo('B · el script, con los dobles del arnes')
 const hay = existsSync(REPO + 'scripts/comprueba-descarga.js')
 const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'https://proyecto-secreto.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'falsa' }
@@ -89,5 +107,19 @@ const ops = db.log.filter(l => String(l.tabla).startsWith('storage'))
 oraculo('Paso 6', 'el script: 0, sin proveedor, solo info y download (una descarga real del objeto), sin URL en el log', s.codigo === 0 && proveedor.llamadas.length === 0 && ops.every(l => l.op === 'info' || l.op === 'download') && ops.filter(l => l.op === 'download' && l.encontrado !== false).length === 1 && !s.salida.some(l => /proyecto-secreto|https?:/.test(l)), `codigo ${s.codigo} · ${ops.map(l => l.op).join(',')} · ${s.salida.slice(-1).join('')}`)
 const s2 = hay ? await correScript('scripts/comprueba-descarga.js', { ahora: '2026-10-11T08:00:00Z', argv: ['XXXYYY'], env: ENV }) : { codigo: null }
 oraculo('Paso 6', 'un par que no existe: 4 y nada pedido', s2.codigo === 4, `codigo ${s2.codigo}`)
+titulo('C · el lector del diario aplica la misma regla (MDC2-02)')
+{
+  const correDiario = () => correScript('scripts/actualizar-diario.js', { ahora: '2026-02-03T06:00:00Z', argv: ['--subir', '--pares', 'EURUSD'], env: { ...ENV, MERCADO_TOPE_BYTES: '45000000' } })
+  escenario({ storage: { 'forex-data': { [GZ]: CUERPO } } })
+  db.infoSinEtag = true
+  const d1 = await correDiario()
+  oraculo('MDC2-02', 'diario: info() sin etag y sin sha256 en los metadatos → codigo 3, nada subido', d1.codigo === 3 && !db.log.some(l => l.op === 'upload' && !String(l.payload?.ruta).startsWith('_cerrojos/')), `codigo ${d1.codigo} · ${d1.salida.find(l => /EURUSD\/M1/.test(l)) ?? ''}`)
+  escenario({ storage: { 'forex-data': { [GZ]: CUERPO } } })
+  db.infoSinEtag = true
+  db.metadatos['forex-data'] = { [GZ]: { sha256: sha(CUERPO), velas: '1' } }
+  const d2 = await correDiario()
+  db.infoSinEtag = false
+  oraculo('MDC2-02', 'diario, control positivo: sin etag pero con el sha256 de los metadatos, la lectura se acepta (no 3)', d2.codigo !== 3 && !/identidad sin confirmar/.test(d2.salida.join('\n')), `codigo ${d2.codigo} · ${d2.salida.find(l => /EURUSD\/M1/.test(l)) ?? ''}`)
+}
 ver('control (H06): ningun script por timeout', ejecucionesScripts.every(x => x.terminoPor !== 'timeout'))
 fin()
