@@ -196,7 +196,8 @@ const leerAnio = async (pair, year) => {
   const shaMeta = i.estado === 'ok' ? i.metadata?.sha256 ?? null : null
   const lee = () => TOPE != null ? F.leerRuta(sb, i.ruta, LIM, { crudo: true, tope: { max: i.size, etag: i.etag, size: i.size }, sha256: shaMeta }).then(r => ({ ...r, ruta: i.ruta })) : F.leerVigente(sb, pair, year, LIM, { crudo: true, sha256: shaMeta })
   // un intento fallido cuenta lo recibido y, si no se sabe, el tamaño esperado (MD-01)
-  const cuenta = r => { const c = r.bytes ?? (r.estado === 'error' && i.estado === 'ok' ? i.size ?? 0 : 0); if (r.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += c } return c }
+  // (MDC-01: tambien el cuerpo de un 404 que llego, si se conoce)
+  const cuenta = r => { const c = r.bytes ?? (r.estado === 'error' && i.estado === 'ok' ? i.size ?? 0 : 0); if (r.estado !== 'no-existe' || c) { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += c } return c }
   let x = await lee()
   let contados = cuenta(x)
   if (x.shaDistinto) {
