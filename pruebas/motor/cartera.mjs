@@ -325,6 +325,23 @@ for (const [gbp, x] of [[true, a40(true)], [false, a40(false)]]) {
   const canc = x?.r ? de(x.r.eventos, 'orden_cancelada')[0] : null
   oraculo('P7-05', `A40 (${gbp ? 'GBPUSD' : 'EURUSD'} primero): la cancelacion de ${otro} explica que su fill de la simulacion aislada no ocurrio en la conjunta, por margen; y no la marca como ambigua A/B`, !!canc && canc.par === otro && /aislada/.test(canc.causa_ambiguedad ?? '') && /fill/.test(canc.causa_ambiguedad ?? '') && /margen/.test(canc.causa_ambiguedad ?? '') && canc.ambigua !== true, enTexto(canc))
 }
+// P7C-03 (Astra): la precedencia se explica con los instantes y ordenes que compitieron de verdad. En A40 llegan
+// al precio en el mismo instante (s = 1/2) y desempata la seq; en la variante de Astra (o1 seq 1 llega a s = 1/2,
+// o2 seq 2 a s = 1/4) decide el precio: o2 se lleno antes, y atribuirlo a la seq seria falso
+for (const [gbp, x] of [[true, a40(true)], [false, a40(false)]]) {
+  const canc = x?.r ? de(x.r.eventos, 'orden_cancelada')[0] : null, t = canc?.causa_ambiguedad ?? ''
+  const [gana, pierde] = gbp ? ['o1 (GBPUSD, seq 1)', 'o2 (seq 2)'] : ['o1 (EURUSD, seq 1)', 'o2 (seq 2)']
+  oraculo('P7C-03', `A40 (${gbp ? 'GBPUSD' : 'EURUSD'} primero): mismo instante (s = 1/2 de la fase 2) y desempate por seq, nombrando las dos ordenes`, t.includes(gana) && t.includes(pierde) && /mismo instante \(s = 1\/2 de la fase 2\)/.test(t) && /seq menor/.test(t), t)
+}
+const a40v = corre(() => {
+  const s = sesion({ pares: ['EURUSD', 'GBPUSD'], capital: '2400', mins: { EURUSD: [plana('1.10002'), ['1.10002', '1.10002', '1.10000', '1.10000']], GBPUSD: [plana('1.30004'), ['1.30004', '1.30004', '1.30000', '1.30000']] } })
+  pend(s, 'EURUSD', 'BUY', 'limit', '1.10001', '1'); pend(s, 'GBPUSD', 'BUY', 'limit', '1.30003', '1')
+  return { s, r: avanza(s, 1) }
+})
+const v40 = a40v?.r ? { fill: de(a40v.r.eventos, 'fill'), canc: de(a40v.r.eventos, 'orden_cancelada') } : {}
+ver('control variante: o2 (GBPUSD, seq 2) se llena en s = 1/4 y o1 (EURUSD, seq 1) se cancela en s = 1/2 por margen', v40.fill?.length === 1 && v40.fill[0].orden === 'o2' && v40.fill[0].en?.fraccion === '1/4' && v40.canc?.length === 1 && v40.canc[0].orden === 'o1' && v40.canc[0].en?.fraccion === '1/2' && v40.canc[0].motivo === 'margen_insuficiente', a40v?.error ?? enTexto(v40))
+const tv = v40.canc?.[0]?.causa_ambiguedad ?? ''
+oraculo('P7C-03', 'variante de Astra: decidio el precio (o2 en s = 1/4 antes que o1 en s = 1/2), sin atribuirlo a la seq', !/seq/.test(tv) && tv.includes('o2 (GBPUSD)') && /s = 1\/4 de la fase 2/.test(tv) && /s = 1\/2 de la fase 2/.test(tv) && /decidio el precio/.test(tv) && /margen/.test(tv), tv)
 // negativo: dos pares que no se tocan (cada SL en su par, margen sobrado): la conjunta = las aisladas, sin explicacion
 const sinDif = corre(() => {
   const s = sesion({ pares: ['EURUSD', 'GBPUSD'], mins: { EURUSD: [plana('1.10000'), ['1.10000', '1.10000', '1.09800', '1.09800']], GBPUSD: [plana('1.30000'), ['1.30000', '1.30000', '1.29800', '1.29800']] } })
