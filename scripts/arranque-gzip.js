@@ -151,16 +151,26 @@ async function main() {
     if (i.estado === 'error') { console.log(`  ${par} ✗ no se pudo consultar (${i.motivo})${SUBIR ? '. El arranque PARA' : ''}`); mal.push(par); if (SUBIR) break; continue }
     if (i.estado === 'no-existe') { console.log(`  ${par} ✗ no hay ${json} ni ${gz}: nada que migrar${SUBIR ? '. El arranque PARA' : ''}`); mal.push(par); if (SUBIR) break; continue }
     if (i.ruta === gz) {
-      if (!SUBIR) { const cp = COPIA ? miraCopia(COPIA, par) : null; console.log(`  ${par} [SECO] ya hay ${gz} (${i.size} bytes): con --subir se certificaria contra el .json (se bajan los dos) y despues se borraria el .json${cp ? ` · copia: ${cp.ok ? 'ok' : cp.motivo}` : ''}`); continue }
+      if (!SUBIR) { const cp = COPIA ? miraCopia(COPIA, par) : null; console.log(`  ${par} [SECO] ya hay ${gz} (${i.size} bytes): con --subir se certificaria (sha256 de sus metadatos, contra el .json si lo hay y contra la copia local) y, si hay .json, se borraria${cp ? ` · copia: ${cp.ok ? 'ok' : cp.motivo}` : ''}`); continue }
+      // MA-GZ-03 (Astra): el sha256 del .gz se certifica SIEMPRE, haya .json o no; sin el, el par queda pendiente
+      const ig = await infoRuta(gz)
+      if (ig.estado !== 'ok') { console.log(`  ${par} ✗ no se pudo consultar ${gz} (${ig.motivo ?? ig.estado}): pendiente de reconciliar. El arranque PARA`); mal.push(par); break }
+      if (!ig.metadata?.sha256) { console.log(`  ${par} ✗ ${gz} sin sha256 en sus metadatos: no se puede certificar su identidad: pendiente de reconciliar. El arranque PARA`); mal.push(par); break }
       const ij = await infoRuta(json)
-      const g = await F.leerRuta(sb, gz, LIM), j = await F.leerRuta(sb, json, LIM)
+      const g = await F.leerRuta(sb, gz, LIM, { sha256: ig.metadata.sha256 }), j = await F.leerRuta(sb, json, LIM)
       T.n += 2; T.bytes += (g.bytes || 0) + (j.bytes || 0)
-      if (g.estado !== 'ok') { console.log(`  ${par} ✗ ${gz} existe pero no se puede leer: ${g.motivo ?? g.estado}`); mal.push(par); break }
-      if (j.estado === 'error') { console.log(`  ${par} ✗ no se pudo leer ${json} para comparar: ${j.motivo}`); mal.push(par); break }
+      if (g.estado !== 'ok') { console.log(`  ${par} ✗ ${gz} no se puede certificar (${g.motivo ?? g.estado}): pendiente de reconciliar. El arranque PARA`); mal.push(par); break }
+      if (j.estado === 'error') { console.log(`  ${par} ✗ no se pudo leer ${json} para comparar: ${j.motivo}. El arranque PARA`); mal.push(par); break }
       const v = C.validaParaPublicar(g.velas, j.estado === 'ok' ? j.velas : null, { anio: ANIO })
-      if (!v.ok) { console.log(`  ${par} ✗ ${gz} no pasa la validacion frente a ${json}: ${v.problemas.join(' · ')}`); mal.push(par); break }
-      console.log(`  ${par} ✓ ${gz} certificado: ${g.velas.length} velas, validado y sin ningun dia con menos velas que ${json} (${j.estado === 'ok' ? j.velas.length : 0} velas)${v.avisos.length ? ` (aviso: ${v.avisos.join(' · ')})` : ''}`)
-      if (j.estado !== 'ok') continue                 // sin .json: nada que borrar
+      if (!v.ok) { console.log(`  ${par} ✗ ${gz} no pasa la validacion frente a ${json}: ${v.problemas.join(' · ')}. El arranque PARA`); mal.push(par); break }
+      if (j.estado !== 'ok') {
+        // par YA CONVERTIDO (solo .gz, p. ej. tras un arranque interrumpido): su copia local tiene que ser lo que hay en el .gz
+        const cpg = miraCopia(COPIA, par, F.huella(g.velas))
+        if (!cpg.ok) { console.log(`  ${par} ✗ ${gz} con su sha256 correcto, pero ${cpg.motivo}: pendiente de reconciliar. El arranque PARA`); mal.push(par); break }
+        console.log(`  ${par} ✓ ${gz} ya convertido y certificado: sha256 ${ig.metadata.sha256}, ${g.velas.length} velas = copia local ${cpg.fichero} (sha256 ${cpg.sha})`)
+        continue
+      }
+      console.log(`  ${par} ✓ ${gz} certificado: sha256 ${ig.metadata.sha256}, ${g.velas.length} velas, validado y sin ningun dia con menos velas que ${json} (${j.velas.length} velas)${v.avisos.length ? ` (aviso: ${v.avisos.join(' · ')})` : ''}`)
       // el .json de un par certificado tambien se borra, con su copia y con el .gz ya verificado
       const cp = miraCopia(COPIA, par, F.huella(j.velas))
       if (!cp.ok) { console.log(`  ${par} ✗ ${cp.motivo}: no se borra ${json}. El arranque PARA`); mal.push(par); break }
