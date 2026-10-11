@@ -273,6 +273,33 @@ Registros completos en `~/Desktop/revisiones-suite/2026-10-10-arranque-gzip-regi
     `17 3 * * *`, sin ejecución fallida.
   - El workflow manual sigue desactivado y se queda así.
 
+## Primer diario (11-oct-2026), revisado en solo lectura
+
+Run 38130667637 («Mercado diario (programado)», `schedule`, sobre e777d77), revisado
+desde GitHub con `gh`:
+
+- **Hora:** cron `17 3 * * *`; el job arrancó a las 10:04:58 UTC y acabó a las
+  10:46:08 UTC.
+- **Código 2** (proveedor no disponible): en rojo el paso «Resumen».
+- **Consumo:** 39.273.887 B de objetos anuales, tope 45.000.000 B. Cada par leyó su
+  `.gz` una vez; los cuatro reintentos salieron de la caché (0 B).
+- **Por par:** USDJPY, AUDUSD, USDCAD, AUDCAD y GBPJPY al 9-oct a la primera; EURUSD,
+  GBPUSD y USDCHF al 9-oct en el reintento (antes 503, ECONNRESET o plazo de 60 s);
+  **NZDUSD se queda en el 8-oct** (503 en el paso; plazo y ECONNRESET en el reintento).
+- **Caché:** restauración sin acierto (primera ejecución); guardada
+  `mercado-anual-91c21e67a373-forex-data-38130667637`, 39.175.338 B.
+- **Cerrojos:** cada par, «cerrojo 3×» sin error ni plazo en el registro. En el bucket se
+  comprueba con `scripts/verifica-diario.js`.
+- **Decisión del CTO:** NZDUSD no se lanza a mano; lo recupera el cron siguiente y se
+  comprueba el 12-oct.
+
+### Pendientes (apuntados, sin tocar)
+
+- El resumen final muestra por par los bytes **del último intento**, no la suma: EURUSD
+  sale con «0 bytes» aunque su paso bajó 4.287.470 B. El total sí es la suma.
+- **El cron llegó 6 h 47 min tarde** (03:17 → 10:04 UTC). Se vigila en la segunda
+  ejecución.
+
 ## Rollback
 
 - **Nunca a lectores anteriores al gzip** una vez que el commit nuevo está en main
