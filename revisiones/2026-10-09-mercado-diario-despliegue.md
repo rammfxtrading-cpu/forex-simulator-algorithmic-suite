@@ -293,6 +293,25 @@ desde GitHub con `gh`:
 - **Decisión del CTO:** NZDUSD no se lanza a mano; lo recupera el cron siguiente y se
   comprueba el 12-oct.
 
+### Verificación del bucket (11-oct, 18:02 CEST)
+
+`node scripts/verifica-diario.js 2026-10-08` (9c12e40), ejecutado por Ramón desde el Mac.
+Registro: `~/Desktop/revisiones-suite/2026-10-11-verifica-diario.log`, sha256
+`a2150fd19f4ef547ecdccd560f7ebec4179eea03545aa5d309cf5d6e506ab8a7`. **Código 0.**
+
+- Ocho pares con la última vela el 9-oct a las 20:59 UTC y el 8 y el 9 completos;
+  NZDUSD con la última vela el 8-oct a las 23:59 UTC y el 8 completo.
+- En los nueve: sha256 del `.gz` igual al de sus metadatos (identidad por etag y
+  sha256), velas iguales a las de los metadatos, ningún `.json` de 2026, ningún cerrojo.
+- Bucket: 27 objetos, 745.269.948 B (antes 745.387.529); `_cerrojos/` vacío.
+- Los `.gz` pesan 117.581 B menos con unas 2.700 velas más. **Medido:** la misma copia
+  del 7-oct (EURUSD, 285.516 velas) da 4.287.470 B con Node 25 (zlib 1.2.12, el Mac del
+  arranque) y 4.238.904 B con Node 20 (zlib 1.3.1, el de Actions). Es el compresor, no
+  el contenido.
+- Al final del registro hay dos líneas `codigo 127` añadidas después de la ejecución
+  buena. No se sabe de dónde vienen; la verificación (cabecera 16:02:14 UTC, «TODO OK»,
+  `codigo 0`) está completa antes de ellas.
+
 ### Pendientes (apuntados, sin tocar)
 
 - El resumen final muestra por par los bytes **del último intento**, no la suma: EURUSD
