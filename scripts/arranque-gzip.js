@@ -37,7 +37,14 @@
 //      descomprimido = exactamente las velas del .json;
 //   4. el .json sigue siendo el que se leyo (misma firma en info()) y se borra;
 //   5. info() del .json tiene que decir que ya no existe.
-// Cualquier fallo en 1-5: el arranque PARA ahi, sin borrar el .json de ese par.
+// Cualquier fallo: el arranque PARA ahi. Pero lo que queda depende de cuando
+// (Astra MA-GZ-04):
+//   · en 1-3, o en 4 ANTES de enviar el DELETE: el .json no se ha intentado
+//     borrar y sigue ahi;
+//   · con el DELETE ya enviado (sin respuesta, con error, o 5 que no confirma
+//     la ausencia): INCIERTO, no se sabe si el .json existe. No se da por
+//     conservado ni por borrado: se reconcilia releyendo (info() o el listado).
+//   · un cerrojo puesto: codigo 5, sin tocar nada mas del par.
 // Codigo: 0 todos migrados (o certificados) y su .json borrado · 1 algo fallo
 // (para ahi) · 5 un cerrojo puesto (para ahi) · 4 uso (tambien --subir sin --copia).
 const { createClient } = require('@supabase/supabase-js')

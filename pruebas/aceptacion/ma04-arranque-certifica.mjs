@@ -46,6 +46,13 @@ titulo('1 · un .gz existente se valida')
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J, 'EURUSD/M1/2026.json.gz': Buffer.from('gzip ilegible') } } })
 const a = await corre(['--subir', '--copia', CP, '--pares', 'EURUSD'])
 oraculo('MD-04', '.gz ilegible (13 bytes de texto) con un .json valido: ✗ y codigo 1, sin subir ni borrar nada', a.codigo === 1 && /EURUSD.*✗/.test(txt(a)) && subidas().length === 0 && borrados().length === 0, `codigo ${a.codigo} · ${a.salida.filter(l => /EURUSD/.test(l)).join(' | ')}`)
+// Astra arranque-2 (reserva baja): sin sha256 el caso de arriba se rechaza ANTES del
+// decodificador. Con el sha256 correcto de esos 13 bytes llega a el: «fichero ilegible»
+const ILEGIBLE = Buffer.from('gzip ilegible')
+escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J, 'EURUSD/M1/2026.json.gz': ILEGIBLE } } })
+;(db.metadatos['forex-data'] ??= {})['EURUSD/M1/2026.json.gz'] = { sha256: sha(ILEGIBLE) }
+const a2 = await corre(['--subir', '--copia', CP, '--pares', 'EURUSD'])
+oraculo('MD-04', '.gz ilegible CON su sha256 correcto: llega al decodificador («ilegible»), ✗ y codigo 1, sin subir ni borrar, el .json intacto', a2.codigo === 1 && /ilegible/.test(txt(a2)) && !/sin sha256|no trae sha256/.test(txt(a2)) && subidas().length === 0 && borrados().length === 0 && db.storage['forex-data']['EURUSD/M1/2026.json'] === J, `codigo ${a2.codigo} · ${a2.salida.filter(l => /EURUSD/.test(l)).join(' | ')}`)
 const corto = V.filter(v => !(new Date(v.time * 1000).toISOString().startsWith('2026-02-10') && (v.time / 60) % 1440 >= 1000))
 escenario({ storage: { 'forex-data': { 'EURUSD/M1/2026.json': J, 'EURUSD/M1/2026.json.gz': gz(corto) } } })
 ;(db.metadatos['forex-data'] ??= {})['EURUSD/M1/2026.json.gz'] = { sha256: sha(gz(corto)) }

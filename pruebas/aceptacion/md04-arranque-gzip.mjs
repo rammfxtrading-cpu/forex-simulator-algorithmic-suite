@@ -11,8 +11,11 @@
  *   del .json. --pares A,B limita los pares.
  *   CTO 10-oct (Storage al limite): con --subir exige --copia DIR (copia local
  *   de cada .json con su sha256) y, por par y en serie, verifica el .gz
- *   bajandolo y BORRA el .json; cualquier fallo PARA sin borrar ese .json.
- *   Codigo: 0 todo migrado y su .json borrado; 1 algo fallo (para); 4 uso.
+ *   bajandolo y BORRA el .json; cualquier fallo PARA. Antes de enviar el
+ *   DELETE, el .json sigue ahi; con el DELETE enviado y sin confirmar, el
+ *   resultado es INCIERTO y se reconcilia releyendo (Astra MA-GZ-04).
+ *   Codigo: 0 todo migrado y su .json borrado; 1 algo fallo (para); 5 un
+ *   cerrojo puesto (para); 4 uso.
  *
  * Para que publicarAnio suba aunque el contenido sea el mismo: «sin cambios»
  * solo si lo vigente ya esta en la ruta que se escribe (el .gz).
