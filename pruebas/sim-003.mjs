@@ -364,11 +364,37 @@ try {
     bl.ok && uno(`select terminal from sim_sessions where id = '${u(101)}'`) === 'borrada' && n(`select count(*) from sim_trades where session_id = '${u(101)}'`) === 0
     && SR(`select public.sim_borrar_legacy('${A}', '${u(212)}');`).motivo === 'no_es_legado' && SR(`select public.sim_borrar_legacy('${A}', '${u(102)}');`).http === 404, eti(bl))
   ver('sim_borrar_legacy otra vez → 410', SR(`select public.sim_borrar_legacy('${A}', '${u(101)}');`).http === 410)
+  // S003-01 (Astra 11-oct): borrar el reto P se lleva tambien su fase H. Oraculo P → H → borrar P → comando H
+  const tH = tomar(Y, H, u(1410), { k: 30, forzar: true })
+  const abH = comando(Y, H, u(1411), 'abrir', { testigo: tH.testigo, version: 0, k: 31, resultado: res({ estado: { esquema: 'reto@1', fase: 2, estado: 'en_curso', pos: 1 }, eventos: [ev(0, 'orden_creada')] }) })
+  ver('montaje S003-01: la fase H de P con arrendamiento, un comando confirmado y un dibujo', tH.ok && abH.ok
+    && pg.psql(`insert into session_drawings (user_id, session_id, pair) values ('${Y}', '${H}', 'EURUSD');`, 'p').ok, `${eti(tH)} · ${eti(abH)}`)
+  const bP = SR(`select public.sim_borrar_sesion('${Y}', '${P}');`)
+  ver('S003-01: borrar P → 200 y P y su fase H quedan como lapida', bP.ok && uno(`select string_agg(coalesce(terminal, '-'), ',' order by id) from sim_sessions where id in ('${P}', '${H}')`) === 'borrada,borrada', eti(bP))
+  ver('S003-01: de H no queda nada: recibos, eventos, trades, dibujos ni arrendamiento',
+    ['sim_recibos', 'sim_eventos', 'sim_trades', 'session_drawings', 'sim_arrendamientos'].every(t => n(`select count(*) from ${t} where session_id = '${H}'`) === 0))
+  ver('S003-01: un comando sobre H (con su testigo de antes) → 410; tomar H → 410; borrar H → 410; comando sobre P → 410',
+    comando(Y, H, u(1412), 'abrir', { testigo: tH.testigo, version: 1, k: 32, resultado: res() }).motivo === 'sesion_borrada'
+    && tomar(Y, H, u(1413), { k: 33 }).motivo === 'sesion_borrada' && SR(`select public.sim_borrar_sesion('${Y}', '${H}');`).http === 410
+    && comando(Y, P, u(1414), 'abrir', { testigo: 'x', version: 1, k: 34, resultado: res() }).motivo === 'sesion_borrada')
+  // y en legacy: el reto v0 de B con su fase v0 (como las crea hoy la web), con un trade y un dibujo en la fase
+  const LP = u(700), LH = u(701)
+  ver('montaje S003-01 legacy: reto v0 LP de B y su fase LH, con un trade y un dibujo', pg.psql(`insert into sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to, challenge_type, challenge_phase) values
+      ('${LP}', '${B}', 'reto', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', 'ftmo', 1);
+    insert into sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to, challenge_type, challenge_phase, challenge_parent_id) values
+      ('${LH}', '${B}', 'fase 2', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', 'ftmo', 2, '${LP}');
+    insert into sim_trades (session_id, user_id, pair, side, entry_price, lots, pnl, opened_at) values ('${LH}', '${B}', 'EURUSD', 'BUY', 1.1, 1, 5, now());
+    insert into session_drawings (user_id, session_id, pair) values ('${B}', '${LH}', 'EURUSD');`, 'p').ok)
+  const bLP = SR(`select public.sim_borrar_legacy('${B}', '${LP}');`)
+  ver('S003-01 legacy: borrar LP → 200; LP y LH lapidas; ni el trade ni el dibujo de LH; borrar LH → 410',
+    bLP.ok && uno(`select string_agg(coalesce(terminal, '-'), ',' order by id) from sim_sessions where id in ('${LP}', '${LH}')`) === 'borrada,borrada'
+    && n(`select count(*) from sim_trades where session_id = '${LH}'`) === 0 && n(`select count(*) from session_drawings where session_id = '${LH}'`) === 0
+    && SR(`select public.sim_borrar_legacy('${B}', '${LH}');`).http === 410, eti(bLP))
   crear(W, u(500), u(1500))
   ver('montaje: W con config de grafico y una plantilla (columnas de s04)', pg.psql(`insert into user_chart_config (user_id) values ('${W}'); insert into sim_drawing_templates (user_id, name, data) values ('${W}', 'p', '[]');`, 'p').ok)
   const ba = SR(`select public.sim_borrar_alumno('${W}');`)
   ver('sim_borrar_alumno: la fila SI se va (no deja lapida); no queda nada de W en las tablas del simulador; B intacto', ba.ok && ['sim_sessions', 'sim_recibos', 'sim_trades', 'user_chart_config', 'sim_drawing_templates', 'sim_arrendamientos'].every(t => n(`select count(*) from ${t} where user_id = '${W}'`) === 0)
-    && n(`select count(*) from sim_sessions where user_id = '${B}'`) === 1, eti(ba))
+    && n(`select count(*) from sim_sessions where id = '${u(102)}' and terminal is null`) === 1, eti(ba))
 
   titulo('8 · el DELETE del hub (§ 6.1)')
   // orden simple 1: el hub borra antes; orden simple 2: la RPC confirma antes

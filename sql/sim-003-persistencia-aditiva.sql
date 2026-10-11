@@ -735,61 +735,81 @@ BEGIN
     -- BORRAR UNA SESION v1 (§ 1.6, CD07; CTO 11-oct, opcion a): bajo los
     -- bloqueos del orden comun, la fila QUEDA como lapida (terminal =
     -- 'borrada') y se borran sus trades, eventos, recibos, dibujos y su
-    -- arrendamiento. La configuracion del grafico (session_chart_config) se
+    -- arrendamiento. Lo mismo para sus fases (S003-01): borrar el reto se
+    -- lleva sus hijas; orden: arrendamientos (por session_id) → padre →
+    -- sesion → fases. La configuracion del grafico (session_chart_config) se
     -- queda. Ya borrada: 410. Recrear ese id: 410 (sim_crear_sesion). El
     -- cupo no cuenta las lapidas; el dashboard tiene que no listarlas.
     CREATE FUNCTION public.sim_borrar_sesion(p_actor uuid, p_session_id uuid)
       RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
     AS $f$
-    DECLARE v_al jsonb; v_padre uuid; v_s public.sim_sessions;
+    DECLARE v_al jsonb; v_padre uuid; v_s public.sim_sessions; v_ids uuid[];
     BEGIN
       IF p_actor IS NULL OR p_session_id IS NULL THEN RETURN public.sim_error(422, 'argumentos_incompletos'); END IF;
       v_al := public.sim_bloquea_alumno(p_actor);
       IF v_al IS NULL THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
-      PERFORM 1 FROM public.sim_arrendamientos WHERE session_id = p_session_id FOR UPDATE;
+      -- la sesion y sus fases (S003-01): con la barrera del alumno puesta,
+      -- ninguna RPC le crea otra mientras tanto
+      WITH RECURSIVE d(id) AS (
+        SELECT p_session_id
+        UNION
+        SELECT s.id FROM public.sim_sessions s JOIN d ON s.challenge_parent_id = d.id WHERE s.user_id = p_actor)
+      SELECT array_agg(id) INTO v_ids FROM d;
+      PERFORM 1 FROM public.sim_arrendamientos WHERE session_id = ANY (v_ids) ORDER BY session_id FOR UPDATE;
       SELECT challenge_parent_id INTO v_padre FROM public.sim_sessions WHERE id = p_session_id;
       IF v_padre IS NOT NULL THEN PERFORM 1 FROM public.sim_sessions WHERE id = v_padre FOR UPDATE; END IF;
       SELECT * INTO v_s FROM public.sim_sessions WHERE id = p_session_id FOR UPDATE;
-      IF NOT FOUND THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
+      PERFORM 1 FROM public.sim_sessions WHERE id = ANY (v_ids) AND id <> p_session_id ORDER BY id FOR UPDATE;
+      IF v_s.id IS NULL THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       IF v_s.user_id <> p_actor THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
       IF v_s.motor_version <> 1 THEN RETURN public.sim_error(409, 'no_es_v1'); END IF;
       IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
-      UPDATE public.sim_sessions SET terminal = 'borrada', escritor = NULL WHERE id = p_session_id;
-      DELETE FROM public.sim_trades WHERE session_id = p_session_id;
-      DELETE FROM public.sim_eventos WHERE session_id = p_session_id;
-      DELETE FROM public.sim_recibos WHERE session_id = p_session_id;
-      DELETE FROM public.session_drawings WHERE session_id = p_session_id;
-      DELETE FROM public.sim_arrendamientos WHERE session_id = p_session_id;
-      RETURN jsonb_build_object('ok', true, 'http', 200, 'borrada', p_session_id);
+      UPDATE public.sim_sessions SET terminal = 'borrada', escritor = NULL WHERE id = ANY (v_ids);
+      DELETE FROM public.sim_trades WHERE session_id = ANY (v_ids);
+      DELETE FROM public.sim_eventos WHERE session_id = ANY (v_ids);
+      DELETE FROM public.sim_recibos WHERE session_id = ANY (v_ids);
+      DELETE FROM public.session_drawings WHERE session_id = ANY (v_ids);
+      DELETE FROM public.sim_arrendamientos WHERE session_id = ANY (v_ids);
+      RETURN jsonb_build_object('ok', true, 'http', 200, 'borrada', p_session_id,
+                                'fases', to_jsonb(array_remove(v_ids, p_session_id)));
     END $f$;
 
     -- BORRAR UNA SESION LEGACY (CTO 10-oct, decision 6): la llama el
     -- endpoint con la sesion del alumno; comprueba que es suya y que es de la
     -- epoca legacy (motor_version = 0) y deja la fila como lapida, igual que
-    -- sim_borrar_sesion (CTO 11-oct, opcion a).
+    -- sim_borrar_sesion (CTO 11-oct, opcion a), con sus fases (S003-01).
     CREATE FUNCTION public.sim_borrar_legacy(p_user_id uuid, p_session_id uuid)
       RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
     AS $f$
-    DECLARE v_al jsonb; v_padre uuid; v_s public.sim_sessions;
+    DECLARE v_al jsonb; v_padre uuid; v_s public.sim_sessions; v_ids uuid[];
     BEGIN
       IF p_user_id IS NULL OR p_session_id IS NULL THEN RETURN public.sim_error(422, 'argumentos_incompletos'); END IF;
       v_al := public.sim_bloquea_alumno(p_user_id);
       IF v_al IS NULL THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
-      PERFORM 1 FROM public.sim_arrendamientos WHERE session_id = p_session_id FOR UPDATE;
+      -- la sesion y sus fases (S003-01): con la barrera del alumno puesta,
+      -- ninguna RPC le crea otra mientras tanto
+      WITH RECURSIVE d(id) AS (
+        SELECT p_session_id
+        UNION
+        SELECT s.id FROM public.sim_sessions s JOIN d ON s.challenge_parent_id = d.id WHERE s.user_id = p_user_id)
+      SELECT array_agg(id) INTO v_ids FROM d;
+      PERFORM 1 FROM public.sim_arrendamientos WHERE session_id = ANY (v_ids) ORDER BY session_id FOR UPDATE;
       SELECT challenge_parent_id INTO v_padre FROM public.sim_sessions WHERE id = p_session_id;
       IF v_padre IS NOT NULL THEN PERFORM 1 FROM public.sim_sessions WHERE id = v_padre FOR UPDATE; END IF;
       SELECT * INTO v_s FROM public.sim_sessions WHERE id = p_session_id FOR UPDATE;
-      IF NOT FOUND THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
+      PERFORM 1 FROM public.sim_sessions WHERE id = ANY (v_ids) AND id <> p_session_id ORDER BY id FOR UPDATE;
+      IF v_s.id IS NULL THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       IF v_s.user_id <> p_user_id THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
       IF v_s.motor_version <> 0 THEN RETURN public.sim_error(409, 'no_es_legado'); END IF;
       IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
-      UPDATE public.sim_sessions SET terminal = 'borrada', escritor = NULL WHERE id = p_session_id;
-      DELETE FROM public.sim_trades WHERE session_id = p_session_id;
-      DELETE FROM public.sim_eventos WHERE session_id = p_session_id;
-      DELETE FROM public.sim_recibos WHERE session_id = p_session_id;
-      DELETE FROM public.session_drawings WHERE session_id = p_session_id;
-      DELETE FROM public.sim_arrendamientos WHERE session_id = p_session_id;
-      RETURN jsonb_build_object('ok', true, 'http', 200, 'borrada', p_session_id);
+      UPDATE public.sim_sessions SET terminal = 'borrada', escritor = NULL WHERE id = ANY (v_ids);
+      DELETE FROM public.sim_trades WHERE session_id = ANY (v_ids);
+      DELETE FROM public.sim_eventos WHERE session_id = ANY (v_ids);
+      DELETE FROM public.sim_recibos WHERE session_id = ANY (v_ids);
+      DELETE FROM public.session_drawings WHERE session_id = ANY (v_ids);
+      DELETE FROM public.sim_arrendamientos WHERE session_id = ANY (v_ids);
+      RETURN jsonb_build_object('ok', true, 'http', 200, 'borrada', p_session_id,
+                                'fases', to_jsonb(array_remove(v_ids, p_session_id)));
     END $f$;
 
     -- BORRAR TODO EL SIMULADOR DE UN ALUMNO (wipe del admin, § 7.0): barrera
