@@ -473,7 +473,8 @@ BEGIN
     -- last_timestamp}, resumen }. Esta funcion confirma o rechaza:
     --   bloqueos (alumno → arrendamiento → padre → sesion) → t_decision →
     --   410/404 → idempotencia (mismo digest: el recibo; otro: 409) →
-    --   avance caducado (409) → terminal, acceso, legado, v1, epoca, testigo,
+    --   lapida (410, S003-03) → avance caducado (409) → revocada, acceso,
+    --   legado, v1, epoca, testigo,
     --   version (409 conflicto) → tasa de avances (429) → escribe.
     -- La clase la comprueba aqui (avanzar/checkpoint sin eventos economicos
     -- = ultimo_avance; lo demas, economico) y la version sube si y solo si el
@@ -565,10 +566,12 @@ BEGIN
         END IF;
         RETURN public.sim_error(409, 'clave_reutilizada');
       END IF;
+      -- la lapida antes que el avance caducado (S003-03): una sesion borrada
+      -- no manda recargar su estado
+      IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       IF v_avance AND p_version_esperada <> v_s.version THEN
         RETURN public.sim_error(409, 'comando_caducado', jsonb_build_object('version', v_s.version));
       END IF;
-      IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       IF v_s.terminal = 'revocada' THEN RETURN public.sim_error(403, 'acceso_revocado'); END IF;
       IF NOT (v_al->>'acceso')::boolean THEN RETURN public.sim_error(403, 'sin_acceso'); END IF;
       IF v_s.legado THEN RETURN public.sim_error(409, 'solo_lectura'); END IF;

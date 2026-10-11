@@ -148,7 +148,7 @@ Dentro de una transacción, en este orden:
 3. **Idempotencia:** si existe `sim_recibos (session_id, command_id)`:
    - mismo digest → devolver ese recibo tal cual, **sin ejecutar**;
    - digest distinto → `409 clave_reutilizada`.
-4. **Avance caducado** (V3-07): `avanzar`/`checkpoint` sin recibo y con `version_esperada` distinta de la vigente → `409 comando_caducado` (§ 6). Para los demás tipos, la misma situación es un `409 conflicto` normal.
+4. **Avance caducado** (V3-07): `avanzar`/`checkpoint` sin recibo y con `version_esperada` distinta de la vigente → `409 comando_caducado` (§ 6). **Antes, la lápida** (S003-03): si la sesión está borrada, `410 sesion_borrada`, aunque el avance también esté caducado. Para los demás tipos, la misma situación es un `409 conflicto` normal.
 5. Verificaciones, cada una con su respuesta y **sin efectos**: `terminal` (`410` / `403`); acceso de producto vigente (`profiles.simulador_activo`, dentro de la RPC, § 12.4); `legado` (`409 solo_lectura`); `epoca` (`426 actualizar_cliente`); testigo y caducidad con la **hora de decisión** `t_decision` de § 4.2 (`clock_timestamp()` capturado una vez, después de todos los bloqueos; `409 sin_arrendamiento`); `version = version_esperada` (`409 conflicto`).
 6. Escribir: recibo, eventos con `seq` consecutivo (lo asigna la RPC bajo el bloqueo), trades de los `cierre`, `estado`, proyecciones (`balance`, `last_timestamp`, `challenge_*`), renovar `hasta` y, según § 4.3.1, `version`.
 
@@ -212,7 +212,7 @@ El cliente guarda dos cosas separadas (§ 1.5): el **estado confirmado** (versi�
 
 - **«Guardado»** solo se enseña con recibo remoto.
 - **Conflicto** (`409 conflicto`): el comando sale de la cola sin efectos; si era económico, se recotiza y se pide confirmación con **un `command_id` nuevo**.
-- **`comando_caducado`:** solo para `avanzar`/`checkpoint` sin recibo y con versión distinta de la vigente. No hay ambigüedad económica: un avance no lleva intención de operar, y el estado confirmado ya incluye lo que hubiera hecho. Los comandos económicos conservan su recibo siempre, así que «sin recibo» en un comando económico solo puede significar «no se ejecutó».
+- **`comando_caducado`:** solo para `avanzar`/`checkpoint` sin recibo y con versión distinta de la vigente, y nunca sobre una lápida (ahí, 410: el cliente descarta su cola, no recarga). No hay ambigüedad económica: un avance no lleva intención de operar, y el estado confirmado ya incluye lo que hubiera hecho. Los comandos económicos conservan su recibo siempre, así que «sin recibo» en un comando económico solo puede significar «no se ejecutó».
 - **ACK y snapshot, separados** (V3-07, § 12.4): la respuesta de un comando **confirma su entrada de la cola** (sale por su `command_id`) aunque traiga un snapshot más viejo que el que el cliente ya tiene; el snapshot solo se instala si su versión es **mayor** que la conocida. Una respuesta vieja confirma la cola y no rebaja el estado; nunca deja el comando colgado en la cola.
 - **Identidad:** al cambiar de usuario se descarta la cola de esa clave sin enviarla (A22). Si `localStorage` falla, se avisa y cada comando espera su confirmación.
 - **Borrado:** un reintento de una sesión borrada recibe `410` y no la recrea (A24).
@@ -437,7 +437,7 @@ Toda respuesta es un jsonb `{ ok, http, motivo, … }`. Un rechazo **no escribe 
 | 403 | `acceso_revocado` | la sesión está marcada `terminal = 'revocada'` (hoy nada la marca así) | tomar, comando, pasar de fase |
 | 404 | `sesion_no_encontrada` | la sesión es de otro alumno; no se dice que existe ni se devuelve su recibo | tomar, comando, pasar de fase, `sim_borrar_sesion`, `sim_borrar_legacy` |
 | 409 | `clave_reutilizada` | la clave (`command_id`) o el id de sesión ya se usaron con otro sobre, otro tipo u otro alumno | crear, tomar, comando, pasar de fase |
-| 409 | `comando_caducado` | `avanzar`/`checkpoint` sin recibo y con una versión que ya no es la vigente (su `ultimo_avance` se sobrescribió); trae la versión vigente | comando |
+| 409 | `comando_caducado` | `avanzar`/`checkpoint` sin recibo y con una versión que ya no es la vigente (su `ultimo_avance` se sobrescribió); trae la versión vigente. Sobre una lápida gana el 410 (S003-03) | comando |
 | 409 | `conflicto` | la versión esperada no es la vigente; trae la vigente. El cálculo se descarta | comando, pasar de fase (versión del padre) |
 | 409 | `escritor_ocupado` | otra pestaña tiene el arrendamiento vigente de esta sesión y no se pidió forzar; trae quién y hasta cuándo | tomar |
 | 409 | `otra_sesion_activa` | otra sesión del alumno tiene un arrendamiento vigente (D-18) y no se pidió forzar; trae cuáles | tomar |
