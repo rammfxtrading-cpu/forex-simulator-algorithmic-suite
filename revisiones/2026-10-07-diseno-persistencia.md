@@ -56,7 +56,7 @@ Las columnas actuales (`capital`, `balance`, `last_timestamp`, `challenge_*`, `s
 | `session_id` | uuid → `sim_sessions(id)` ON DELETE CASCADE | — |
 | `user_id` | uuid | derivado de la sesión bloqueada, nunca del payload (§ 9) |
 | `command_id` | uuid | lo genera el cliente |
-| `tipo` | text | `abrir` · `modificar` · `cancelar` · `cerrar` · `avanzar` · `checkpoint` · `crear` · `tomar_escritor` |
+| `tipo` | text | `abrir` · `modificar` · `cancelar` · `cerrar` · `avanzar` · `checkpoint` · `crear` · `tomar_escritor` · `avanzar_fase` (CTO 11-oct: el recibo de la transición, en la hija; no se confunde con `crear`) |
 | `digest` | text | sha256 del **sobre canónico** (tipo + payload normalizado, § 12.4) |
 | `epoca` | integer | — |
 | `version_partida` | bigint | la que esperaba el cliente |

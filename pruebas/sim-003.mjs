@@ -319,16 +319,18 @@ try {
   const P = u(400), H = u(401)
   crear(Y, P, u(1400), { sesion: { ...SESION, challenge_type: 'ftmo' }, estado: { esquema: 'reto@1', fase: 1, estado: 'en_curso' } })
   const tY = tomar(Y, P, u(1401))
-  const nosup = SR(`select public.sim_avanzar_fase('${Y}', '${P}', '${H}', '${u(1402)}', ${L(JSON.stringify({ tipo: 'crear', padre: P }))}, 1, 0, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`)
+  const nosup = SR(`select public.sim_avanzar_fase('${Y}', '${P}', '${H}', '${u(1402)}', ${L(JSON.stringify({ tipo: 'avanzar_fase', padre: P }))}, 1, 0, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`)
   ver('fase 1 sin superar → 409 fase_no_superada', nosup.motivo === 'fase_no_superada', eti(nosup))
   comando(Y, P, u(1403), 'cerrar', { testigo: tY.testigo, version: 0, resultado: res({ estado: { esquema: 'reto@1', fase: 1, estado: 'superada' }, eventos: [ev(0, 'cierre'), ev(1, 'fase_superada')], trades: [TRADE(0)] }) })
   const fase = sobre => SR(`select public.sim_avanzar_fase('${Y}', '${P}', '${H}', '${u(1404)}', ${L(sobre)}, 1, 1, ${J({ name: 'fase 2' })}, ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`)
-  const f1 = fase(JSON.stringify({ tipo: 'crear', padre: P }))
-  ver('superada: 201, hija fase 2 con el capital del padre, padre passed_phase', f1.ok && f1.http === 201
+  ver('un sobre de tipo crear para pasar de fase → 422 sobre_invalido', fase(JSON.stringify({ tipo: 'crear', padre: P })).motivo === 'sobre_invalido')
+  const f1 = fase(JSON.stringify({ tipo: 'avanzar_fase', padre: P }))
+  ver('superada: 201, hija fase 2 con el capital del padre, padre passed_phase; recibo en la hija de tipo avanzar_fase (no crear)', f1.ok && f1.http === 201
+    && f1.recibo?.tipo === 'avanzar_fase' && f1.recibo?.session_id === H
     && uno(`select challenge_phase||','||capital||','||challenge_parent_id||','||motor_version from sim_sessions where id = '${H}'`) === `2,10000,${P},1`
     && uno(`select status from sim_sessions where id = '${P}'`) === 'passed_phase', eti(f1))
-  ver('reintento identico → el mismo recibo; otra hija → 409 transicion_hecha', fase(JSON.stringify({ tipo: 'crear', padre: P })).recibo?.id === f1.recibo?.id
-    && SR(`select public.sim_avanzar_fase('${Y}', '${P}', '${u(402)}', '${u(1405)}', ${L(JSON.stringify({ tipo: 'crear', padre: P, otra: 1 }))}, 1, 1, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`).motivo === 'transicion_hecha')
+  ver('reintento identico → el mismo recibo; otra hija → 409 transicion_hecha', fase(JSON.stringify({ tipo: 'avanzar_fase', padre: P })).recibo?.id === f1.recibo?.id
+    && SR(`select public.sim_avanzar_fase('${Y}', '${P}', '${u(402)}', '${u(1405)}', ${L(JSON.stringify({ tipo: 'avanzar_fase', padre: P, otra: 1 }))}, 1, 1, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`).motivo === 'transicion_hecha')
   ver('la hija no cuenta en el cupo (Y: 1 raiz)', n(`select count(*) from sim_sessions where user_id = '${Y}' and challenge_parent_id is null`) === 1)
 
   titulo('7 · borrar (CD07; CTO 10-oct, decision 6; CTO 11-oct, opcion a)')
@@ -388,7 +390,7 @@ try {
   const P2 = u(620), H2 = u(621)
   crear(Z, P2, u(1620), { sesion: { ...SESION, challenge_type: 'ftmo' }, estado: { esquema: 'reto@1', fase: 1, estado: 'superada' } })
   const i2a = conexion(), i2b = conexion()
-  await i2a.manda(`begin; set role service_role; select public.sim_avanzar_fase('${Z}', '${P2}', '${H2}', '${u(1621)}', ${L(JSON.stringify({ tipo: 'crear', padre: P2 }))}, 1, 0, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`)
+  await i2a.manda(`begin; set role service_role; select public.sim_avanzar_fase('${Z}', '${P2}', '${H2}', '${u(1621)}', ${L(JSON.stringify({ tipo: 'avanzar_fase', padre: P2 }))}, 1, 0, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`)
   const pb2 = i2b.manda(`set role service_role; delete from sim_sessions where user_id = '${Z}';`)
   const espI2 = await esperando(1)
   await i2a.manda('commit;')
@@ -403,7 +405,7 @@ try {
   pg.psql(`insert into auth.users values ('${V}'); insert into profiles (id, plan, simulador_activo) values ('${V}', 'basic', true);`, 'p')
   const P3 = u(630), H3 = u(631)
   crear(V, P3, u(1630), { sesion: { ...SESION, challenge_type: 'ftmo' }, estado: { esquema: 'reto@1', fase: 1, estado: 'superada' } })
-  SR(`select public.sim_avanzar_fase('${V}', '${P3}', '${H3}', '${u(1631)}', ${L(JSON.stringify({ tipo: 'crear', padre: P3 }))}, 1, 0, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`)
+  SR(`select public.sim_avanzar_fase('${V}', '${P3}', '${H3}', '${u(1631)}', ${L(JSON.stringify({ tipo: 'avanzar_fase', padre: P3 }))}, 1, 0, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`)
   const tV = tomar(V, H3, u(1632))
   const hub = conexion(), rpc = conexion()
   await hub.manda(`begin; set role service_role; select 1 from public.sim_sessions where id = '${H3}' for update;`)

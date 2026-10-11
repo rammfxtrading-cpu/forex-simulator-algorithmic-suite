@@ -247,7 +247,7 @@ BEGIN
       session_id         uuid        NOT NULL,
       user_id            uuid        NOT NULL,
       command_id         uuid        NOT NULL,
-      tipo               text        NOT NULL CHECK (tipo IN ('abrir', 'modificar', 'cancelar', 'cerrar', 'avanzar', 'checkpoint', 'crear', 'tomar_escritor')),
+      tipo               text        NOT NULL CHECK (tipo IN ('abrir', 'modificar', 'cancelar', 'cerrar', 'avanzar', 'checkpoint', 'crear', 'tomar_escritor', 'avanzar_fase')),
       digest             text        NOT NULL CHECK (digest ~ '^[0-9a-f]{64}$'),
       epoca              integer     NOT NULL,
       version_partida    bigint      NOT NULL,
@@ -649,9 +649,9 @@ BEGIN
 
     -- PASAR DE FASE (§ 2.5, § 4.3.2, D07). Crea la hija (fase 2) de un reto
     -- v1 cuya fase 1 esta superada en su estado (reto@1, estado 'superada').
-    -- Es una creacion: el id de la hija lo trae quien la pide y el recibo
-    -- 'crear' va en la hija; mismo id + misma clave + mismo digest → la misma
-    -- respuesta. CAS sobre la version del padre. Mismo capital que el padre.
+    -- El id de la hija lo trae quien la pide; el sobre y el recibo son de
+    -- tipo 'avanzar_fase' (no 'crear': CTO 11-oct) y el recibo va en la
+    -- hija; mismo id + misma clave + mismo digest → la misma respuesta. CAS sobre la version del padre. Mismo capital que el padre.
     -- El padre queda con status 'passed_phase' (la proyeccion de hoy,
     -- pages/api/challenge/advance.js).
     CREATE FUNCTION public.sim_avanzar_fase(p_actor uuid, p_padre_id uuid, p_hija_id uuid, p_command_id uuid, p_sobre text,
@@ -668,7 +668,7 @@ BEGIN
         RETURN public.sim_error(422, 'argumentos_incompletos');
       END IF;
       BEGIN v_sobre := p_sobre::jsonb; EXCEPTION WHEN others THEN RETURN public.sim_error(422, 'sobre_invalido'); END;
-      IF jsonb_typeof(v_sobre) <> 'object' OR v_sobre->>'tipo' IS DISTINCT FROM 'crear' THEN
+      IF jsonb_typeof(v_sobre) <> 'object' OR v_sobre->>'tipo' IS DISTINCT FROM 'avanzar_fase' THEN
         RETURN public.sim_error(422, 'sobre_invalido');
       END IF;
       v_digest := encode(extensions.digest(convert_to(p_sobre, 'UTF8'), 'sha256'), 'hex');
@@ -682,7 +682,7 @@ BEGIN
       IF v_h.id IS NOT NULL THEN
         IF v_h.user_id = p_actor AND v_h.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
         IF v_h.user_id = p_actor AND v_h.challenge_parent_id = p_padre_id THEN
-          SELECT * INTO v_r FROM public.sim_recibos WHERE session_id = p_hija_id AND command_id = p_command_id AND tipo = 'crear';
+          SELECT * INTO v_r FROM public.sim_recibos WHERE session_id = p_hija_id AND command_id = p_command_id AND tipo = 'avanzar_fase';
           IF FOUND AND v_r.digest = v_digest THEN
             RETURN jsonb_build_object('ok', true, 'http', 200, 'repetido', true, 'recibo', to_jsonb(v_r));
           END IF;
@@ -726,7 +726,7 @@ BEGIN
       UPDATE public.sim_sessions SET status = 'passed_phase' WHERE id = p_padre_id;
       INSERT INTO public.sim_recibos (session_id, user_id, command_id, tipo, digest, epoca, version_partida, version_resultante,
                                       resultado, resumen, clase)
-      VALUES (p_hija_id, p_actor, p_command_id, 'crear', v_digest, v_p.epoca, 0, 0, 'aceptado',
+      VALUES (p_hija_id, p_actor, p_command_id, 'avanzar_fase', v_digest, v_p.epoca, 0, 0, 'aceptado',
               coalesce(p_resumen, '{}'::jsonb) || jsonb_build_object('padre', p_padre_id, 'version_padre', v_p.version), 'economico')
       RETURNING * INTO v_r;
       RETURN jsonb_build_object('ok', true, 'http', 201, 'recibo', to_jsonb(v_r));
