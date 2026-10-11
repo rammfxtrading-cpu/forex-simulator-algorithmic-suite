@@ -54,11 +54,13 @@ insert into user_chart_config values ('${A}', '{}'); insert into user_tool_confi
 // literales): columnas, NOT NULL, defaults, FK y ON DELETE, indices, el
 // disparador del cupo, RLS y grants de sim_sessions/sim_trades, profiles con
 // plan y simulador_activo (columna 09, boolean nulable, default false),
-// pgcrypto 1.3 en el esquema extensions. INVENTADO, porque el resumen no lo
-// dice: el texto del RAISE del cupo (solo se sabe P0001), el tipo de
-// opened_at/closed_at/created_at (aqui timestamptz), la funcion del trigger
-// de plataformas_activas (aqui no hace nada), la RLS de las 5 tablas sin
-// sesion economica y si sim_trades.session_id admite nulos. Al final, los
+// pgcrypto 1.3 en el esquema extensions. LITERAL de s04 (CTO, 11-oct): los
+// nombres sim_sessions_user_id_fkey y sim_sessions_challenge_parent_id_fkey,
+// el texto del cupo «Limite de sesiones alcanzado para el plan % (max %).»
+// con P0001, y opened_at timestamptz NOT NULL. INVENTADO, porque el resumen
+// no lo dice: el tipo de closed_at/created_at (aqui timestamptz), la funcion
+// del trigger de plataformas_activas (aqui no hace nada), la RLS de las 5
+// tablas sin sesion economica y si sim_trades.session_id admite nulos. Al final, los
 // privilegios por defecto de Supabase en public (todo a anon, authenticated y
 // service_role en tablas, funciones y secuencias NUEVAS): sim-003 tiene que
 // quitarlos el mismo. Despues se aplica sql/sim-002 tal cual (sus funciones
@@ -90,22 +92,22 @@ create policy profiles_select on public.profiles for select to authenticated usi
 
 create table public.sim_sessions (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid not null constraint sim_sessions_user_id_fkey references auth.users(id) on delete cascade,
   name text not null, pair text not null, timeframe text not null,
   date_from date not null, date_to date not null,
   capital numeric not null default 10000, balance numeric not null default 10000,
   status text default 'active', created_at timestamptz default now(), last_timestamp bigint,
   challenge_type text, challenge_phase integer,
-  challenge_parent_id uuid references public.sim_sessions(id) on delete set null);
+  challenge_parent_id uuid constraint sim_sessions_challenge_parent_id_fkey references public.sim_sessions(id) on delete set null);
 create index sim_sessions_user_id_idx on public.sim_sessions (user_id);
 create function public.enforce_sim_session_limit() returns trigger language plpgsql security definer set search_path = public as $$
-declare n integer; lim integer;
+declare n integer; lim integer; v_plan text;
 begin
   if new.challenge_parent_id is not null then return new; end if;
   select count(*) into n from sim_sessions where user_id = new.user_id and challenge_parent_id is null;
-  select case when plan = 'extra' then 12 else 6 end into lim from profiles where id = new.user_id;
+  select plan, case when plan = 'extra' then 12 else 6 end into v_plan, lim from profiles where id = new.user_id;
   lim := coalesce(lim, 6);
-  if n >= lim then raise exception 'limite de sesiones (max %) [texto inventado: s04 solo dice P0001]', lim using errcode = 'P0001'; end if;
+  if n >= lim then raise exception 'Limite de sesiones alcanzado para el plan % (max %).', v_plan, lim using errcode = 'P0001'; end if;
   return new;
 end $$;
 create trigger trg_enforce_sim_session_limit before insert on public.sim_sessions for each row execute function public.enforce_sim_session_limit();

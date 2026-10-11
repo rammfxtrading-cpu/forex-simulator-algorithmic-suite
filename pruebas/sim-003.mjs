@@ -129,6 +129,10 @@ try {
     lineas(r1).filter(l => /^funcion\|.* · security_definer=true · config=search_path="" · execute: anon=false authenticated=false service_role=(true|false) PUBLIC=false$/.test(l)).length === 9
     && lineas(r1).filter(l => /^funcion\|sim_(error|bloquea_alumno)\(.*service_role=false/.test(l)).length === 2, lineas(r1).filter(l => l.startsWith('funcion')).length)
   ver('informe: la FK sim_sessions.user_id → profiles ON DELETE CASCADE, validada', lineas(r1).some(l => l === 'restriccion|sim_sessions.sim_sessions_user_id_perfil_fkey · FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true'))
+  ver('montaje fiel a s04: FK sim_sessions_user_id_fkey (auth.users, CASCADE) y sim_sessions_challenge_parent_id_fkey (SET NULL); opened_at timestamptz NOT NULL; codigo P0001 del cupo',
+    uno(`select string_agg(conname || ':' || confdeltype::text, ',' order by conname) from pg_constraint where conrelid = 'public.sim_sessions'::regclass and contype = 'f' and conname in ('sim_sessions_user_id_fkey', 'sim_sessions_challenge_parent_id_fkey')`) === 'sim_sessions_challenge_parent_id_fkey:n,sim_sessions_user_id_fkey:c'
+    && uno(`select format_type(atttypid, atttypmod) || ',' || attnotnull from pg_attribute where attrelid = 'public.sim_trades'::regclass and attname = 'opened_at'`) === 'timestamp with time zone,true'
+    && /using errcode = 'P0001'/.test(uno(`select prosrc from pg_proc where proname = 'enforce_sim_session_limit'`)))
   ver('las filas que habia no cambian de sentido: legado A sigue v0, epoca 0, version 0, no legado, sin estado',
     uno(`select motor_version||','||epoca||','||version||','||legado||','||coalesce(estado::text,'-')||','||creada_por_rpc from sim_sessions where id = '${u(101)}'`) === '0,0,0,false,-,false')
   const r1b = pg.psql(SQL, 'p')
@@ -206,7 +210,8 @@ try {
   ver('cupo basic: con 6 raices, la 7.ª → 409 limite_sesiones (limite 6)', lim.motivo === 'limite_sesiones' && lim.limite === 6, eti(lim) + ' · raices ' + n(`select count(*) from sim_sessions where user_id = '${A}' and challenge_parent_id is null`))
   pg.psql(`update sim_sessions set legado = true where id = '${u(101)}'`, 'p')
   const conDisparador = crear(A, u(220), u(920))
-  ver('con una legado: el disparador de HOY aun la cuenta y para la 7.ª con P0001 (se ajusta en sim-004, no aqui)', /P0001|limite de sesiones/.test(conDisparador.error ?? ''), eti(conDisparador))
+  ver('con una legado: el disparador de HOY aun la cuenta y para la 7.ª con su texto literal (s04: «Limite de sesiones alcanzado para el plan % (max %).», P0001); se ajusta en sim-004', /ERROR: {2}Limite de sesiones alcanzado para el plan basic \(max 6\)\.$/.test(conDisparador.error ?? ''), eti(conDisparador))
+  ver('…y el dashboard de hoy lo reconoce (busca «limite de sesiones» en minusculas, pages/dashboard.js:191)', (conDisparador.error ?? '').toLowerCase().includes('limite de sesiones'))
   pg.psql('alter table sim_sessions disable trigger trg_enforce_sim_session_limit', 'p')
   const conLegado = crear(A, u(220), u(920))
   ver('sin ese disparador (como quedara tras sim-004): las legado no cuentan en sim_crear_sesion y la 7.ª entra', conLegado.http === 201, eti(conLegado))
