@@ -227,7 +227,7 @@ El cliente guarda dos cosas separadas (§ 1.5): el **estado confirmado** (versi�
 
 | Hija → padre | ON DELETE | Estado |
 |---|---|---|
-| `sim_sessions.user_id` → `profiles(id)` | **CASCADE** | **nueva** (V3-05). **Aprobada por el CTO (8-oct); pendiente del sí de Ramón** (cambio de esquema en `sim_sessions`, CLAUDE.md § 3, regla 1), que el CTO pide aparte. Hoy, según el resumen de s04, las tablas «caen con auth.users»; no consta la FK exacta (D-01) |
+| `sim_sessions.user_id` → `profiles(id)` | **CASCADE** | **nueva** (V3-05). **Aprobada por el CTO (8-oct) y por Ramón (10-oct, «sí ambas»)** (cambio de esquema en `sim_sessions`, CLAUDE.md § 3, regla 1). Escrita en `sql/sim-003` (11-oct); **aplicarla sigue pendiente de otro sí**. Hoy (s04 del 10-oct): `user_id` → `auth.users` ON DELETE CASCADE, sin FK a `profiles` |
 | `sim_sessions.challenge_parent_id` → `sim_sessions(id)` | **CASCADE** | nueva; hoy no consta (D-01). Borrar un reto padre borra sus fases (**D-17, aprobada por el CTO** el 8-oct) |
 | `sim_recibos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
 | `sim_eventos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
@@ -412,7 +412,7 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 | D-18 | Una sola sesión v1 en reproducción a la vez por alumno | **Aprobada:** se hace cumplir con el arrendamiento (`otra_sesion_activa`), con el orden común de bloqueos (V4-01) |
 | V4-01 | Reloj y bloqueos del arrendamiento | **`clock_timestamp()` tras los bloqueos, una hora de decisión; orden común perfil → arrendamientos → padre → hija** (§ 4.2, § 4.3) |
 | V4-03 | Tasa de avances y presupuesto | **Un avance cada 5 s por alumno, sumando sus sesiones, en el servidor; resets como filas permanentes; uso normal y cota separados** (§ 4.4, § 9) |
-| FK | `sim_sessions.user_id` → `profiles(id)` ON DELETE CASCADE | **Aprobada por el CTO; pendiente del sí de Ramón** (cambio de esquema en `sim_sessions`) |
+| FK | `sim_sessions.user_id` → `profiles(id)` ON DELETE CASCADE | **Aprobada por el CTO y aprobada por Ramón 10-oct** («sí ambas»; cambio de esquema en `sim_sessions`). Escrita en `sql/sim-003`; aplicar sigue pendiente de otro sí |
 
 **De Ramón:**
 

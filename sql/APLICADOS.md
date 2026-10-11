@@ -8,6 +8,8 @@ Lo que se ha ejecutado de `sql/` en la base viva, con el informe del propio fich
 | `sim-001-permisos-e-integridad.sql` | anon fuera de las 7 tablas; sin TRUNCATE/REFERENCES/TRIGGER para authenticated; FK con CASCADE en session_chart_config; 3 índices; NOT NULL donde no hay nulos | **ejecutado, NO aplicado** · 4/10/2026, Ramón en el editor SQL de Supabase: **falló con su precondición** y no aplicó nada (ver abajo) | `92f7c08` · `73782606f6002c7f05e2208dd7827cdfb67700dc4b3b0d67339199681ccc720f` |
 | `sim-001b-permisos-e-integridad.sql` | sim-001 + borrar antes, en el mismo DO, las filas huérfanas de session_chart_config (salvaguarda: más de 10, no hace nada) | **sí** · lo ejecutó Ramón; informe parcial literal (FK, huérfanas, FIN) pegado el 5-oct: ver abajo | `c95110b` · `a5cd4783dab3e0ed56628471410362f998cdd9e99ac27938b9d47155fab95fa0` (el fichero del commit; ver abajo) |
 | `sim-002-lectura-estable.sql` | funciones `sim_trades_de_sesion` y `sim_trades_de_usuario`: los trades en UNA sentencia como jsonb; SECURITY INVOKER, search_path vacío, EXECUTE solo authenticated y service_role (bloque E, punto 3) | **sí** · 5/10/2026, la ejecutó Ramón; informe **transcrito por el CTO** (no las filas tal cual): ver abajo | `66758a3` · `56d0f947b784c3ccb966f83b06a2d76c980414178067bd35bd75c4743950952b` |
+| `consultas/s04-esquema-simulador.sql` (2.ª vez) | la misma consulta, pedida fila a fila para la persistencia (D-01) | **sí** · **10/10/2026**, Ramón en el editor; **resumen** transmitido por el CTO el 11-oct (no las filas): ver abajo | `a639b0b` · `bb9aee94…83dee7` (el mismo fichero) |
+| `consultas/s05-nombres-libres.sql` | **consulta de solo lectura**: nombres de la persistencia libres o no | **sí** · **10/10/2026**, Ramón en el editor; **resumen** del CTO, 11-oct: ver abajo | `39b0b55` · `7caa602e44e77f533fed314bd0cf3831911c80037b28175b59769bbc989e80e0` |
 
 ## s04 · resultado (4-oct-2026)
 
@@ -74,3 +76,13 @@ Aplicada por Ramón en el editor SQL de Supabase. El CTO transmite el informe as
 > las dos funciones con security_definer=false, search_path vacío, EXECUTE true para authenticated y service_role, false para anon y PUBLIC, «FIN | sim-002 aplicada».
 
 Coincide con lo que el bloque DO exige antes de terminar (si cualquiera de esas condiciones fallase, revienta con «sim-002: …» y no crea nada). **No consta en lo transmitido:** `volatil=s` (STABLE) ni el tipo devuelto (`jsonb`); los comprueba el propio bloque. Fichero ejecutado: el del commit `66758a3` (sha256 arriba); el abierto en TextEdit el 5-oct tenía ese mismo sha256 antes y después de abrirlo.
+
+## s04 (2.ª) y s05 · resultado (10-oct-2026)
+
+**Es un RESUMEN** del CTO (11-oct), no las filas tal cual. Lo que dice, en corto (el texto entero es la base de `pruebas/estado-s04.mjs`, `PRODUCCION`):
+
+- **s05:** todos los nombres LIBRES (12 objetos, las columnas nuevas de `sim_sessions` y `sim_trades` con `*_micro`). pgcrypto 1.3 en el esquema `extensions`. Existen `sim_sessions`, `sim_trades`, `sim_drawing_templates` y las funciones `sim_trades_de_sesion(uuid)` y `sim_trades_de_usuario(uuid)` (dueño postgres). **`sim_borrar_legacy` no estaba en la lista de s05**: lo comprueba sim-003 al empezar (en cualquier esquema).
+- **s04, PostgreSQL 17.6.** `sim_sessions.user_id` → `auth.users` ON DELETE CASCADE, **sin FK a profiles**; `challenge_parent_id` → `sim_sessions` ON DELETE SET NULL. Disparador `trg_enforce_sim_session_limit` (BEFORE INSERT, definer): las hijas de reto no cuentan; raíces por `user_id`; 12 con `plan = 'extra'`, si no 6; P0001. `profiles`: `plan` NOT NULL default 'basic' CHECK (basic|extra); `simulador_activo` boolean nulable default false (columna 09). RLS de `sim_sessions` y `sim_trades`: una política ALL PERMISSIVE para public, `auth.uid() = user_id`, sin WITH CHECK. authenticated: SELECT/INSERT/UPDATE/DELETE en `sim_sessions`, `sim_trades`, `session_drawings`, `session_chart_config`, `sim_drawing_templates`. Bucket `forex-data` público; `storage.objects` con RLS.
+
+**No consta en el resumen (no bloquea sim-003; sí sim-004):** los nombres literales de las FK de `sim_sessions.user_id` y `challenge_parent_id`; el texto del RAISE del disparador; el tipo de `opened_at`/`closed_at`/`created_at` de `sim_trades` (sim-003 no lo necesita: convierte con `jsonb_populate_record`).
+
