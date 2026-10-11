@@ -427,6 +427,38 @@ Según la página de precios de Supabase (consultada el 7-oct-2026, <https://sup
 
 ---
 
+### 10.1 Motivos de rechazo de las funciones (`sql/sim-003`; aprobados por el CTO el 11-oct)
+
+Toda respuesta es un jsonb `{ ok, http, motivo, … }`. Un rechazo **no escribe nada** (salvo la fila del alumno en `sim_alumnos`, que la barrera crea si no existe). Lo que no es del protocolo (un dato imposible de convertir, un interbloqueo 40P01, el P0001 del disparador del cupo de hoy) sale como error de SQL y deshace la llamada entera.
+
+| http | motivo | Significado | Dónde |
+|---|---|---|---|
+| 403 | `sin_acceso` | el perfil del actor no tiene `simulador_activo` exactamente `true` (también un admin sin él) | crear, tomar, comando, pasar de fase |
+| 403 | `acceso_revocado` | la sesión está marcada `terminal = 'revocada'` (hoy nada la marca así) | tomar, comando, pasar de fase |
+| 404 | `sesion_no_encontrada` | la sesión es de otro alumno; no se dice que existe ni se devuelve su recibo | tomar, comando, pasar de fase, `sim_borrar_sesion`, `sim_borrar_legacy` |
+| 409 | `clave_reutilizada` | la clave (`command_id`) o el id de sesión ya se usaron con otro sobre, otro tipo u otro alumno | crear, tomar, comando, pasar de fase |
+| 409 | `comando_caducado` | `avanzar`/`checkpoint` sin recibo y con una versión que ya no es la vigente (su `ultimo_avance` se sobrescribió); trae la versión vigente | comando |
+| 409 | `conflicto` | la versión esperada no es la vigente; trae la vigente. El cálculo se descarta | comando, pasar de fase (versión del padre) |
+| 409 | `escritor_ocupado` | otra pestaña tiene el arrendamiento vigente de esta sesión y no se pidió forzar; trae quién y hasta cuándo | tomar |
+| 409 | `otra_sesion_activa` | otra sesión del alumno tiene un arrendamiento vigente (D-18) y no se pidió forzar; trae cuáles | tomar |
+| 409 | `sin_arrendamiento` | no hay arrendamiento, es de otra pestaña, el testigo no casa o caducó (con la hora tomada tras los bloqueos, V4-01) | comando |
+| 409 | `solo_lectura` | la sesión es legado | tomar, comando, pasar de fase |
+| 409 | `no_es_v1` | la sesión es del motor anterior (`motor_version = 0`) y no está marcada legado: no admite comandos ni el borrado v1 | tomar, comando, pasar de fase, `sim_borrar_sesion` |
+| 409 | `no_es_legado` | `sim_borrar_legacy` sobre una sesión v1 | `sim_borrar_legacy` |
+| 409 | `limite_sesiones` | el alumno ya tiene su cupo de raíces (6, o 12 con plan `extra`), sin contar legado ni lápidas; trae límite y plan | crear |
+| 409 | `fase_no_superada` | el padre no es un reto v1 con la fase 1 superada en su estado (`reto@1`, `estado = 'superada'`) | pasar de fase |
+| 409 | `transicion_hecha` | el reto padre ya tiene su hija v1 (D07) | pasar de fase |
+| 410 | `sesion_borrada` | la sesión no existe o es una lápida (`terminal = 'borrada'`); también al recrear el id de una borrada (A24) y cuando el perfil del actor ya no existe | todas salvo crear (que da `perfil_borrado` sin perfil) |
+| 410 | `perfil_borrado` | el actor no tiene perfil (cuenta borrada o a medio borrar, I1) | crear |
+| 422 | `argumentos_incompletos` | falta un argumento obligatorio | todas |
+| 422 | `sobre_invalido` | el sobre no es JSON objeto o su `tipo` no es el del comando | crear, tomar, comando, pasar de fase |
+| 422 | `tipo_invalido` | tipo de comando desconocido | comando |
+| 422 | `carga_invalida` | los datos de la sesión, el estado o el mercado no tienen la forma pedida | crear, pasar de fase |
+| 422 | `resultado_invalido` | el resultado del servidor está mal formado: eventos (`en: eventos`), trades que no casan uno a uno con los cierres (`en: trades`) o valores que no se convierten (`en: tipos`) | comando |
+| 422 | `clase_incoherente` | la clase declarada no es la que dan el tipo y los eventos; trae la correcta | comando |
+| 426 | `actualizar_cliente` | la época del cliente no es la de la sesión (al crear, la vigente: 1) | crear, tomar, comando, pasar de fase |
+| 429 | `demasiados_avances` | un `avanzar`/`checkpoint` antes de 5 s desde el último del alumno (V4-03) | comando |
+
 ## 11. Lo que este documento no hace
 
 - No escribe SQL ni código; no toca la base, Storage ni la web.
