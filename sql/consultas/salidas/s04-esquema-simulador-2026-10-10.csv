@@ -1,0 +1,293 @@
+seccion,objeto,detalle
+tabla,messages,dueño=postgres · rls=true · rls_forzada=false
+tabla,profiles,dueño=postgres · rls=true · rls_forzada=false
+tabla,session_chart_config,dueño=postgres · rls=true · rls_forzada=false
+tabla,session_drawings,dueño=postgres · rls=true · rls_forzada=false
+tabla,sim_drawing_templates,dueño=postgres · rls=true · rls_forzada=false
+tabla,sim_sessions,dueño=postgres · rls=true · rls_forzada=false
+tabla,sim_trades,dueño=postgres · rls=true · rls_forzada=false
+tabla,user_chart_config,dueño=postgres · rls=true · rls_forzada=false
+tabla,user_tool_config,dueño=postgres · rls=true · rls_forzada=false
+columna,messages.body,05 · text · NOT NULL · default=-
+columna,messages.created_at,07 · timestamp with time zone · NOT NULL · default=now()
+columna,messages.from_user_id,03 · uuid · nulable · default=-
+columna,messages.id,01 · uuid · NOT NULL · default=gen_random_uuid()
+columna,messages.read_at,06 · timestamp with time zone · nulable · default=-
+columna,messages.subject,04 · text · NOT NULL · default=-
+columna,messages.to_user_id,02 · uuid · NOT NULL · default=-
+columna,profiles.agoge_ediciones,15 · smallint · NOT NULL · default=0
+columna,profiles.agoge_estado,17 · text · nulable · default=-
+columna,profiles.capital,05 · numeric · nulable · default=100000
+columna,profiles.created_at,"07 · timestamp with time zone · nulable · default=timezone('utc'::text, now())"
+columna,profiles.email,02 · text · NOT NULL · default=-
+columna,profiles.es_elite,16 · boolean · NOT NULL · default=false
+columna,profiles.id,01 · uuid · NOT NULL · default=-
+columna,profiles.indicadores_activos,11 · jsonb · NOT NULL · default='{}'::jsonb
+columna,profiles.journal_activo,08 · boolean · nulable · default=false
+columna,profiles.nombre,03 · text · nulable · default=-
+columna,profiles.plan,14 · text · NOT NULL · default='basic'::text
+columna,profiles.plataformas_activas,13 · jsonb · NOT NULL · default='{}'::jsonb
+columna,profiles.riesgo,06 · numeric · nulable · default=0.5
+columna,profiles.rol,04 · text · nulable · default='alumno'::text
+columna,profiles.rol_global,10 · text · NOT NULL · default='user'::text
+columna,profiles.simulador_activo,09 · boolean · nulable · default=false
+columna,profiles.tv_username,12 · text · nulable · default=-
+columna,session_chart_config.config,04 · jsonb · NOT NULL · default='{}'::jsonb
+columna,session_chart_config.id,01 · uuid · NOT NULL · default=gen_random_uuid()
+columna,session_chart_config.session_id,02 · uuid · NOT NULL · default=-
+columna,session_chart_config.updated_at,05 · timestamp with time zone · nulable · default=now()
+columna,session_chart_config.user_id,03 · uuid · NOT NULL · default=-
+columna,session_drawings.data,04 · text · NOT NULL · default='[]'::text
+columna,session_drawings.id,01 · uuid · NOT NULL · default=gen_random_uuid()
+columna,session_drawings.pair,06 · text · NOT NULL · default=-
+columna,session_drawings.session_id,02 · uuid · NOT NULL · default=-
+columna,session_drawings.updated_at,05 · timestamp with time zone · nulable · default=now()
+columna,session_drawings.user_id,03 · uuid · NOT NULL · default=-
+columna,sim_drawing_templates.config,07 · text · nulable · default=-
+columna,sim_drawing_templates.created_at,05 · timestamp with time zone · nulable · default=now()
+columna,sim_drawing_templates.data,04 · text · NOT NULL · default=-
+columna,sim_drawing_templates.id,01 · uuid · NOT NULL · default=gen_random_uuid()
+columna,sim_drawing_templates.name,03 · text · NOT NULL · default=-
+columna,sim_drawing_templates.tool_key,06 · text · nulable · default=-
+columna,sim_drawing_templates.user_id,02 · uuid · NOT NULL · default=-
+columna,sim_sessions.balance,09 · numeric · NOT NULL · default=10000
+columna,sim_sessions.capital,08 · numeric · NOT NULL · default=10000
+columna,sim_sessions.challenge_parent_id,15 · uuid · nulable · default=-
+columna,sim_sessions.challenge_phase,14 · integer · nulable · default=-
+columna,sim_sessions.challenge_type,13 · text · nulable · default=-
+columna,sim_sessions.created_at,11 · timestamp with time zone · nulable · default=now()
+columna,sim_sessions.date_from,06 · date · NOT NULL · default=-
+columna,sim_sessions.date_to,07 · date · NOT NULL · default=-
+columna,sim_sessions.id,01 · uuid · NOT NULL · default=gen_random_uuid()
+columna,sim_sessions.last_timestamp,12 · bigint · nulable · default=-
+columna,sim_sessions.name,03 · text · NOT NULL · default=-
+columna,sim_sessions.pair,04 · text · NOT NULL · default=-
+columna,sim_sessions.status,10 · text · nulable · default='active'::text
+columna,sim_sessions.timeframe,05 · text · NOT NULL · default=-
+columna,sim_sessions.user_id,02 · uuid · NOT NULL · default=-
+columna,sim_trades.closed_at,20 · timestamp with time zone · nulable · default=-
+columna,sim_trades.created_at,21 · timestamp with time zone · nulable · default=now()
+columna,sim_trades.entry_price,"06 · numeric(10,5) · NOT NULL · default=-"
+columna,sim_trades.exit_price,"07 · numeric(10,5) · nulable · default=-"
+columna,sim_trades.id,01 · uuid · NOT NULL · default=gen_random_uuid()
+columna,sim_trades.lots,"10 · numeric(10,2) · NOT NULL · default=-"
+columna,sim_trades.notes,18 · text · nulable · default=-
+columna,sim_trades.opened_at,19 · timestamp with time zone · NOT NULL · default=-
+columna,sim_trades.pair,04 · text · NOT NULL · default=-
+columna,sim_trades.pnl,"14 · numeric(10,2) · nulable · default=-"
+columna,sim_trades.result,15 · text · nulable · default=-
+columna,sim_trades.risk_amount,"12 · numeric(10,2) · nulable · default=-"
+columna,sim_trades.risk_percent,"11 · numeric(5,2) · nulable · default=-"
+columna,sim_trades.rr,"13 · numeric(10,2) · nulable · default=-"
+columna,sim_trades.session_id,02 · uuid · NOT NULL · default=-
+columna,sim_trades.session_type,16 · text · nulable · default=-
+columna,sim_trades.side,05 · text · NOT NULL · default=-
+columna,sim_trades.sl_price,"08 · numeric(10,5) · nulable · default=-"
+columna,sim_trades.tags,17 · text[] · nulable · default=-
+columna,sim_trades.tp_price,"09 · numeric(10,5) · nulable · default=-"
+columna,sim_trades.user_id,03 · uuid · NOT NULL · default=-
+columna,user_chart_config.config,03 · jsonb · NOT NULL · default='{}'::jsonb
+columna,user_chart_config.id,01 · uuid · NOT NULL · default=gen_random_uuid()
+columna,user_chart_config.updated_at,04 · timestamp with time zone · nulable · default=now()
+columna,user_chart_config.user_id,02 · uuid · NOT NULL · default=-
+columna,user_tool_config.config,03 · jsonb · NOT NULL · default='{}'::jsonb
+columna,user_tool_config.id,01 · uuid · NOT NULL · default=gen_random_uuid()
+columna,user_tool_config.updated_at,04 · timestamp with time zone · nulable · default=now()
+columna,user_tool_config.user_id,02 · uuid · NOT NULL · default=-
+restriccion,ia_alertas.ia_alertas_alumno_id_fkey (entrante),f · public.ia_alertas FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_borrados.ia_borrados_alumno_id_fkey (entrante),f · public.ia_borrados FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_consentimiento.ia_consentimiento_user_id_fkey (entrante),f · public.ia_consentimiento FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_conversaciones.ia_conversaciones_user_id_fkey (entrante),f · public.ia_conversaciones FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_notas_mentor.ia_notas_mentor_alumno_id_fkey (entrante),f · public.ia_notas_mentor FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_operaciones.ia_operaciones_user_id_fkey (entrante),f · public.ia_operaciones FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_perfil_alumno.ia_perfil_alumno_user_id_fkey (entrante),f · public.ia_perfil_alumno FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_recados.ia_recados_alumno_id_fkey (entrante),f · public.ia_recados FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_turnos.ia_turnos_alumno_id_fkey (entrante),f · public.ia_turnos FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,ia_uso.ia_uso_user_id_fkey (entrante),f · public.ia_uso FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,macro_conversaciones.macro_conversaciones_user_id_fkey (entrante),f · public.macro_conversaciones FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,macro_ia_uso.macro_ia_uso_user_id_fkey (entrante),f · public.macro_ia_uso FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,macro_planes.macro_planes_user_id_fkey (entrante),f · public.macro_planes FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,messages.messages_from_user_id_fkey,f · FOREIGN KEY (from_user_id) REFERENCES auth.users(id) ON DELETE SET NULL
+restriccion,messages.messages_pkey,p · PRIMARY KEY (id)
+restriccion,messages.messages_to_user_id_fkey,f · FOREIGN KEY (to_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,notas.notas_alumno_id_fkey (entrante),f · public.notas FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,profiles.profiles_agoge_estado_chk,"c · CHECK (((agoge_estado IS NULL) OR (agoge_estado = ANY (ARRAY['en_curso'::text, 'expulsado'::text]))))"
+restriccion,profiles.profiles_email_key,u · UNIQUE (email)
+restriccion,profiles.profiles_id_fkey,f · FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,profiles.profiles_pkey,p · PRIMARY KEY (id)
+restriccion,profiles.profiles_plan_check,"c · CHECK ((plan = ANY (ARRAY['basic'::text, 'extra'::text])))"
+restriccion,session_chart_config.session_chart_config_pkey,p · PRIMARY KEY (id)
+restriccion,session_chart_config.session_chart_config_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE
+restriccion,session_chart_config.session_chart_config_session_id_key,u · UNIQUE (session_id)
+restriccion,session_chart_config.session_chart_config_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,session_drawings.session_drawings_pkey,p · PRIMARY KEY (id)
+restriccion,session_drawings.session_drawings_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE
+restriccion,session_drawings.session_drawings_session_id_pair_key,"u · UNIQUE (session_id, pair)"
+restriccion,session_drawings.session_drawings_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,sim_drawing_templates.sim_drawing_templates_pkey,p · PRIMARY KEY (id)
+restriccion,sim_drawing_templates.sim_drawing_templates_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,sim_sessions.sim_sessions_challenge_parent_id_fkey,f · FOREIGN KEY (challenge_parent_id) REFERENCES sim_sessions(id) ON DELETE SET NULL
+restriccion,sim_sessions.sim_sessions_pkey,p · PRIMARY KEY (id)
+restriccion,sim_sessions.sim_sessions_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,sim_trades.sim_trades_pkey,p · PRIMARY KEY (id)
+restriccion,sim_trades.sim_trades_result_check,"c · CHECK ((result = ANY (ARRAY['WIN'::text, 'LOSS'::text, 'BREAKEVEN'::text, 'OPEN'::text])))"
+restriccion,sim_trades.sim_trades_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE
+restriccion,sim_trades.sim_trades_session_type_check,"c · CHECK ((session_type = ANY (ARRAY['asia'::text, 'london'::text, 'nyam'::text, 'nypm'::text])))"
+restriccion,sim_trades.sim_trades_side_check,"c · CHECK ((side = ANY (ARRAY['BUY'::text, 'SELL'::text])))"
+restriccion,sim_trades.sim_trades_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,trades.trades_user_id_fkey (entrante),f · public.trades FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+restriccion,user_chart_config.user_chart_config_pkey,p · PRIMARY KEY (id)
+restriccion,user_chart_config.user_chart_config_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,user_chart_config.user_chart_config_user_id_key,u · UNIQUE (user_id)
+restriccion,user_tool_config.user_tool_config_pkey,p · PRIMARY KEY (id)
+restriccion,user_tool_config.user_tool_config_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+restriccion,user_tool_config.user_tool_config_user_id_key,u · UNIQUE (user_id)
+indice,messages.messages_pkey,CREATE UNIQUE INDEX messages_pkey ON public.messages USING btree (id) · valido=true
+indice,messages.messages_to_user_idx,"CREATE INDEX messages_to_user_idx ON public.messages USING btree (to_user_id, read_at, created_at DESC) · valido=true"
+indice,profiles.profiles_email_key,CREATE UNIQUE INDEX profiles_email_key ON public.profiles USING btree (email) · valido=true
+indice,profiles.profiles_pkey,CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id) · valido=true
+indice,session_chart_config.session_chart_config_pkey,CREATE UNIQUE INDEX session_chart_config_pkey ON public.session_chart_config USING btree (id) · valido=true
+indice,session_chart_config.session_chart_config_session_id_key,CREATE UNIQUE INDEX session_chart_config_session_id_key ON public.session_chart_config USING btree (session_id) · valido=true
+indice,session_drawings.session_drawings_pkey,CREATE UNIQUE INDEX session_drawings_pkey ON public.session_drawings USING btree (id) · valido=true
+indice,session_drawings.session_drawings_session_id_pair_key,"CREATE UNIQUE INDEX session_drawings_session_id_pair_key ON public.session_drawings USING btree (session_id, pair) · valido=true"
+indice,sim_drawing_templates.sim_drawing_templates_pkey,CREATE UNIQUE INDEX sim_drawing_templates_pkey ON public.sim_drawing_templates USING btree (id) · valido=true
+indice,sim_sessions.sim_sessions_pkey,CREATE UNIQUE INDEX sim_sessions_pkey ON public.sim_sessions USING btree (id) · valido=true
+indice,sim_sessions.sim_sessions_user_id_idx,CREATE INDEX sim_sessions_user_id_idx ON public.sim_sessions USING btree (user_id) · valido=true
+indice,sim_trades.sim_trades_pkey,CREATE UNIQUE INDEX sim_trades_pkey ON public.sim_trades USING btree (id) · valido=true
+indice,sim_trades.sim_trades_session_id_idx,CREATE INDEX sim_trades_session_id_idx ON public.sim_trades USING btree (session_id) · valido=true
+indice,sim_trades.sim_trades_user_id_closed_idx,"CREATE INDEX sim_trades_user_id_closed_idx ON public.sim_trades USING btree (user_id, closed_at) · valido=true"
+indice,user_chart_config.user_chart_config_pkey,CREATE UNIQUE INDEX user_chart_config_pkey ON public.user_chart_config USING btree (id) · valido=true
+indice,user_chart_config.user_chart_config_user_id_key,CREATE UNIQUE INDEX user_chart_config_user_id_key ON public.user_chart_config USING btree (user_id) · valido=true
+indice,user_tool_config.user_tool_config_pkey,CREATE UNIQUE INDEX user_tool_config_pkey ON public.user_tool_config USING btree (id) · valido=true
+indice,user_tool_config.user_tool_config_user_id_key,CREATE UNIQUE INDEX user_tool_config_user_id_key ON public.user_tool_config USING btree (user_id) · valido=true
+trigger,profiles.profiles_sync_plataformas_activas,CREATE TRIGGER profiles_sync_plataformas_activas BEFORE INSERT OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION sync_plataformas_activas() · activo=O
+trigger,sim_sessions.trg_enforce_sim_session_limit,CREATE TRIGGER trg_enforce_sim_session_limit BEFORE INSERT ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION enforce_sim_session_limit() · activo=O
+politica,public.messages.User reads own messages,SELECT · PERMISSIVE · authenticated · using=(auth.uid() = to_user_id) · check=-
+politica,public.profiles.profiles_select,SELECT · PERMISSIVE · authenticated · using=((auth.uid() = id) OR is_admin()) · check=-
+politica,public.session_chart_config.user owns session config,ALL · PERMISSIVE · public · using=(auth.uid() = user_id) · check=-
+politica,public.session_drawings.user owns session drawings,ALL · PERMISSIVE · public · using=(auth.uid() = user_id) · check=-
+politica,public.sim_drawing_templates.Users manage own templates,ALL · PERMISSIVE · public · using=(auth.uid() = user_id) · check=-
+politica,public.sim_sessions.Users see own sessions,ALL · PERMISSIVE · public · using=(auth.uid() = user_id) · check=-
+politica,public.sim_trades.Users see own trades,ALL · PERMISSIVE · public · using=(auth.uid() = user_id) · check=-
+politica,public.user_chart_config.user owns config,ALL · PERMISSIVE · public · using=(auth.uid() = user_id) · check=-
+politica,public.user_tool_config.user owns tool config,ALL · PERMISSIVE · public · using=(auth.uid() = user_id) · check=-
+grant,messages · anon,"REFERENCES,SELECT,TRIGGER"
+grant,messages · authenticated,"REFERENCES,SELECT,TRIGGER"
+grant,messages · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+grant,profiles · anon,SELECT
+grant,profiles · authenticated,SELECT
+grant,profiles · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+grant,session_chart_config · authenticated,"DELETE,INSERT,SELECT,UPDATE"
+grant,session_chart_config · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+grant,session_drawings · authenticated,"DELETE,INSERT,SELECT,UPDATE"
+grant,session_drawings · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+grant,sim_drawing_templates · authenticated,"DELETE,INSERT,SELECT,UPDATE"
+grant,sim_drawing_templates · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+grant,sim_sessions · authenticated,"DELETE,INSERT,SELECT,UPDATE"
+grant,sim_sessions · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+grant,sim_trades · authenticated,"DELETE,INSERT,SELECT,UPDATE"
+grant,sim_trades · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+grant,user_chart_config · authenticated,"DELETE,INSERT,SELECT,UPDATE"
+grant,user_chart_config · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+grant,user_tool_config · authenticated,"DELETE,INSERT,SELECT,UPDATE"
+grant,user_tool_config · service_role,"DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+funcion,enforce_sim_session_limit(),"dueño=postgres · definer=true · config=search_path=public · acl==X/postgres postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+CREATE OR REPLACE FUNCTION public.enforce_sim_session_limit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_plan  text;
+  v_limit int;
+  v_count int;
+begin
+  -- Las fases hijas de un challenge (parent_id no nulo) no consumen cupo:
+  -- son continuacion de una challenge ya contada. Dejar pasar siempre.
+  if new.challenge_parent_id is not null then
+    return new;
+  end if;
+
+  select plan into v_plan from public.profiles where id = new.user_id;
+  if v_plan is null then
+    v_plan := 'basic';
+  end if;
+
+  if v_plan = 'extra' then
+    v_limit := 12;
+  else
+    v_limit := 6;
+  end if;
+
+  -- Cuenta solo filas raiz (cada practice y cada challenge una vez).
+  select count(*) into v_count
+  from public.sim_sessions
+  where user_id = new.user_id
+    and challenge_parent_id is null;
+
+  if v_count >= v_limit then
+    raise exception 'Limite de sesiones alcanzado para el plan % (max %).', v_plan, v_limit
+      using errcode = 'P0001';
+  end if;
+
+  return new;
+end;
+$function$
+"
+funcion,handle_new_user(),"dueño=postgres · definer=true · config=search_path=public, pg_temp · acl==X/postgres postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  INSERT INTO public.profiles (
+    id, email, nombre, rol_global, journal_activo, simulador_activo
+  )
+  VALUES (
+    new.id,
+    new.email,
+    COALESCE(new.raw_user_meta_data->>'nombre', split_part(new.email, '@', 1)),
+    'user',
+    false,
+    false
+  );
+  RETURN new;
+END;
+$function$
+"
+funcion,is_admin(),"dueño=postgres · definer=true · config=search_path=public, pg_temp · acl==X/postgres postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+CREATE OR REPLACE FUNCTION public.is_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid()
+      AND rol_global = 'admin'
+  );
+$function$
+"
+funcion,sync_plataformas_activas(),"dueño=postgres · definer=false · config=- · acl==X/postgres postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+CREATE OR REPLACE FUNCTION public.sync_plataformas_activas()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  NEW.plataformas_activas =
+    COALESCE(NEW.plataformas_activas, '{}'::jsonb)
+    || jsonb_build_object(
+         'journal',   COALESCE(NEW.journal_activo, false),
+         'simulator', COALESCE(NEW.simulador_activo, false)
+       );
+  RETURN NEW;
+END;
+$function$
+"
+bucket,forex-data,publico=true · limite_bytes=sin limite · tipos=todos
+storage,storage.objects,rls=true · rls_forzada=false
+FIN,s04,consulta

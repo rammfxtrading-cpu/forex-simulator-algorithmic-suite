@@ -1,0 +1,63 @@
+seccion,objeto,detalle
+nombre,sim_alumnos,LIBRE
+nombre,sim_arrendamientos,LIBRE
+nombre,sim_avanzar_fase,LIBRE
+nombre,sim_bloquea_alumno,LIBRE
+nombre,sim_borrar_alumno,LIBRE
+nombre,sim_borrar_sesion,LIBRE
+nombre,sim_comando,LIBRE
+nombre,sim_crear_sesion,LIBRE
+nombre,sim_error,LIBRE
+nombre,sim_eventos,LIBRE
+nombre,sim_recibos,LIBRE
+nombre,sim_tomar_escritor,LIBRE
+columna,profiles.siguiente_avance_desde,LIBRE
+columna,sim_sessions.creada_por_rpc,LIBRE
+columna,sim_sessions.epoca,LIBRE
+columna,sim_sessions.escritor,LIBRE
+columna,sim_sessions.estado,LIBRE
+columna,sim_sessions.legado,LIBRE
+columna,sim_sessions.legado_snapshot,LIBRE
+columna,sim_sessions.mercado,LIBRE
+columna,sim_sessions.motor_version,LIBRE
+columna,sim_sessions.terminal,LIBRE
+columna,sim_sessions.version,LIBRE
+columna,sim_trades.ambigua,LIBRE
+columna,sim_trades.bruto_micro,LIBRE
+columna,sim_trades.bruto_µ,LIBRE
+columna,sim_trades.causa_ambiguedad,LIBRE
+columna,sim_trades.comision_micro,LIBRE
+columna,sim_trades.comision_µ,LIBRE
+columna,sim_trades.conversion,LIBRE
+columna,sim_trades.evento_id,LIBRE
+columna,sim_trades.motor_version,LIBRE
+columna,sim_trades.neto_micro,LIBRE
+columna,sim_trades.neto_µ,LIBRE
+columna,sim_trades.spread_micro,LIBRE
+columna,sim_trades.spread_µ,LIBRE
+columna,sim_trades.swap_micro,LIBRE
+columna,sim_trades.swap_µ,LIBRE
+prefijo,sim_drawing_templates,tabla · conocida
+prefijo,sim_drawing_templates_pkey,restriccion de sim_drawing_templates · p
+prefijo,sim_drawing_templates_pkey,indice de sim_drawing_templates
+prefijo,sim_drawing_templates_user_id_fkey,restriccion de sim_drawing_templates · f
+prefijo,sim_sessions,tabla · conocida
+prefijo,sim_sessions_challenge_parent_id_fkey,restriccion de sim_sessions · f
+prefijo,sim_sessions_pkey,restriccion de sim_sessions · p
+prefijo,sim_sessions_pkey,indice de sim_sessions
+prefijo,sim_sessions_user_id_fkey,restriccion de sim_sessions · f
+prefijo,sim_sessions_user_id_idx,indice de sim_sessions
+prefijo,sim_trades,tabla · conocida
+prefijo,sim_trades_de_sesion(uuid),funcion · dueño=postgres
+prefijo,sim_trades_de_usuario(uuid),funcion · dueño=postgres
+prefijo,sim_trades_pkey,restriccion de sim_trades · p
+prefijo,sim_trades_pkey,indice de sim_trades
+prefijo,sim_trades_result_check,restriccion de sim_trades · c
+prefijo,sim_trades_session_id_fkey,restriccion de sim_trades · f
+prefijo,sim_trades_session_id_idx,indice de sim_trades
+prefijo,sim_trades_session_type_check,restriccion de sim_trades · c
+prefijo,sim_trades_side_check,restriccion de sim_trades · c
+prefijo,sim_trades_user_id_closed_idx,indice de sim_trades
+prefijo,sim_trades_user_id_fkey,restriccion de sim_trades · f
+extension,pgcrypto,instalada · esquema=extensions · version=1.3
+FIN,s05,consulta

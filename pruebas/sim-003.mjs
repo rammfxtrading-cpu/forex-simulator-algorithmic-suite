@@ -1,7 +1,7 @@
 /**
  * sim-003 · PERSISTENCIA ADITIVA, ENSAYADA EN POSTGRESQL 17 LOCAL
  *
- * Esquema de partida: produccion segun s04/s05 del 10-oct (estado-s04.mjs,
+ * Esquema de partida: produccion segun la salida LITERAL de s04/s05 del 10-oct (estado-s04.mjs,
  * PRODUCCION) + sql/sim-002 tal cual, con los privilegios por defecto de
  * Supabase. Datos INVENTADOS. Nada de esto toca Supabase.
  *
@@ -339,7 +339,7 @@ try {
   ver('la hija no cuenta en el cupo (Y: 1 raiz)', n(`select count(*) from sim_sessions where user_id = '${Y}' and challenge_parent_id is null`) === 1)
 
   titulo('7 · borrar (CD07; CTO 10-oct, decision 6; CTO 11-oct, opcion a)')
-  pg.psql(`insert into session_drawings (user_id, session_id, pair) values ('${A}', '${s1}', 'EURUSD');`, 'p')
+  ver('montaje: un dibujo en s1', pg.psql(`insert into session_drawings (user_id, session_id, pair) values ('${A}', '${s1}', 'EURUSD');`, 'p').ok)
   const bs = SR(`select public.sim_borrar_sesion('${A}', '${s1}');`)
   ver('sim_borrar_sesion: 200; la fila QUEDA como lapida (terminal = borrada) y se van recibos, eventos, trades, dibujos y arrendamiento',
     bs.ok && uno(`select terminal from sim_sessions where id = '${s1}'`) === 'borrada'
@@ -364,7 +364,8 @@ try {
     bl.ok && uno(`select terminal from sim_sessions where id = '${u(101)}'`) === 'borrada' && n(`select count(*) from sim_trades where session_id = '${u(101)}'`) === 0
     && SR(`select public.sim_borrar_legacy('${A}', '${u(212)}');`).motivo === 'no_es_legado' && SR(`select public.sim_borrar_legacy('${A}', '${u(102)}');`).http === 404, eti(bl))
   ver('sim_borrar_legacy otra vez → 410', SR(`select public.sim_borrar_legacy('${A}', '${u(101)}');`).http === 410)
-  crear(W, u(500), u(1500)); pg.psql(`insert into user_chart_config values ('${W}', '{}'); insert into sim_drawing_templates (user_id, name) values ('${W}', 'p');`, 'p')
+  crear(W, u(500), u(1500))
+  ver('montaje: W con config de grafico y una plantilla (columnas de s04)', pg.psql(`insert into user_chart_config (user_id) values ('${W}'); insert into sim_drawing_templates (user_id, name, data) values ('${W}', 'p', '[]');`, 'p').ok)
   const ba = SR(`select public.sim_borrar_alumno('${W}');`)
   ver('sim_borrar_alumno: la fila SI se va (no deja lapida); no queda nada de W en las tablas del simulador; B intacto', ba.ok && ['sim_sessions', 'sim_recibos', 'sim_trades', 'user_chart_config', 'sim_drawing_templates', 'sim_arrendamientos'].every(t => n(`select count(*) from ${t} where user_id = '${W}'`) === 0)
     && n(`select count(*) from sim_sessions where user_id = '${B}'`) === 1, eti(ba))
@@ -407,7 +408,7 @@ try {
   i2a.cierra(); i2b.cierra()
   // I3: interbloqueo padre/hija. El hub toma H y despues necesita P; la RPC sobre H tiene P y espera H
   const V = u(11)
-  pg.psql(`insert into auth.users values ('${V}'); insert into profiles (id, plan, simulador_activo) values ('${V}', 'basic', true);`, 'p')
+  ver('montaje I3: el alumno V (email NOT NULL, como en s04)', pg.psql(`insert into auth.users values ('${V}'); insert into profiles (id, email, plan, simulador_activo) values ('${V}', 'v@ejemplo.test', 'basic', true);`, 'p').ok)
   const P3 = u(630), H3 = u(631)
   crear(V, P3, u(1630), { sesion: { ...SESION, challenge_type: 'ftmo' }, estado: { esquema: 'reto@1', fase: 1, estado: 'superada' } })
   SR(`select public.sim_avanzar_fase('${V}', '${P3}', '${H3}', '${u(1631)}', ${L(JSON.stringify({ tipo: 'avanzar_fase', padre: P3 }))}, 1, 0, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`)

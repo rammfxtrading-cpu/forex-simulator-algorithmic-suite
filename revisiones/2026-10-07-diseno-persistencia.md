@@ -21,7 +21,7 @@
 - **Grants:** sim-001b quitó a `anon` las 7 tablas y a `authenticated` TRUNCATE/REFERENCES/TRIGGER. `authenticated` conserva SELECT/INSERT/UPDATE/DELETE.
 - **FK:** `sim_trades.session_id`, `session_drawings.session_id` y `session_chart_config.session_id` → `sim_sessions(id) ON DELETE CASCADE` (comunicado por el CTO; la de chart_config la puso sim-001b).
 - **Retos:** `pages/api/challenge/*` (servidor) mantiene `challenge_type`, `challenge_phase`, `challenge_parent_id` y los estados de fase; reglas de `lib/challengeRules`.
-- **No consta:** las columnas completas de `sim_sessions` y `sim_trades` fila a fila, los triggers (p. ej. el límite de sesiones por plan que sugiere `pages/dashboard.js:191`) ni los grants de `service_role`. Hace falta la salida completa de s04 antes de escribir el SQL (§ 10, D-01).
+- **No consta** (al escribir este apartado): las columnas completas de `sim_sessions` y `sim_trades` fila a fila, los triggers (p. ej. el límite de sesiones por plan que sugiere `pages/dashboard.js:191`) ni los grants de `service_role`. Hace falta la salida completa de s04 antes de escribir el SQL (§ 10, D-01). **Ya consta (11-oct):** la salida literal de s04/s05 está en `sql/consultas/salidas/` y el ensayo parte de ella (`pruebas/estado-s04-literal.mjs`).
 
 Consecuencia de diseño: **la v1 no puede convivir con un cliente que escriba balance o trades.** El corte (§ 7) retira esos permisos a `authenticated`.
 
@@ -228,14 +228,14 @@ El cliente guarda dos cosas separadas (§ 1.5): el **estado confirmado** (versi�
 | Hija → padre | ON DELETE | Estado |
 |---|---|---|
 | `sim_sessions.user_id` → `profiles(id)` | **CASCADE** | **nueva** (V3-05). **Aprobada por el CTO (8-oct) y por Ramón (10-oct, «sí ambas»)** (cambio de esquema en `sim_sessions`, CLAUDE.md § 3, regla 1). Escrita en `sql/sim-003` (11-oct); **aplicarla sigue pendiente de otro sí**. Hoy (s04 del 10-oct): `user_id` → `auth.users` ON DELETE CASCADE, sin FK a `profiles` |
-| `sim_sessions.challenge_parent_id` → `sim_sessions(id)` | **CASCADE** | nueva; hoy no consta (D-01). Borrar un reto padre borra sus fases (**D-17, aprobada por el CTO** el 8-oct) |
+| `sim_sessions.challenge_parent_id` → `sim_sessions(id)` | **CASCADE** | cambio en sim-004; hoy (s04 literal, 10-oct) `sim_sessions_challenge_parent_id_fkey` ON DELETE SET NULL. Ojo: el borrado lógico (lápida) es un UPDATE y no lo cubre ninguna FK (S003-01). Borrar un reto padre borra sus fases (**D-17, aprobada por el CTO** el 8-oct) |
 | `sim_recibos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
 | `sim_eventos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
 | `sim_arrendamientos.session_id` → `sim_sessions(id)` | CASCADE | nueva |
 | `sim_trades.session_id` → `sim_sessions(id)` | CASCADE | existe (comunicado por el CTO, 4-oct) |
 | `sim_trades.evento_id` → `sim_eventos(id)` | CASCADE | nueva; los dos caen con la sesión (corrige la versión anterior de este documento, que la ponía hacia `sim_sessions`) |
 | `session_drawings.session_id`, `session_chart_config.session_id` → `sim_sessions(id)` | CASCADE | existen |
-| `profiles.id` → `auth.users(id)` | no consta (D-01) | el hub borra la cuenta antes que el perfil |
+| `profiles.id` → `auth.users(id)` | CASCADE | existe: `profiles_id_fkey` (s04 literal, 10-oct). El hub borra la cuenta antes que el perfil. A `profiles` llegan además 15 FK CASCADE de otros productos (`ia_*`, `macro_*`, `notas`, `trades`) |
 
 `user_id` de recibos, eventos y trades es una copia para la RLS: no lleva FK propia; caen con su sesión.
 
