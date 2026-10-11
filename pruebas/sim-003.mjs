@@ -320,6 +320,34 @@ try {
   const tk4 = tomar(A, s1, u(966), { k: 16 })
   ver('control: sin espera, el mismo comando con un arrendamiento vigente → 200', comando(A, s1, u(967), 'abrir', { testigo: tk4.testigo, version: 4, k: 17, resultado: res({ estado: EST2 }) }).ok)
 
+  // S003-04 (Astra 11-oct): acceso vigente en el punto de decision, releido tras los bloqueos
+  const G = u(13)
+  ver('montaje S003-04: alumno G (basic, con acceso) con 6 raices', pg.psql(`insert into auth.users values ('${G}'); insert into profiles (id, email, plan, simulador_activo) values ('${G}', 'g@ejemplo.test', 'basic', true);`, 'p').ok
+    && [0, 1, 2, 3, 4, 5].every(k => crear(G, u(800 + k), u(1800 + k)).http === 201))
+  const g1 = conexion(), g2 = conexion(), g3 = conexion()
+  await g1.manda(`begin; select 1 from public.sim_alumnos where user_id = '${G}' for update;`)
+  const pg7 = g2.manda(`set role service_role; select public.sim_crear_sesion('${G}', '${u(806)}', '${u(1806)}', ${L(sobreCrear(u(806)))}, 1, ${J(SESION)}, ${J(EST0)}, ${J(MERCADO)}, '{}');`)
+  const espG = await esperando(1)
+  const sube = await g3.manda(`set lock_timeout = '3s'; update public.profiles set plan = 'extra' where id = '${G}';`)
+  await g1.manda('commit;')
+  const rg7 = await pg7
+  ver('S003-04: el plan pasa a extra MIENTRAS la 7.ª creacion espera la barrera (el UPDATE no espera: KEY SHARE) → 201, con el plan releido',
+    espG && !sube.err && rg7.json?.http === 201, `${espG} · ${sube.err || 'update ok'} · ${rg7.json?.motivo ?? rg7.json?.http ?? rg7.err}`)
+  const tG = tomar(G, u(800), u(1810), { forzar: true })
+  const cmdG = sqlComando(G, u(800), u(1811), 'abrir', { testigo: tG.testigo, version: 0, k: 50, resultado: res({ estado: EST2, eventos: [ev(0, 'orden_creada')] }) })
+  await g1.manda(`begin; select 1 from public.sim_alumnos where user_id = '${G}' for update;`)
+  const pcG = g2.manda(cmdG)
+  const espC = await esperando(1)
+  const quita = await g3.manda(`update public.profiles set simulador_activo = false where id = '${G}';`)
+  await g1.manda('commit;')
+  const rcG = await pcG
+  ver('S003-04: el acceso se revoca MIENTRAS el comando espera → 403 sin_acceso, sin escribir (ni recibo, ni evento, ni version)',
+    tG.ok && espC && !quita.err && rcG.json?.motivo === 'sin_acceso' && n(`select count(*) from sim_recibos where command_id = '${u(1811)}'`) === 0
+    && n(`select count(*) from sim_eventos where session_id = '${u(800)}'`) === 0 && uno(`select version from sim_sessions where id = '${u(800)}'`) === '0', `${espC} · ${quita.err || 'update ok'} · ${rcG.json?.motivo ?? rcG.err}`)
+  await g3.manda(`update public.profiles set simulador_activo = true where id = '${G}';`)
+  ver('control: con el acceso devuelto, el mismo comando → 200', (await g2.manda(cmdG)).json?.ok === true)
+  g1.cierra(); g2.cierra(); g3.cierra()
+
   titulo('6 · pasar de fase (D07)')
   const P = u(400), H = u(401)
   crear(Y, P, u(1400), { sesion: { ...SESION, challenge_type: 'ftmo' }, estado: { esquema: 'reto@1', fase: 1, estado: 'en_curso' } })

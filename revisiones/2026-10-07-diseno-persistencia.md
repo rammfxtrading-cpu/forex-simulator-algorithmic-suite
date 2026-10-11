@@ -149,7 +149,7 @@ Dentro de una transacción, en este orden:
    - mismo digest → devolver ese recibo tal cual, **sin ejecutar**;
    - digest distinto → `409 clave_reutilizada`.
 4. **Avance caducado** (V3-07): `avanzar`/`checkpoint` sin recibo y con `version_esperada` distinta de la vigente → `409 comando_caducado` (§ 6). **Antes, la lápida** (S003-03): si la sesión está borrada, `410 sesion_borrada`, aunque el avance también esté caducado. Para los demás tipos, la misma situación es un `409 conflicto` normal.
-5. Verificaciones, cada una con su respuesta y **sin efectos**: `terminal` (`410` / `403`); acceso de producto vigente (`profiles.simulador_activo`, dentro de la RPC, § 12.4); `legado` (`409 solo_lectura`); `epoca` (`426 actualizar_cliente`); testigo y caducidad con la **hora de decisión** `t_decision` de § 4.2 (`clock_timestamp()` capturado una vez, después de todos los bloqueos; `409 sin_arrendamiento`); `version = version_esperada` (`409 conflicto`).
+5. Verificaciones, cada una con su respuesta y **sin efectos**: `terminal` (`410` / `403`); acceso de producto vigente (`profiles.simulador_activo`, dentro de la RPC, § 12.4). **Semántica (S003-04, CTO 11-oct): «acceso vigente en el punto de decisión, releído tras los bloqueos»**: `simulador_activo` y `plan` se vuelven a leer después de la barrera, los arrendamientos y las sesiones; una revocación (o un cambio de plan) confirmada mientras la RPC esperaba cuenta, y sin acceso se responde 403 sin escribir. Una revocación que se confirma **después** de esa relectura no deshace la decisión: el comando queda ordenado antes que ella; `legado` (`409 solo_lectura`); `epoca` (`426 actualizar_cliente`); testigo y caducidad con la **hora de decisión** `t_decision` de § 4.2 (`clock_timestamp()` capturado una vez, después de todos los bloqueos; `409 sin_arrendamiento`); `version = version_esperada` (`409 conflicto`).
 6. Escribir: recibo, eventos con `seq` consecutivo (lo asigna la RPC bajo el bloqueo), trades de los `cierre`, `estado`, proyecciones (`balance`, `last_timestamp`, `challenge_*`), renovar `hasta` y, según § 4.3.1, `version`.
 
 #### 4.3.1 Cuándo sube la versión (V3-01, CTO 8-oct)
@@ -433,7 +433,7 @@ Toda respuesta es un jsonb `{ ok, http, motivo, … }`. Un rechazo **no escribe 
 
 | http | motivo | Significado | Dónde |
 |---|---|---|---|
-| 403 | `sin_acceso` | el perfil del actor no tiene `simulador_activo` exactamente `true` (también un admin sin él) | crear, tomar, comando, pasar de fase |
+| 403 | `sin_acceso` | el perfil del actor no tiene `simulador_activo` exactamente `true` (también un admin sin él), leído tras los bloqueos (S003-04) | crear, tomar, comando, pasar de fase |
 | 403 | `acceso_revocado` | la sesión está marcada `terminal = 'revocada'` (hoy nada la marca así) | tomar, comando, pasar de fase |
 | 404 | `sesion_no_encontrada` | la sesión es de otro alumno; no se dice que existe ni se devuelve su recibo | tomar, comando, pasar de fase, `sim_borrar_sesion`, `sim_borrar_legacy` |
 | 409 | `clave_reutilizada` | la clave (`command_id`) o el id de sesión ya se usaron con otro sobre, otro tipo u otro alumno | crear, tomar, comando, pasar de fase |

@@ -354,6 +354,10 @@ BEGIN
         RETURN public.sim_error(409, 'clave_reutilizada');
       END IF;
 
+      -- acceso y plan vigentes en el punto de decision, releidos tras los
+      -- bloqueos (S003-04): una revocacion confirmada mientras se esperaba cuenta
+      v_al := v_al || coalesce((SELECT jsonb_build_object('acceso', p.simulador_activo IS TRUE, 'plan', p.plan)
+                                  FROM public.profiles p WHERE p.id = p_actor), '{"acceso": false}'::jsonb);
       IF NOT (v_al->>'acceso')::boolean THEN RETURN public.sim_error(403, 'sin_acceso'); END IF;
       IF p_epoca <> 1 THEN RETURN public.sim_error(426, 'actualizar_cliente'); END IF;
       IF p_sesion IS NULL OR jsonb_typeof(p_sesion) <> 'object'
@@ -419,6 +423,10 @@ BEGIN
       IF v_padre IS NOT NULL THEN PERFORM 1 FROM public.sim_sessions WHERE id = v_padre FOR UPDATE; END IF;
       SELECT * INTO v_s FROM public.sim_sessions WHERE id = p_session_id FOR UPDATE;
       v_t := clock_timestamp();   -- la hora de decision, DESPUES de los bloqueos (V4-01)
+      -- acceso y plan vigentes en el punto de decision, releidos tras los
+      -- bloqueos (S003-04): una revocacion confirmada mientras se esperaba cuenta
+      v_al := v_al || coalesce((SELECT jsonb_build_object('acceso', p.simulador_activo IS TRUE, 'plan', p.plan)
+                                  FROM public.profiles p WHERE p.id = p_actor), '{"acceso": false}'::jsonb);
 
       IF v_s.id IS NULL THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       IF v_s.user_id <> p_actor THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
@@ -556,6 +564,10 @@ BEGIN
       IF v_padre IS NOT NULL THEN PERFORM 1 FROM public.sim_sessions WHERE id = v_padre FOR UPDATE; END IF;
       SELECT * INTO v_s FROM public.sim_sessions WHERE id = p_session_id FOR UPDATE;
       v_t := clock_timestamp();   -- la hora de decision, DESPUES de los bloqueos (V4-01)
+      -- acceso y plan vigentes en el punto de decision, releidos tras los
+      -- bloqueos (S003-04): una revocacion confirmada mientras se esperaba cuenta
+      v_al := v_al || coalesce((SELECT jsonb_build_object('acceso', p.simulador_activo IS TRUE, 'plan', p.plan)
+                                  FROM public.profiles p WHERE p.id = p_actor), '{"acceso": false}'::jsonb);
 
       IF v_s.id IS NULL THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       IF v_s.user_id <> p_actor THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
@@ -682,6 +694,10 @@ BEGIN
       SELECT * INTO v_p FROM public.sim_sessions WHERE id = p_padre_id FOR UPDATE;
       IF NOT FOUND THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       SELECT * INTO v_h FROM public.sim_sessions WHERE id = p_hija_id FOR UPDATE;
+      -- acceso y plan vigentes en el punto de decision, releidos tras los
+      -- bloqueos (S003-04): una revocacion confirmada mientras se esperaba cuenta
+      v_al := v_al || coalesce((SELECT jsonb_build_object('acceso', p.simulador_activo IS TRUE, 'plan', p.plan)
+                                  FROM public.profiles p WHERE p.id = p_actor), '{"acceso": false}'::jsonb);
       IF v_p.user_id <> p_actor THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
       IF v_h.id IS NOT NULL THEN
         IF v_h.user_id = p_actor AND v_h.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
