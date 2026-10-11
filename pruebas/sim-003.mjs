@@ -477,6 +477,11 @@ try {
   const ba = SR(`select public.sim_borrar_alumno('${W}');`)
   ver('sim_borrar_alumno: la fila SI se va (no deja lapida); no queda nada de W en las tablas del simulador; B intacto', ba.ok && ['sim_sessions', 'sim_recibos', 'sim_trades', 'user_chart_config', 'sim_drawing_templates', 'sim_arrendamientos'].every(t => n(`select count(*) from ${t} where user_id = '${W}'`) === 0)
     && n(`select count(*) from sim_sessions where id = '${u(102)}' and terminal is null`) === 1, eti(ba))
+  // S003-06 (Astra 11-oct): la excepcion, escrita y comprobada
+  ver('S003-06: tras el wipe, con el perfil vivo, W CONSERVA su fila de sim_alumnos (la barrera: user_id, creado, siguiente_avance_desde; nada economico)',
+    n(`select count(*) from sim_alumnos where user_id = '${W}'`) === 1 && n(`select count(*) from profiles where id = '${W}'`) === 1)
+  ver('S003-06: al borrar la cuenta (y con ella el perfil, profiles_id_fkey) esa fila se va por la FK', pg.psql(`delete from auth.users where id = '${W}'`, 'p').ok
+    && n(`select count(*) from sim_alumnos where user_id = '${W}'`) === 0)
 
   titulo('8 · el DELETE del hub (§ 6.1)')
   // orden simple 1: el hub borra antes; orden simple 2: la RPC confirma antes

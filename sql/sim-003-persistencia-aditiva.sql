@@ -56,7 +56,9 @@
 --
 -- ── RESPUESTAS DE LAS FUNCIONES ─────────────────────────────────────────────
 --   Siempre un jsonb: { ok, http, motivo, ... }. Un rechazo del protocolo
---   (410, 404, 403, 409, 426, 429, 422) no escribe nada. Lo que no es del
+--   (410, 404, 403, 409, 426, 429, 422) no escribe nada del alumno: como
+--   mucho deja creada su fila de coordinacion en sim_alumnos (la barrera,
+--   sin datos economicos), que se crea al bloquear. Lo que no es del
 --   protocolo (un tipo de dato imposible de convertir, un interbloqueo 40P01,
 --   el P0001 del disparador del cupo actual) sale como error de SQL y deshace
 --   la llamada entera.
@@ -857,6 +859,10 @@ BEGIN
     -- y las BORRA (aqui no queda lapida: CTO 11-oct); y las tablas del
     -- simulador sin sesion. El perfil y
     -- profiles.simulador_activo no se tocan (los lleva el endpoint).
+    -- EXCEPCION (S003-06): la fila de sim_alumnos del alumno SE QUEDA mientras
+    -- exista su perfil. Es la barrera: borrarla aqui dejaria que dos llamadas
+    -- concurrentes crearan dos barreras distintas. No guarda nada economico
+    -- (user_id, creado, siguiente_avance_desde) y se va con el perfil (FK).
     CREATE FUNCTION public.sim_borrar_alumno(p_user_id uuid)
       RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
     AS $f$
