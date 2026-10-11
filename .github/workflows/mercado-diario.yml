@@ -15,9 +15,12 @@ name: Mercado diario (programado)
 #   · mismo grupo de concurrencia que el workflow manual (actualizar-velas):
 #     nunca corren a la vez. El manual (sonda / recuperar) no cambia.
 # Ninguna clave ni URL en el log. Desde aqui no se libera ningun cerrojo.
+# CTO 11-oct: tambien se puede lanzar a mano (workflow_dispatch, sin entradas).
+# Hace exactamente lo mismo que el programado: nada mira como se lanzo.
 on:
   schedule:
     - cron: '17 3 * * *'
+  workflow_dispatch:
 
 concurrency:
   group: actualizar-velas
