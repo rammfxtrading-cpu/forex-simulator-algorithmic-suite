@@ -32,8 +32,9 @@
 --   indice    una sola hija v1 por reto padre (unico parcial, motor_version = 1)
 --   funciones SECURITY DEFINER, search_path vacio, EXECUTE solo service_role:
 --               sim_crear_sesion, sim_tomar_escritor, sim_comando,
---               sim_avanzar_fase, sim_borrar_sesion, sim_borrar_legacy,
---               sim_borrar_alumno
+--               sim_avanzar_fase, sim_borrar_sesion y sim_borrar_legacy
+--               (dejan la fila como lapida, terminal = 'borrada'),
+--               sim_borrar_alumno (borra las filas)
 --             auxiliares (nadie mas que su dueño las ejecuta):
 --               sim_error, sim_bloquea_alumno
 --   RLS       sim_recibos y sim_eventos: authenticated lee LOS SUYOS; nada mas.
@@ -316,9 +317,9 @@ BEGIN
 
     -- CREAR (§ 4.3.2). El id de la sesion lo trae el cliente. Mismo actor y
     -- mismo digest → la misma respuesta; otro digest u otro actor → 409
-    -- clave_reutilizada (sin decir de quien). Cupo: raices no legado del
-    -- alumno; 12 con plan 'extra', 6 si no (las cifras del disparador real,
-    -- s04). p_sesion: name, pair, timeframe, date_from, date_to, capital y,
+    -- clave_reutilizada (sin decir de quien); con la lapida de una borrada,
+    -- 410 (A24). Cupo: raices del alumno que no son legado ni lapida; 12 con
+    -- plan 'extra', 6 si no (las cifras del disparador real, s04). p_sesion: name, pair, timeframe, date_from, date_to, capital y,
     -- si es reto, challenge_type (fase 1).
     CREATE FUNCTION public.sim_crear_sesion(p_actor uuid, p_session_id uuid, p_command_id uuid, p_sobre text,
                                             p_epoca integer, p_sesion jsonb, p_estado jsonb, p_mercado jsonb, p_resumen jsonb)
@@ -343,6 +344,8 @@ BEGIN
       SELECT * INTO v_s FROM public.sim_sessions WHERE id = p_session_id FOR UPDATE;
       IF FOUND THEN
         IF v_s.user_id <> p_actor THEN RETURN public.sim_error(409, 'clave_reutilizada'); END IF;
+        -- A24: una sesion borrada no se recrea (su lapida sigue ahi)
+        IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
         SELECT * INTO v_r FROM public.sim_recibos WHERE session_id = p_session_id AND command_id = p_command_id AND tipo = 'crear';
         IF FOUND AND v_r.digest = v_digest THEN
           RETURN jsonb_build_object('ok', true, 'http', 200, 'repetido', true, 'recibo', to_jsonb(v_r));
@@ -368,7 +371,7 @@ BEGIN
 
       v_lim := CASE WHEN v_al->>'plan' = 'extra' THEN 12 ELSE 6 END;
       SELECT count(*) INTO v_n FROM public.sim_sessions
-       WHERE user_id = p_actor AND challenge_parent_id IS NULL AND NOT legado;
+       WHERE user_id = p_actor AND challenge_parent_id IS NULL AND NOT legado AND terminal IS DISTINCT FROM 'borrada';
       IF v_n >= v_lim THEN
         RETURN public.sim_error(409, 'limite_sesiones', jsonb_build_object('limite', v_lim, 'plan', v_al->>'plan'));
       END IF;
@@ -677,6 +680,7 @@ BEGIN
       SELECT * INTO v_h FROM public.sim_sessions WHERE id = p_hija_id FOR UPDATE;
       IF v_p.user_id <> p_actor THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
       IF v_h.id IS NOT NULL THEN
+        IF v_h.user_id = p_actor AND v_h.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
         IF v_h.user_id = p_actor AND v_h.challenge_parent_id = p_padre_id THEN
           SELECT * INTO v_r FROM public.sim_recibos WHERE session_id = p_hija_id AND command_id = p_command_id AND tipo = 'crear';
           IF FOUND AND v_r.digest = v_digest THEN
@@ -728,10 +732,12 @@ BEGIN
       RETURN jsonb_build_object('ok', true, 'http', 201, 'recibo', to_jsonb(v_r));
     END $f$;
 
-    -- BORRAR UNA SESION v1 (§ 1.6, CD07): bajo los bloqueos del orden comun,
-    -- lapida (terminal = 'borrada') y DELETE en la misma transaccion; las
-    -- cascadas se llevan recibos, eventos, trades, arrendamiento, dibujos y
-    -- configuracion. Ya borrada: 410 (repetir es inofensivo).
+    -- BORRAR UNA SESION v1 (§ 1.6, CD07; CTO 11-oct, opcion a): bajo los
+    -- bloqueos del orden comun, la fila QUEDA como lapida (terminal =
+    -- 'borrada') y se borran sus trades, eventos, recibos, dibujos y su
+    -- arrendamiento. La configuracion del grafico (session_chart_config) se
+    -- queda. Ya borrada: 410. Recrear ese id: 410 (sim_crear_sesion). El
+    -- cupo no cuenta las lapidas; el dashboard tiene que no listarlas.
     CREATE FUNCTION public.sim_borrar_sesion(p_actor uuid, p_session_id uuid)
       RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
     AS $f$
@@ -747,14 +753,20 @@ BEGIN
       IF NOT FOUND THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       IF v_s.user_id <> p_actor THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
       IF v_s.motor_version <> 1 THEN RETURN public.sim_error(409, 'no_es_v1'); END IF;
-      UPDATE public.sim_sessions SET terminal = 'borrada' WHERE id = p_session_id;
-      DELETE FROM public.sim_sessions WHERE id = p_session_id;
+      IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
+      UPDATE public.sim_sessions SET terminal = 'borrada', escritor = NULL WHERE id = p_session_id;
+      DELETE FROM public.sim_trades WHERE session_id = p_session_id;
+      DELETE FROM public.sim_eventos WHERE session_id = p_session_id;
+      DELETE FROM public.sim_recibos WHERE session_id = p_session_id;
+      DELETE FROM public.session_drawings WHERE session_id = p_session_id;
+      DELETE FROM public.sim_arrendamientos WHERE session_id = p_session_id;
       RETURN jsonb_build_object('ok', true, 'http', 200, 'borrada', p_session_id);
     END $f$;
 
     -- BORRAR UNA SESION LEGACY (CTO 10-oct, decision 6): la llama el
     -- endpoint con la sesion del alumno; comprueba que es suya y que es de la
-    -- epoca legacy (motor_version = 0), deja la lapida y borra en cascada.
+    -- epoca legacy (motor_version = 0) y deja la fila como lapida, igual que
+    -- sim_borrar_sesion (CTO 11-oct, opcion a).
     CREATE FUNCTION public.sim_borrar_legacy(p_user_id uuid, p_session_id uuid)
       RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
     AS $f$
@@ -770,14 +782,20 @@ BEGIN
       IF NOT FOUND THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
       IF v_s.user_id <> p_user_id THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
       IF v_s.motor_version <> 0 THEN RETURN public.sim_error(409, 'no_es_legado'); END IF;
-      UPDATE public.sim_sessions SET terminal = 'borrada' WHERE id = p_session_id;
-      DELETE FROM public.sim_sessions WHERE id = p_session_id;
+      IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
+      UPDATE public.sim_sessions SET terminal = 'borrada', escritor = NULL WHERE id = p_session_id;
+      DELETE FROM public.sim_trades WHERE session_id = p_session_id;
+      DELETE FROM public.sim_eventos WHERE session_id = p_session_id;
+      DELETE FROM public.sim_recibos WHERE session_id = p_session_id;
+      DELETE FROM public.session_drawings WHERE session_id = p_session_id;
+      DELETE FROM public.sim_arrendamientos WHERE session_id = p_session_id;
       RETURN jsonb_build_object('ok', true, 'http', 200, 'borrada', p_session_id);
     END $f$;
 
     -- BORRAR TODO EL SIMULADOR DE UN ALUMNO (wipe del admin, § 7.0): barrera
     -- del alumno, sus arrendamientos, sus sesiones (padres antes que hijas),
-    -- lapida y DELETE; y las tablas del simulador sin sesion. El perfil y
+    -- y las BORRA (aqui no queda lapida: CTO 11-oct); y las tablas del
+    -- simulador sin sesion. El perfil y
     -- profiles.simulador_activo no se tocan (los lleva el endpoint).
     CREATE FUNCTION public.sim_borrar_alumno(p_user_id uuid)
       RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''

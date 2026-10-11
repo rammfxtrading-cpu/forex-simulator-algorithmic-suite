@@ -19,7 +19,8 @@
  *     eventos y trades, 422 sin efectos, rechazo puro, conflicto, idempotencia,
  *     actor ajeno, testigo y caducidad, y V4-01 (caduca MIENTRAS espera el
  *     bloqueo: 409 aunque al empezar era valido)
- *   6 pasar de fase; 7 borrar (sesion, legacy, alumno; A24 medido)
+ *   6 pasar de fase; 7 borrar: sesion y legacy dejan la fila como lapida
+ *     (terminal = 'borrada', A24: 410 al recrear; fuera del cupo), alumno la borra
  *   8 el DELETE del hub: los dos ordenes simples, I1, I2 e I3 (interbloqueo)
  * ⚠️ No prueba el editor de Supabase.
  */
@@ -330,19 +331,35 @@ try {
     && SR(`select public.sim_avanzar_fase('${Y}', '${P}', '${u(402)}', '${u(1405)}', ${L(JSON.stringify({ tipo: 'crear', padre: P, otra: 1 }))}, 1, 1, '{}', ${J({ esquema: 'reto@1', fase: 2, estado: 'en_curso' })}, ${J(MERCADO)}, '{}');`).motivo === 'transicion_hecha')
   ver('la hija no cuenta en el cupo (Y: 1 raiz)', n(`select count(*) from sim_sessions where user_id = '${Y}' and challenge_parent_id is null`) === 1)
 
-  titulo('7 · borrar (CD07; CTO 10-oct, decision 6)')
+  titulo('7 · borrar (CD07; CTO 10-oct, decision 6; CTO 11-oct, opcion a)')
+  pg.psql(`insert into session_drawings (user_id, session_id, pair) values ('${A}', '${s1}', 'EURUSD');`, 'p')
   const bs = SR(`select public.sim_borrar_sesion('${A}', '${s1}');`)
-  ver('sim_borrar_sesion: 200 y se van recibos, eventos, trades y arrendamiento (cascada)', bs.ok && ['sim_sessions where id', 'sim_recibos where session_id', 'sim_eventos where session_id', 'sim_trades where session_id', 'sim_arrendamientos where session_id'].every(t => n(`select count(*) from ${t} = '${s1}'`) === 0), eti(bs))
+  ver('sim_borrar_sesion: 200; la fila QUEDA como lapida (terminal = borrada) y se van recibos, eventos, trades, dibujos y arrendamiento',
+    bs.ok && uno(`select terminal from sim_sessions where id = '${s1}'`) === 'borrada'
+    && ['sim_recibos', 'sim_eventos', 'sim_trades', 'session_drawings', 'sim_arrendamientos'].every(t => n(`select count(*) from ${t} where session_id = '${s1}'`) === 0), eti(bs))
   ver('otra vez → 410; la de otro → 404; una v0 → 409 no_es_v1', SR(`select public.sim_borrar_sesion('${A}', '${s1}');`).http === 410
     && SR(`select public.sim_borrar_sesion('${B}', '${u(212)}');`).http === 404 && SR(`select public.sim_borrar_sesion('${A}', '${u(101)}');`).motivo === 'no_es_v1')
-  ver('sim_borrar_legacy: la v0 de A → 200 (con su trade); una v1 → 409 no_es_legado; la de otro → 404',
-    SR(`select public.sim_borrar_legacy('${A}', '${u(101)}');`).ok && n(`select count(*) from sim_trades where session_id = '${u(101)}'`) === 0
-    && SR(`select public.sim_borrar_legacy('${A}', '${u(212)}');`).motivo === 'no_es_legado' && SR(`select public.sim_borrar_legacy('${A}', '${u(102)}');`).http === 404)
   const s1re = crear(A, s1, u(901))
-  console.log(`  · medido (A24 con la lectura literal «lapida y borra en cascada»): crear reintentado tras borrar → ${eti(s1re)}${s1re.ok ? ' (la sesion RESUCITA)' : ''}`)
+  ver('A24: la creacion reintentada con ese id (misma clave y sobre) → 410 sesion_borrada; no resucita', s1re.http === 410 && s1re.motivo === 'sesion_borrada'
+    && uno(`select terminal from sim_sessions where id = '${s1}'`) === 'borrada' && n(`select count(*) from sim_recibos where session_id = '${s1}'`) === 0, eti(s1re))
+  ver('sobre la lapida: tomar el escritor → 410; un comando → 410', tomar(A, s1, u(970), { k: 20 }).motivo === 'sesion_borrada'
+    && comando(A, s1, u(971), 'abrir', { testigo: 'x', version: 5, k: 21, resultado: res() }).motivo === 'sesion_borrada')
+  // cupo: E tiene 12 raices v1 (300..310 y 330); una pasa a lapida
+  SR(`select public.sim_borrar_sesion('${E}', '${u(330)}');`)
+  const conDisp = crear(E, u(340), u(1340))
+  ver('cupo con una lapida: el disparador de HOY aun la cuenta y para la 13.ª (se ajusta en sim-004, no aqui)', /imite de sesiones/i.test(conDisp.error ?? ''), eti(conDisp))
+  pg.psql('alter table sim_sessions disable trigger trg_enforce_sim_session_limit', 'p')
+  const sinDisp = crear(E, u(340), u(1340))
+  pg.psql('alter table sim_sessions enable trigger trg_enforce_sim_session_limit', 'p')
+  ver('sin ese disparador (como quedara tras sim-004): sim_crear_sesion no cuenta la lapida y entra', sinDisp.http === 201, eti(sinDisp))
+  const bl = SR(`select public.sim_borrar_legacy('${A}', '${u(101)}');`)
+  ver('sim_borrar_legacy: la v0 de A → 200; la fila queda como lapida, sin su trade; una v1 → 409 no_es_legado; la de otro → 404',
+    bl.ok && uno(`select terminal from sim_sessions where id = '${u(101)}'`) === 'borrada' && n(`select count(*) from sim_trades where session_id = '${u(101)}'`) === 0
+    && SR(`select public.sim_borrar_legacy('${A}', '${u(212)}');`).motivo === 'no_es_legado' && SR(`select public.sim_borrar_legacy('${A}', '${u(102)}');`).http === 404, eti(bl))
+  ver('sim_borrar_legacy otra vez → 410', SR(`select public.sim_borrar_legacy('${A}', '${u(101)}');`).http === 410)
   crear(W, u(500), u(1500)); pg.psql(`insert into user_chart_config values ('${W}', '{}'); insert into sim_drawing_templates (user_id, name) values ('${W}', 'p');`, 'p')
   const ba = SR(`select public.sim_borrar_alumno('${W}');`)
-  ver('sim_borrar_alumno: no queda nada de W en las tablas del simulador; B intacto', ba.ok && ['sim_sessions', 'sim_recibos', 'sim_trades', 'user_chart_config', 'sim_drawing_templates', 'sim_arrendamientos'].every(t => n(`select count(*) from ${t} where user_id = '${W}'`) === 0)
+  ver('sim_borrar_alumno: la fila SI se va (no deja lapida); no queda nada de W en las tablas del simulador; B intacto', ba.ok && ['sim_sessions', 'sim_recibos', 'sim_trades', 'user_chart_config', 'sim_drawing_templates', 'sim_arrendamientos'].every(t => n(`select count(*) from ${t} where user_id = '${W}'`) === 0)
     && n(`select count(*) from sim_sessions where user_id = '${B}'`) === 1, eti(ba))
 
   titulo('8 · el DELETE del hub (§ 6.1)')

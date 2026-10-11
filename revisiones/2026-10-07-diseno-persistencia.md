@@ -259,6 +259,8 @@ Además, los dos órdenes simples de un comando ordinario: DELETE antes de la RP
 
 **Lo que no hace:** la lápida de CD07 (`terminal`) solo existe en los borrados que pasan por `sim_borrar_sesion` / `sim_borrar_alumno`. El borrado del hub no la deja; no hace falta para impedir resurrecciones (los ids son UUID y ninguna RPC inserta una sesión sin el perfil vivo, I1), pero la respuesta es `410` por fila inexistente.
 
+**Lápida (CTO 11-oct, opción a; `sql/sim-003`):** `sim_borrar_sesion` y `sim_borrar_legacy` **no borran la fila**: queda con `terminal = 'borrada'` y se borran sus trades, eventos, recibos, dibujos y arrendamiento (la configuración del gráfico se queda). Repetir el borrado da 410; una creación reintentada con ese id da **410** (A24: no resucita). El cupo de `sim_crear_sesion` no cuenta las lápidas; el dashboard y los listados del alumno tienen que excluirlas (cliente, antes del corte), y el disparador del cupo de hoy las cuenta hasta que lo ajuste sim-004. `sim_borrar_alumno` y el borrado del hub sí eliminan las filas.
+
 ## 7. Sesiones antiguas en solo lectura (corte)
 
 ### 7.0 Inventario de los escritores económicos actuales (V3-04, CTO 8-oct)
