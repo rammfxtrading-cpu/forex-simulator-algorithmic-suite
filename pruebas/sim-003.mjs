@@ -369,6 +369,24 @@ try {
   await g3.manda(`update public.profiles set simulador_activo = true where id = '${G}';`)
   ver('control: con el acceso devuelto, el mismo comando → 200', (await g2.manda(cmdG)).json?.ok === true)
   g1.cierra(); g2.cierra(); g3.cierra()
+  // CAS concurrente (CTO 11-oct): dos confirmaciones con la misma version N desde dos conexiones
+  const tC = tomar(G, u(800), u(1820), { forzar: true })
+  const vN = Number(uno(`select version from sim_sessions where id = '${u(800)}'`))
+  const evN = n(`select count(*) from sim_eventos where session_id = '${u(800)}'`)
+  const k1c = conexion(), k2c = conexion()
+  const cas = (cid, k, pos) => `set role service_role; ${sqlComando(G, u(800), cid, 'abrir', { testigo: tC.testigo, version: vN, k, resultado: res({ estado: { ...EST2, cas: pos }, eventos: [ev(0, 'orden_creada')] }) })}`
+  await k1c.manda('begin;')
+  const r1c = await k1c.manda(cas(u(1821), 60, 1))
+  const p2c = k2c.manda(cas(u(1822), 61, 2))
+  const espCas = await esperando(1)
+  await k1c.manda('commit;')
+  const r2c = await p2c
+  ver('CAS concurrente: dos «abrir» con la misma version N a la vez → la primera confirma N+1; la segunda ESPERA y da 409 conflicto con N+1; un solo recibo y un solo evento nuevos',
+    tC.ok && r1c.json?.ok && r1c.json?.version === vN + 1 && espCas && r2c.json?.motivo === 'conflicto' && r2c.json?.version === vN + 1
+    && n(`select count(*) from sim_recibos where command_id in ('${u(1821)}', '${u(1822)}')`) === 1
+    && n(`select count(*) from sim_eventos where session_id = '${u(800)}'`) === evN + 1 && uno(`select version from sim_sessions where id = '${u(800)}'`) === String(vN + 1),
+    `N=${vN} · ${r1c.json?.version ?? r1c.err} · espera ${espCas} · ${r2c.json?.motivo ?? r2c.err}`)
+  k1c.cierra(); k2c.cierra()
 
   titulo('6 · pasar de fase (D07)')
   const P = u(400), H = u(401)
