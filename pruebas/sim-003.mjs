@@ -158,6 +158,19 @@ try {
   ver('un fallo despues de crear (authenticated hereda EXECUTE): revienta y no queda NADA', !r5.ok && /sim-003: authenticated puede ejecutar/.test(r5.err) && nadaCreado('heredado'), r5.err.split('\n')[0])
   // los roles son del cluster entero, no de la base: se deshace ya
   pg.psql('revoke service_role from authenticated;', 'postgres')
+  // S003-05 (Astra 11-oct): la segunda ejecucion mira la definicion, no solo que las piezas existan
+  for (const [db, deriva, aviso] of [
+    ['deriva1', `drop policy sim_eventos_select_propios on public.sim_eventos;
+      create policy sim_eventos_select_propios on public.sim_eventos for select to authenticated using (true);`, /sim-003: .*sim_eventos_select_propios/],
+    ['deriva2', 'drop index public.sim_sessions_una_hija_v1_key;', /sim-003: .*sim_sessions_una_hija_v1_key/]]) {
+    nueva(db)
+    const pr = pg.psql(SQL, db), al = pg.psql(deriva, db)
+    const segunda = pg.psql(SQL, db)
+    ver(`S003-05: aplicada, ${db === 'deriva1' ? 'la politica de eventos pasa a USING (true)' : 'se quita el indice unico de la hija v1'} → la segunda ejecucion ABORTA y lo nombra`,
+      pr.ok && al.ok && !segunda.ok && aviso.test(segunda.err), segunda.err.split('\n').find(l => /ERROR/.test(l)) ?? 'termino sin error')
+  }
+  ver('S003-05: y la alteracion sigue ahi (el DO abortado no toco nada)', uno(`select qual from pg_policies where policyname = 'sim_eventos_select_propios'`, 'deriva1') === 'true'
+    && uno(`select to_regclass('public.sim_sessions_una_hija_v1_key') is null`, 'deriva2') === 't')
 
   titulo('2 · permisos (§ 8) y la web de hoy')
   const s1 = u(201)
@@ -275,6 +288,15 @@ try {
   ver('cerrar: un trade v1 ligado a su evento cierre, con sus importes µ; balance proyectado; seq 3', ce.ok && ce.trades === 1 && ce.eventos?.[0]?.seq === 3
     && uno(`select t.motor_version||','||t.neto_micro||','||t.pnl||','||e.tipo from sim_trades t join sim_eventos e on e.id = t.evento_id where t.session_id = '${s1}'`) === '1,97000000,97.00,cierre'
     && uno(`select balance from sim_sessions where id = '${s1}'`) === '10097', eti(ce))
+  // S003-05: SELECT cruzada de eventos, con filas de A y de B
+  const sB = u(230), cB = crear(B, sB, u(930)), tB = tomar(B, sB, u(931))
+  const abB = comando(B, sB, u(932), 'abrir', { testigo: tB.testigo, version: 0, resultado: res({ estado: EST2, eventos: [ev(0, 'orden_creada'), ev(1, 'fill')] }) })
+  const evA = n(`select count(*) from sim_eventos where user_id = '${A}'`), evB = n(`select count(*) from sim_eventos where user_id = '${B}'`)
+  ver('montaje: A y B tienen eventos', cB.ok && abB.ok && evA > 0 && evB === 2, `${evA} · ${evB}`)
+  ver('S003-05: authenticated A ve sus eventos y ninguno de B; B, los suyos y ninguno de A; anon, nada',
+    como('authenticated', A, 'select count(*) from sim_eventos;') === String(evA) && como('authenticated', A, `select count(*) from sim_eventos where user_id = '${B}' or session_id = '${sB}';`) === '0'
+    && como('authenticated', B, 'select count(*) from sim_eventos;') === String(evB) && como('authenticated', B, `select count(*) from sim_eventos where user_id = '${A}';`) === '0'
+    && como('anon', A, 'select count(*) from sim_eventos;') === 'DENEGADO')
   const antes = uno(`select version||','||(select count(*) from sim_eventos where session_id = '${s1}')||','||(select count(*) from sim_recibos where session_id = '${s1}')||','||(select count(*) from sim_trades where session_id = '${s1}') from sim_sessions where id = '${s1}'`)
   const sinEfecto = () => uno(`select version||','||(select count(*) from sim_eventos where session_id = '${s1}')||','||(select count(*) from sim_recibos where session_id = '${s1}')||','||(select count(*) from sim_trades where session_id = '${s1}') from sim_sessions where id = '${s1}'`) === antes
   ver('un cierre sin su trade → 422 resultado_invalido (trades), sin efectos', comando(A, s1, u(957), 'cerrar', { testigo: T, version: 4, k: 7, resultado: res({ estado: EST2, eventos: [ev(0, 'cierre')] }) }).en === 'trades' && sinEfecto())

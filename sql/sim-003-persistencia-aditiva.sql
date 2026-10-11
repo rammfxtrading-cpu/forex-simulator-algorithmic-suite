@@ -70,6 +70,11 @@
 --        en «FIN | sim-003 aplicada».
 --   Segunda ejecucion: ve que ya esta, no crea nada, repite las comprobaciones
 --   y da el mismo informe. Si encuentra una parte si y otra no, se para.
+--   Las comprobaciones miran la DEFINICION (S003-05): politicas (comando,
+--   roles, expresion), indices unicos, CHECK y FK, texto a texto; un esquema
+--   alterado despues de aplicar hace abortar la segunda ejecucion. Lo que NO
+--   hace: sustituir los cuerpos de unas funciones ya instaladas; corregir una
+--   version aplicada pide una migracion explicita.
 --
 -- Ensayado en PostgreSQL 17 local con el esquema de produccion reconstruido
 -- desde s04 (pruebas/sim-003.mjs). No prueba el editor de Supabase.
@@ -107,6 +112,9 @@ DECLARE
                               'sim_trades_v1_coherente', 'sim_trades_evento_id_fkey'];
   v_total     integer;
   v_tipo      text;
+  v_sp        text;
+  v_rel       text;
+  v_def       text;
 BEGIN
   -- ── 0 · lo que se da por hecho ──────────────────────────────────────────
   IF current_setting('server_version_num')::integer < 170000 THEN
@@ -936,6 +944,72 @@ BEGIN
                   AND confrelid = 'public.profiles'::regclass AND convalidated) THEN
     RAISE EXCEPTION 'sim-003: falta la FK sim_sessions.user_id → profiles ON DELETE CASCADE, validada';
   END IF;
+
+  -- S003-05: la DEFINICION de lo que se da por instalado, no solo que exista
+  -- (una segunda ejecucion sobre un esquema alterado tiene que pararse).
+  -- Con search_path = public mientras se comparan los textos del catalogo;
+  -- despues se deja como estaba.
+  v_sp := current_setting('search_path');
+  PERFORM set_config('search_path', 'public', true);
+  FOR v_rel, f, v_def IN SELECT * FROM (VALUES
+      ('sim_alumnos', 'sim_alumnos_pkey', 'PRIMARY KEY (user_id)'),
+      ('sim_alumnos', 'sim_alumnos_user_id_fkey', 'FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'),
+      ('sim_arrendamientos', 'sim_arrendamientos_pkey', 'PRIMARY KEY (session_id)'),
+      ('sim_arrendamientos', 'sim_arrendamientos_session_id_fkey', 'FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE'),
+      ('sim_arrendamientos', 'sim_arrendamientos_cliente_id_check', 'CHECK (((length(cliente_id) >= 1) AND (length(cliente_id) <= 100)))'),
+      ('sim_arrendamientos', 'sim_arrendamientos_testigo_hash_check', 'CHECK ((testigo_hash ~ ''^[0-9a-f]{64}$''::text))'),
+      ('sim_recibos', 'sim_recibos_pkey', 'PRIMARY KEY (id)'),
+      ('sim_recibos', 'sim_recibos_session_id_fkey', 'FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE'),
+      ('sim_recibos', 'sim_recibos_session_command_key', 'UNIQUE (session_id, command_id)'),
+      ('sim_recibos', 'sim_recibos_tipo_check', 'CHECK ((tipo = ANY (ARRAY[''abrir''::text, ''modificar''::text, ''cancelar''::text, ''cerrar''::text, ''avanzar''::text, ''checkpoint''::text, ''crear''::text, ''tomar_escritor''::text, ''avanzar_fase''::text])))'),
+      ('sim_recibos', 'sim_recibos_clase_check', 'CHECK ((clase = ANY (ARRAY[''economico''::text, ''ultimo_avance''::text])))'),
+      ('sim_recibos', 'sim_recibos_clase_tipo', 'CHECK (((clase = ''economico''::text) OR (tipo = ANY (ARRAY[''avanzar''::text, ''checkpoint''::text]))))'),
+      ('sim_recibos', 'sim_recibos_digest_check', 'CHECK ((digest ~ ''^[0-9a-f]{64}$''::text))'),
+      ('sim_recibos', 'sim_recibos_resultado_check', 'CHECK ((resultado = ANY (ARRAY[''aceptado''::text, ''rechazado''::text, ''conflicto''::text])))'),
+      ('sim_eventos', 'sim_eventos_pkey', 'PRIMARY KEY (id)'),
+      ('sim_eventos', 'sim_eventos_session_id_fkey', 'FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE'),
+      ('sim_eventos', 'sim_eventos_session_seq_key', 'UNIQUE (session_id, seq)'),
+      ('sim_eventos', 'sim_eventos_session_command_ordinal_key', 'UNIQUE (session_id, command_id, ordinal)'),
+      ('sim_eventos', 'sim_eventos_seq_check', 'CHECK ((seq >= 1))'),
+      ('sim_eventos', 'sim_eventos_ordinal_check', 'CHECK ((ordinal >= 0))'),
+      ('sim_eventos', 'sim_eventos_tipo_check', 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text])))'),
+      ('sim_sessions', 'sim_sessions_user_id_perfil_fkey', 'FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'),
+      ('sim_sessions', 'sim_sessions_terminal_valida', 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text]))))'),
+      ('sim_sessions', 'sim_sessions_v1_coherente', 'CHECK (((motor_version = ANY (ARRAY[0, 1])) AND (epoca >= 0) AND (version >= 0) AND ((motor_version = 0) OR (creada_por_rpc AND (((estado IS NOT NULL) AND (mercado IS NOT NULL)) OR (NOT (terminal IS DISTINCT FROM ''borrada''::text))))) AND ((NOT legado) OR (motor_version = 0))))'),
+      ('sim_trades', 'sim_trades_evento_id_fkey', 'FOREIGN KEY (evento_id) REFERENCES sim_eventos(id) ON DELETE CASCADE'),
+      ('sim_trades', 'sim_trades_evento_id_key', 'UNIQUE (evento_id)'),
+      ('sim_trades', 'sim_trades_v1_coherente', 'CHECK ((((motor_version = 0) AND (evento_id IS NULL)) OR ((motor_version = 1) AND (evento_id IS NOT NULL) AND (bruto_micro IS NOT NULL) AND (neto_micro IS NOT NULL) AND (comision_micro IS NOT NULL) AND (spread_micro IS NOT NULL) AND (swap_micro IS NOT NULL) AND (ambigua IS NOT NULL))))')) c(rel, nombre, def)
+  LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conrelid = to_regclass('public.' || v_rel) AND k.conname = f
+                    AND k.convalidated AND pg_get_constraintdef(k.oid) = v_def) THEN
+      RAISE EXCEPTION 'sim-003: la restriccion %.% falta, no esta validada o no es la prevista (%)', v_rel, f, v_def;
+    END IF;
+  END LOOP;
+  FOR f, v_def IN SELECT * FROM (VALUES
+      ('sim_alumnos_pkey', 'CREATE UNIQUE INDEX sim_alumnos_pkey ON public.sim_alumnos USING btree (user_id)'),
+      ('sim_arrendamientos_pkey', 'CREATE UNIQUE INDEX sim_arrendamientos_pkey ON public.sim_arrendamientos USING btree (session_id)'),
+      ('sim_recibos_pkey', 'CREATE UNIQUE INDEX sim_recibos_pkey ON public.sim_recibos USING btree (id)'),
+      ('sim_recibos_session_command_key', 'CREATE UNIQUE INDEX sim_recibos_session_command_key ON public.sim_recibos USING btree (session_id, command_id)'),
+      ('sim_recibos_ultimo_avance_key', 'CREATE UNIQUE INDEX sim_recibos_ultimo_avance_key ON public.sim_recibos USING btree (session_id) WHERE (clase = ''ultimo_avance''::text)'),
+      ('sim_eventos_pkey', 'CREATE UNIQUE INDEX sim_eventos_pkey ON public.sim_eventos USING btree (id)'),
+      ('sim_eventos_session_seq_key', 'CREATE UNIQUE INDEX sim_eventos_session_seq_key ON public.sim_eventos USING btree (session_id, seq)'),
+      ('sim_eventos_session_command_ordinal_key', 'CREATE UNIQUE INDEX sim_eventos_session_command_ordinal_key ON public.sim_eventos USING btree (session_id, command_id, ordinal)'),
+      ('sim_trades_evento_id_key', 'CREATE UNIQUE INDEX sim_trades_evento_id_key ON public.sim_trades USING btree (evento_id)'),
+      ('sim_sessions_una_hija_v1_key', 'CREATE UNIQUE INDEX sim_sessions_una_hija_v1_key ON public.sim_sessions USING btree (challenge_parent_id) WHERE ((motor_version = 1) AND (challenge_parent_id IS NOT NULL))')) c(nombre, def)
+  LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('public.' || f)
+                    AND i.indisunique AND i.indisvalid AND pg_get_indexdef(i.indexrelid) = v_def) THEN
+      RAISE EXCEPTION 'sim-003: el indice unico % falta, no es valido o no es el previsto (%)', f, v_def;
+    END IF;
+  END LOOP;
+  FOREACH f IN ARRAY ARRAY['sim_recibos', 'sim_eventos'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = f
+                    AND p.policyname = f || '_select_propios' AND p.permissive = 'PERMISSIVE' AND p.cmd = 'SELECT'
+                    AND p.roles = ARRAY['authenticated']::name[] AND p.qual = '(auth.uid() = user_id)' AND p.with_check IS NULL) THEN
+      RAISE EXCEPTION 'sim-003: la politica %_select_propios falta o no es SELECT · PERMISSIVE · authenticated · (auth.uid() = user_id)', f;
+    END IF;
+  END LOOP;
+  PERFORM set_config('search_path', v_sp, true);
 END
 $sim_003$;
 
