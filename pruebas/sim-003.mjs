@@ -340,7 +340,12 @@ try {
 
   titulo('7 · borrar (CD07; CTO 10-oct, decision 6; CTO 11-oct, opcion a)')
   ver('montaje: un dibujo en s1', pg.psql(`insert into session_drawings (user_id, session_id, pair) values ('${A}', '${s1}', 'EURUSD');`, 'p').ok)
+  const ECON = id => uno(`select coalesce(estado::text, '-') <> '-' or mercado is not null or legado_snapshot is not null or last_timestamp is not null or balance <> capital from sim_sessions where id = '${id}'`)
+  ver('montaje S003-02: s1 tiene estado, mercado, last_timestamp y un balance distinto del capital', ECON(s1) === 't'
+    && uno(`select (estado is not null)::text || (mercado is not null)::text || (last_timestamp is not null)::text || (balance <> capital)::text from sim_sessions where id = '${s1}'`) === 'truetruetruetrue')
   const bs = SR(`select public.sim_borrar_sesion('${A}', '${s1}');`)
+  ver('S003-02: tras borrar, la lapida no guarda estado del motor, mercado, snapshot, ultima marca de tiempo ni resultado (balance = capital)',
+    uno(`select coalesce(estado::text, '-') || ',' || coalesce(mercado::text, '-') || ',' || coalesce(legado_snapshot::text, '-') || ',' || coalesce(last_timestamp::text, '-') || ',' || (balance = capital) || ',' || capital from sim_sessions where id = '${s1}'`) === '-,-,-,-,true,10000')
   ver('sim_borrar_sesion: 200; la fila QUEDA como lapida (terminal = borrada) y se van recibos, eventos, trades, dibujos y arrendamiento',
     bs.ok && uno(`select terminal from sim_sessions where id = '${s1}'`) === 'borrada'
     && ['sim_recibos', 'sim_eventos', 'sim_trades', 'session_drawings', 'sim_arrendamientos'].every(t => n(`select count(*) from ${t} where session_id = '${s1}'`) === 0), eti(bs))
@@ -359,7 +364,11 @@ try {
   const sinDisp = crear(E, u(340), u(1340))
   pg.psql('alter table sim_sessions enable trigger trg_enforce_sim_session_limit', 'p')
   ver('sin ese disparador (como quedara tras sim-004): sim_crear_sesion no cuenta la lapida y entra', sinDisp.http === 201, eti(sinDisp))
+  ver('montaje S003-02 legacy: la v0 de A con snapshot, last_timestamp y balance distinto del capital',
+    pg.psql(`update sim_sessions set legado_snapshot = '{"saldo": 10500}', last_timestamp = 1767600000, balance = 10500 where id = '${u(101)}'`, 'p').ok && ECON(u(101)) === 't')
   const bl = SR(`select public.sim_borrar_legacy('${A}', '${u(101)}');`)
+  ver('S003-02 legacy: la lapida v0 sin snapshot, sin last_timestamp y con balance = capital', ECON(u(101)) === 'f'
+    && uno(`select coalesce(legado_snapshot::text, '-') || ',' || coalesce(last_timestamp::text, '-') || ',' || balance from sim_sessions where id = '${u(101)}'`) === '-,-,10000')
   ver('sim_borrar_legacy: la v0 de A → 200; la fila queda como lapida, sin su trade; una v1 → 409 no_es_legado; la de otro → 404',
     bl.ok && uno(`select terminal from sim_sessions where id = '${u(101)}'`) === 'borrada' && n(`select count(*) from sim_trades where session_id = '${u(101)}'`) === 0
     && SR(`select public.sim_borrar_legacy('${A}', '${u(212)}');`).motivo === 'no_es_legado' && SR(`select public.sim_borrar_legacy('${A}', '${u(102)}');`).http === 404, eti(bl))
@@ -390,6 +399,12 @@ try {
     bLP.ok && uno(`select string_agg(coalesce(terminal, '-'), ',' order by id) from sim_sessions where id in ('${LP}', '${LH}')`) === 'borrada,borrada'
     && n(`select count(*) from sim_trades where session_id = '${LH}'`) === 0 && n(`select count(*) from session_drawings where session_id = '${LH}'`) === 0
     && SR(`select public.sim_borrar_legacy('${B}', '${LH}');`).http === 410, eti(bLP))
+  ver('S003-02: ninguna lapida de la base (s1, la v0, P, H, LP, LH, la 330 de E) guarda datos economicos',
+    n(`select count(*) from sim_sessions where terminal = 'borrada'`) >= 7
+    && n(`select count(*) from sim_sessions where terminal = 'borrada' and (estado is not null or mercado is not null or legado_snapshot is not null or last_timestamp is not null or balance <> capital)`) === 0)
+  const sinEstado = pg.psql(`update sim_sessions set estado = null where id = '${u(210)}'`, 'p')
+  ver('S003-02: el CHECK de coherencia solo deja una v1 sin estado o sin mercado si es lapida', !sinEstado.ok && /sim_sessions_v1_coherente/.test(sinEstado.err)
+    && !pg.psql(`update sim_sessions set mercado = null where id = '${u(210)}'`, 'p').ok, sinEstado.err.split('\n')[0])
   crear(W, u(500), u(1500))
   ver('montaje: W con config de grafico y una plantilla (columnas de s04)', pg.psql(`insert into user_chart_config (user_id) values ('${W}'); insert into sim_drawing_templates (user_id, name, data) values ('${W}', 'p', '[]');`, 'p').ok)
   const ba = SR(`select public.sim_borrar_alumno('${W}');`)

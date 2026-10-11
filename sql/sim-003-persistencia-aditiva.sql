@@ -201,10 +201,11 @@ BEGIN
       ADD COLUMN mercado         jsonb,
       ADD COLUMN creada_por_rpc  boolean  NOT NULL DEFAULT false,
       ADD CONSTRAINT sim_sessions_terminal_valida CHECK (terminal IS NULL OR terminal IN ('borrada', 'revocada')),
-      -- v1 solo nace por RPC, con estado y mercado fijado; un legado es v0
+      -- v1 solo nace por RPC, con estado y mercado fijado (salvo su lapida,
+      -- que los pierde: S003-02); un legado es v0
       ADD CONSTRAINT sim_sessions_v1_coherente CHECK (
             motor_version IN (0, 1) AND epoca >= 0 AND version >= 0
-        AND (motor_version = 0 OR (creada_por_rpc AND estado IS NOT NULL AND mercado IS NOT NULL))
+        AND (motor_version = 0 OR (creada_por_rpc AND ((estado IS NOT NULL AND mercado IS NOT NULL) OR terminal IS NOT DISTINCT FROM 'borrada')))
         AND (NOT legado OR motor_version = 0));
 
     ALTER TABLE public.sim_trades
@@ -764,7 +765,13 @@ BEGIN
       IF v_s.user_id <> p_actor THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
       IF v_s.motor_version <> 1 THEN RETURN public.sim_error(409, 'no_es_v1'); END IF;
       IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
-      UPDATE public.sim_sessions SET terminal = 'borrada', escritor = NULL WHERE id = ANY (v_ids);
+      -- lapida minima (S003-02, CTO 11-oct): identidad, dueño, configuracion
+      -- (capital) y lo que impide resucitar o repetir la transicion; sin
+      -- estado del motor, mercado, snapshot, ultima marca ni resultado
+      UPDATE public.sim_sessions
+         SET terminal = 'borrada', escritor = NULL, estado = NULL, mercado = NULL, legado_snapshot = NULL,
+             last_timestamp = NULL, balance = capital
+       WHERE id = ANY (v_ids);
       DELETE FROM public.sim_trades WHERE session_id = ANY (v_ids);
       DELETE FROM public.sim_eventos WHERE session_id = ANY (v_ids);
       DELETE FROM public.sim_recibos WHERE session_id = ANY (v_ids);
@@ -802,7 +809,13 @@ BEGIN
       IF v_s.user_id <> p_user_id THEN RETURN public.sim_error(404, 'sesion_no_encontrada'); END IF;
       IF v_s.motor_version <> 0 THEN RETURN public.sim_error(409, 'no_es_legado'); END IF;
       IF v_s.terminal = 'borrada' THEN RETURN public.sim_error(410, 'sesion_borrada'); END IF;
-      UPDATE public.sim_sessions SET terminal = 'borrada', escritor = NULL WHERE id = ANY (v_ids);
+      -- lapida minima (S003-02, CTO 11-oct): identidad, dueño, configuracion
+      -- (capital) y lo que impide resucitar o repetir la transicion; sin
+      -- estado del motor, mercado, snapshot, ultima marca ni resultado
+      UPDATE public.sim_sessions
+         SET terminal = 'borrada', escritor = NULL, estado = NULL, mercado = NULL, legado_snapshot = NULL,
+             last_timestamp = NULL, balance = capital
+       WHERE id = ANY (v_ids);
       DELETE FROM public.sim_trades WHERE session_id = ANY (v_ids);
       DELETE FROM public.sim_eventos WHERE session_id = ANY (v_ids);
       DELETE FROM public.sim_recibos WHERE session_id = ANY (v_ids);
