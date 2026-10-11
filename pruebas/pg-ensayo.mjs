@@ -87,5 +87,5 @@ export function cluster() {
   }
   const cierra = () => { corre('pg_ctl', ['-D', path.join(dir, 'd'), '-m', 'immediate', 'stop']); rmSync(dir, { recursive: true, force: true }) }
   const base = nombre => { psql(`create database ${nombre}`, 'postgres'); return psql(STUB, nombre) }
-  return { psql, como, arranca, cierra, base, dir }
+  return { psql, como, arranca, cierra, base, dir, puerto }
 }
