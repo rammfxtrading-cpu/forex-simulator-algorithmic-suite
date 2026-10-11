@@ -218,12 +218,24 @@ function bucket(nombre) {
       if (db.trasAplicar) await db.trasAplicar({ cliente: quien, tabla: 'storage:' + nombre, op: 'upload', payload: ruta })
       return { data: { path: ruta }, error: null }
     },
+    // como POST /object/list de Storage (storage-js 2.102 devuelve el JSON tal cual):
+    // UN nivel bajo el prefijo ('' = la raiz), por nombre; una carpeta es
+    // { name, id: null, metadata: null } y un objeto { name, id, metadata: { size, eTag } }.
+    // (Antes devolvia rutas enteras sin carpetas ni tamaños: una suma de bytes aprobaba en vacio.)
     async list(prefijo = '', o = {}) {
       const err = await op('list', { prefijo, ...o }); if (err) return { data: null, error: err }
       if (!objetos()) return noExiste
       const lim = o.limit ?? 100, off = o.offset ?? 0
-      const nombres = Object.keys(objetos()).filter(n => n.startsWith(prefijo + '/')).map(n => n.slice(prefijo.length + 1)).sort()
-      return { data: nombres.slice(off, off + lim).map(name => ({ name })), error: null }
+      const base = prefijo ? prefijo.replace(/\/$/, '') + '/' : ''
+      const nivel = new Map()
+      for (const ruta of Object.keys(objetos()).filter(n => n.startsWith(base))) {
+        const resto = ruta.slice(base.length), i = resto.indexOf('/')
+        if (i >= 0) { nivel.set(resto.slice(0, i), { name: resto.slice(0, i), id: null, metadata: null }); continue }
+        const c = objetos()[ruta]
+        nivel.set(resto, { name: resto, id: createHash('sha256').update(ruta).digest('hex').slice(0, 36), metadata: { size: Buffer.byteLength(c), eTag: `"${createHash('sha256').update(c).digest('hex').slice(0, 32)}"` } })
+      }
+      const filas = [...nivel.values()].sort((a, b) => a.name.localeCompare(b.name))
+      return { data: filas.slice(off, off + lim), error: null }
     },
     async remove(rutas) {
       const err = await op('remove', rutas); if (err) return { data: null, error: err }
