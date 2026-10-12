@@ -1,0 +1,65 @@
+seccion,detalle
+tabla,sim_alumnos · rls=true · select: authenticated=false service_role=false · escritura: false
+tabla,sim_arrendamientos · rls=true · select: authenticated=false service_role=false · escritura: false
+tabla,sim_eventos · rls=true · select: authenticated=true service_role=true · escritura: false
+tabla,sim_recibos · rls=true · select: authenticated=true service_role=true · escritura: false
+columna,sim_sessions.creada_por_rpc boolean not null default false
+columna,sim_sessions.epoca integer not null default 0
+columna,sim_sessions.escritor jsonb
+columna,sim_sessions.estado jsonb
+columna,sim_sessions.legado boolean not null default false
+columna,sim_sessions.legado_snapshot jsonb
+columna,sim_sessions.mercado jsonb
+columna,sim_sessions.motor_version smallint not null default 0
+columna,sim_sessions.terminal text
+columna,sim_sessions.version bigint not null default 0
+columna,sim_trades.ambigua boolean
+columna,sim_trades.bruto_micro bigint
+columna,sim_trades.causa_ambiguedad text
+columna,sim_trades.comision_micro bigint
+columna,sim_trades.conversion jsonb
+columna,sim_trades.evento_id bigint
+columna,sim_trades.motor_version smallint not null default 0
+columna,sim_trades.neto_micro bigint
+columna,sim_trades.spread_micro bigint
+columna,sim_trades.swap_micro bigint
+restriccion,sim_alumnos.sim_alumnos_pkey · PRIMARY KEY (user_id) · validada=true
+restriccion,sim_alumnos.sim_alumnos_user_id_fkey · FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+restriccion,sim_arrendamientos.sim_arrendamientos_cliente_id_check · CHECK (((length(cliente_id) >= 1) AND (length(cliente_id) <= 100))) · validada=true
+restriccion,sim_arrendamientos.sim_arrendamientos_pkey · PRIMARY KEY (session_id) · validada=true
+restriccion,sim_arrendamientos.sim_arrendamientos_session_id_fkey · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true
+restriccion,sim_arrendamientos.sim_arrendamientos_testigo_hash_check · CHECK ((testigo_hash ~ '^[0-9a-f]{64}$'::text)) · validada=true
+restriccion,sim_eventos.sim_eventos_ordinal_check · CHECK ((ordinal >= 0)) · validada=true
+restriccion,sim_eventos.sim_eventos_pkey · PRIMARY KEY (id) · validada=true
+restriccion,sim_eventos.sim_eventos_seq_check · CHECK ((seq >= 1)) · validada=true
+restriccion,"sim_eventos.sim_eventos_session_command_ordinal_key · UNIQUE (session_id, command_id, ordinal) · validada=true"
+restriccion,sim_eventos.sim_eventos_session_id_fkey · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true
+restriccion,"sim_eventos.sim_eventos_session_seq_key · UNIQUE (session_id, seq) · validada=true"
+restriccion,"sim_eventos.sim_eventos_tipo_check · CHECK ((tipo = ANY (ARRAY['orden_creada'::text, 'orden_modificada'::text, 'orden_cancelada'::text, 'fill'::text, 'cierre'::text, 'reset_diario'::text, 'breach'::text, 'fase_superada'::text, 'fin_de_datos'::text, 'posicion_modificada'::text, 'no_valorable'::text]))) · validada=true"
+restriccion,"sim_recibos.sim_recibos_clase_check · CHECK ((clase = ANY (ARRAY['economico'::text, 'ultimo_avance'::text]))) · validada=true"
+restriccion,"sim_recibos.sim_recibos_clase_tipo · CHECK (((clase = 'economico'::text) OR (tipo = ANY (ARRAY['avanzar'::text, 'checkpoint'::text])))) · validada=true"
+restriccion,sim_recibos.sim_recibos_digest_check · CHECK ((digest ~ '^[0-9a-f]{64}$'::text)) · validada=true
+restriccion,sim_recibos.sim_recibos_pkey · PRIMARY KEY (id) · validada=true
+restriccion,"sim_recibos.sim_recibos_resultado_check · CHECK ((resultado = ANY (ARRAY['aceptado'::text, 'rechazado'::text, 'conflicto'::text]))) · validada=true"
+restriccion,"sim_recibos.sim_recibos_session_command_key · UNIQUE (session_id, command_id) · validada=true"
+restriccion,sim_recibos.sim_recibos_session_id_fkey · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true
+restriccion,"sim_recibos.sim_recibos_tipo_check · CHECK ((tipo = ANY (ARRAY['abrir'::text, 'modificar'::text, 'cancelar'::text, 'cerrar'::text, 'avanzar'::text, 'checkpoint'::text, 'crear'::text, 'tomar_escritor'::text, 'avanzar_fase'::text]))) · validada=true"
+restriccion,"sim_sessions.sim_sessions_terminal_valida · CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY['borrada'::text, 'revocada'::text])))) · validada=true"
+restriccion,sim_sessions.sim_sessions_user_id_perfil_fkey · FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+restriccion,"sim_sessions.sim_sessions_v1_coherente · CHECK (((motor_version = ANY (ARRAY[0, 1])) AND (epoca >= 0) AND (version >= 0) AND ((motor_version = 0) OR (creada_por_rpc AND (((estado IS NOT NULL) AND (mercado IS NOT NULL)) OR (NOT (terminal IS DISTINCT FROM 'borrada'::text))))) AND ((NOT legado) OR (motor_version = 0)))) · validada=true"
+restriccion,sim_trades.sim_trades_evento_id_fkey · FOREIGN KEY (evento_id) REFERENCES sim_eventos(id) ON DELETE CASCADE · validada=true
+restriccion,sim_trades.sim_trades_evento_id_key · UNIQUE (evento_id) · validada=true
+restriccion,sim_trades.sim_trades_v1_coherente · CHECK ((((motor_version = 0) AND (evento_id IS NULL)) OR ((motor_version = 1) AND (evento_id IS NOT NULL) AND (bruto_micro IS NOT NULL) AND (neto_micro IS NOT NULL) AND (comision_micro IS NOT NULL) AND (spread_micro IS NOT NULL) AND (swap_micro IS NOT NULL) AND (ambigua IS NOT NULL)))) · validada=true
+indice,sim_sessions_una_hija_v1_key · CREATE UNIQUE INDEX sim_sessions_una_hija_v1_key ON public.sim_sessions USING btree (challenge_parent_id) WHERE ((motor_version = 1) AND (challenge_parent_id IS NOT NULL))
+politica,sim_eventos.sim_eventos_select_propios · SELECT · authenticated · (auth.uid() = user_id)
+politica,sim_recibos.sim_recibos_select_propios · SELECT · authenticated · (auth.uid() = user_id)
+funcion,"sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true PUBLIC=false"
+funcion,"sim_bloquea_alumno(uuid) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=false PUBLIC=false"
+funcion,"sim_borrar_alumno(uuid) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true PUBLIC=false"
+funcion,"sim_borrar_legacy(uuid,uuid) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true PUBLIC=false"
+funcion,"sim_borrar_sesion(uuid,uuid) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true PUBLIC=false"
+funcion,"sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true PUBLIC=false"
+funcion,"sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true PUBLIC=false"
+funcion,"sim_error(integer,text,jsonb) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=false PUBLIC=false"
+funcion,"sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean) · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true PUBLIC=false"
+FIN,sim-003 aplicada

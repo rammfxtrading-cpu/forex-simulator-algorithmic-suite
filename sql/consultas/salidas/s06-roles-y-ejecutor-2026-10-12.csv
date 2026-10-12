@@ -1,0 +1,128 @@
+seccion,objeto,detalle
+version,server_version_num,170006
+version,version(),"PostgreSQL 17.6 on aarch64-unknown-linux-gnu, compiled by gcc (GCC) 15.2.0, 64-bit"
+ejecutor,current_user,postgres
+ejecutor,session_user,postgres
+rol,anon,superuser=false · bypassrls=false · inherit=true · createrole=false · login=false
+rol,authenticated,superuser=false · bypassrls=false · inherit=true · createrole=false · login=false
+rol,postgres,superuser=false · bypassrls=true · inherit=true · createrole=true · login=true
+rol,service_role,superuser=false · bypassrls=true · inherit=true · createrole=false · login=false
+miembro,postgres → anon,admin=true · inherit=true · set=true · concedido_por=supabase_admin
+miembro,postgres → authenticated,admin=true · inherit=true · set=true · concedido_por=supabase_admin
+miembro,postgres → service_role,admin=true · inherit=true · set=true · concedido_por=supabase_admin
+puede_ser,postgres → anon,member=si · usage=si
+puede_ser,postgres → authenticated,member=si · usage=si
+puede_ser,postgres → service_role,member=si · usage=si
+default_acl,postgres · public · funciones,"{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+default_acl,postgres · public · secuencias,"{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}"
+default_acl,postgres · public · tablas,"{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"
+esquema,auth · anon,usage=true · create=false
+esquema,auth · authenticated,usage=true · create=false
+esquema,auth · service_role,usage=true · create=false
+esquema,extensions · anon,usage=true · create=false
+esquema,extensions · authenticated,usage=true · create=false
+esquema,extensions · service_role,usage=true · create=false
+esquema,public · anon,usage=true · create=false
+esquema,public · authenticated,usage=true · create=false
+esquema,public · service_role,usage=true · create=false
+auth.uid,auth.uid(),"dueño=supabase_auth_admin · security_definer=false · config=- · acl={=X/supabase_auth_admin,supabase_auth_admin=X/supabase_auth_admin,dashboard_user=X/supabase_auth_admin} · CREATE OR REPLACE FUNCTION auth.uid()
+ RETURNS uuid
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select
+  coalesce(
+    nullif(current_setting('request.jwt.claim.sub', true), ''),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
+  )::uuid
+$function$
+"
+fk,ia_alertas.ia_alertas_alumno_id_fkey,FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_borrados.ia_borrados_alumno_id_fkey,FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_consentimiento.ia_consentimiento_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_conversaciones.ia_conversaciones_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_notas_mentor.ia_notas_mentor_alumno_id_fkey,FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_operaciones.ia_operaciones_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_perfil_alumno.ia_perfil_alumno_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_recados.ia_recados_alumno_id_fkey,FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_turnos.ia_turnos_alumno_id_fkey,FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,ia_uso.ia_uso_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,macro_conversaciones.macro_conversaciones_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,macro_ia_uso.macro_ia_uso_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,macro_planes.macro_planes_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,notas.notas_alumno_id_fkey,FOREIGN KEY (alumno_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+fk,profiles.profiles_id_fkey,FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true
+fk,session_chart_config.session_chart_config_session_id_fkey,FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true
+fk,session_drawings.session_drawings_session_id_fkey,FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true
+fk,sim_sessions.sim_sessions_challenge_parent_id_fkey,FOREIGN KEY (challenge_parent_id) REFERENCES sim_sessions(id) ON DELETE SET NULL · validada=true
+fk,sim_sessions.sim_sessions_user_id_fkey,FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true
+fk,sim_trades.sim_trades_session_id_fkey,FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true
+fk,trades.trades_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true
+inventario,columna · sim_sessions.creada_por_rpc,LIBRE
+inventario,columna · sim_sessions.epoca,LIBRE
+inventario,columna · sim_sessions.escritor,LIBRE
+inventario,columna · sim_sessions.estado,LIBRE
+inventario,columna · sim_sessions.legado,LIBRE
+inventario,columna · sim_sessions.legado_snapshot,LIBRE
+inventario,columna · sim_sessions.mercado,LIBRE
+inventario,columna · sim_sessions.motor_version,LIBRE
+inventario,columna · sim_sessions.terminal,LIBRE
+inventario,columna · sim_sessions.version,LIBRE
+inventario,columna · sim_trades.ambigua,LIBRE
+inventario,columna · sim_trades.bruto_micro,LIBRE
+inventario,columna · sim_trades.causa_ambiguedad,LIBRE
+inventario,columna · sim_trades.comision_micro,LIBRE
+inventario,columna · sim_trades.conversion,LIBRE
+inventario,columna · sim_trades.evento_id,LIBRE
+inventario,columna · sim_trades.motor_version,LIBRE
+inventario,columna · sim_trades.neto_micro,LIBRE
+inventario,columna · sim_trades.spread_micro,LIBRE
+inventario,columna · sim_trades.swap_micro,LIBRE
+inventario,funcion · sim_avanzar_fase,LIBRE
+inventario,funcion · sim_bloquea_alumno,LIBRE
+inventario,funcion · sim_borrar_alumno,LIBRE
+inventario,funcion · sim_borrar_legacy,LIBRE
+inventario,funcion · sim_borrar_sesion,LIBRE
+inventario,funcion · sim_comando,LIBRE
+inventario,funcion · sim_crear_sesion,LIBRE
+inventario,funcion · sim_error,LIBRE
+inventario,funcion · sim_tomar_escritor,LIBRE
+inventario,relacion · sim_alumnos,LIBRE
+inventario,relacion · sim_alumnos_pkey,LIBRE
+inventario,relacion · sim_arrendamientos,LIBRE
+inventario,relacion · sim_arrendamientos_pkey,LIBRE
+inventario,relacion · sim_arrendamientos_user_id_idx,LIBRE
+inventario,relacion · sim_eventos,LIBRE
+inventario,relacion · sim_eventos_id_seq,LIBRE
+inventario,relacion · sim_eventos_pkey,LIBRE
+inventario,relacion · sim_eventos_session_command_ordinal_key,LIBRE
+inventario,relacion · sim_eventos_session_seq_key,LIBRE
+inventario,relacion · sim_recibos,LIBRE
+inventario,relacion · sim_recibos_id_seq,LIBRE
+inventario,relacion · sim_recibos_pkey,LIBRE
+inventario,relacion · sim_recibos_session_command_key,LIBRE
+inventario,relacion · sim_recibos_session_creado_idx,LIBRE
+inventario,relacion · sim_recibos_ultimo_avance_key,LIBRE
+inventario,relacion · sim_sessions_una_hija_v1_key,LIBRE
+inventario,relacion · sim_trades_evento_id_key,LIBRE
+inventario,restriccion · sim_sessions_terminal_valida,LIBRE
+inventario,restriccion · sim_sessions_user_id_perfil_fkey,LIBRE
+inventario,restriccion · sim_sessions_v1_coherente,LIBRE
+inventario,restriccion · sim_trades_evento_id_fkey,LIBRE
+inventario,restriccion · sim_trades_v1_coherente,LIBRE
+inventario,tipo · sim_alumnos,LIBRE
+inventario,tipo · sim_arrendamientos,LIBRE
+inventario,tipo · sim_avanzar_fase,LIBRE
+inventario,tipo · sim_bloquea_alumno,LIBRE
+inventario,tipo · sim_borrar_alumno,LIBRE
+inventario,tipo · sim_borrar_legacy,LIBRE
+inventario,tipo · sim_borrar_sesion,LIBRE
+inventario,tipo · sim_comando,LIBRE
+inventario,tipo · sim_crear_sesion,LIBRE
+inventario,tipo · sim_error,LIBRE
+inventario,tipo · sim_eventos,LIBRE
+inventario,tipo · sim_recibos,LIBRE
+inventario,tipo · sim_tomar_escritor,LIBRE
+inventario,~ total,65 nombres · 0 ocupados
+huerfanos,sesiones_sin_perfil,0 · el ejecutor ve todas las filas: sim_sessions=si · profiles=si
+FIN,s06,consulta
