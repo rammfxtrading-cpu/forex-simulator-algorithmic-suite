@@ -1294,7 +1294,7 @@ El resto de la tabla de l.2 no cambia.
 - **Entorno:** PostgreSQL 17.11 local, PostgREST 16.4 y 13.0.8 (los binarios verificados de k.4) y postgrest-js 2.102.1. Este cliente manda `.update()` como un PATCH con el cuerpo tal cual, sin `?columns=`. Nada de producción.
 - **El mecanismo son dos disparadores en `sim_sessions`:**
   - **A, `AFTER UPDATE … FOR EACH ROW`:** el registro de l.1 a, con `menciona_balance = false`;
-  - **B, `AFTER UPDATE OF balance … FOR EACH ROW`:** su nombre ordena **después** de A, porque los disparadores del mismo evento se disparan por orden alfabético. Marca `menciona_balance = true` en la última fila de A con la **misma transacción** (`pg_current_xact_id()`) y la **misma sesión**. Si no encuentra exactamente una fila, lanza una **excepción** (sin tragarla, l.4).
+  - **B, `AFTER UPDATE OF balance … FOR EACH ROW`:** su nombre ordena **después** de A, porque los disparadores del mismo evento se disparan por orden alfabético. Marca `menciona_balance = true` en la última fila de A con la **misma transacción** (`pg_current_xact_id()`) y la **misma sesión**. Si no encuentra exactamente una fila, lanza una **excepción** (sin tragarla, l.4). **→ n.7: B ya no hace UPDATE;** inserta una marca en una segunda tabla.
 - **`UPDATE OF col` se dispara cuando la columna es destino del `SET`, cambie o no su valor.** OLD/NEW no lo pueden saber: con el mismo valor no hay diferencia.
 - **Resultado, idéntico en las dos versiones:**
 
@@ -1315,7 +1315,7 @@ El resto de la tabla de l.2 no cambia.
 - **Control:** sin el disparador A, B no encuentra la fila → la escritura falla (código 1, `sim_registro: marca_balance sin fila de registro`).
 - **Confirma lo que avisó Astra:** la lista de columnas cambiadas **no distingue** la pausa del guardado (`{last_timestamp}` en los dos). `menciona_balance` sí los distingue.
 
-**Columna nueva en el registro:** `menciona_balance` (solo en los UPDATE de `sim_sessions`).
+**Columna nueva en el registro:** `menciona_balance` (solo en los UPDATE de `sim_sessions`). **→ n.7:** ya no es una columna; es «existe una marca para esa fila».
 
 **Oráculos:**
 - **los dos casos de Astra:**
@@ -1511,7 +1511,7 @@ Para cada sesión con resolución, el DO del corte recalcula **bajo el `LOCK`**:
    - **No cubre los valores de las filas** (delta, pnl, `menciona_balance`, `en`, tabla, operación).
      - Los roles de la aplicación no pueden cambiarlos: no tienen grants (l.4, m.4).
      - **El dueño, sí.** Podría cambiar un delta sin cambiar ids ni parejas, y el hash no lo vería.
-   - **Propuesta para el CTO, no adoptada:** incluir en el texto canónico los campos que usa la clasificación de cada id. Así una edición del registro por el dueño también invalidaría la resolución.
+   - ~~Propuesta para el CTO, no adoptada…~~ **Adoptada y ampliada en n.7:** el texto canónico lleva todos los campos de cada fila, y el registro es inmutable.
 4. **La secuencia de Astra, con otros tiempos.**
    - Da igual en qué momento llegue `i_A`:
      - **antes de la foto final**, no hay resoluciones que tapar;
@@ -1526,3 +1526,90 @@ Para cada sesión con resolución, el DO del corte recalcula **bajo el `LOCK`**:
    - Entre la foto final y el corte, cualquier cambio invalida la resolución, sin plazo.
    - **El tiempo no cierra nada.**
 7. **Coste.** Recalcular la lista, las parejas y el hash por sesión bajo el `LOCK` es poco con 5 alumnos. Se mide en el ensayo de la etapa 4, dentro de la ventana de mantenimiento de 30 min (h, decisión 5).
+
+### n.7 Registro inmutable, marcas aparte y hash de todos los campos (decisión CTO, 12-oct; prevalece sobre m.1 y n.2 donde choquen)
+
+**1. Texto canónico del hash (amplía n.2).** Por cada fila «sin firma de alumno» de la sesión, se incluyen **TODOS** los campos del registro, **en este orden fijo**:
+- id;
+- sesión;
+- tabla;
+- operación;
+- id de transacción;
+- `cliente`;
+- `rol_jwt`;
+- `rol_guc` (`current_setting('role')`);
+- la marca de `menciona_balance` (el id de la marca, o NULL);
+- columnas cambiadas;
+- delta;
+- `pnl`;
+- id del trade;
+- hora.
+
+**El formato también es fijo:**
+- `numeric` en su texto canónico;
+- la hora en UTC con microsegundos;
+- las listas en orden;
+- **NULL explícito**, distinto de la cadena vacía.
+
+Después van las parejas, como en n.2. **Editar cualquier valor invalida la resolución.**
+
+**2. El registro es INMUTABLE, y la marca de `balance` sale de él (opción (b)).**
+- **B ya no hace UPDATE.** Inserta una fila en una **segunda tabla de marcas** con:
+  - el id de la fila de A, encontrado por transacción y sesión, como antes;
+  - el id de transacción.
+
+  Si no encuentra la fila de A, **excepción, como hoy**.
+- **`menciona_balance` = existe una marca para esa fila.** La marca entra en el texto canónico (punto 1).
+- **Las dos tablas, el registro y las marcas, tienen:**
+  - RLS **sin políticas**;
+  - los grants revocados **explícitamente** a `PUBLIC`, `anon`, `authenticated` y `service_role`, en la tabla, su secuencia y las funciones (como l.4 y m.4).
+- **Marca huérfana** (sin su fila de registro) **o duplicada** (dos marcas para la misma fila) → **anomalía, y el corte aborta.**
+- **Inmutabilidad en las dos tablas, con dos disparadores en cada una:**
+  - `BEFORE UPDATE OR DELETE … FOR EACH ROW`;
+  - `BEFORE TRUNCATE … FOR EACH STATEMENT`. PostgreSQL no admite TRUNCATE en un disparador por fila.
+
+  **Rechazan cualquier cambio, también el del dueño.** Solo los retira el DO del corte, **al final, después de validar**, y entonces borra las dos tablas.
+- **Guardas de catálogo:**
+  - la final de la preparatoria y la del corte comprueban **los nombres exactos** de los 4 disparadores de inmutabilidad, de A y de B, y de las dos tablas;
+  - la del corte comprueba que **siguen presentes** hasta el momento de borrar el registro.
+
+**3. Ensayo:**
+- un UPDATE del delta como dueño → **rechazado**;
+- **si se fuerza quitando el disparador de inmutabilidad** → la guarda de catálogo **y** el hash del corte lo detectan → **el corte aborta**;
+- lo mismo con DELETE y TRUNCATE, en las dos tablas;
+- una marca huérfana y una duplicada → anomalía → aborto.
+
+**Medido** en `revisiones-suite/2026-10-12-sim-004-n-marcas-inmutables/` (PostgreSQL 17.11 local, PostgREST 16.4 y 13.0.8, idénticos):
+- **Las 18 filas de m.1, con las mismas marcas que antes:**
+  - **marcadas:** el parcial de pnl 0, la pausa, la salida y el cierre total de pnl 0;
+  - **sin marca:** el guardado y el TF;
+  - funciona igual con una sentencia sobre varias filas y con dos sentencias en una transacción.
+- **La secuencia de Astra de la ronda 5:** `TTTFFFTFTT`.
+- **Detector:** 0 marcas huérfanas, 0 duplicadas y 0 en una transacción distinta de la de su fila.
+- **Inmutabilidad:** UPDATE, DELETE y TRUNCATE del dueño, **rechazados en las dos tablas**.
+- **ACL:** `false` para `anon`, `authenticated` y `service_role` en las tablas, las secuencias y las funciones.
+- **Sin A, B falla** con su excepción.
+- **El primer intento falló por el instrumento:** etiquetaba los casos HTTP con un UPDATE del registro, que la propia inmutabilidad rechazó. Corregido en el script.
+
+### n.8 Autorrevisión adversaria de n.7
+
+1. **INSERT del dueño: no lo cubre la inmutabilidad.** Medido: el dueño **sí puede insertar** en las dos tablas. La marca duplicada entró, y la detectó el contador.
+   - **Antes de la foto final,** el dueño podría insertar:
+     - una **fila de registro falsa**, por ejemplo un INSERT de trade que empareje con un `u_B` y tape su pérdida;
+     - **una marca para una fila sin marca.** Esa no la caza ni el detector de huérfanas ni el de duplicadas.
+   - **Después de la foto final,** el hash lo caza.
+   - **Propuesta para el CTO, no adoptada:** un disparador `BEFORE INSERT` en las dos tablas que rechace la inserción si no viene de un disparador (`pg_trigger_depth()` < 2). A y B insertan desde un disparador, así que pasan; una inserción directa del dueño, no. Habría que medirlo y añadirlo a las guardas de catálogo.
+2. **El dueño puede quitar los disparadores.** La inmutabilidad no frena al dueño, que puede hacer `DROP` o `ALTER TABLE … DISABLE TRIGGER`. Hacer eso deja huella:
+   - la **guarda de catálogo** del corte;
+   - y, si la edición cambia algo de una sesión resuelta, el **hash**.
+
+   **Lo que no cubre:** quitar el disparador, editar y volver a crearlo con el mismo nombre **antes** de la foto final. El catálogo final estaría bien, y la foto ya incluiría la edición.
+   - Con el punto 1 aplicado a la edición (UPDATE, no INSERT), esto sigue siendo posible para el dueño.
+   - **Es el límite de lo que se puede proteger contra el dueño desde dentro de la base.** La protección es el procedimiento: escrituras del dueño solo por SQL anotado en APLICADOS. Se documenta como límite, no como cierre.
+3. **Una marca en una transacción distinta de la de su fila:** B siempre inserta en la misma transacción. Una distinta solo puede venir de una inserción directa (punto 1). **Se propone contarla también como anomalía**, con el mismo detector. Se ha medido el contador (0); la regla está por adoptar.
+4. **El orden de A y B sigue importando**, pero sin el problema del UPDATE. Si B ordena antes que A:
+   - sin una fila anterior de la transacción → excepción;
+   - con una fila anterior → marca la fila equivocada.
+
+   **Lo para la guarda final** (n.5), no B.
+5. **El coste:** una inserción más por cada UPDATE que menciona `balance`, en la misma transacción. Se mide en la etapa 1, junto con el volumen de k.3.7.
