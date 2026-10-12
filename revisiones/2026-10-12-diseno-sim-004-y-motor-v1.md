@@ -1598,7 +1598,7 @@ Después van las parejas, como en n.2. **Editar cualquier valor invalida la reso
      - una **fila de registro falsa**, por ejemplo un INSERT de trade que empareje con un `u_B` y tape su pérdida;
      - **una marca para una fila sin marca.** Esa no la caza ni el detector de huérfanas ni el de duplicadas.
    - **Después de la foto final,** el hash lo caza.
-   - **Propuesta para el CTO, no adoptada:** un disparador `BEFORE INSERT` en las dos tablas que rechace la inserción si no viene de un disparador (`pg_trigger_depth()` < 2). A y B insertan desde un disparador, así que pasan; una inserción directa del dueño, no. Habría que medirlo y añadirlo a las guardas de catálogo.
+   - ~~Propuesta para el CTO, no adoptada…~~ **Adoptada en n.9**, con la condición medida. Era: un disparador `BEFORE INSERT` en las dos tablas que rechace la inserción si no viene de un disparador (`pg_trigger_depth()` < 2). A y B insertan desde un disparador, así que pasan; una inserción directa del dueño, no. Habría que medirlo y añadirlo a las guardas de catálogo.
 2. **El dueño puede quitar los disparadores.** La inmutabilidad no frena al dueño, que puede hacer `DROP` o `ALTER TABLE … DISABLE TRIGGER`. Hacer eso deja huella:
    - la **guarda de catálogo** del corte;
    - y, si la edición cambia algo de una sesión resuelta, el **hash**.
@@ -1606,10 +1606,56 @@ Después van las parejas, como en n.2. **Editar cualquier valor invalida la reso
    **Lo que no cubre:** quitar el disparador, editar y volver a crearlo con el mismo nombre **antes** de la foto final. El catálogo final estaría bien, y la foto ya incluiría la edición.
    - Con el punto 1 aplicado a la edición (UPDATE, no INSERT), esto sigue siendo posible para el dueño.
    - **Es el límite de lo que se puede proteger contra el dueño desde dentro de la base.** La protección es el procedimiento: escrituras del dueño solo por SQL anotado en APLICADOS. Se documenta como límite, no como cierre.
-3. **Una marca en una transacción distinta de la de su fila:** B siempre inserta en la misma transacción. Una distinta solo puede venir de una inserción directa (punto 1). **Se propone contarla también como anomalía**, con el mismo detector. Se ha medido el contador (0); la regla está por adoptar.
+3. **Una marca en una transacción distinta de la de su fila:** B siempre inserta en la misma transacción. Una distinta solo puede venir de una inserción directa (punto 1). **Adoptado en n.9:** es una anomalía que aborta el corte, igual que la huérfana y la duplicada. Se ha medido el contador (0).
 4. **El orden de A y B sigue importando**, pero sin el problema del UPDATE. Si B ordena antes que A:
    - sin una fila anterior de la transacción → excepción;
    - con una fila anterior → marca la fila equivocada.
 
    **Lo para la guarda final** (n.5), no B.
 5. **El coste:** una inserción más por cada UPDATE que menciona `balance`, en la misma transacción. Se mide en la etapa 1, junto con el volumen de k.3.7.
+
+### n.9 Inserción solo desde A y B, y marca en una transacción ajena (decisión CTO, 12-oct; adopta n.8.1 y n.8.3)
+
+**1. Guarda `BEFORE INSERT … FOR EACH ROW` en las dos tablas, el registro y las marcas.**
+- **Qué hace:** rechaza, con una excepción de prefijo fijo, cualquier inserción que no venga de dentro de A o de B.
+- **Condición, la exacta medida:** **`pg_trigger_depth() IS DISTINCT FROM 2` → excepción.**
+- **Valores medidos dentro de la guarda,** en `revisiones-suite/2026-10-12-sim-004-n-insercion-solo-disparador/` (PostgreSQL 17.11, PostgREST 16.4 y 13.0.8, idénticos):
+
+| Quién inserta | `pg_trigger_depth()` | Resultado |
+|---|---|---|
+| A (registro), por psql y por PostgREST | **2** | pasa |
+| B (marca), por psql y por PostgREST | **2** | pasa |
+| A, en un DELETE de trades arrastrado por la FK en cascada | **2** (la acción de la FK no suma nivel) | pasa |
+| El dueño a mano, desde un DO o desde una función | **1** | **rechazado** |
+| **El dueño desde un disparador suyo en otra tabla** | **2** | **pasa** (hueco: punto 3) |
+
+- **Las 18 escrituras dan las mismas marcas,** y la secuencia de Astra da `TTTFFFTFTT`.
+- **Mutante sin la guarda:** la inserción a mano del dueño entra → **rojo**.
+- **Consecuencia de usar `= 2` y no `≥ 2`:** una escritura legítima en `sim_sessions` o `sim_trades` desde dentro de **otro** disparador (que no sea de una FK) llegaría con 3 y **se rechazaría**.
+  - Hoy no existe ninguna: en s04, fila 164, el único disparador de `sim_sessions` es el BEFORE INSERT del cupo, que no escribe en esas tablas.
+  - Si un día existiera, el fallo sería ruidoso, no silencioso.
+- **Las guardas de catálogo** (la final de la preparatoria y la del corte) comprueban también los dos disparadores `BEFORE INSERT`, con su nombre exacto.
+
+**2. ¿Se puede saber qué disparador inserta? No de forma fiable.**
+- PostgreSQL no expone a una función el nombre del disparador que la ha llamado. Dentro de la guarda, `TG_NAME` es el de la propia guarda.
+- **Pasarlo por una variable de sesión** (`set_config`) no sirve contra el dueño, que puede fijarla a mano.
+- **La defensa frente a otro disparador del dueño es la guarda de catálogo:**
+  - nombres exactos de A, B, la guarda de inserción y la inmutabilidad;
+  - **ningún otro disparador** en `sim_sessions`, `sim_trades`, el registro ni las marcas.
+
+**3. Hueco medido que esa defensa no cubre.**
+- **Un disparador del dueño en CUALQUIER OTRA tabla** inserta con `pg_trigger_depth() = 2` y pasa la guarda: medido, 1 fila falsa.
+- La guarda de catálogo, tal como está, solo mira las cuatro tablas.
+- **Propuesta para el CTO, no adoptada:** que las guardas de catálogo comparen la lista completa de disparadores no internos de la base con una lista congelada al instalar la preparatoria. Cualquier disparador nuevo, en cualquier tabla, abortaría el corte.
+  - Es conservador: un disparador legítimo nuevo del hub o del journal también lo abortaría.
+  - **No cubre** un disparador creado, usado y borrado antes de la comprobación. Ese es el límite frente al dueño que ya declara n.8.2: la protección es el procedimiento, escrituras del dueño solo con SQL anotado en APLICADOS.
+
+**4. Una marca en una transacción distinta de la de su fila es una anomalía que aborta el corte,** igual que la huérfana y la duplicada (n.7). B siempre inserta en la misma transacción que A. Medido: 0 casos en las escrituras legítimas.
+
+**Ensayo de la etapa 4:**
+- un INSERT a mano del dueño en cada tabla → **rechazado**;
+- las 18 escrituras siguen dando sus marcas, en 13.0.8 y en 16.4;
+- **mutante sin el BEFORE INSERT:** la fila falsa pasa → **rojo**;
+- una marca en una transacción ajena (insertada con la guarda retirada) → anomalía → **aborto**;
+- el borrado en cascada → pasa con 2;
+- el disparador del dueño en otra tabla → **documentado como hueco** (punto 3) hasta que el CTO decida la propuesta.
