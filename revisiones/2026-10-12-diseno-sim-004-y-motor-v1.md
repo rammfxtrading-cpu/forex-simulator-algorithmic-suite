@@ -1031,7 +1031,11 @@ Pruebas: `revisiones-suite/2026-10-12-cabecera-sim-cliente/` (LEEME, SHA256SUMS,
 **d) Recuento de s10 y de la guarda del corte (k.1 e–f).**
 - **Una escritura «sin firma de alumno»** es una fila con `rol_jwt` ∈ {`authenticated`, `anon`} **y** `cliente = 'sin-firma'`. Solo estas filas reinician la ventana de 72 h (s10) y hacen abortar el corte (f).
 - **Las filas de `service_role`** (el hub, el wipe, `challenge/create` y `challenge/advance`) se registran y **s10 las lista aparte**. **No reinician la ventana.**
-- **Anomalía:** una fila con `rol_jwt IS DISTINCT FROM rol_guc`. s10 la marca como anomalía, y **el corte aborta** si hay alguna.
+- **Anomalía:** una fila con `rol_jwt IS DISTINCT FROM rol_guc`, típicamente una escritura por SQL directo, como desde el editor de Supabase.
+  - **Dentro de la ventana de 72 h bloquea el certificado** (decisión CTO, 12-oct). s10 lista cada anomalía con su **hora, tabla y operación**.
+  - **Para certificar, cada anomalía tiene que estar justificada por escrito por el CTO**, con un enlace a un SQL aplicado y anotado en `sql/APLICADOS.md` **con esa hora**.
+  - **Si alguna no se puede justificar, la ventana de 72 h vuelve a empezar desde esa anomalía.**
+  - **Después de la hora del certificado, cualquier anomalía hace abortar el corte** (f), esté justificada o no.
   - La comparación es **`IS DISTINCT FROM`, no `<>`**, porque con `<>` una fila con un `null` no se marca (ver k.3.10).
 
 **e) 2d, al runbook de la etapa 1.** La comprobación de punta a punta se hace **con el sí de Ramón**, en una cuenta de prueba:
@@ -1054,10 +1058,16 @@ No se hace antes ni sin ese sí.
       - Es lo buscado: una escritura fuera del flujo conocido.
       - Implica que en la ventana de 72 h no se escribe a mano en esas tablas.
       - Las migraciones sim-004a-preparatoria y sim-004b no escriben filas. **Si una llegara a escribirlas,** chocaría con esta regla, y habría que decidir antes de escribirla.
-    - **Una fila así antes del certificado:** s10 la marca. La regla del CTO no dice si reinicia la ventana. Hoy solo hace abortar el corte.
+    - **Una fila así antes del certificado:** bloquea el certificado hasta que el CTO la justifica por escrito, con un enlace a un SQL anotado en APLICADOS con esa hora. Si no se puede justificar, la ventana de 72 h vuelve a empezar desde esa anomalía (k.4 d).
 
     **Oráculos del ensayo (etapa 4):**
     - los tres casos medidos dan anomalía y aborto;
     - **mutante `<>` en lugar de `IS DISTINCT FROM`:** el primer caso y el segundo dejan de detectarse → rojo;
-    - **mutante «solo cuenta `authenticated`»:** el `anon` sin firma pasa → rojo.
+    - **mutante «solo cuenta `authenticated`»:** el `anon` sin firma pasa → rojo;
+    - **tres anomalías por SQL directo**, comparando siempre con `IS DISTINCT FROM`:
+      - una **justificada**, con su SQL en APLICADOS a esa hora → **no reinicia la ventana**;
+      - una **sin justificar** → **la ventana vuelve a empezar desde ella**;
+      - una **posterior al certificado** → **el corte aborta**;
+    - **mutante «la justificación también vale después del certificado»:** la tercera no aborta → rojo;
+    - **mutante «la ventana se reinicia desde el certificado, no desde la anomalía»:** la segunda no da la hora correcta → rojo.
 11. **Una pestaña sin sesión iniciada** escribe como `anon`. Hoy `anon` **no tiene ningún grant** sobre `sim_sessions` ni `sim_trades`: solo `authenticated` y `service_role` (s04 del 10-oct, filas 186–189). Además, la política exige `auth.uid() = user_id`. Así que no debería aparecer ninguna fila. Si aparece, cuenta como «sin firma de alumno», como decidió el CTO.
