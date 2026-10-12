@@ -1394,10 +1394,19 @@ Es un **defecto de v0 que ya existe hoy**.
    - **Con la regla de m.1 ya no hay ninguna «fila inocua» donde esconderlo:** solo se libran los UPDATE que no mencionan `balance`, y esos no los escribe ningún cierre del v0. Si uno de esos consume un trade, el UPDATE del cierre queda sin pareja → dudoso.
    - **Sigue residual solo el cruce de l.6.1:** el INSERT de uno y el UPDATE del otro, con pnl iguales. Acotado a 7 días por m.3.
 4. **La resolución por sesión.**
-   - **Propuesta, a confirmar por el CTO al escribir s10:** la resolución enumera **los ids de registro** de los dudosos que cubre, y no cubre los que aparezcan después, por ejemplo uno visto en la segunda s10 (l.1 c) o una pausa posterior. **Si no, una resolución dada a mitad de la ventana taparía un cierre perdido después.**
+   - **Confirmado por el CTO (12-oct):** cada resolución **enumera los ids de registro concretos** que cubre, y **nunca cubre los que aparezcan después**, por ejemplo uno visto en la segunda s10 (l.1 c) o una pausa posterior. **Un dudoso nuevo en la misma sesión necesita su propia resolución.** Si no, una resolución dada a mitad de la ventana taparía un cierre perdido después.
+   - **Ensayo:** una resolución a mitad de la ventana y, después, un cierre perdido en la misma sesión → **el posterior sigue abierto y bloquea el corte**.
+   - **Mutante «resolución por sesión sin lista de ids»** → rojo.
    - **Solo cubre dudosos de delta 0.** Un delta ≠ 0 sin pareja sigue necesitando su resolución fila por fila (l.2).
    - **Una resolución de dudoso no cierra una anomalía** (l.4, dos predicados).
-5. **Lo que m no cambia:**
+5. **El orden de A y B queda fijado por su nombre.**
+   - Los nombres exactos de los dos disparadores se fijan en la migración. **La guarda final de sim-004a-preparatoria comprueba que existen los dos, con esos nombres exactos**, y que B ordena después de A (`UPDATE OF balance` en B y `AFTER UPDATE` en A, los dos `FOR EACH ROW` y con su función).
+   - **Volver a ejecutar la migración nunca deja solo uno de los dos.** Los crea o los reemplaza juntos, dentro de la misma transacción, y la guarda final aborta si falta cualquiera de ellos.
+   - **Ensayo:**
+     - reejecutar la migración → siguen los dos;
+     - quitar B o renombrarlo para que ordene antes de A → la guarda final aborta;
+     - **mutante «guarda que solo mira que exista uno»** → rojo.
+6. **Lo que m no cambia:**
    - la tolerancia de 0,01 y los 10 s;
    - el emparejamiento uno a uno, en el que cualquier UPDATE puede ser pareja (l.2);
    - las anomalías (l.2);
