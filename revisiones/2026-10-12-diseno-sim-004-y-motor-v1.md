@@ -740,3 +740,78 @@ No había una sección así en este diseño. La abro con 1F y 3F:
 - **«Igual que `resolveBreach`» frente a la cartera v1.** `resolveBreach` valora los **otros** pares a su cierre actual, y solo el par de la vela entre su máximo y su mínimo. La cartera v1 (`lib/motor/cartera.mjs`, § 13 de la spec) recorre todos los pares a la vez por el camino sincronizado. Con un solo par dan lo mismo (el oráculo de equivalencia lo comprueba). **Con varios pares pueden quemar en momentos o precios distintos.** No lo decido: o «igual que `resolveBreach`» significa la regla de un solo par generalizada por la cartera, o se replica literalmente su aproximación multipar. Para el CTO y Astra.
 - **El medio pip de empuje** es un artefacto de v0 contra el redondeo IEEE-754 (`breach.js:68–69`). En enteros no hace falta, pero el CTO lo mantiene por equivalencia: el alumno pierde 50 USD más (10 lotes) de lo que marca el límite. Es deliberado y tiene que decirse en pantalla.
 - **Pasar con posiciones abiertas** (pregunta pendiente): con la opción (a), un alumno puede alcanzar el objetivo con cierres teniendo una posición muy perdedora abierta, y pasar descartándola. Hoy, además, el replay se bloquea mientras tanto, así que esa posición ya no puede quemar el DD.
+
+### j.7 Reglas congeladas: paso de fase, varios pares e ids (CTO, 12-oct)
+
+**Prevalece sobre j.1–j.6 donde choquen.**
+
+**1. Pasar de fase con posiciones abiertas: se rechaza, en los cuatro productos** (opción b, como el FTMO del motor).
+
+- **Condición para superar la fase** (la misma en práctica de reto, 1F, 2F y 3F):
+  - objetivo alcanzado sobre **cerrados** (saldo cerrado ≥ objetivo);
+  - **cero posiciones abiertas;**
+  - ningún límite quemado (el breach prevalece, C7-01);
+  - en 2F, además, los 4 días de FTMO_2STEP.
+- **Órdenes pendientes: se CANCELAN, no bloquean.** Es lo que ya hace el FTMO del motor:
+  - el objetivo se mira **en el evento de cierre**, dentro de la vela (C6-02, `lib/motor/reto.mjs:112–117`);
+  - si se cumple, el motor se detiene y **anula todas las pendientes** con su evento `orden_cancelada`, motivo `objetivo`, en orden de `seq` (`lib/motor/motor.mjs:186–191`).
+
+  Justificación: con el motor detenido, una pendiente ya no puede ejecutarse, así que no hay «órdenes que puedan ejecutarse». Rechazar exigiría que el alumno las cancelara a mano después de que el motor ya hubiera parado, y daría el mismo resultado con un paso más. Cancelarlas deja evento y recibo, así que nada se pierde en silencio.
+- **Cuándo se rechaza.** Si el alumno pide pasar de fase (2F/3F: `/api/sim/avanzar-fase`; 1F: completar) y su estado no está `superada`:
+  - con saldo cerrado ≥ objetivo y posiciones abiertas: **`409 posiciones_abiertas`**;
+  - en cualquier otro caso: `409 fase_no_superada`.
+
+  Ninguno de los dos toca el estado: rechazo puro, sin recibo económico ni versión nueva. El cliente muestra **«Cierra tus posiciones abiertas para pasar de fase»**.
+- **Dónde va.** El endpoint lo detecta leyendo el estado confirmado antes de llamar a ninguna RPC. `sim_avanzar_fase` ya exige `superada` (S:725–733), y con posiciones abiertas el motor no la concede (`!e.posiciones.length` en `altoDe`). Es una mejora del mensaje, no de la garantía.
+- **Para la etapa 3:** `altoDe` usa hoy `FTMO_2STEP.dias_minimos` fijo (`reto.mjs:117`). Con 1F/3F tiene que leer los días mínimos de **sus** reglas (0).
+- **Cambio frente a hoy (v0):** hoy se pasa con posiciones abiertas y `advance.js:224–232` las descarta. **v1 lo rechaza.**
+- **Detalle para la etapa 3 (Astra):** en 1F, la superación queda en el estado en el mismo cierre, porque el motor se detiene. Falta fijar cómo se registra el «completado» de la proyección cuando el alumno lo pide: escrito por la RPC del cierre que supera, o por un comando explícito de confirmación.
+
+**Oráculos de j.4, ampliados:**
+
+| Productos | Oráculo | Mutante → rojo |
+|---|---|---|
+| 1F, 2F, 3F | pedir el paso con objetivo alcanzado sobre cerrados y **una posición abierta GANADORA**: `409 posiciones_abiertas`; estado, versión, recibos y eventos **idénticos** antes y después | descartar las posiciones como hoy (`advance.js:224–232`) y pasar |
+| 1F, 2F, 3F | ídem con **una posición abierta PERDEDORA**: `409 posiciones_abiertas`, sin tocar nada | ídem; y uno que solo rechace las perdedoras |
+| 1F, 2F, 3F | objetivo alcanzado en un cierre sin posiciones y con **2 órdenes pendientes**: `superada`; las dos `orden_cancelada` (motivo `objetivo`) en orden de `seq`, en el mismo comando | no cancelar (las pendientes siguen vivas) o rechazar por pendientes |
+| 1F, 3F | días mínimos 0: superar el primer día | leer `FTMO_2STEP.dias_minimos` (4) |
+
+**2. Varios pares: la semántica de la cartera del motor v1, en los cuatro productos.**
+
+- **«Igual que `resolveBreach`» se define como la semántica de cartera ya aprobada para 2F** (spec § 13):
+  - la equity se evalúa **en cada minuto con todos los pares a la vez**;
+  - el peor caso dentro de la vela de cada par sigue la regla del motor: dos caminos, el peor para la cartera, sincronizados por fracción (§ 13.1–13.4).
+- **La equivalencia v0/v1 se exige SOLO con un par** (el caso −6.000 de j.6).
+- **Con varios pares, v1 es la referencia,** y se documenta como **corrección de una aproximación de v0**: v0 valoraba los otros pares a su cierre actual (`useChallengeFlow.js:316–326`) y solo el par de la vela entre su máximo y su mínimo, ese par por separado.
+
+**3. Ids de reglas, congelados.** Constantes inmutables en `lib/motor/reto.mjs`, junto a `FTMO_2STEP`:
+
+| Constante | `version` (id) | Fases | Objetivo por fase (% del capital inicial, sobre cerrados) | DD diario | DD total | Días mínimos | Zona | Equity y quema | Igualdad | Paso de fase |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `SUITE_1F` | **`suite-1f@2026-10-12`** | 1 | 15 | 5 % del **saldo al empezar el día** | 10 % del capital inicial, suelo fijo | 0 | Europe/Madrid | con flotante, peor caso de la vela por la cartera; al quemar, cierre de todo al precio de quema ± 5 ticks hacia el lado peor (recortado a la vela); fallo en el mismo comando | ≤ límite = fallar; µUSD enteros | a petición; con posiciones abiertas, rechazo; pendientes canceladas al superar; 1F: completar, sin `avanzar_fase` |
+| `SUITE_3F` | **`suite-3f@2026-10-12`** | 3 | 5 · 5 · 5 (capital igual en las tres) | ídem | ídem | 0 | Europe/Madrid | ídem | ídem | a petición: 1→2 y 2→3; 3→4 rechazada; superar la 3 = final |
+| `FTMO_2STEP` (ya aprobada) | `ftmo-2step@2026-10-05` | 2 | 10 · 5 | 5 % del capital inicial, restado al balance de las 00:00 | 10 % del capital inicial | 4 | Europe/Prague | la del motor | la del motor | 1→2, a petición, con las mismas reglas de posiciones y pendientes (punto 1) |
+
+- **Ninguna alta se mapea a otra.** El estado y el recibo llevan el id.
+- **Una corrección futura es otra constante con otro id;** estas no se editan.
+- **Fuentes:** `lib/challengeRules.js` (sha256 `f1e3fbb4…`) y `lib/challengeEngine.js` (`206754eb…`) en `4bb328b`, más el detector `lib/trading/breach.js` y `components/useChallengeFlow.js:269–415` (j.6).
+
+**j.5, ampliada: dos pares donde v0 y v1 queman en momentos distintos.**
+
+Es un ejemplo construido a mano: no lo ha calculado todavía el motor. Será un oráculo de la etapa 3.
+
+- **Montaje:** capital 100.000; el día empieza en 100.000; límite diario 5.000.
+  - EURUSD: 10 lotes comprados.
+  - GBPUSD: 10 lotes comprados.
+  - En el mismo minuto, EURUSD toca su mínimo pronto (−3.000) y cierra en −500; GBPUSD toca su mínimo tarde (−3.000) y cierra en −2.900.
+- **v0** procesa cada par por separado:
+  - Al evaluar la vela de EURUSD, suma su peor caso (−3.000) con GBPUSD valorado **a su cierre actual** (−2.900, si su motor ya pasó ese minuto). Total: **−5.900 → QUEMA**, con EURUSD cerrado al precio que deja −5.000 en total.
+  - Si GBPUSD aún no había avanzado ese minuto, lo valora a su cierre anterior y puede **no** quemar.
+  - **El resultado de v0 depende del orden en que avanzan los pares.**
+- **v1** recorre los dos pares a la vez por el camino sincronizado:
+  - cuando EURUSD está en −3.000 (pronto), GBPUSD está, por ejemplo, en −1.000: **−4.000**;
+  - cuando GBPUSD está en −3.000 (tarde), EURUSD ya ha vuelto a −500: **−3.500**;
+  - **no quema.**
+- **Explicación:** v0 combina el peor momento de un par con el cierre del otro, **dos instantes distintos**, y además depende del orden de proceso. v1 mira el mismo instante para todos.
+
+**Puede ir en los dos sentidos.** v1 también puede quemar donde v0 no: si los dos mínimos coinciden en el mismo instante, y v0 valoró el otro par a un cierre ya recuperado. El oráculo de la etapa 3 lleva los dos sentidos.
