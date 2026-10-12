@@ -440,3 +440,118 @@ Búsqueda literal en los 15 repos del escritorio, el hub incluido, en solo lectu
 - disparadores o funciones de otros esquemas que escriban en ellas.
 
 s04 solo lista las funciones de `public` que tocan las 9 tablas: el único disparador de `sim_sessions` es el del cupo. **Propuesta:** que la s08 previa a sim-004 los consulte (`cron.job` si existe, funciones con `sim_sessions`/`sim_trades` en su cuerpo en cualquier esquema), en solo lectura.
+
+---
+
+## i) Decisiones CTO tras Astra (12-oct)
+
+**Revisión:** `revisiones-suite/2026-10-12-astra-sim-004-diseno.md` (HEAD revisado `2365e28`). Resultado: **no**, hasta cerrar S4-01…S4-05. **Esta sección prevalece sobre todo lo anterior, sección h incluida.** El cuerpo a–h no se reescribe, para que se vea qué cambió. **Sin código todavía.**
+
+**Corrección de una cifra mía (h, decisión 3):** el inventario no recorrió «15 repos». En el escritorio hay **13** directorios con Git: 12 repos y el worktree `forex-simulator-mercado-diario`. Mi búsqueda recorrió los 12 repos; el worktree es otro checkout del simulador, con los mismos escritores (Astra lo contrastó). El resultado no cambia.
+
+### i.1 Altos (cierran el «no»)
+
+#### S4-01 · Quiescencia sin operaciones partidas
+
+- **a) Cierre atómico ya en la etapa 1, semanas antes del corte.**
+  - El cierre total (`useTradingActions.js:49+67`) y el parcial (`_SessionInner.js:1949+1950`) pasan a ser **una sola llamada**.
+  - Es una función plpgsql **SECURITY INVOKER** (no definer), con `search_path` vacío y EXECUTE **solo** para `authenticated`. Hace el INSERT del trade y el UPDATE del saldo en una transacción.
+  - Los permisos y la RLS siguen siendo los de hoy, sin ningún privilegio nuevo: la llamada puede exactamente lo que podían las dos sentencias.
+  - Va en una **migración nueva, sim-004a** (i.1, S4-04), no en sim-003.
+  - Tras el corte, la revocación y la guarda la rechazan como a cualquier escritura de `authenticated`.
+- **b) Cliente de la etapa 1.**
+  - Consulta un **endpoint de estado del servicio** antes de cada escritura económica y cada 30 s. Con mantenimiento activo, bloquea las escrituras y muestra la pantalla de mantenimiento.
+  - Lleva un **id de versión:** si el servidor anuncia otra, recarga.
+  - La limpieza y el desmontaje (`_SessionInner.js:1363`, `usePairData.js:25`, pausa `:1104`) respetan el bloqueo.
+- **c) Coherencia durante el corte.**
+  - El export de entradas de S4-02 incluye una comprobación de coherencia por sesión v0. **Cualquier incoherencia ABORTA el corte** y se lista para Ramón; **nunca se recalcula**.
+  - Esto sustituye a la nota G02 de § c.2 («pasa a legado igual, con la incoherencia anotada»).
+  - **Invariantes que propongo** (por sesión v0, todos de solo lectura):
+    1. `balance = capital + Σ pnl` exacto, en `numeric`;
+    2. cada trade con el mismo `user_id` que su sesión;
+    3. en una hija de reto, el padre existe, es del mismo alumno y es raíz;
+    4. **ninguna columna nueva de sim-003 escrita en una v0:** `estado`, `mercado`, `escritor`, `legado_snapshot` y `terminal` nulos, `version = 0`, `epoca = 0`, `legado = false`, `creada_por_rpc = false` (cierra el primer caso de S4-10: antes del corte el alumno puede escribirlas).
+
+    No propongo como invariante `last_timestamp ≥ closed_at` del último trade: el cierre parcial actualiza el saldo y no `last_timestamp`, así que puede no cumplirse sin incoherencia.
+  - **Propuesta:** la misma comprobación como consulta de solo lectura (s09) **bastante antes** del corte. Si los datos de hoy ya no cuadran, Ramón decide sin la ventana encima.
+  - **Riesgo residual:** una pestaña cargada **antes** de la etapa 1 y sin recargar no sondea el estado. Si escribe a medias durante el corte, la comprobación de c) lo detecta y aborta. No lo corrompe.
+- **d) La guarda de sim-004 también rechaza DELETE** cuando `current_user` es `authenticated` o `anon`: los alumnos borran por RPC. `service_role` conserva DELETE (hub y wipe).
+  - **Ensayo obligatorio:** INSERT→corte→UPDATE, UPDATE→corte→INSERT, limpieza tardía y DELETE viejo esperando el `LOCK`. Todos, rechazados o abortados.
+
+#### S4-02 · Veredicto ligado a la foto
+
+- **Evaluador:** el de hoy, en JavaScript, **fijado por hash** de fichero (`lib/challengeEngine.js`) y de reglas (`lib/challengeRules.js`), sha256 en el commit usado.
+- **Export consistente:** una transacción **REPEATABLE READ** que lee todas sus entradas: la sesión, con capital, saldo, tipo, fase y estado, y sus trades.
+- **Hash canónico por sesión,** con los trades **ordenados por id**, como `challenge/status`.
+  - **Propuesta de construcción:** el texto canónico lo construye **la misma expresión SQL** en el export y dentro del DO. El JS solo recibe y hashea ese texto. Así no puede divergir el formato de los `numeric` entre JS y SQL.
+- **`currentTimeIso`:** el último tiempo simulado de la sesión (`last_timestamp`). Si es null, el `closed_at` del último trade. **Sin trades: veredicto «sin operaciones».** Nunca el reloj real.
+- **Dentro del DO, bajo el `LOCK`:** se recalcula el hash de entradas de cada sesión y se compara con el exportado. **Si difiere uno solo, se aborta antes de escribir nada.**
+- **El `legado_snapshot` de un reto guarda:**
+  - el veredicto;
+  - el hash de entradas;
+  - los hashes del evaluador y de las reglas;
+  - el `currentTimeIso` usado.
+- **Oráculo de la etapa 4:** la contraprueba de Astra (dos conjuntos con el mismo recuento, la misma suma y el mismo saldo, y veredictos distintos). Cambiar de uno a otro entre export y corte **tiene que abortar**.
+
+#### S4-03 · Identidad de la continuación del mercado
+
+- **El estado guarda, por par, la raíz** (el manifiesto fijado al crear) **y la versión efectiva** (hash).
+- **La continuación se resuelve al empezar un comando.**
+  - Va **dentro del sobre de intención**: entra en el digest, y los reintentos reutilizan el mismo sobre, así que piden la misma identidad.
+  - Se registra **atómicamente** con el recibo y la versión.
+- **El replay usa solo las identidades registradas,** nunca «el último».
+- **Continuación válida solo con prefijo idéntico:** velas **y** metadatos de interpretación (cerrados, cobertura, fronteras, aceptados), **todo dentro del manifiesto**. Los días nuevos van **estrictamente después de la frontera**. **Las adiciones interiores son incidente.**
+- **`sim_sessions.mercado` la actualiza la RPC** (cambio en sim-004a).
+- **El inventario de retención conserva toda la cadena usada.**
+- **Consecuencia para el motor (etapa 2):**
+  - `creaFuente` deja de recibir `aceptados` como parámetro externo (`lib/motor/fuente.mjs:39`): los lee del manifiesto.
+  - `fuenteDelEstado` acepta la versión efectiva registrada, no solo la raíz.
+- **Pendiente de coherencia** (para Astra, ronda 2; ver i.4): h2 decía que los huecos aceptados «van dentro del trozo», y esta decisión dice «todo dentro del manifiesto».
+  - **Mi lectura compatible:** el trozo los lleva y el manifiesto los fija por hash.
+  - Si lo que se quiere es que vivan en el manifiesto, cambia el formato de h2.
+
+#### S4-04 · `hueco_aceptado` y la migración sim-004a
+
+- **sim-004a es versionada, aditiva** y se aplica **ANTES del corte**, con las RPC aún inactivas. Contiene:
+  1. **`hueco_aceptado`:** se amplía el CHECK de `sim_eventos.tipo` (S:285–287) y la validación de tipos de `sim_comando` (S:537–544). Es un **evento técnico con la misma retención que los económicos**: no lo sobrescribe `ultimo_avance`.
+  2. **La actualización de `sim_sessions.mercado` por la RPC** (S4-03).
+  3. **La función atómica de cierre** (S4-01a).
+
+  Con segunda ejecución y guardas de definición, como sim-003.
+- **El adaptador motor→RPC se especifica completo** para cada evento: `tipo`, `resultado`, `motivo` coherente, `proyeccion`, `ordinal` y `t_mercado` (lo que exige S:537–611). No vale el objeto resumido de § b.2 / § e.1.
+- **Prueba:** motor → adaptador → **RPC real** en el PostgreSQL de ensayo, en la etapa 3. Un doble que acepte cualquier `tipo` no vale.
+
+#### S4-05 · Catálogo de retos v1
+
+**PENDIENTE DEL SÍ DE RAMÓN.** Se diseña con esta opción:
+
+- **Las altas v1 son solo práctica y `FTMO_2STEP`,** con un **id de reglas versionado** en el estado y en el recibo.
+- **1F y 3F quedan como legado de solo lectura.** `/api/sim/crear` los rechaza con **400**.
+- **No se mapean a 2-Step.** Si algún día vuelven como v1, necesitan reglas versionadas, transiciones y oráculos propios.
+
+### i.2 Medios, en su etapa
+
+| # | Decisión | Etapa |
+|---|---|---|
+| S4-06 | **RPC de presentación** para `name`/`timeframe`, sin excepción en la guarda. La guarda es una función **SECURITY INVOKER** que comprueba el dueño real (`current_user` = el dueño de las RPC; DEFINER la dejaría siempre satisfecha). **A concretar:** quién la ejecuta (`authenticated` con `auth.uid()` = dueño y acceso vigente, o un endpoint) | 4 (cliente en 1/5) |
+| S4-07 | **`/api/sim/estado`** (lectura en servidor): snapshot confirmado + versión, época y `terminal`, para práctica y reto, coherente con h11 (el cliente no lee `estado` por RLS). Los `select('*')` (`dashboard.js:110`, `analytics.js:76`, `_SessionInner.js:706`) pasan a listas de columnas. ACK del comando y snapshot vigente, separados | 3, antes de la UI de 5 |
+| S4-08 | **Tal cual Astra:** cada tramo con sobre e id estables antes de enviarse; una sola petición pendiente; un resultado incierto se resuelve antes de subdividir o seguir; fronteras entre minutos completos, sin partir una fase del camino; respetar terminal, detenciones y el horizonte frontera − 1 s. «Recibo por tramo» = **confirmación** por tramo, **no conservación** de todos (un avance técnico sobrescribe `ultimo_avance`). Los 10 s, desglosados en autenticación, lecturas, mercado, cálculo, SQL (con hasta tres intentos 40P01) y respuesta. Los 4 MB, separados en entrada HTTP, llamada RPC y salida, en UTF-8 serializado. Rechazo seguro si no cabe ni un minuto o un cierre. El p99 es un objetivo medido | 3; umbrales medidos antes de 5 |
+| S4-09 | **Revocar también TRUNCATE, TRIGGER y REFERENCES de `service_role`** en `sim_sessions` y `sim_trades`. **Matriz explícita de roles de aplicación**: herencias, PUBLIC y grants de columna. Separar administradores confiables de vías invocables por clientes, sin revocar a ciegas permisos internos de Supabase. Verificar dueños y definiciones (cuerpos incluidos), y el inventario de tareas, disparadores, funciones invocables y Edge Functions. **s08 previa, obligatoria** | 4; evidencia real antes de 5 |
+| S4-10 | **Tal cual Astra:** declarar qué columnas nuevas de las v0 se validan (i.1, S4-01c: si alguna está escrita, aborta); todos los snapshots iniciales los produce el corte; el corte se identifica por un **marcador de esquema verificable**, no por filas ni snapshots; guardas de primera ejecución separadas de los invariantes posteriores; **lápidas fuera** de las comprobaciones de snapshot (`sim_borrar_legacy` lo pone a NULL). Segunda ejecución probada con cero sesiones, con sesiones v1 y después de borrar legado | 4 |
+| S4-11 | **Tal cual Astra:** día cerrado por calendario, cobertura y excepciones explícitas (disponibilidad ≠ completitud); publicación atómica del manifiesto después de verificar todos sus trozos, y si el publicador falla, el manifiesto anterior sigue válido; huecos que cruzan dos trozos con una ubicación canónica y su momento de definitivos; calcular huecos **no** los acepta: la lista y su motivo se revisan (E:763). Formato nuevo: versión subida, validación semántica además del hash (escala, reservado, orden, OHLC, volumen, longitud) y contenido de huecos acotado (C6-06) | 2 |
+| S4-12 | **La etapa 6 es requisito para abrir la 5:** retirar `challenge/create` y `challenge/advance` y el wipe por RPC antes de quitar mantenimiento (manteniendo la revocación de acceso previa al wipe). El runbook lleva el **artefacto de mantenimiento ya ensayado** y un **punto de aborto** dentro de los 30 min. Tras COMMIT no se reponen grants v0. Ensayar fallo antes del COMMIT, COMMIT con respuesta perdida y fallo de despliegue después del COMMIT | 1/3 preparar · 4 probar · antes de 5 |
+
+### i.3 Orden de aplicación que resulta
+
+1. **sim-004a** (aditiva, RPC inactivas) y el **cliente de la etapa 1**: cierre atómico, estado del servicio y versión.
+2. Etapas **2–4** con sus oráculos.
+3. **s08 y s09** (solo lectura).
+4. **Etapa 6.**
+5. Ventana: mantenimiento → **export REPEATABLE READ** (S4-02 y S4-01c) → **sim-004** → comprobaciones con mantenimiento activo → abrir v1. O el punto de aborto.
+
+### i.4 Para la ronda 2 de Astra (coherencia)
+
+1. **¿Dónde viven los huecos aceptados?** En el trozo (h2) o en el manifiesto (S4-03); ver la lectura compatible arriba.
+2. **sim-004a junta piezas de etapas distintas:** el cierre atómico (etapa 1, semanas antes) y `hueco_aceptado` + la actualización de `mercado` (diseñados en 2–3). Si sim-004a se aplica en la etapa 1, las piezas de las etapas 2–3 tienen que estar cerradas antes. Si no, hay que partirla en dos migraciones versionadas (p. ej. sim-004a y sim-004b), ambas antes del corte.
+3. **S4-01c frente a los datos de hoy:** si alguna sesión v0 ya no cuadra, el corte no puede hacerse hasta que Ramón decida. De ahí la propuesta de s09 temprana.
+4. **S4-06:** quién ejecuta la RPC de presentación.
