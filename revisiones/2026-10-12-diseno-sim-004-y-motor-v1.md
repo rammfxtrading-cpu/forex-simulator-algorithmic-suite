@@ -474,7 +474,7 @@ s04 solo lista las funciones de `public` que tocan las 9 tablas: el único dispa
 
     No propongo como invariante `last_timestamp ≥ closed_at` del último trade: el cierre parcial actualiza el saldo y no `last_timestamp`, así que puede no cumplirse sin incoherencia.
   - **Propuesta:** la misma comprobación como consulta de solo lectura (s09) **bastante antes** del corte. Si los datos de hoy ya no cuadran, Ramón decide sin la ventana encima.
-  - **Riesgo residual:** una pestaña cargada **antes** de la etapa 1 y sin recargar no sondea el estado. Si escribe a medias durante el corte, la comprobación de c) lo detecta y aborta. No lo corrompe.
+  - ~~**Riesgo residual:** una pestaña cargada antes de la etapa 1 … la comprobación de c) lo detecta y aborta.~~ **RETIRADO (k, S4R2-01):** era falso. Dos cierres parciales compensados (+100/−100), o uno de P&L cero, dejan el saldo cuadrado sin sus trades. La igualdad del saldo es una comprobación de **datos**, no la prueba de que no queden peticiones pendientes. La retirada de clientes anteriores a la etapa 1 es ahora una **condición previa verificable** (k.1).
 - **d) La guarda de sim-004 también rechaza DELETE** cuando `current_user` es `authenticated` o `anon`: los alumnos borran por RPC. `service_role` conserva DELETE (hub y wipe).
   - **Ensayo obligatorio:** INSERT→corte→UPDATE, UPDATE→corte→INSERT, limpieza tardía y DELETE viejo esperando el `LOCK`. Todos, rechazados o abortados.
 
@@ -747,7 +747,7 @@ No había una sección así en este diseño. La abro con 1F y 3F:
 
 **1. Pasar de fase con posiciones abiertas: se rechaza, en los cuatro productos** (opción b, como el FTMO del motor).
 
-- **Condición para superar la fase** (la misma en práctica de reto, 1F, 2F y 3F):
+- **Condición para superar la fase** (la misma en 1F, 2F y 3F; corregido en k: **la práctica no es un reto**, no tiene objetivo ni fase que superar):
   - objetivo alcanzado sobre **cerrados** (saldo cerrado ≥ objetivo);
   - **cero posiciones abiertas;**
   - ningún límite quemado (el breach prevalece, C7-01);
@@ -872,3 +872,115 @@ Es `sim_avanzar_fase`, aditiva, versionada y sin editar sim-003 (j.3, punto 3).
   - **Resultado exigido:** aborta con su error prefijado (`sim-003: …`, la definición distinta) **y el catálogo es idéntico antes y después**. La foto de catálogo es la de s04/s06 más las definiciones de sim-003/sim-004a, comparada como multiconjunto.
   - Así, una ejecución por error no hace daño.
   - **Control:** un mutante de sim-003 sin esa comprobación de definición cambiaría el catálogo → rojo.
+
+---
+
+## k · tras Astra ronda 2
+
+**Revisión:** `revisiones-suite/2026-10-12-astra-sim-004-diseno-2.md`, sobre `8daea32`.
+- **Resultado:** S4-02, S4-03, S4-04 y S4-05 cerrados (S4-03 y S4-05, con condiciones de etapa). **NO solo por S4R2-01.**
+- **Esta sección prevalece sobre todo lo anterior.** Correcciones en el sitio:
+  - D:477 retirada (tachada, con la nota);
+  - D:750, la práctica no es un reto.
+
+### k.1 S4R2-01 · Retirada verificable de los clientes anteriores a la etapa 1 (alto)
+
+**a) Retirada la afirmación de D:477.** Dos parciales compensados (+100/−100), o uno de P&L cero, con el UPDATE confirmado y el INSERT pendiente, dejan `balance = capital + Σ pnl` sin los trades. La contraprueba de Astra da `coherente: true` y el mismo hash en el export y en el corte. **La igualdad del saldo es una comprobación de datos** (S4-01c y s09 la siguen haciendo), **no una prueba de que no queden peticiones pendientes.**
+
+**b) Cabecera del cliente de la etapa 1.**
+- **Todas** sus peticiones a Supabase llevan `x-sim-cliente: etapa1-<versión>`, con la misma versión que S4-01b.
+- Va como cabecera global del cliente: `global: { headers: { 'x-sim-cliente': … } }` en el `createClient` de `lib/supabase.js:35`. Así cubre REST, RPC y Storage sin tocar cada llamada.
+
+**c) sim-004a se divide en dos migraciones versionadas, las dos antes del corte:**
+
+| Migración | Contiene | Cuándo | Notas |
+|---|---|---|---|
+| **sim-004a-preparatoria** | el cierre atómico (S4-01a: plpgsql INVOKER, EXECUTE solo `authenticated`, permisos de hoy) + el **registro de escrituras** (d) | con la etapa 1, **antes** de desplegar el cliente de la etapa 1 | **no es «RPC inactiva»** (Astra, i.4.2): el cliente de la etapa 1 llama al cierre atómico; deja los demás objetos de sim-003 como están |
+| **sim-004b** | el contrato v1: `superado` (CHECK de terminal), `hueco_aceptado` (CHECK, validación y **clasificación de retención**, S:560–566), `mercado` por la RPC, reglas versionadas y transiciones (`reto@2`, k→k+1 y final), retención | cerrado con las etapas 2–3 y ensayado en la 4, **antes** del corte | aquí sí, RPC inactivas |
+| **sim-004** | el corte (§ c, i, j, k.1 f) | en la ventana | — |
+
+**Matriz de sucesión** (sustituye a j.9 donde choque):
+
+| Tras aplicar… | ¿Se puede volver a ejecutar sim-003? | ¿sim-004a-preparatoria? | Referencia de esquema vigente |
+|---|---|---|---|
+| sim-003 (12-oct) | sí, idempotente | — | comprobación final de sim-003 |
+| sim-004a-preparatoria | **sí, inofensiva:** no cambia ninguna definición que sim-003 compare. **A comprobar en el ensayo**, no supuesto | sí, idempotente | sim-003 **+** comprobación de sim-004a-preparatoria (sus objetos propios) |
+| sim-004b | **no:** aborta con su error prefijado y el catálogo idéntico (prueba de j.9, que pasa de «sim-004a» a «sim-004b») | sí, idempotente | **comprobación final de sim-004b,** que verifica también los objetos de sim-003 y de sim-004a-preparatoria que no cambia |
+| sim-004 (corte) | no | no se vuelve a ejecutar (el corte borra su registro, d) | comprobación final de sim-004 |
+
+- **La cabecera literal de j.9** («a partir de sim-004a, sim-003 queda superada…») **pasa a sim-004b.**
+- **La nota de `sql/APLICADOS.md` se corrige igual** cuando se escriba la primera de las dos.
+- **El mutante de j.9, ajustado** (Astra, sección C): la prueba tiene que ponerse en rojo también si la ejecución indebida **termina con éxito** sin alterar nada. Se exige el error prefijado, no solo el catálogo intacto.
+
+**d) Registro de escrituras `sim_escrituras_v0`** (en sim-004a-preparatoria).
+- **Columnas:** `session_id`, `user_id`, `tabla`, `operación`, `cliente`, `en`.
+- **Permisos:** RLS activada **sin ninguna política** y **sin grants** a `anon`, `authenticated` ni `service_role`. Solo la escribe la función del disparador y solo la lee el dueño (s10).
+- **Disparadores** `AFTER INSERT OR UPDATE OR DELETE … FOR EACH ROW` en `sim_sessions` y `sim_trades`.
+  - La función es **SECURITY DEFINER** del dueño, con `search_path` vacío: el disparador corre con el rol de quien escribe, que no tiene grants sobre el registro.
+  - Una función `RETURNS trigger` no se puede llamar fuera de un disparador.
+- **`cliente`:** `current_setting('request.headers', true)::json->>'x-sim-cliente'`. PostgREST pasa los nombres de cabecera en minúsculas. Si falta, `'sin-firma'`.
+- **No es seguridad:** la cabecera se puede falsificar. **Es un detector de clientes antiguos**, y así se documenta en la cabecera de la migración.
+- **Retención:** se borra tras el corte (k.1 f).
+
+**e) Certificado de retirada: s10** (solo lectura; la ejecuta Ramón).
+- **Por alumno:**
+  - las escrituras `'sin-firma'` de las **últimas 72 h** (sesión, tabla, operación, hora);
+  - la **última versión vista** (`cliente` más reciente).
+- **Condición para cortar:** **cero** escrituras sin firma en 72 h **y** ninguna versión anterior a la vigente.
+- **Si aparece alguna, no se corta.** Ramón pide a ese alumno que recargue, y **la ventana de 72 h vuelve a empezar**.
+- **La salida se guarda en `revisiones-suite`.** **Certifica el CTO** con esa salida: su hora es la «hora del certificado».
+
+**f) En el DO del corte, bajo el `LOCK`:** si hay alguna escritura `'sin-firma'` en `sim_escrituras_v0` posterior a la hora del certificado, **ABORT** antes de escribir nada. La hora entra como parámetro literal en el texto del corte. Después de esa comprobación, el mismo DO quita los disparadores y la tabla de registro (retención d).
+
+**g) Ensayo de la etapa 4:**
+- los dos parciales compensados (+100/−100), con los UPDATE confirmados y los INSERT pendientes;
+- un parcial con P&L cero;
+- en los dos casos, **desde un cliente sin firma.**
+
+Resultado exigido: **s10 los detecta**, y si el corte se lanza igual, **aborta** en f). **Mutante:** una s10 que solo mire la igualdad del saldo → no detecta nada → **rojo**.
+
+### k.2 Medios, a su etapa (como propone Astra)
+
+| # | Decisión | Etapa |
+|---|---|---|
+| S4R2-02 | S4-01c y s09: **ascendencia existente, del mismo alumno, acíclica y con fases coherentes** (fase del hijo = fase del padre + 1, mismo producto), terminada en una raíz. Sustituye a «el padre es raíz», que rechazaba una tercera fase legítima P→H→N (`advance.js:249–263` enlaza con la fase anterior). Controles negativos: ciclo, salto de fase y padre ajeno. Ni se normalizan padres ni se borran fases | 4 y s09 |
+| S4R2-03 | El oráculo multipar de j.7 se sustituye por **OHLC completos, posiciones, órdenes, costes y caminos calculados** (§ 13.4). La narración «pronto/tarde» no viene en una vela OHLC. **Se conserva el caso de dos BUY que SÍ quema** (contraprueba de Astra con la cartera: breach en 251/300 a 1,09749 y 1,29749, equity 94.980; con la igualdad SUITE, 250/300 y 95.000 antes del empuje), **repetido cambiando el orden y los nombres** de los pares. Un caso de divergencia sin breach solo vale si produce de verdad caminos distintos o exposiciones compensadas | 3 |
+| S4R2-04 | La equivalencia v0/v1 de j.6 se marca como **fixture aislado sin costes** (1,09495, −5.050). Otro **fixture con costes@1**: bid, ask, entrada ejecutada, comisión (3 USD/lote al abrir), bruto, neto y saldo. Por ejemplo, la cuenta de Astra: saldo 99.970, toque en 1,09503, empuje a 1,09498, bruto −5.020 y neto −5.050. No se cambia costes@1 para cuadrar la cifra antigua | 3 |
+| S4R2-05 | **Quema sin vela en ese instante** (reset diario o mandato). Precio de cierre: **la última cotización conocida de cada par**, con el empuje de **±5 ticks hacia el lado peor POR POSICIÓN** (BUY hacia abajo, SELL hacia arriba), **recortado al rango de la última vela conocida**. **Nunca una vela futura.** Es una política **versionada dentro de las reglas** (SUITE_1F/SUITE_3F). Oráculos: reset sin vela (el caso de Astra: saldo 120.000 con flotante −22.000, suelo diario nuevo 114.000), exposición neta cero (BUY y SELL del mismo par), JPY, y paso/salto/reanudación con el mismo precio y saldo | 3 |
+| i.4.4 | **Presentación:** endpoint autenticado + una RPC **solo para `service_role`** que valida actor, propiedad y acceso y **únicamente** toca `name`/`timeframe`. Guarda INVOKER con el dueño esperado | 4 |
+| — | **La práctica no es un reto:** corregido en D:750 | — |
+
+**Además, lo que Astra deja como criterio de aceptación** (sin decisión nueva):
+- S4-02: el hash cubre el conjunto completo exportado y el presente, incluidas altas y bajas.
+- S4-03: los huecos en el trozo, vinculados por el hash del manifiesto, sin una segunda lista mutable.
+- S4-04: la clasificación de retención cambia en sim-004b, no solo el CHECK.
+- j.8: el reintento busca el recibo en la sesión final antes de rechazar `superado`; mismo id con digest distinto = `clave_reutilizada`; dos peticiones concurrentes en la fase final.
+
+### k.3 Autorrevisión adversaria del registro de escrituras
+
+1. **Escrituras de servidor sin cabecera.** El hub (`users/delete.js:104–106`, DELETE), el wipe (`admin/wipe-simulador.js:94`) y `challenge/create`/`advance` escriben con `service_role` desde Node, sin `x-sim-cliente`. Quedarían como `'sin-firma'` y **bloquearían el certificado sin ser clientes antiguos**.
+   - **Propuesta, para el CTO:** añadir al registro el **rol** (`current_setting('request.jwt.claims', true)::json->>'role'`, o `current_user`), y que s10/f solo cuenten `'sin-firma'` con rol `authenticated`.
+   - Alternativa: que esos servidores manden su propia cabecera.
+   - Sin una de las dos, cualquier borrado del hub en las 72 h reinicia la ventana.
+2. **¿Llega la cabecera?** Dos cosas **sin medir:**
+   - que la puerta de entrada de Supabase deje pasar una cabecera propia desde el navegador (CORS: el preflight tiene que admitir `x-sim-cliente`);
+   - que PostgREST la ponga en `request.headers`.
+
+   Si el CORS la rechazara, **fallarían todas las peticiones del cliente de la etapa 1**, no solo el registro. Hay que medirlo **antes** de desplegar la etapa 1, con una petición de solo lectura desde el navegador, y comprobar la cabecera con una lectura del registro tras una escritura de prueba en una cuenta de prueba. Esa escritura es autorizable solo con el sí de Ramón.
+3. **Falsificación.** Un alumno podría mandar a mano `etapa1-<versión>` desde un cliente viejo modificado. Es un riesgo aceptado: el registro no es seguridad. Lo que protege la economía tras el corte son la revocación y la guarda. El registro solo evita **perder historial** por clientes viejos honestos.
+4. **Carreras con el registro.** El disparador es `AFTER … FOR EACH ROW` en la **misma transacción** que la escritura: o se confirman las dos, o ninguna. No hay escritura sin registro ni registro sin escritura.
+   - **Una escritura de un cliente viejo que espera el `LOCK` del corte** no llega a confirmarse antes de f). Después del corte, la revocación y la guarda la rechazan, y el disparador ni se ejecuta.
+   - **Un UPDATE confirmado antes del certificado con su INSERT todavía en vuelo:** el UPDATE quedó registrado `'sin-firma'`, así que s10 lo ve (ventana de 72 h).
+   - **Ese mismo UPDATE, confirmado después del certificado:** f) lo ve.
+5. **Pestaña vieja inactiva más de 72 h.** Cero escrituras en 72 h **no prueba** que no exista una pestaña vieja abierta y quieta. Si escribe **antes** del corte, queda registrada y f) aborta. Si su petición está **en vuelo** en el instante del `LOCK`, el registro no la ve hasta que se confirma, y ya no se confirma, porque la rechazan la revocación y la guarda.
+   - El caso S4R2-01 necesita una **primera** escritura confirmada (el UPDATE), y esa sí queda registrada.
+   - **No veo un caso que pase,** pero esto es lectura: es para Astra y para el ensayo de la etapa 4 (g).
+6. **Cascadas.** Un DELETE de sesión que arrastra sus trades dispara el registro también en `sim_trades`, con la misma cabecera y el mismo rol. Es correcto: cuenta como escritura de ese cliente.
+7. **Volumen.** El cliente de hoy guarda el progreso periódicamente (`usePairData.js:25`) y al pausar (`_SessionInner.js:1104`). Cada guardado es una fila del registro. Con 5 alumnos es poco, pero hay que medirlo en la etapa 1 (filas/día) frente a la base gratuita, antes de Pro. Se borra con el corte.
+8. **Permisos de la tabla de registro.** RLS sin políticas y sin grants:
+   - un alumno no puede leer quién escribió ni borrar su rastro;
+   - `service_role` tampoco (bypassrls no basta sin grant);
+   - **el dueño sí.**
+
+   Se comprueba con la matriz de S4-09 y con una s08 que la incluya. El disparador, al ser DEFINER del dueño, es el único que inserta.
+9. **sim-003 y la sucesión.** Que sim-003 sea inofensiva tras sim-004a-preparatoria es una afirmación de la matriz. Se comprueba en el ensayo (catálogo y error, como j.9), no se da por buena.
