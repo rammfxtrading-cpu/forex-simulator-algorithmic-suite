@@ -30,7 +30,7 @@ Ningún doble fabrica los núcleos de los 23 hallazgos (Astra lo comprobó), per
 | `script-falso.mjs` | un `process.exit` real (una `SalidaDeScript` puede quedar atrapada en un `catch` del propio script); solo fija `Date.now()` y `new Date()` sin argumentos; `setTimeout` inmediato, `setInterval` no | Los scripts corren en el mismo proceso, con su `require` interceptado. |
 | `next-falso.mjs` | navegación (`push` solo se apunta); `dynamic` carga el módulo de verdad | — |
 | `banco-motor.mjs` | copia dos fragmentos de `_SessionInner` (alta de mercado y reset del Go to), verificados por `copiasVigentes()` | Si `_SessionInner` cambia esas líneas, el banco lo dice. |
-| `pg-ensayo.mjs` / `estado-s04.mjs` | el esquema es **inventado** con los hechos de la s04; no es el baseline real | Acredita los objetos del stub, no la base viva. |
+| `pg-ensayo.mjs` / `estado-s04.mjs` | `pg-ensayo.mjs` (STUB) es **inventado**. `estado-s04.mjs` (PRODUCCION) es **literal** desde el 11-oct: reconstruido de las salidas de s04/s05 y comprobado fila a fila (`estado-s04-literal.mjs`); lo que s04 no lee va marcado «NO CONSTA» (roles, `pg_default_acl`, `auth.users`, versión): lo trae s06 | Acredita el catálogo del 10-oct, no la base viva de hoy ni el editor de Supabase. |
 
 ## Límites de precisión de algunas pruebas (H08)
 
