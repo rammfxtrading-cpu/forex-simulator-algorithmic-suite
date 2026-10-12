@@ -913,7 +913,7 @@ Es `sim_avanzar_fase`, aditiva, versionada y sin editar sim-003 (j.3, punto 3).
 - **El mutante de j.9, ajustado** (Astra, sección C): la prueba tiene que ponerse en rojo también si la ejecución indebida **termina con éxito** sin alterar nada. Se exige el error prefijado, no solo el catálogo intacto.
 
 **d) Registro de escrituras `sim_escrituras_v0`** (en sim-004a-preparatoria).
-- **Columnas:** `session_id`, `user_id`, `tabla`, `operación`, `cliente`, `en`.
+- **Columnas:** `session_id`, `user_id`, `tabla`, `operación`, `cliente`, `en`. **→ Ampliadas en k.4 c** con `rol_jwt` y `rol_guc`; sin `current_user`.
 - **Permisos:** RLS activada **sin ninguna política** y **sin grants** a `anon`, `authenticated` ni `service_role`. Solo la escribe la función del disparador y solo la lee el dueño (s10).
 - **Disparadores** `AFTER INSERT OR UPDATE OR DELETE … FOR EACH ROW` en `sim_sessions` y `sim_trades`.
   - La función es **SECURITY DEFINER** del dueño, con `search_path` vacío: el disparador corre con el rol de quien escribe, que no tiene grants sobre el registro.
@@ -959,10 +959,11 @@ Resultado exigido: **s10 los detecta**, y si el corte se lanza igual, **aborta**
 ### k.3 Autorrevisión adversaria del registro de escrituras
 
 1. **Escrituras de servidor sin cabecera.** El hub (`users/delete.js:104–106`, DELETE), el wipe (`admin/wipe-simulador.js:94`) y `challenge/create`/`advance` escriben con `service_role` desde Node, sin `x-sim-cliente`. Quedarían como `'sin-firma'` y **bloquearían el certificado sin ser clientes antiguos**.
+   - **→ Decidido en k.4 d.**
    - **Propuesta, para el CTO:** añadir al registro el **rol** (`current_setting('request.jwt.claims', true)::json->>'role'`, o `current_user`), y que s10/f solo cuenten `'sin-firma'` con rol `authenticated`.
    - Alternativa: que esos servidores manden su propia cabecera.
    - Sin una de las dos, cualquier borrado del hub en las 72 h reinicia la ventana.
-2. **¿Llega la cabecera?** Dos cosas **sin medir:**
+2. **¿Llega la cabecera?** **→ Medido en k.4 a–b:** llega en las dos versiones, y el CORS la admite. Lo que sigue era el riesgo antes de medir:
    - que la puerta de entrada de Supabase deje pasar una cabecera propia desde el navegador (CORS: el preflight tiene que admitir `x-sim-cliente`);
    - que PostgREST la ponga en `request.headers`.
 
@@ -984,3 +985,79 @@ Resultado exigido: **s10 los detecta**, y si el corte se lanza igual, **aborta**
 
    Se comprueba con la matriz de S4-09 y con una s08 que la incluya. El disparador, al ser DEFINER del dueño, es el único que inserta.
 9. **sim-003 y la sucesión.** Que sim-003 sea inofensiva tras sim-004a-preparatoria es una afirmación de la matriz. Se comprueba en el ensayo (catálogo y error, como j.9), no se da por buena.
+
+### k.4 Decisiones CTO tras la medida de la cabecera (12-oct) · prevalece sobre k.1 d–f y k.3 (1, 2)
+
+Pruebas: `revisiones-suite/2026-10-12-cabecera-sim-cliente/` (LEEME, SHA256SUMS, scripts y salidas literales).
+
+**a) CORS, medido en producción sin clave y sin efectos.** Preflight `OPTIONS /rest/v1/sim_sessions` desde el origen `https://simulator.algorithmicsuite.com`, con el método pedido `POST`:
+- respuesta HTTP 200;
+- `access-control-allow-headers` repite `x-sim-cliente`, y también `x-client-info`;
+- `allow-origin: *`.
+
+**La cabecera propia no rompe el cliente.** La cabecera `Server` es `cloudflare` y no deja ver la versión de PostgREST. Por eso b) se mide con dos versiones mayores.
+
+**b) `request.headers` y el rol, medidos en local** con PostgreSQL 17 desechable y PostgREST **13.0.8 y 16.4**. Son binarios oficiales de macOS, con el sha256 verificado contra el digest publicado en la release: `c97a913d…886a` y `5720fbde…0776`.
+- **Mismo disparador que d):** AFTER, fila a fila, en una función DEFINER con `search_path` vacío.
+- **La 12.x no se usó:** sus binarios de macOS no tienen sha256 publicado.
+- **Resultado idéntico en las dos versiones**, fila por fila:
+
+| Petición | HTTP | `x-sim-cliente` | `x-client-info` | Rol del JWT | `current_setting('role')` | `current_user` |
+|---|---|---|---|---|---|---|
+| INSERT, authenticated, `x-sim-cliente: etapa1-7` | 201 | `etapa1-7` | — | authenticated | authenticated | postgres |
+| UPDATE, authenticated, `x-client-info: sim-etapa1/7` | 204 | `sin-firma` | `sim-etapa1/7` | authenticated | authenticated | postgres |
+| DELETE, authenticated, sin cabecera | 204 | `sin-firma` | — | authenticated | authenticated | postgres |
+| INSERT, anon, sin cabecera | 201 | `sin-firma` | — | anon | anon | postgres |
+| INSERT, service_role, sin cabecera | 201 | `sin-firma` | — | service_role | service_role | postgres |
+| INSERT, `X-Sim-Cliente` en mayúsculas | 201 | `etapa1-8` | — | authenticated | authenticated | postgres |
+
+- **Seis filas en el registro para seis peticiones.**
+- **Controles de permisos:**
+  - un alumno no puede leer el registro (`GET` → 403);
+  - no puede llamar a la función del disparador (`/rpc` → 404).
+- **El primer intento con la 13.0.8 dio 503 en todo.** Fallaba el instrumento, no PostgREST:
+  - la 13.x empieza a escuchar antes de cargar la caché del esquema, y la espera daba por bueno un 503;
+  - el contador contaba como una fila una salida vacía.
+
+  Se corrigió el script. Las dos versiones se repitieron con él, y la 16.4 dio una salida idéntica a la de antes. Las tres salidas se conservan.
+- **Conclusión: b) cerrado.** El **plan B (`x-client-info`) no hace falta**. Queda medido como respaldo.
+
+**c) Qué guarda `sim_escrituras_v0`** (sustituye a las columnas de d).
+- **Columnas:** `session_id`, `user_id`, `tabla`, `operación`, `cliente`, `en`, **`rol_jwt`** y **`rol_guc`**:
+  - `rol_jwt` = `current_setting('request.jwt.claims', true)::json->>'role'`;
+  - `rol_guc` = `current_setting('role', true)`.
+- **No se guarda `current_user`.** Dentro de la función DEFINER vale siempre el dueño (`postgres` en las 6 filas), escriba quien escriba.
+
+**d) Recuento de s10 y de la guarda del corte (k.1 e–f).**
+- **Una escritura «sin firma de alumno»** es una fila con `rol_jwt` ∈ {`authenticated`, `anon`} **y** `cliente = 'sin-firma'`. Solo estas filas reinician la ventana de 72 h (s10) y hacen abortar el corte (f).
+- **Las filas de `service_role`** (el hub, el wipe, `challenge/create` y `challenge/advance`) se registran y **s10 las lista aparte**. **No reinician la ventana.**
+- **Anomalía:** una fila con `rol_jwt IS DISTINCT FROM rol_guc`. s10 la marca como anomalía, y **el corte aborta** si hay alguna.
+  - La comparación es **`IS DISTINCT FROM`, no `<>`**, porque con `<>` una fila con un `null` no se marca (ver k.3.10).
+
+**e) 2d, al runbook de la etapa 1.** La comprobación de punta a punta se hace **con el sí de Ramón**, en una cuenta de prueba:
+1. una escritura desde el cliente de la etapa 1 desplegado;
+2. leer el registro como dueño y ver `etapa1-<versión>` y `authenticated` en las dos columnas de rol.
+
+No se hace antes ni sin ese sí.
+
+### k.3 (continuación) · casos añadidos tras k.4
+
+10. **Rol del JWT ≠ `current_setting('role')`.** Por PostgREST no puede pasar: PostgREST fija el rol a partir del JWT firmado, y las 6 filas medidas coinciden. **Una fila así viene de otro camino.** Medido en local (`sin-postgrest.sh` / `.txt`):
+    - **SQL directo del dueño** (el editor de Supabase): `rol_jwt` null y `rol_guc` `none`;
+    - **`SET ROLE authenticated` sin JWT:** null / `authenticated`;
+    - **un JWT puesto a mano sin `SET ROLE`:** `authenticated` / `none`.
+
+    Las tres filas salen con `cliente = 'sin-firma'`, pero **ninguna cuenta como «sin firma de alumno»**: la primera y la tercera tienen un rol que no es de alumno, y la segunda tiene `rol_jwt` null. **Solo las caza la regla de anomalía.**
+
+    **Consecuencias, por la regla del CTO tal como está escrita:**
+    - **Una escritura a mano en `sim_sessions` o `sim_trades` desde el editor después del certificado hace abortar el corte.**
+      - Es lo buscado: una escritura fuera del flujo conocido.
+      - Implica que en la ventana de 72 h no se escribe a mano en esas tablas.
+      - Las migraciones sim-004a-preparatoria y sim-004b no escriben filas. **Si una llegara a escribirlas,** chocaría con esta regla, y habría que decidir antes de escribirla.
+    - **Una fila así antes del certificado:** s10 la marca. La regla del CTO no dice si reinicia la ventana. Hoy solo hace abortar el corte.
+
+    **Oráculos del ensayo (etapa 4):**
+    - los tres casos medidos dan anomalía y aborto;
+    - **mutante `<>` en lugar de `IS DISTINCT FROM`:** el primer caso y el segundo dejan de detectarse → rojo;
+    - **mutante «solo cuenta `authenticated`»:** el `anon` sin firma pasa → rojo.
+11. **Una pestaña sin sesión iniciada** escribe como `anon`. Hoy `anon` **no tiene ningún grant** sobre `sim_sessions` ni `sim_trades`: solo `authenticated` y `service_role` (s04 del 10-oct, filas 186–189). Además, la política exige `auth.uid() = user_id`. Así que no debería aparecer ninguna fila. Si aparece, cuenta como «sin firma de alumno», como decidió el CTO.
