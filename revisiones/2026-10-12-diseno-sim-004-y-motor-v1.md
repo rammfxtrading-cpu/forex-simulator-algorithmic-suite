@@ -1086,7 +1086,7 @@ No se hace antes ni sin ese sí.
   - `session_id`, `user_id`, `tabla`, `operación` y `en` (`clock_timestamp()`);
   - `cliente`, `rol_jwt` y `rol_guc`;
   - **el id de transacción** (`pg_current_xact_id()::text`);
-  - **la lista de columnas cambiadas, por nombre** (en un UPDATE, las de `NEW IS DISTINCT FROM OLD`; en un INSERT o un DELETE, la fila entera);
+  - **la lista de columnas cambiadas, por nombre** (en un UPDATE, las de `NEW IS DISTINCT FROM OLD`; en un INSERT o un DELETE, la fila entera) **→ m.4: «la fila entera» = solo la lista de nombres de columnas, nunca el JSON del trade**;
   - **solo dos valores:**
     - el **delta de saldo** (`NEW.balance − OLD.balance`) en un UPDATE de `sim_sessions`;
     - el **id del trade y su `pnl`** en un INSERT o DELETE de `sim_trades`.
@@ -1200,7 +1200,7 @@ s10 empareja **todas** las escrituras «sin firma de alumno» (k.4 d) registrada
   - los 200.000 cierres con el `realizePnl` real → **0 incidencias falsas**;
   - con la tolerancia **siguen saliendo** los ±100, el delta 0 sin trade, y un trade que falta junto a otro de la misma sesión cuyo pnl difiere 1 céntimo de su delta.
 - **La clasificación de l.2, fila por fila:**
-  - pausa, salida, guardado y TF → nada;
+  - pausa, salida, guardado y TF → nada **(→ m.1: la pausa y la salida mencionan `balance`; sin pareja son dudosos. El guardado y el TF siguen dando nada)**;
   - borrado de sesión en cascada → nada;
   - DELETE de trade suelto → incidencia;
   - sesión creada con saldo distinto del capital → incidencia;
@@ -1208,7 +1208,7 @@ s10 empareja **todas** las escrituras «sin firma de alumno» (k.4 d) registrada
 - **S4R3-03:** misma conexión tras `SET LOCAL` + COMMIT y tras ROLLBACK.
 - **El cierre total a break-even de un cliente antiguo:**
   - completo (trade de pnl 0 y UPDATE de delta 0 que cambia `last_timestamp`) → **0 incidencias**;
-  - **sin su trade** → **0 incidencias**, porque el UPDATE de delta 0 que cambia `last_timestamp` no lo es, y **sin pérdida de saldo**;
+  - ~~**sin su trade** → **0 incidencias**…~~ **Corregido en m.1 (S4R4-01):** sin su trade → **dudoso, que es una incidencia**. Su UPDATE menciona `balance`, tiene delta 0 y no tiene pareja;
   - **el trade de pnl 0 sin ningún UPDATE en 10 s** → **incidencia**.
 - **Anomalías:**
   - una escritura desde el editor **justificada** (fila + SQL en APLICADOS a esa hora) → el corte sigue;
@@ -1259,3 +1259,148 @@ s10 empareja **todas** las escrituras «sin firma de alumno» (k.4 d) registrada
    - Así, al confirmarse la puerta, las escrituras empezadas antes ya se han confirmado o abortado.
    - **No sustituye** a la segunda s10 tras 2 × `statement_timeout` (l.1 c): la refuerza, y **se comprueba en el ensayo con C1**. No se da por hecho.
 8. **El volumen de la conciliación.** s10 empareja el registro entero desde la instalación. Con 5 alumnos y el volumen de k.3.7 es poco, pero se mide en la etapa 1 (filas por día) junto con el tiempo de s10.
+
+## m · tras Astra ronda 4
+
+**Revisión:** `revisiones-suite/2026-10-12-astra-sim-004-diseno-4.md`, sobre `513143b`.
+- **Resultado:** S4R3-01 cerrado (la puerta drena, medido por Astra). **NO solo por S4R4-01:** un cierre de pnl 0 perdido, con **un solo fallo**, se clasificaba como guardado.
+- **Esta sección prevalece sobre l.2, l.1 c y l.3 donde choquen.** Correcciones hechas en su sitio:
+  - el oráculo del cierre a break-even «sin su trade» (antes D:1211);
+  - «pausa y salida → nada» en l.5;
+  - «la fila entera» de l.1 a (antes D:1089).
+
+### m.1 S4R4-01 · Los UPDATE que mencionan `balance` (decisión CTO, 12-oct)
+
+**Regla:** todo UPDATE de `sim_sessions` sin firma de alumno que cumpla las tres condiciones es **«dudoso»**:
+- tiene **delta 0**;
+- **menciona `balance`**: la columna es destino del `SET`, cambie o no su valor;
+- se queda **sin pareja** tras el emparejamiento de l.2.
+
+**Da igual que cambie `last_timestamp`.**
+
+**Un dudoso es una incidencia:**
+- **no caduca** y **bloquea el corte** hasta que se resuelve por escrito;
+- **la resolución de los dudosos de delta 0** puede ser «sin efecto económico; posible cierre de pnl 0 perdido, aceptado», **con el visto bueno de Ramón, por sesión** (alcance en m.5.4).
+
+**El emparejamiento ya no da un conjunto por conciliado solo porque le sobre una fila «inocua».** Si sobra una fila que menciona `balance`, es dudosa.
+
+**Siguen sin ser incidencia los UPDATE que NO mencionan `balance`:**
+- guardado periódico `usePairData.js:25`: `{last_timestamp, timeframe}`;
+- cambio de TF `:684`/`:1751`: `{timeframe}`.
+
+El resto de la tabla de l.2 no cambia.
+
+**Cómo sabe el disparador que la sentencia mencionó `balance`: medido** en `revisiones-suite/2026-10-12-sim-004-m-menciona-balance/` (script, salidas, LEEME y SHA256SUMS).
+- **Entorno:** PostgreSQL 17.11 local, PostgREST 16.4 y 13.0.8 (los binarios verificados de k.4) y postgrest-js 2.102.1. Este cliente manda `.update()` como un PATCH con el cuerpo tal cual, sin `?columns=`. Nada de producción.
+- **El mecanismo son dos disparadores en `sim_sessions`:**
+  - **A, `AFTER UPDATE … FOR EACH ROW`:** el registro de l.1 a, con `menciona_balance = false`;
+  - **B, `AFTER UPDATE OF balance … FOR EACH ROW`:** su nombre ordena **después** de A, porque los disparadores del mismo evento se disparan por orden alfabético. Marca `menciona_balance = true` en la última fila de A con la **misma transacción** (`pg_current_xact_id()`) y la **misma sesión**. Si no encuentra exactamente una fila, lanza una **excepción** (sin tragarla, l.4).
+- **`UPDATE OF col` se dispara cuando la columna es destino del `SET`, cambie o no su valor.** OLD/NEW no lo pueden saber: con el mismo valor no hay diferencia.
+- **Resultado, idéntico en las dos versiones:**
+
+| Escritura | Delta | Columnas cambiadas | `menciona_balance` |
+|---|---|---|---|
+| PATCH `{balance}` mismo valor: parcial pnl 0, `_SessionInner.js:1949` | 0 | {} | **true** |
+| PATCH `{balance, last_timestamp}`: pausa, `:1104` | 0 | {last_timestamp} | **true** |
+| PATCH `{last_timestamp, balance, timeframe}`: salida, `:1363` | 0 | {last_timestamp} | **true** |
+| PATCH `{balance, last_timestamp}`: cierre total pnl 0, `useTradingActions.js:67` | 0 | {last_timestamp} | **true** |
+| PATCH `{last_timestamp, timeframe}`: guardado, `usePairData.js:25` | 0 | {last_timestamp} | false |
+| PATCH `{timeframe}`: TF, `:684` | 0 | {timeframe} | false |
+| PATCH `{balance}` con pnl 12,34 | 12,34 | {balance} | true |
+| psql: una sentencia sobre 3 filas `SET balance = balance` | 0 ×3 | {} | true ×3 |
+| psql: una sentencia sobre 2 filas `SET timeframe` | 0 ×2 | {timeframe} | false ×2 |
+| psql: una transacción, 1.ª sin `balance` y 2.ª con `balance`, misma sesión | 0, 0 | {timeframe}, {} | false, true |
+
+- **18 filas para 18 escrituras.**
+- **Control:** sin el disparador A, B no encuentra la fila → la escritura falla (código 1, `sim_registro: marca_balance sin fila de registro`).
+- **Confirma lo que avisó Astra:** la lista de columnas cambiadas **no distingue** la pausa del guardado (`{last_timestamp}` en los dos). `menciona_balance` sí los distingue.
+
+**Columna nueva en el registro:** `menciona_balance` (solo en los UPDATE de `sim_sessions`).
+
+**Oráculos:**
+- **los dos casos de Astra:**
+  - el cierre total con el INSERT fallido resuelto con `{error}` → **dudoso**;
+  - el parcial perdido junto a un cierre total correcto (el UPDATE del parcial consume el trade del total, y sobra el UPDATE del total, que menciona `balance`) → **dudoso**;
+- un cierre de pnl 0 completo y aislado → ninguna;
+- un guardado sin `balance` → ninguna;
+- **la pausa o la salida sin pareja → dudoso.**
+
+**Mutantes → rojo:**
+- «ignorar el delta 0 con cambio de tiempo»;
+- «dar por conciliado lo que solo deja filas inocuas»;
+- «`menciona_balance` sacado de la lista de columnas cambiadas»: la pausa sale como guardado y el caso 1 de Astra pasa;
+- «B ordenado antes que A»: excepción en cada UPDATE con `balance`, o una marca en la fila equivocada.
+
+### m.2 Causa raíz, documentada: el cliente v0 ignora `{error}`
+
+- **Cierre total, `useTradingActions.js:49–68`:** hace `await` del INSERT, pero no mira `error`. Una respuesta `{error}` de Supabase no rechaza la promesa, así que el código sigue hasta el UPDATE de la línea 67.
+- **Parcial `_SessionInner.js:1949–1965`, pausa `:1104` y salida `:1363`:** usan `.then(()=>{}).catch(()=>{})` o un `try` sin mirar el resultado.
+
+Es un **defecto de v0 que ya existe hoy**.
+
+**El cierre atómico de la etapa 1 lo elimina para el cliente nuevo:**
+- la etapa 1 **comprueba `error` en cada escritura**;
+- si falla, **revierte la pantalla y avisa**.
+
+**Oráculo:** una respuesta `{error}` → no queda ni trade ni saldo cambiado, en pantalla ni en la base.
+- **Mutante:** «comprobar solo excepciones (`catch`)» → `{error}` deja el trade en pantalla → rojo.
+
+### m.3 S4R4-02 · Un único criterio para la puerta (sustituye a l.1 c, pasos 1–2)
+
+**Cuándo se activa:** en **lo primero que ocurra** de:
+- **(a)** 72 h seguidas sin escrituras «sin firma de alumno»;
+- **(b)** 7 días desde la instalación del registro.
+
+**Es seguro activarla con pestañas antiguas vivas:**
+- la mitad anterior de un cierre queda registrada y sale como incidencia o dudoso;
+- la posterior se rechaza.
+
+**Se registran:**
+- la **hora del COMMIT de activación**, no la de lanzar la orden;
+- el **`statement_timeout` usado** en la segunda s10 (l.1 c, paso 3, que sigue vigente).
+
+**La activación crea los disparadores de la puerta dentro de una transacción.** Esa es la barrera de drenaje que midió Astra: `CREATE TRIGGER` espera al escritor en vuelo. **Nada de indicadores de configuración leídos sin bloqueo.**
+
+**Exposición máxima de los residuales de l.3 y l.6.1: 7 días desde la instalación del registro.**
+
+### m.4 Lo demás de Astra
+
+- **l.1 a, «la fila entera»** = solo la **lista de nombres de columnas**, nunca el JSON del trade (con `notes`). Se comprueba al escribir la migración.
+- **Las revocaciones** (l.4) van **dentro de la misma migración atómica**, antes de cualquier actividad. El registro ya guarda delta y pnl, que son datos económicos.
+- **Volver a ejecutar sim-004a-preparatoria no puede volver a abrir la puerta.**
+  - Su comprobación de idempotencia conoce los dos estados: **registro instalado**, y **registro + puerta activa**.
+  - En el segundo estado, la reejecución deja la puerta como está y lo verifica.
+  - **Ensayo:** reejecutar con la puerta activa → la escritura de un cliente antiguo sigue rechazada.
+
+### m.5 Autorrevisión adversaria de m
+
+1. **Cómo detecta el disparador que la sentencia mencionó `balance`.**
+   - **Depende de dos cosas de PostgreSQL, las dos medidas:**
+     - `UPDATE OF` se dispara si la columna es destino del `SET`, aunque no cambie;
+     - el orden alfabético de los disparadores del mismo evento.
+   - **Lo que lo rompería, y cómo se caza:**
+     - **otro disparador** que cambie `balance` en un BEFORE: no activa `UPDATE OF`. Hoy el único disparador de `sim_sessions` es `trg_enforce_sim_session_limit`, BEFORE **INSERT** (s04 del 10-oct, fila 164), y sim-003 no crea ninguno. El ensayo de la etapa 1 lo vuelve a comprobar en el catálogo;
+     - **un cambio de nombre** que invierta el orden de A y B: lo caza el mutante de m.1, y la excepción de B no deja pasar el fallo en silencio;
+     - **un INSERT … ON CONFLICT DO UPDATE** que mencione `balance`: también dispara `UPDATE OF`. El v0 no lo usa con `sim_sessions`;
+     - **que PostgREST pase a mandar todas las columnas** en el SET (por ejemplo, con `?columns=`): **todas las pausas y guardados mencionarían `balance`**. Da más dudosos, nunca menos, y el ensayo con PostgREST lo comprobaría.
+   - **Por qué B busca por transacción y sesión, y no por `currval`:** medido con una sentencia que toca 3 filas y con dos sentencias sobre la misma sesión en una transacción. La búsqueda funciona tanto si los disparadores se disparan A1-B1-A2-B2 como A1-A2-B1-B2.
+2. **La pausa frente al cierre.**
+   - La pausa y la salida mencionan `balance` (`balance: balanceRef.current`). **Cada pausa o salida de un cliente antiguo sin pareja es un dudoso.**
+   - **Es lo decidido:** con los datos que hay no se distinguen de un cierre total de pnl 0 cuyo INSERT falló. La pausa (`:1104`) y el cierre total (`:67`) mandan exactamente el mismo cuerpo: `{balance, last_timestamp}`.
+   - **Ruido esperado:** una fila por pausa o salida de pestaña antigua, solo hasta la puerta (≤ 7 días, m.3). Con 5 alumnos y la resolución por sesión es manejable. Se mide en la etapa 1, con s10.
+   - **Si la pausa consume el trade de pnl 0 de un cierre** (están a menos de 10 s), sobra el UPDATE del cierre, que menciona `balance` → dudoso. **Sea cual sea la pareja que se elija, sobra un dudoso.**
+3. **Dos dudosos en la misma sesión.**
+   - **El recuento:** las filas que mencionan `balance` y quedan sin pareja son al menos (UPDATE que mencionan `balance`) − (trades). Si se pierde un trade, sobra uno más.
+   - **Con la regla de m.1 ya no hay ninguna «fila inocua» donde esconderlo:** solo se libran los UPDATE que no mencionan `balance`, y esos no los escribe ningún cierre del v0. Si uno de esos consume un trade, el UPDATE del cierre queda sin pareja → dudoso.
+   - **Sigue residual solo el cruce de l.6.1:** el INSERT de uno y el UPDATE del otro, con pnl iguales. Acotado a 7 días por m.3.
+4. **La resolución por sesión.**
+   - **Propuesta, a confirmar por el CTO al escribir s10:** la resolución enumera **los ids de registro** de los dudosos que cubre, y no cubre los que aparezcan después, por ejemplo uno visto en la segunda s10 (l.1 c) o una pausa posterior. **Si no, una resolución dada a mitad de la ventana taparía un cierre perdido después.**
+   - **Solo cubre dudosos de delta 0.** Un delta ≠ 0 sin pareja sigue necesitando su resolución fila por fila (l.2).
+   - **Una resolución de dudoso no cierra una anomalía** (l.4, dos predicados).
+5. **Lo que m no cambia:**
+   - la tolerancia de 0,01 y los 10 s;
+   - el emparejamiento uno a uno, en el que cualquier UPDATE puede ser pareja (l.2);
+   - las anomalías (l.2);
+   - la lectura del registro entero bajo el `LOCK`.
+
+   **La lectura bajo el `LOCK` cuenta ahora también los dudosos sin resolver.**
