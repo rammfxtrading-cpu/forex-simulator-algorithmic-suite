@@ -662,3 +662,81 @@ No había una sección así en este diseño. La abro con 1F y 3F:
 - **Transición 2→3 del 3F:** la hija de la hija. El orden de bloqueos «padre y después hija» y el borrado en cascada (S003-01, D-17) ya cubren cadenas, pero **no hay un oráculo con tres generaciones**: añadirlo (borrar la raíz deja tres lápidas; un comando en la nieta da 410).
 - **El cupo cuenta raíces:** un 3F ocupa una plaza en sus tres fases, como hoy.
 - **sim-004a crece otra vez,** ahora también con la transición generalizada y `reto@2`. Se suma al punto 2 de i.4.
+
+### j.6 Corrección de j.1 y decisiones del CTO sobre j.2 (12-oct, tarde)
+
+**Prevalece sobre j.1 y j.2 donde choquen.**
+
+**j.1, corregida: hoy el flotante SÍ cuenta para 1F, 2F y 3F.** j.1 describía solo el evaluador del servidor (`lib/challengeEngine.js`), que mira cierres. Pero el **cliente** tiene un detector de quemado dentro de la vela:
+- `components/usePairData.js:73–76` lo llama en cada vela;
+- `components/useChallengeFlow.js:269–415` (`checkChallengeBreach`) lo ejecuta;
+- `lib/trading/breach.js:18–77` (`resolveBreach`) hace el cálculo.
+
+**Qué hace:**
+- **Equity en el peor caso de la vela:** capital + realizado + flotante de los otros pares (a su cierre actual) + el peor flotante del par entre el máximo y el mínimo.
+- **Se compara con dos límites,** cada uno con un margen de 1 céntimo:
+  - el DD total (capital × 10 %);
+  - el DD diario (el límite de la última evaluación del servidor, más lo ya perdido en el día).
+- **Al quemar:**
+  - calcula el precio exacto de quema, lo empuja **medio pip hacia el lado peor** y lo recorta al rango de la vela;
+  - **cierra todas las posiciones** de todos los pares (las del par al precio de quema, las de los otros a su cierre actual);
+  - pausa el replay y abre el modal de fallo.
+- **Después,** el servidor ve el trade cerrado y confirma `failed_dd_*`.
+
+**Reproducido** con las funciones reales (`revisiones-suite/2026-10-12-reglas-de-hoy-1F-3F/`):
+- capital 100.000, 10 lotes de EURUSD comprados a 1,10000, una vela con mínimo 1,0940 (−6.000);
+- resultado: quema en esa vela a **1,09495**, con un trade de **−5.050,00**, y `failed_dd_daily`;
+- igual en 1F, 2F y 3F.
+
+**Defectos de v0 que v1 elimina, porque decide el servidor:**
+1. **El modal de fallo se abre sin confirmación del servidor:** tras tres consultas del estado, abre `failed` diga lo que diga. Si el trade del cierre forzado no llega a guardarse, el alumno ve «quemado» y el servidor dice `active` (y rechazaría el `fail` con 400).
+2. **El límite diario del detector sale del último día con trades** (`ddDailyCapUSD` = balance de inicio del último día registrado × 5 %, `useChallengeFlow.js:304–310`), no necesariamente del día en curso.
+3. Además, el fallo solo queda guardado en la sesión cuando el alumno pulsa el botón del modal (`advance` con `outcome='fail'`).
+
+**j.2, cerrada: las reglas de 1F y 3F son las de hoy, ejecutadas en el servidor por el motor**
+
+1. **El flotante cuenta.**
+   - **Equity en el peor caso dentro de la vela** (máximo y mínimo), con el flotante de **todos** los pares, como `resolveBreach`.
+   - **Al quemar:** se cierran **todas** las posiciones al precio de quema de `breach.js` (con medio pip hacia el lado peor = **5 ticks** en los 9 pares, recortado al rango de la vela).
+   - **El fallo se guarda en el mismo comando**, no al pulsar el modal.
+2. **Base del DD diario:** la de hoy, **5 % del saldo al empezar el día, día de Madrid**.
+   - **2F sigue con las reglas FTMO del motor ya aprobadas** (`FTMO_2STEP`).
+   - **Cada producto lleva su id de reglas.**
+3. **Sin margen:** enteros en µUSD, y **tocar el límite (≤) es fallar**. Fuera el céntimo.
+4. **Paso de fase como hoy:** el alumno lo pide. En 1F, al pedirlo queda completado, sin `avanzar_fase`.
+
+**Condición de hoy para pasar de fase, literal.** No hay un botón «Submit Phase» fijo. El paso se pide desde el modal de fase superada:
+
+| Paso | Dónde | Qué exige |
+|---|---|---|
+| El modal aparece | `components/useChallengeFlow.js:165` | `evalStatus === 'target_reached'` |
+| Qué es `target_reached` | `lib/challengeEngine.js:230` | `pnlTotal >= targetUSD`, **solo con trades cerrados**, y ni DD total ni DD diario quemados (:223–229, que tienen prioridad) |
+| El servidor lo confirma | `pages/api/challenge/advance.js:147` | `outcome === 'pass'` exige `evaluation.status === 'target_reached'`, recalculado sobre los cierres |
+| Bloqueo mientras tanto | `components/useChallengeFlow.js:39–50` | con `target_reached`, `challengeLocked`: ni operaciones nuevas, ni dibujos, ni avanzar el replay. «Posiciones abiertas pueden seguir cerrándose normalmente (SL/TP o manual)» (:39) |
+| **Posiciones abiertas al pasar** | `pages/api/challenge/advance.js:224–232` (fase intermedia) | **se permiten**. El cliente las manda (`open_positions`) y el servidor **las descarta**: ni trade ni saldo («la hija nace virgen»), solo deja un registro en el log |
+| … en la última fase | `pages/api/challenge/advance.js:195–215` | `passed_all` con `balance = balanceNow` (cierres). Las posiciones abiertas **ni se mencionan**: quedan fuera del resultado |
+
+**Por tanto, hoy:**
+- se puede alcanzar el objetivo con cierres y pasar de fase con posiciones abiertas;
+- su flotante, ganador o perdedor, **se pierde** sin entrar en el saldo de la fase;
+- mientras el modal está abierto, el replay está parado, así que esas posiciones no se mueven, salvo que el alumno las cierre a mano al precio del momento.
+
+**Ids de reglas de 1F y 3F: NO congelados.** Sigo la orden del CTO («si hoy las permite, dímelo antes de congelar»). Falta decidir si en v1 el paso de fase:
+- (a) se permite con posiciones abiertas y las descarta, como hoy;
+- (b) se rechaza con posiciones abiertas, como `FTMO_2STEP`;
+- (c) las cierra al precio del momento antes de comprobar el objetivo.
+
+**j.4, ampliada** (oráculos que no dependen de esa respuesta):
+
+| Producto | Oráculo | Mutante que lo pone en rojo |
+|---|---|---|
+| 1F, 2F (v0) y 3F | **Equivalencia v0/v1, el caso del CTO:** capital 100.000; el día empieza en 100.000; 10 lotes de EURUSD comprados a 1,10000 (110000 ticks); velas con mínimo 1,0990 → 1,0940 → 1,0880 → cierre 1,1005. En la vela de mínimo 1,0940: quema DD diario a **1,09495 (109495 ticks)**, trade **−5.050.000.000 µUSD**, `failed_dd_daily` **en el mismo comando**; la vela de −12.000 y el +500 no llegan a ocurrir. v0 = las funciones reales de hoy (`resolveBreach` + `evaluateChallenge`); v1 = el motor con las reglas de 1F/3F. Para 2F, la equivalencia es con v0 (legado); el 2F v1 tiene FTMO_2STEP y su propio oráculo | **evaluar solo cierres:** sin quema; la posición llega a −12.000 y cierra en +500; `active` → rojo |
+| 1F, 3F | quema en el límite exacto: una caída que deja la equity **justo** en el límite (≤) falla; 1 µUSD por encima, sigue | margen de 1 céntimo (10.000 µUSD) |
+| 1F, 3F | medio pip: precio de quema = el exacto ± 5 ticks hacia el lado peor, recortado al rango de la vela | sin empuje, o empuje hacia el lado bueno |
+| 1F, 3F | flotante de **otro** par en la equity del peor caso (dos pares abiertos) | contar solo el par de la vela |
+| 1F, 3F | base del DD diario = saldo al empezar el día de Madrid, con dos días de saldos distintos; un cierre a las 23:30 UTC (ya es el día siguiente en Madrid) | base = capital inicial; día UTC |
+
+**j.5, ampliada (autorrevisión adversaria):**
+- **«Igual que `resolveBreach`» frente a la cartera v1.** `resolveBreach` valora los **otros** pares a su cierre actual, y solo el par de la vela entre su máximo y su mínimo. La cartera v1 (`lib/motor/cartera.mjs`, § 13 de la spec) recorre todos los pares a la vez por el camino sincronizado. Con un solo par dan lo mismo (el oráculo de equivalencia lo comprueba). **Con varios pares pueden quemar en momentos o precios distintos.** No lo decido: o «igual que `resolveBreach`» significa la regla de un solo par generalizada por la cartera, o se replica literalmente su aproximación multipar. Para el CTO y Astra.
+- **El medio pip de empuje** es un artefacto de v0 contra el redondeo IEEE-754 (`breach.js:68–69`). En enteros no hace falta, pero el CTO lo mantiene por equivalencia: el alumno pierde 50 USD más (10 lotes) de lo que marca el límite. Es deliberado y tiene que decirse en pantalla.
+- **Pasar con posiciones abiertas** (pregunta pendiente): con la opción (a), un alumno puede alcanzar el objetivo con cierres teniendo una posición muy perdedora abierta, y pasar descartándola. Hoy, además, el replay se bloquea mientras tanto, así que esa posición ya no puede quemar el DD.
