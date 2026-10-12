@@ -1,0 +1,24 @@
+seccion,objeto,detalle
+secuencia,sim_eventos_id_seq · anon,usage=false · select=false · update=false
+secuencia,sim_eventos_id_seq · authenticated,usage=false · select=false · update=false
+secuencia,sim_eventos_id_seq · PUBLIC,usage=false · select=false · update=false
+secuencia,sim_eventos_id_seq · service_role,usage=false · select=false · update=false
+secuencia,sim_recibos_id_seq · anon,usage=false · select=false · update=false
+secuencia,sim_recibos_id_seq · authenticated,usage=false · select=false · update=false
+secuencia,sim_recibos_id_seq · PUBLIC,usage=false · select=false · update=false
+secuencia,sim_recibos_id_seq · service_role,usage=false · select=false · update=false
+acl,sim_eventos_id_seq,dueño=postgres · relacl={postgres=rwU/postgres}
+acl,sim_recibos_id_seq,dueño=postgres · relacl={postgres=rwU/postgres}
+tabla,sim_alumnos · anon,select=false · insert=false · update=false · delete=false
+tabla,sim_alumnos · authenticated,select=false · insert=false · update=false · delete=false
+tabla,sim_alumnos · service_role,select=false · insert=false · update=false · delete=false
+tabla,sim_arrendamientos · anon,select=false · insert=false · update=false · delete=false
+tabla,sim_arrendamientos · authenticated,select=false · insert=false · update=false · delete=false
+tabla,sim_arrendamientos · service_role,select=false · insert=false · update=false · delete=false
+tabla,sim_eventos · anon,select=false · insert=false · update=false · delete=false
+tabla,sim_eventos · authenticated,select=true · insert=false · update=false · delete=false
+tabla,sim_eventos · service_role,select=true · insert=false · update=false · delete=false
+tabla,sim_recibos · anon,select=false · insert=false · update=false · delete=false
+tabla,sim_recibos · authenticated,select=true · insert=false · update=false · delete=false
+tabla,sim_recibos · service_role,select=true · insert=false · update=false · delete=false
+FIN,s07,consulta
