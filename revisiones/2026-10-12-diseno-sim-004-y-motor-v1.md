@@ -862,3 +862,13 @@ Es `sim_avanzar_fase`, aditiva, versionada y sin editar sim-003 (j.3, punto 3).
 | todos | acceso revocado entre la lectura y el bloqueo: `403 sin_acceso`, sin efectos (S003-04) | leer el acceso antes de los bloqueos |
 | todos | `sim_borrar_sesion` sobre `superado` → lápida; en una cadena 3F, desde la raíz, las tres lápidas | borrado rechazado sobre `superado`, o una fase que no se arrastra |
 | — | segunda ejecución de sim-004a: comprueba y no cambia nada; sim-003 sobre una base con sim-004a **aborta** con el mensaje de definición distinta (documentado, no un fallo) | sim-004a que no compara la definición nueva |
+
+### j.9 sim-003 queda superada por sim-004a (CTO, 12-oct)
+
+- **sim-003 no se toca:** su sha256 aplicado (`2a74bcb3…`) sigue siendo el de `sql/APLICADOS.md`. La nota está en `sql/APLICADOS.md` desde ahora.
+- **La cabecera de sim-004a lleva, literal:** «a partir de sim-004a, sim-003 queda superada y NO se vuelve a ejecutar; la referencia del esquema pasa a ser la comprobación final de sim-004a, que verifica también los objetos de sim-003 que no cambia».
+- **La comprobación final de sim-004a cubre:** las definiciones nuevas (`sim_sessions_terminal_valida` con `'superado'`, `sim_eventos.tipo` con `hueco_aceptado`, las RPC generalizadas) **y** todas las de la sección 8 de sim-003 que sim-004a no cambia (restricciones, índices únicos, políticas, funciones con su ACL), comparadas al pie de la letra.
+- **Prueba obligatoria en el ensayo de sim-004a:** ejecutar sim-003 **después** de sim-004a.
+  - **Resultado exigido:** aborta con su error prefijado (`sim-003: …`, la definición distinta) **y el catálogo es idéntico antes y después**. La foto de catálogo es la de s04/s06 más las definiciones de sim-003/sim-004a, comparada como multiconjunto.
+  - Así, una ejecución por error no hace daño.
+  - **Control:** un mutante de sim-003 sin esa comprobación de definición cambiaría el catálogo → rojo.
