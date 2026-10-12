@@ -43,10 +43,14 @@ const historial = hasta => { const v = []; for (let t = Date.parse('2026-01-02T0
 const todos = () => Object.fromEntries(NUEVE.map(p => [`${p}/M1/2026.json`, JSON.stringify(historial('2026-02-01'))]))
 const filas = dia => JSON.stringify(new Date(dia + 'T00:00:00Z').getUTCDay() === 0 ? diaM1(dia).slice(22 * 60) : diaM1(dia))
 const corre = (argv = [], env = {}) => correScript('scripts/actualizar-diario.js', { ahora: '2026-02-03T06:00:00Z', argv: ['--subir', ...argv], env: { ...ENV, ...env } })
-const descargas = ruta => db.log.filter(l => l.op === 'download' && l.payload === ruta).length
+// descargas del año de un par, en cualquiera de los dos formatos (un 404 no es descarga)
+const descargas = ruta => db.log.filter(l => l.op === 'download' && (l.payload === ruta || l.payload === ruta + '.gz') && l.encontrado !== false).length
 const linea = (r, par) => r.salida.find(l => l.includes(`${par}/M1`)) ?? ''
 const bien = () => { proveedor.http = (url, n, { dia }) => ({ status: 200, body: filas(dia) }) }
 const AUD = 'AUDUSD/M1/2026.json'
+// lo que publica el actualizador: desde el 9-oct (un solo formato) el .json.gz
+const AUD_GZ = AUD + '.gz'
+const esAUD = r => r === AUD || r === AUD_GZ
 
 titulo('1 · --pares AUDUSD,GBPUSD')
 escenario({ storage: { 'forex-data': todos() } }); bien()
@@ -63,14 +67,15 @@ titulo('2 · una publicacion: el año se descarga una vez y se verifica por meta
 escenario({ storage: { 'forex-data': todos() } }); bien()
 const bytesAntes = Buffer.byteLength(db.storage['forex-data'][AUD])
 const r2 = await corre(['--pares', 'AUDUSD'])
-const sub2 = db.log.find(l => l.op === 'upload' && l.payload?.ruta === AUD)
-const sha2 = createHash('sha256').update(db.storage['forex-data'][AUD]).digest('hex')
+const sub2 = db.log.find(l => l.op === 'upload' && esAUD(l.payload?.ruta))
+const RUTA2 = sub2?.payload?.ruta ?? AUD
+const sha2 = createHash('sha256').update(db.storage['forex-data'][RUTA2] ?? '').digest('hex')
 oraculo('BF05', 'AUDUSD publica el 2-feb y su año se descargo UNA sola vez en toda la pasada', /SUBIDO.*verificado/.test(linea(r2, 'AUDUSD')) && descargas(AUD) === 1, `${descargas(AUD)} descargas · ${linea(r2, 'AUDUSD')}`)
 oraculo('BF05', 'el job dice la transferencia que hizo: 1 descarga y sus bytes exactos', r2.salida.some(l => new RegExp(`Transferencia.*: 1 descarga\\(s\\), ${bytesAntes} bytes`).test(l)), r2.salida.find(l => /Transferencia/.test(l)) ?? `(sin linea; esperados ${bytesAntes} bytes)`)
 // CTO 6-oct: el job imprime los tiempos reales de Storage para ajustar los plazos
 const tiempos2 = r2.salida.find(l => /Tiempos de Storage/.test(l)) ?? ''
-oraculo('BF05', 'el job imprime los tiempos reales de Storage por tipo (lectura, subida, info, cerrojo) con sus plazos', /plazos 20000\/120000/.test(tiempos2) && /lectura 1× max \d+/.test(tiempos2) && /subida 1× max \d+/.test(tiempos2) && /info \d+× max \d+/.test(tiempos2) && /cerrojo \d+× max \d+/.test(tiempos2), tiempos2 || '(sin linea)')
-oraculo('BF05', 'la subida lleva el sha256 del cuerpo en sus metadatos (hash local)', db.metadatos?.['forex-data']?.[AUD]?.sha256 === sha2, JSON.stringify(db.metadatos?.['forex-data']?.[AUD] ?? null))
+oraculo('BF05', 'el job imprime los tiempos reales de Storage por tipo (lectura, subida, info, cerrojo) con sus plazos', /plazos 20000\/120000/.test(tiempos2) && /lectura \d+× max \d+/.test(tiempos2) && /subida 1× max \d+/.test(tiempos2) && /info \d+× max \d+/.test(tiempos2) && /cerrojo \d+× max \d+/.test(tiempos2), tiempos2 || '(sin linea)')
+oraculo('BF05', 'la subida lleva el sha256 del cuerpo en sus metadatos (hash local)', db.metadatos?.['forex-data']?.[RUTA2]?.sha256 === sha2, JSON.stringify(db.metadatos?.['forex-data']?.[RUTA2] ?? null))
 
 titulo('3 · otro escritor cambia el año despues de la lectura inicial')
 escenario({ storage: { 'forex-data': todos() } })
@@ -89,7 +94,7 @@ oraculo('BF05', 'firma distinta bajo el cerrojo: se relee (2 descargas) y se pub
 titulo('4 · otro escritor pisa justo despues de la subida')
 escenario({ storage: { 'forex-data': todos() } }); bien()
 let pisa = false
-db.trasAplicar = async c => { if (c.payload === AUD && !pisa) { pisa = true; await otro.storage.from('forex-data').upload(AUD, JSON.stringify(historial('2026-01-30')), { upsert: true }) } }
+db.trasAplicar = async c => { if (esAUD(c.payload) && !pisa) { pisa = true; await otro.storage.from('forex-data').upload(c.payload, JSON.stringify(historial('2026-01-30')), { upsert: true }) } }
 const r4 = await corre(['--pares', 'AUDUSD'])
 db.trasAplicar = null
 oraculo('BF05', 'la verificacion por metadatos lo detecta: «no verificado» (codigo 1), y sin descargar mas de dos veces', /PUBLICACION/.test(linea(r4, 'AUDUSD')) && /no verificado/.test(linea(r4, 'AUDUSD')) && r4.codigo === 1 && descargas(AUD) <= 2, `${descargas(AUD)} descargas · codigo ${r4.codigo} · ${linea(r4, 'AUDUSD')}`)

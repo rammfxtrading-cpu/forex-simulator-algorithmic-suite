@@ -7,9 +7,11 @@
 //   node scripts/actualizar-diario.js          -> SECO (no sube, dice qué haría)
 //   node scripts/actualizar-diario.js --subir   -> SUBE de verdad
 //   ... --pares AUDUSD,GBPUSD                   -> solo esos pares (bloque G, punto 11)
-// Transferencia (bloque G, punto 11): cada par descarga su año como mucho DOS
-// veces por pasada (lectura inicial; relectura solo si cambio bajo el cerrojo;
-// verificacion por metadatos). El estado final no descarga nada.
+// Transferencia (bloque G, punto 11): en los intentos ORDINARIOS cada par
+// descarga su año como mucho DOS veces por pasada (lectura inicial; relectura
+// solo si cambio bajo el cerrojo; verificacion por metadatos); un sha256 que no
+// cuadra añade UN reintento por descarga (MD-05/MDC-02), contado en el tope si
+// lo hay. El estado final no descarga nada.
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
 
@@ -94,10 +96,10 @@ const PRESUPUESTO_PAR_MS = segs(process.env.PRESUPUESTO_PAR_S, 4 * 60) * 1000
 // (checkout y npm ci dentro) quedan ~6 min para el estado final.
 let RESERVA_MS
 // CTO 6-oct (tras la sonda 1: 69 de 75 peticiones con HTTP 429): 3 intentos por
-// dia y una pausa entre dias (PAUSA_DIA_S, 5 s por defecto). Un 429 que no se
-// puede esperar (sin Retry-After o sin presupuesto) CORTA EL JOB ENTERO: ni otros
-// dias ni otros pares; lo contiguo ya descargado se publica y el job sale con
-// el codigo de «proveedor no disponible» (2).
+// dia y una pausa entre dias (PAUSA_DIA_S, 5 s por defecto). CTO 9-oct (Astra
+// MD-03): CUALQUIER 429, tambien con Retry-After, CORTA EL JOB ENTERO en ese
+// momento: ni otros dias ni otros pares; lo contiguo ya descargado se publica
+// y el job sale con el codigo de «proveedor no disponible» (2).
 const INTENTOS_DIA = 3
 const PAUSA_DIA_MS = segs(process.env.PAUSA_DIA_S, 5) * 1000
 let CORTE_429 = null      // 'PAR dia: motivo' cuando el proveedor limita
@@ -157,7 +159,63 @@ const ymd = ms => new Date(ms).toISOString().slice(0, 10)
 const TRANSFERENCIA = { n: 0, bytes: 0 }
 // LIM: los plazos de Storage y la lista de tiempos reales de esta pasada (se imprime)
 let LIM
-const leerAnio = async (pair, year) => { const x = await F.leerConFirma(sb, pair, year, LIM); if (x.estado !== 'no-existe') { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += x.bytes || 0 } return x }
+// CACHE y TOPE (mercado diario, CTO 9-oct-2026; lib/mercado/cache-anual.mjs):
+//   MERCADO_CACHE=carpeta  copia local de cada año; antes de usarla, info() (sin
+//                          descargar) tiene que dar la misma huella; si no, se
+//                          descarga y se reescribe. Tras publicar se guarda lo
+//                          subido: el dia siguiente no descarga nada.
+//   MERCADO_TOPE_BYTES=N   tope de bytes de objetos anuales descargados en esta
+//                          ejecucion: una descarga que lo pasaria no se hace
+//                          (el par queda sin comprobar, codigo 3).
+// Sin ninguna de las dos (el modo manual), se lee como siempre.
+let CACHE = null, TOPE = null
+const CACHE_LOG = []   // una linea por año leido con la cache: valida (0 bytes) o por que se descargo y cuanto
+const cabe = (size, extra = 0) => TOPE == null || (Number.isFinite(size) && TRANSFERENCIA.bytes + extra + size <= TOPE)
+const leerAnio = async (pair, year) => {
+  // (sin cache ni tope, el modo manual: info() y lo vigente, como leerConFirma, con la comprobacion del sha256 de MD-05)
+  const P = `${pair.toUpperCase()} ${year}`
+  const i = await F.infoVigente(sb, pair, year, LIM)
+  let porque = 'sin copia'
+  if (CACHE && i.estado === 'ok') {
+    const c = CACHE.lee(pair, year, i)
+    if (c.crudo) {
+      const d = F.decodifica(c.crudo, i.ruta)
+      if (d.estado === 'ok') { CACHE_LOG.push(`${P}: cache valida (misma huella que ${i.ruta}), 0 bytes descargados`); return { ...d, ruta: i.ruta, firma: i.firma, bytes: 0 } }
+      porque = 'copia ilegible'; CACHE.olvida(pair, year)
+    } else porque = c.motivo
+  }
+  // Astra MD-01: con tope, la descarga va ATADA a esta info(): su ruta, su
+  // tamaño (cortada al pasar de el) y su identidad. Sin objeto, no se descarga
+  // (si aparece despues, lo vera el publicador bajo el cerrojo, tambien atado);
+  // sin tamaño, o si no cabe, tampoco (codigo 3).
+  if (TOPE != null) {
+    if (i.estado === 'no-existe') return { estado: 'no-existe' }
+    if (i.estado === 'error') return { estado: 'tope', ruta: F.rutaEscritura(pair, year), motivo: `tope de descarga: info() fallo (${i.motivo}) y sin el tamaño no se descarga` }
+    if (i.size == null) { CACHE_LOG.push(`${P}: ${porque}; NO se descarga: info() sin tamaño`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: info() de ${i.ruta} sin tamaño; no se descarga` } }
+    if (!cabe(i.size)) { CACHE_LOG.push(`${P}: ${porque}; NO se descarga: tope de descarga (${i.size} bytes; ya ${TRANSFERENCIA.bytes} de ${TOPE})`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: ${i.ruta} (${i.size} bytes) no cabe (ya descargados ${TRANSFERENCIA.bytes} de ${TOPE})` } }
+  }
+  // MD-05: el sha256 del cuerpo tiene que ser el de los metadatos (si los hay)
+  const shaMeta = i.estado === 'ok' ? i.metadata?.sha256 ?? null : null
+  const lee = () => TOPE != null ? F.leerRuta(sb, i.ruta, LIM, { crudo: true, tope: { max: i.size, etag: i.etag, size: i.size }, sha256: shaMeta }).then(r => ({ ...r, ruta: i.ruta })) : F.leerVigente(sb, pair, year, LIM, { crudo: true, sha256: shaMeta })
+  // un intento fallido cuenta lo recibido y, si no se sabe, el tamaño esperado (MD-01)
+  // (MDC-01: tambien el cuerpo de un 404 que llego, si se conoce)
+  const cuenta = r => { const c = r.bytes ?? (r.estado === 'error' && i.estado === 'ok' ? i.size ?? 0 : 0); if (r.estado !== 'no-existe' || c) { TRANSFERENCIA.n++; TRANSFERENCIA.bytes += c } return c }
+  let x = await lee()
+  let contados = cuenta(x)
+  if (x.shaDistinto) {
+    // UN reintento, dentro del tope; si sigue sin cuadrar: «no verificado» (codigo 1)
+    if (TOPE != null && !cabe(i.size)) { CACHE_LOG.push(`${P}: el sha256 no cuadra y el reintento no cabe en el tope`); return { estado: 'tope', ruta: i.ruta, motivo: `tope de descarga: el reintento por sha256 de ${i.ruta} no cabe` } }
+    CACHE_LOG.push(`${P}: el sha256 del cuerpo no es el de los metadatos; un reintento`)
+    x = await lee(); contados += cuenta(x)
+    if (x.shaDistinto) x = { estado: 'error', ruta: x.ruta ?? i.ruta, motivo: `no verificado: el sha256 del cuerpo no es el de los metadatos (la descarga y su reintento)` }
+  }
+  if (x.estado === 'tope') { CACHE_LOG.push(`${P}: ${porque}; descarga CORTADA (${x.motivo}); contados ${contados} bytes`); return { estado: 'tope', ruta: i.ruta, motivo: x.motivo } }
+  const firma = i.estado === 'ok' && x.estado === 'ok' && i.ruta === x.ruta ? i.firma : null
+  if (x.estado !== 'no-existe') CACHE_LOG.push(`${P}: ${porque}, descargados ${contados} bytes de ${x.ruta}`)
+  if (CACHE && x.estado === 'ok' && !CACHE.guarda(pair, year, { ruta: x.ruta, firma, crudo: x.crudo, shaRemoto: i.metadata?.sha256 ?? null })) CACHE_LOG.push(`${P}: la copia no se guarda (sin firma, o el objeto cambio durante la descarga)`)
+  delete x.crudo
+  return { ...x, firma }
+}
 
 // Dias a pedir de `year` hasta `ayerMs` (incluido): la cola y los dias del
 // interior PENDIENTES (bloque G, punto 7: laborables cortos y, desde BF-01,
@@ -220,12 +278,13 @@ function componer(pair, guardadas, bajados) {
 
 // Baja los dias pendientes y los publica por la funcion comun.
 async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = Infinity) {
-  const keyFile = F.rutaEscritura(pair, year)     // .json; .json.gz solo con MERCADO_GZIP=1
+  const keyFile = F.rutaEscritura(pair, year)     // .json.gz (un solo formato, CTO 9-oct)
   const leido = await leerAnio(pair, year)
   // Bloque G, punto 10: cada resultado lleva el año y su contenido FINAL
   // conocido (lo verificado al publicar o, si no se publico, lo leido): el
   // veredicto se calcula con el, sin volver a descargar el año.
   if (leido.estado === 'error') return { keyFile, anio: year, final: null, estado: `✗ no se pudo leer ${leido.ruta}: ${leido.motivo}` }
+  if (leido.estado === 'tope') return { keyFile, anio: year, final: null, tope: true, presupuesto: [`${leido.ruta} sin leer (${leido.motivo})`], estado: `✗ TOPE DE DESCARGA ${keyFile}: no se lee el año ni se pide nada al proveedor (${leido.motivo})` }
   const nuevoAnio = leido.estado === 'no-existe'
   const velas = nuevoAnio ? [] : leido.velas
   const pendientes = diasPendientes(pair, velas, year, ayerMs)
@@ -274,8 +333,15 @@ async function reconciliaAnio(pair, year, ayerMs, limite = Infinity, finJob = In
   }
   // BF-03: no se empieza a publicar sin la reserva para terminar (ni se toma el cerrojo)
   if (Date.now() + RESERVA_MS > finJob) return { ...base, sinTiempo: true, estado: `✗ SIN TIEMPO PARA PUBLICAR ${keyFile}: no queda la reserva (${RESERVA_MS / 1000} s); lo bajado se descarta y se repite en la pasada siguiente${nota}` }
-  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido, limites: LIM })
+  const r = await F.publicarAnio(sb, { pair, year, componer: g => componer(pair, g, bajados), dueno: 'actualizar-diario', previo: leido, limites: LIM, ...(TOPE != null ? { topeRestante: ya => TOPE - TRANSFERENCIA.bytes - ya } : {}) })
   TRANSFERENCIA.n += r.descargado?.n || 0; TRANSFERENCIA.bytes += r.descargado?.bytes || 0
+  if (r.descargado?.n) CACHE_LOG.push(`${pair.toUpperCase()} ${year}: al publicar, descargados ${r.descargado.bytes} bytes (relectura o verificacion)`)
+  // la copia del dia siguiente: el cuerpo subido y la firma de la verificacion (por metadatos)
+  if (CACHE && r.estado === 'publicado') {
+    if (r.cuerpo && r.firma && CACHE.guarda(pair, year, { ruta: r.ruta, firma: r.firma, crudo: r.cuerpo })) CACHE_LOG.push(`${pair.toUpperCase()} ${year}: copia actualizada con lo publicado (${r.cuerpo.length} bytes)`)
+    else { CACHE.olvida(pair, year); CACHE_LOG.push(`${pair.toUpperCase()} ${year}: publicado sin firma verificada por metadatos: la copia se borra`) }
+  }
+  if (r.estado === 'tope') return { ...base, tope: true, presupuesto: [...presupuesto, `${keyFile}: ${r.problemas.join(' · ')}`], estado: `✗ TOPE DE DESCARGA ${keyFile}: el año cambio bajo el cerrojo y releerlo pasaria el tope; lo bajado se descarta y se repite en la pasada siguiente${nota}` }
   const avisos = (r.avisos || []).length ? ` (aviso: ${r.avisos.join(' · ')})` : ''
   if (r.estado === 'publicado') return { ...base, final: r.final, estado: `✓ SUBIDO ${keyFile}: ${resumen(r.velas)}, verificado${avisos}${nota}` }
   if (r.estado === 'sin-cambios') return { ...base, final: r.final ?? velas, estado: `✓ ${keyFile}: lo releido ya tenia lo bajado, nada que subir${nota}` }
@@ -290,7 +356,7 @@ async function procesarPar(pair, finJob = Infinity) {
   const year = hoy.getUTCFullYear()
   const anios = hoy.getUTCMonth() === 0 ? [year - 1, year] : [year]   // en enero, tambien el 31-dic anterior
   const partes = [], fallidos = [], presupuesto = [], finales = []
-  let sinTiempoPublicar = false, publicacion = false
+  let sinTiempoPublicar = false, publicacion = false, tope = false
   for (const y of anios) {
     if (CORTE_429) break
     if (Date.UTC(y, 0, 1) > ayerMs) continue           // el 1-ene aun no ha cerrado: nada que pedir de ese año
@@ -298,10 +364,11 @@ async function procesarPar(pair, finJob = Infinity) {
     partes.push(r.estado); fallidos.push(...(r.fallidos || [])); presupuesto.push(...(r.presupuesto || []))
     if (r.sinTiempo) sinTiempoPublicar = true
     if (r.publicacion) publicacion = true
+    if (r.tope) tope = true
     finales.push({ anio: y, velas: r.final })
   }
   const fallo = partes.find(p => p.startsWith('✗'))
-  return { pair, fallidos, presupuesto, publicacion, finales, sinTiempo: sinTiempoPublicar, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
+  return { pair, fallidos, presupuesto, publicacion, finales, tope, sinTiempo: sinTiempoPublicar, estado: fallo ? fallo + (partes.length > 1 ? ` | ${partes.filter(p => p !== fallo).join(' | ')}` : '') : partes.join(' | ') || '✓ nada que hacer hoy' }
 }
 
 async function main() {
@@ -326,9 +393,21 @@ async function main() {
   const L = await import('../lib/mercado/limites.mjs')
   // BF-03: cada peticion HTTP a Storage se corta a su plazo (storage-js solo
   // acepta señal en download; asi tambien upload, info y remove)
-  sb = createClient(url, key, { global: { fetch: L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs) } })
+  // MD-01: por fuera, el tope en la recepcion de las descargas atadas (fetchConTope)
+  sb = createClient(url, key, { global: { fetch: L.fetchConTope(L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs)) } })
   LIM = { ...F.LIMITES, tiempos: [] }
   RESERVA_MS = segs(process.env.RESERVA_PUBLICAR_S, F.tiempoMaximoPublicar() / 1000) * 1000
+  if (process.env.MERCADO_TOPE_BYTES != null && process.env.MERCADO_TOPE_BYTES !== '') {
+    if (!/^\d+$/.test(process.env.MERCADO_TOPE_BYTES)) {
+      console.log('MERCADO_TOPE_BYTES no valido: tiene que ser un entero de bytes (0 o mas)')
+      console.log('\n=== ⚠️ ATENCION: no se ha hecho nada (MERCADO_TOPE_BYTES no valido) (codigo 4) ===')
+      process.exitCode = 4
+      return
+    }
+    TOPE = Number(process.env.MERCADO_TOPE_BYTES)
+  }
+  // MD-05: la cache, por proyecto (el host de la URL, que no se escribe) y bucket
+  if (process.env.MERCADO_CACHE) CACHE = (await import('../lib/mercado/cache-anual.mjs')).creaCache(process.env.MERCADO_CACHE, { proyecto: new URL(url).host })
   console.log(`\n=== ACTUALIZACIÓN DIARIA ${SUBIR?'⚠️ REAL':'🔍 SECO'} — ${new Date().toISOString()}${PAIRS.length < TODOS.length ? ` — solo ${PAIRS.map(p => p.toUpperCase()).join(', ')}` : ''} ===\n`)
   const resultados = []
   const finJob = Date.now() + PRESUPUESTO_JOB_MS
@@ -404,6 +483,7 @@ async function main() {
     // el año mas reciente con datos de los que proceso el par
     const fin = [...(r.finales || [])].reverse().find(f => f.velas?.length)
     if (!fin) {
+      if (r.tope) { console.log(`  ${P} — sin comprobar (tope de descarga)`); continue }
       if (r.sinTiempo && !(r.finales || []).length) { console.log(`  ${P} — sin comprobar (sin tiempo)`); continue }
       if (r.cortado429) { console.log(`  ${P} — sin comprobar (job cortado por HTTP 429)`); continue }
       console.log(`  ${P} ✗ no legible`); descolgados.push(`${pair.toUpperCase()}: archivo no legible${r.error ? ' (error)' : ''}`); continue
@@ -426,7 +506,8 @@ async function main() {
     console.log(`\n=== DESCOLGADO(S) O INCOMPLETO(S) — ${descolgados.length} ===`)
     descolgados.forEach(d=>console.log(`  ${d}`))
   }
-  console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes`)
+  console.log(`\n  Transferencia (objetos anuales leidos del bucket): ${TRANSFERENCIA.n} descarga(s), ${TRANSFERENCIA.bytes} bytes${TOPE != null ? ` (tope ${TOPE})` : ''}`)
+  if (CACHE || TOPE != null) { console.log(`  Cache de años (${CACHE ? 'MERCADO_CACHE' : 'sin cache'}):`); CACHE_LOG.forEach(l => console.log(`    ${l}`)) }
   console.log(`  Tiempos de Storage (ms; plazos ${LIM.pequenaMs}/${LIM.grandeMs}): ${F.resumenTiempos(LIM.tiempos)}`)
   // M-03: los objetivos, con lo que cada par ya leyo o verifico (sin descargar)
   const objetivosMal = []
@@ -437,7 +518,7 @@ async function main() {
       const r = resultados.find(x => x.pair === par.toLowerCase()) || {}
       const fin = (r.finales || []).find(f => f.anio === Number(dia.slice(0, 4)))
       let linea, ok = false
-      if (!fin || !Array.isArray(fin.velas)) linea = `✗ no comprobado (${r.cortado429 ? 'job cortado por HTTP 429' : r.sinTiempo ? 'sin tiempo' : 'año no leido'})`
+      if (!fin || !Array.isArray(fin.velas)) linea = `✗ no comprobado (${r.cortado429 ? 'job cortado por HTTP 429' : r.tope ? 'tope de descarga' : r.sinTiempo ? 'sin tiempo' : 'año no leido'})`
       else {
         const vd = fin.velas.filter(v => ymd(v.time * 1000) === dia)
         const e = estadoDe(par.toLowerCase(), dia, vd)

@@ -18,7 +18,7 @@
 // antes de subir, valida con lib/mercado/calidad.mjs, ningun dia con menos
 // velas que lo releido, verifica despues). Cobertura exigida: cada dia
 // laborable del 1-ene a AYER; las excepciones son por FECHA (festivos), ya no
-// una cantidad tolerada de dias. Sube .json (.json.gz solo con MERCADO_GZIP=1).
+// una cantidad tolerada de dias. Sube .json.gz (un solo formato, CTO 9-oct).
 const fs = require('fs')
 const { getHistoricalRates } = require('dukascopy-node')
 const { createClient } = require('@supabase/supabase-js')
@@ -71,7 +71,7 @@ async function main() {
   const ayerSeg = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() - 1) / 1000
   const fallos = []
   for(const pair of PAIRS) {
-    const path = F.rutaEscritura(pair, YEAR)     // .json; .json.gz solo con MERCADO_GZIP=1
+    const path = F.rutaEscritura(pair, YEAR)     // .json.gz (un solo formato, CTO 9-oct)
     try {
       console.log(`↓ ${pair.toUpperCase()}...`)
       const data = await downloadWithRetry(pair)

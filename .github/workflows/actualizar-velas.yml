@@ -7,7 +7,8 @@ name: Actualizar velas (manual)
 #     (PAR:AAAA-MM-DD; vacia = EURUSD de ayer), con sus cabeceras de limite.
 #     No lee ni escribe Storage y este paso NO recibe la clave de servicio.
 #   · modo recuperar: scripts/actualizar-diario.js --subir --pares <PAR>, con
-#     UN solo par por ejecucion y MERCADO_GZIP sin definir. Con «objetivo»
+#     UN solo par por ejecucion; publica .json.gz como todos los escritores
+#     (CTO 9-oct: un solo formato). Con «objetivo»
 #     (PAR:AAAA-MM-DD,...), el job dice si cada dia quedo completo y sale
 #     distinto de 0 si alguno no (Astra M-03, CTO 7-oct).
 # Ninguna clave ni URL en el log. Desde aqui no se libera ningun cerrojo.
@@ -98,7 +99,6 @@ jobs:
             exit 4
           fi
           # <<< valida-objetivo
-          unset MERCADO_GZIP
           set +e
           node scripts/actualizar-diario.js --subir --pares "$PARES" ${OBJETIVO:+--objetivo "$OBJETIVO"}
           c=$?

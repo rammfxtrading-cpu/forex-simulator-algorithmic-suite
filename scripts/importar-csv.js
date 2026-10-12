@@ -32,7 +32,7 @@
 // completo (calidad.estadoDia, con la lista de dias aceptados).
 // Codigos: 0 bien · 1 no publicado, objetivo incompleto o cerrojo · 4 entrada no
 // valida (tambien si el CSV no casa con lo guardado, aunque sea bajo el cerrojo).
-// Clave por nombre (como el resto de scripts), nunca impresa. MERCADO_GZIP: sin tocar.
+// Clave por nombre (como el resto de scripts), nunca impresa. Publica .json.gz (un solo formato, CTO 9-oct).
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
 

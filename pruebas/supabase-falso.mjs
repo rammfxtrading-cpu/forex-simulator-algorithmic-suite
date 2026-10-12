@@ -23,6 +23,11 @@
 //                     (upload con options.metadata; info los devuelve en
 //                     `metadata`, como el tipo FileObjectV2 de storage-js 2.102)
 //   db.infoSinMetadatos → true: info no devuelve `metadata` (bloque G, punto 11)
+//   db.infoSinTamano  → true: info devuelve size null (Astra MD-01)
+//   db.infoSinEtag    → true: info no devuelve etag (Astra MDC2-02; la version sigue)
+//   db.getSinEtag     → true: la descarga no lleva etag. Si no, una descarga atada
+//                       (lib/mercado/limites.mjs, con señal) recibe la etag del
+//                       contenido servido, como el GET real (apuntaRespuesta)
 //                       (se devuelve un error de transporte, como supabase-js ante
 //                       un fetch roto a la vuelta)
 //   db.log            cada operacion: { cliente, tabla, op, payload, filtros }
@@ -30,7 +35,7 @@ import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, infoSinTamano: false, infoSinEtag: false, getSinEtag: false, log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -157,9 +162,10 @@ class Q {
 // que no esta da error. Los errores se DEVUELVEN ({ data, error }), no se lanzan.
 function bucket(nombre) {
   const objetos = () => db.storage[nombre]
-  const op = async (tipo, payload) => {
+  const op = async (tipo, payload, marca = null) => {
     await tick()
     const ctx = { cliente: quien, tabla: 'storage:' + nombre, op: tipo, payload, filtros: [] }
+    if (marca) marca.ctx = ctx
     db.log.push(ctx)
     if (db.pausa) await db.pausa(ctx)
     return (db.falla && await db.falla(ctx)) || null
@@ -167,13 +173,22 @@ function bucket(nombre) {
   const noExiste = { data: null, error: { message: 'Bucket not found', statusCode: '404' } }
   const NO_ENCONTRADO = { name: 'StorageApiError', message: 'Object not found', status: 400, statusCode: '404' }
   return {
-    async download(ruta) {
-      const err = await op('download', ruta); if (err) return { data: null, error: err }
-      if (!objetos()) return noExiste
+    // en el log, encontrado: false si la descarga dio 404 (lo que no existe no
+    // se descarga: las pruebas de transferencia cuentan solo las reales)
+    async download(ruta, opciones, parametros) {
+      const m = {}
+      const err = await op('download', ruta, m); if (err) return { data: null, error: err }
+      if (!objetos()) { m.ctx.encontrado = false; return noExiste }
       // como storage-js 2.102: la API responde 400 con cuerpo { statusCode: '404',
       // error: 'not_found', message: 'Object not found' } → StorageApiError
-      if (!Object.hasOwn(objetos(), ruta)) return { data: null, error: NO_ENCONTRADO }
+      if (!Object.hasOwn(objetos(), ruta)) { m.ctx.encontrado = false; return { data: null, error: NO_ENCONTRADO } }
       const blob = new Blob([objetos()[ruta]], { type: 'application/octet-stream' })
+      // la descarga atada ve el estado, la etag y los bytes como el envoltorio real (MDC2-02)
+      if (parametros?.signal) {
+        const L = await import('../lib/mercado/limites.mjs').catch(() => null)
+        const c = objetos()[ruta]
+        L?.apuntaRespuesta?.(parametros.signal, { status: 200, etag: db.getSinEtag ? null : `"${createHash('sha256').update(c).digest('hex').slice(0, 32)}"`, bytes: Buffer.byteLength(c) })
+      }
       // db.entrega(ctx): retiene la ENTREGA de un contenido ya leido (la lectura
       // vio la version de ese instante; la respuesta llega despues)
       if (db.entrega) await db.entrega({ cliente: quien, tabla: 'storage:' + nombre, op: 'download', payload: ruta })
@@ -188,7 +203,7 @@ function bucket(nombre) {
       const c = objetos()[ruta]
       const etag = createHash('sha256').update(c).digest('hex').slice(0, 32)
       const metadata = db.infoSinMetadatos ? undefined : (db.metadatos[nombre]?.[ruta] ?? null)
-      return { data: { name: ruta, etag, version: etag, size: Buffer.byteLength(c), lastModified: null, contentType: null, ...(metadata === undefined ? {} : { metadata }) }, error: null }
+      return { data: { name: ruta, ...(db.infoSinEtag ? {} : { etag }), version: etag, size: db.infoSinTamano ? null : Buffer.byteLength(c), lastModified: null, contentType: null, ...(metadata === undefined ? {} : { metadata }) }, error: null }
     },
     // texto o binario (Blob, Buffer, Uint8Array), como el real
     async upload(ruta, cuerpo, o = {}) {
@@ -203,12 +218,24 @@ function bucket(nombre) {
       if (db.trasAplicar) await db.trasAplicar({ cliente: quien, tabla: 'storage:' + nombre, op: 'upload', payload: ruta })
       return { data: { path: ruta }, error: null }
     },
+    // como POST /object/list de Storage (storage-js 2.102 devuelve el JSON tal cual):
+    // UN nivel bajo el prefijo ('' = la raiz), por nombre; una carpeta es
+    // { name, id: null, metadata: null } y un objeto { name, id, metadata: { size, eTag } }.
+    // (Antes devolvia rutas enteras sin carpetas ni tamaños: una suma de bytes aprobaba en vacio.)
     async list(prefijo = '', o = {}) {
       const err = await op('list', { prefijo, ...o }); if (err) return { data: null, error: err }
       if (!objetos()) return noExiste
       const lim = o.limit ?? 100, off = o.offset ?? 0
-      const nombres = Object.keys(objetos()).filter(n => n.startsWith(prefijo + '/')).map(n => n.slice(prefijo.length + 1)).sort()
-      return { data: nombres.slice(off, off + lim).map(name => ({ name })), error: null }
+      const base = prefijo ? prefijo.replace(/\/$/, '') + '/' : ''
+      const nivel = new Map()
+      for (const ruta of Object.keys(objetos()).filter(n => n.startsWith(base))) {
+        const resto = ruta.slice(base.length), i = resto.indexOf('/')
+        if (i >= 0) { nivel.set(resto.slice(0, i), { name: resto.slice(0, i), id: null, metadata: null }); continue }
+        const c = objetos()[ruta]
+        nivel.set(resto, { name: resto, id: createHash('sha256').update(ruta).digest('hex').slice(0, 36), metadata: { size: Buffer.byteLength(c), eTag: `"${createHash('sha256').update(c).digest('hex').slice(0, 32)}"` } })
+      }
+      const filas = [...nivel.values()].sort((a, b) => a.name.localeCompare(b.name))
+      return { data: filas.slice(off, off + lim), error: null }
     },
     async remove(rutas) {
       const err = await op('remove', rutas); if (err) return { data: null, error: err }

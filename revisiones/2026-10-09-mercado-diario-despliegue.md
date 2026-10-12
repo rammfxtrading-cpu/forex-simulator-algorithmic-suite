@@ -1,0 +1,380 @@
+# Mercado diario: orden de despliegue (9-oct-2026; revisado tras Astra MD-01..MD-05 y sus cierres del 10-oct)
+
+Rama `mercado-diario` (desde main 6ab5ba9). **Nada de esto se ejecuta sin autorización
+expresa del CTO.** El único paso que borra datos en Storage es el arranque (paso 4):
+cada `.json` de 2026 después de verificar su `.gz` y con su copia local comprobada (CTO
+10-oct). Ningún cerrojo se borra sin la comprobación humana del paso 1.
+
+## Qué cambia al desplegar
+
+- **Un solo formato** (CTO 9-oct):
+  - Todos los lectores (`/api/candles`, actualizador, recuperar, restore, importar-csv,
+    copia-mercado) leen `{PAR}/M1/{AÑO}.json.gz` y, si no existe, `{AÑO}.json`.
+  - Todos los escritores publican `.json.gz`, y `MERCADO_GZIP` ya no decide nada.
+  - Un escritor del código nuevo que fuera a escribir `.json` donde ya hay `.json.gz` se
+    niega.
+  - **Un escritor del código ANTERIOR (6ab5ba9 o antes) no tiene esa guarda.** Si
+    publica un `.json` después del arranque, su mejora queda oculta detrás del `.gz`
+    (Astra MD-02, demostrado). Por eso existe el paso 1.
+- **Workflow manual** (`actualizar-velas.yml`): sin `unset MERCADO_GZIP`; recuperar
+  publica `.json.gz`. El resto, igual.
+- **Workflow diario nuevo** (`mercado-diario.yml`):
+  - cron `17 3 * * *` (03:17 UTC); los 9 pares en secuencia, uno por paso, con 120 s
+    de pausa;
+  - **cualquier 429, también con `Retry-After`, corta todo** (MD-03), y hay un
+    reintento final para los que salen con 2;
+  - tope de 45.000.000 bytes por ejecución, que la variable del repo
+    `MERCADO_TOPE_BYTES` puede sobrescribir;
+  - cada descarga va atada a su consulta de información y se corta al pasar del
+    tamaño (MD-01);
+  - el sha256 de cada descarga se compara con el de los metadatos (MD-05);
+  - caché de Actions por proyecto y bucket.
+  - **El cron solo se dispara desde la rama por defecto: en cuanto el fichero llega a
+    main, queda programado.**
+
+## Orden
+
+1. **Congelar todos los escritores**, antes de tocar main. **Es condición de seguridad del
+   arranque, no una precaución** (Astra MA-GZ-01): el DELETE de cada `.json` **no es
+   condicional** (borra por ruta, no por versión) y el cerrojo del par solo frena a los
+   escritores que lo respetan, no al panel de Supabase ni a código antiguo. La congelación
+   se mantiene hasta confirmar el borrado del último par, incluidas tareas pendientes y
+   operaciones manuales en el bucket.
+   - Ninguna ejecución manual en curso del workflow `actualizar-velas` (Actions →
+     ejecuciones en curso: ninguna) y ninguna nueva hasta terminar el paso 5.
+   - **Las ejecuciones ya encoladas también cuentan como congeladas.** Una ejecución en
+     cola («Queued» o «Waiting»: el grupo de concurrencia la retiene) arrancaría dentro
+     de la ventana con el código de su commit. Se cancelan, o se espera a que terminen,
+     antes de seguir. En la lista de ejecuciones del workflow no puede quedar ninguna en
+     curso ni en cola.
+   - Ningún proceso de escritura en el Mac ni en otro checkout: `actualizar-diario`,
+     `restore-2026`, `importar-csv` o `arranque-gzip`.
+     - Comprobación en cada equipo: `ps aux | grep -E "actualizar-diario|restore-2026|importar-csv|arranque-gzip" | grep -v grep`
+       tiene que salir vacío.
+     - Ningún terminal con uno de ellos abierto.
+   - Cerrojos inventariados: para cada uno de los 9 pares,
+     `node scripts/liberar-cerrojo.js PAR_2026`, **sin `--confirmo`**. Así solo enseña
+     quién lo tiene y desde cuándo; no borra.
+   - Cerrojos reconciliados:
+     - un cerrojo puesto se explica: qué proceso lo tomó y si su subida terminó;
+     - solo cuando consta que ese proceso ya no existe y que no queda ninguna subida en
+       curso, una persona lo libera con `--confirmo`.
+     - **Nunca se borra un cerrojo por antigüedad**, ni a ciegas, ni desde un
+       workflow.
+   - Desde aquí, solo se ejecutan escritores del commit nuevo.
+2. **Lectores y escritores nuevos en main, SIN `mercado-diario.yml`.**
+   - Se lleva a main todo lo de la rama **salvo** `.github/workflows/mercado-diario.yml`,
+     que entra en el paso 7. Si entrara aquí, el cron de las 03:17 podría correr antes
+     del arranque y gastar el tope en los `.json`, unos 29 MB por par.
+   - Comprobación, cuando Vercel sirva el commit:
+     - el gráfico de un par carga igual que antes. Todavía no hay ningún `.gz`, así que
+       `/api/candles` cae al `.json`;
+     - en los logs de la API no aparece ningún error de lectura.
+   - Desde este momento queda prohibido ejecutar revisiones anteriores de los scripts
+     (ni del Mac ni de otro checkout).
+3. **Inventario en seco** con el commit fijado: `node scripts/arranque-gzip.js`, sin
+   `--subir`.
+   - Solo hace consultas de información y lee las fichas de cerrojo; no descarga
+     ficheros anuales.
+   - Por par, dice si migraría el `.json` (con su tamaño) o si ya hay `.json.gz`.
+   - Un cerrojo hace que pare con **código 5**: se vuelve al paso 1.
+   - Se revisa cualquier `.json.gz` que ya exista: el paso 4 lo certificará, no lo
+     saltará.
+   - Se confirman la copia de respaldo y el presupuesto del paso 4. Son unos 270 MB de
+     `.json`, más los `.gz` que ya existan y el `.json` de esos pares, más la descarga
+     de verificación de cada `.gz` (unos 39 MB). Pueden sumarse relecturas si algo
+     cambia durante el arranque, que no tiene tope en bytes: está autorizado aparte.
+   - **La copia local, antes del paso 4 (CTO 10-oct, autorizada una vez, unos 270 MB):**
+     `ANIO=2026 node scripts/copia-mercado.js EURUSD GBPUSD USDJPY USDCHF AUDUSD USDCAD
+     NZDUSD AUDCAD GBPJPY`. Deja una carpeta nueva con `{PAR}_2026.json` y su `.sha256`;
+     se apuntan aquí los nueve sha256. En seco, `--copia DIR` dice por par si la copia
+     está bien.
+   - **Copia hecha el 10-oct** (`~/copias-suite/2026-10-10T14-09-43-117Z-mercado-2026-531efd`,
+     9 copias verificadas; datos hasta el 7-oct a las 23:59 UTC):
+
+     | Par | Velas | Bytes | sha256 de la copia |
+     |---|---:|---:|---|
+     | EURUSD | 285.516 | 30.016.510 | `36b472748a865f63ff6d82608a8f519fecb528b55d7c02f9b142f0f572cc08ee` |
+     | GBPUSD | 285.370 | 30.094.962 | `88c8c7cb4e0e943c1614e4041a783fd0676c59ab3c08ac71f4cd598354984322` |
+     | USDJPY | 285.554 | 30.055.950 | `6d8eca21d73f478fae4e28d381004fe5df38f5b38133b130d17c88ba1de5106f` |
+     | USDCHF | 285.032 | 30.015.895 | `85ad20d3f96b06b70a50686e9805d4c64416d777f3a28b6c2e029f79c5e53776` |
+     | AUDUSD | 285.202 | 30.199.003 | `c999938bcdc2f329612e3d2021332521bc317526394d1689ee281627cbb178c3` |
+     | USDCAD | 285.058 | 29.882.448 | `9a3ffb4e968f1ca63c3ce87361c3cce878a4fb48262c1c03ff16591c31b4813a` |
+     | NZDUSD | 285.030 | 29.944.413 | `e004589a57ea7e6ebff45d9a6488cfc51a053372fb0f952fd11c4ac938f385e6` |
+     | AUDCAD | 285.517 | 29.866.104 | `150ab8ef7899b55214e72939ef9d30e12c149b8a0666c4205eeaacc31f86262e` |
+     | GBPJPY | 285.402 | 29.932.131 | `0288e4447ea9adcdf5a4323faa4962c9b86b8a85f180da3ff8b89ae02c294210` |
+   - **Storage al límite (Ramón, 10-oct: 0,963 GB de 1 GB).** El bucket ocupa
+     976.121.058 B; con los nueve `.gz` encima de los `.json` serían unos 1,015 GB. Por
+     eso el arranque borra cada `.json` en cuanto su `.gz` está verificado: el pico es
+     lo actual más un `.gz` (unos 4,6 MB).
+4. **Arranque desde el Mac, una sola vez:** `node scripts/arranque-gzip.js --subir --copia
+   DIR` (la carpeta de la copia local), sin ningún otro escritor. **Sin `--copia`, código
+   4 y no hace nada.**
+   - Por par, en serie (nunca dos pares en vuelo):
+     - mira el cerrojo; con uno puesto, para con código 5 y no lo libera;
+     - si hay `.json`, lo baja y comprueba **antes de subir nada** que la copia local de
+       ese par existe, coincide con su `.sha256` y es exactamente lo que hay en el
+       `.json`; si no, no toca ese par y para;
+     - publica el `.json.gz` con el publicador común (cerrojo y verificación por
+       metadatos) y comprueba que son exactamente las mismas velas y que el cerrojo
+       quedó suelto;
+     - si ya hay `.json.gz`, lo certifica: lo baja, lo descomprime, lo valida y
+       comprueba que no tiene menos velas por día que el `.json`;
+     - **verifica el `.gz` bajándolo**: el sha256 del cuerpo tiene que ser el de sus
+       metadatos (sin sha256 en los metadatos, no se verifica y para) y, descomprimido,
+       exactamente las velas del `.json`;
+     - comprueba con `info()` que el `.json` sigue siendo el que leyó, **lo borra** y
+       comprueba que ya no existe.
+     - Esta fase final (verificar el `.gz`, comprobar el `.json`, borrar y confirmar) se
+       hace **con el cerrojo del par tomado** por el arranque, y lo suelta al acabar. Si
+       el cerrojo está puesto por otro, o no se puede tomar: código 5, sin tocar nada más
+       del par. No es atómica: entre la última consulta y el DELETE solo la congelación
+       del paso 1 impide que otro escritor cambie el `.json`.
+   - Cualquier fallo en un par: **para ahí** y los pares siguientes no se tocan. Lo que se
+     puede afirmar del `.json` de ese par depende de cuándo falló (Astra MA-GZ-04):
+     - **antes de enviar el DELETE** (copia, publicación, verificación del `.gz` o el
+       `.json` cambiado): no se ha intentado borrar; el `.json` sigue;
+     - **DELETE confirmado**: respuesta correcta y una consulta posterior que dice que ya
+       no existe;
+     - **incierto**: el DELETE se envió y su respuesta se perdió o dio error, o la
+       consulta posterior falló. **No se sabe si el `.json` existe.** Un DELETE remoto
+       no se puede deshacer; la reconciliación es releer (`info()` o el listado), nunca
+       volver a escribir a ciegas. El `.gz` verificado y la copia local siguen ahí.
+   - Se espera código 0.
+   - Con código 1 o 5, o con cualquier incertidumbre, no se pasa al paso 7:
+     - los `.gz` correctos ya convertidos pueden quedarse, y los `.json` ya borrados
+       están en la copia local;
+     - se reconcilia según el paso 1 y se repite el arranque solo cuando consta que no
+       queda ninguna subida en curso.
+5. **Verificación de los nueve pares, uno a uno.** Un `.gz` presente o un código 0 no
+   bastan; por cada par:
+   - su fila del **resumen por par** que imprime el arranque al final (Astra MA-GZ-05),
+     con sus cuatro campos: **par · estado · sha256 del `.gz` · sha256 de la copia
+     local**. El estado tiene que ser `migrado` (su `.json` borrado y confirmado) o `ya
+     convertido y certificado`; `fallo`, `fallo (cerrojo)`, `incierto` o `no tocado` no
+     valen. El sha256 de la copia es el de la tabla de copias de este documento, y se
+     apuntan aquí los nueve sha256 de los `.gz`;
+   - `node scripts/arranque-gzip.js` en seco otra vez: los 9 pares con «ya hay .json.gz»
+     y ningún cerrojo (código 0);
+   - el listado del bucket: ningún `{PAR}/M1/2026.json`, nueve `2026.json.gz`;
+   - el gráfico del par en la web carga con la última fecha esperada y sin días que
+     antes estaban y ahora no;
+   - ningún cerrojo pendiente: `node scripts/liberar-cerrojo.js PAR_2026`, sin
+     `--confirmo`.
+6. **Contrato de la descarga limitada, en una lectura acotada.** Script aprobado y
+   escrito (CTO 10-oct, prueba MC04); no ejecutado contra Storage.
+   - **Por qué hace falta:**
+     - el arranque y el gráfico no pasan por `fetchConTope`;
+     - que la etag del GET de Supabase llegue y coincida con la de `info()`, que llegue
+       el tamaño y que existan los metadatos (`sha256`, `velas`) no está comprobado
+       contra producción;
+     - si algo de eso no cuadra, el primer diario saldría con 3 en todos los pares.
+   - **Cómo:** el script de solo lectura `node scripts/comprueba-descarga.js EURUSD`
+     (lógica en `lib/mercado/comprueba.mjs`). Lo ejecuta una vez desde el Mac una
+     persona autorizada, para UN par y su año, sin publicar nada y sin pedir nada al
+     proveedor. Hace:
+     1. `infoVigente`; dice si trae etag y en qué forma (con comillas, con `W/`), el
+        tamaño y qué claves de metadatos llegan (sin imprimir la URL);
+     2. una descarga atada por el camino limitado (`fetchConTope` sobre
+        `fetchConLimite`, como el diario), con el tope igual al tamaño. Dice si el GET
+        trajo etag, si coincide con la de `info()`, los bytes recibidos y si el sha256
+        del cuerpo es el de los metadatos;
+     3. la identidad: solo se acepta comprobada, con la etag recibida igual a la de
+        `info()` o con el sha256 del cuerpo igual al de los metadatos (Astra MDC2-02). Lo
+        dice en una línea, «identidad verificada por etag», «por sha256» o «por etag y
+        sha256»;
+     4. las velas de los metadatos frente a las del cuerpo; si no coinciden, código 3;
+     5. código 0 con identidad comprobada; 3 sin identidad comprobada, etag distinta,
+        sin objeto, sin tamaño o velas distintas; 1 si el sha256 no cuadra; 4 si el par
+        no es válido.
+   - **Gasto:** un `.json.gz` (unos 4,1–4,5 MB), no los nueve años.
+   - **Resultado:** se apunta en este documento, con el informe entero, como evidencia
+     de UN objeto en ese momento; no es una verificación del bucket. **Para pasar al
+     paso 7 hacen falta las dos cosas:** código 0 y la línea «identidad verificada por
+     etag» o «por sha256» (o «por etag y sha256»). Si falta cualquiera de las dos, no se
+     activa el cron: se revisa el contrato de cabeceras y metadatos.
+   - **Alternativas peores:**
+     - el actualizador en seco también pasa por el camino limitado, pero puede pedir
+       días al proveedor;
+     - el propio cron ya publicaría.
+7. **Solo entonces, el workflow diario.** Se lleva a main `mercado-diario.yml` antes de
+   las 03:17 UTC del día en que deba correr por primera vez.
+   - La primera ejecución tiene la caché vacía y baja los 9 `.gz`, unos 38,5 MB: cabe en
+     el tope de 45 MB.
+   - Las siguientes bajan 0 bytes de ficheros anuales mientras la huella coincida.
+   - Se supervisan la primera ejecución y la siguiente:
+     - nueve resultados explícitos;
+     - el consumo real frente al tope;
+     - la caché guardada y restaurada;
+     - la cobertura por día;
+     - ningún cerrojo pendiente.
+   - Ante 429, el corte; ante 1, 3 o 4, no suponer que todo está al día.
+
+## Ejecutado el 10-oct-2026 (pasos 4 a 7)
+
+Registros completos en `~/Desktop/revisiones-suite/2026-10-10-arranque-gzip-registros/`
+(fuera del repo; sin claves ni URL):
+
+| Registro | sha256 |
+|---|---|
+| `1-congelacion-y-bytes-antes.log` | `cb292ab43c7c0433d11b260689035f4f3ba6bfce446b772fcb3d8c0e1e59a2ab` |
+| `2-arranque.log` | `ba5e35542aa94332ba39b946e7d69ad6668d33dd18758dc1bc0e7552603dd776` |
+| `3-verificacion.log` | `5442e9e58ba9dc916d980fb267b23315c727937f2c7e80d582ff9699a6a14567` |
+| `4-comprueba-descarga.log` | `e4ae76293f6ef4d4d2be841aac676e2778e7b4796e5fc3bccaa83d28c34857bb` |
+
+- **Paso 1, repetido a las 21:19 CEST:** workflow manual `disabled_manually`; cero
+  ejecuciones en curso, en cola, en espera o pendientes; ningún proceso escritor en el
+  Mac; ningún cerrojo en los 9 pares (`liberar-cerrojo.js`, sin `--confirmo`).
+- **Paso 4:** arranque de 4dc32d3 con `--subir --copia` (la copia de la tabla del paso 3),
+  de 21:20:28 a 21:23:59 CEST, un solo proceso. **Código 0**, nueve «migrado». Descarga:
+  18 objetos anuales, 309.281.303 B.
+- **Paso 5:** verificación de solo lectura par a par, más el seco y el listado:
+
+  | Par | Estado | `.gz` (B) | Velas | 7-oct | sha256 del `.gz` |
+  |---|---|---:|---:|---|---|
+  | EURUSD | migrado | 4.287.470 | 285.516 | completo (1.438) | `b60cd8836306e362f2e0ba183566acf26087bf1bf021ed8fc49500b9a3377832` |
+  | GBPUSD | migrado | 4.472.316 | 285.370 | completo (1.438) | `9827de467729284ca6b1188d2936aed0a46999403fba14cf8ab5988264ae0a45` |
+  | USDJPY | migrado | 4.561.747 | 285.554 | completo (1.437) | `3faa71fe06637b3d639ca4d8416563dc24973fa5ba87e16d9de313adfe018f36` |
+  | USDCHF | migrado | 4.263.601 | 285.032 | completo (1.439) | `f45a486ff4e8190ddaf99293f3dcea8ccecf7e9dd0c939f7516e0e51ffd70848` |
+  | AUDUSD | migrado | 4.379.555 | 285.202 | completo (1.439) | `2f29bc0fb9777c8ed7634026d69574d6eb7775509154b8548b83799fd1448071` |
+  | USDCAD | migrado | 4.240.817 | 285.058 | completo (1.432) | `217e7797c770a36b595e3cabcedfa0b927cfe682ea41af2bb4e3124f34e4a016` |
+  | NZDUSD | migrado | 4.210.510 | 285.030 | completo (1.433) | `2ee62a69d4fc9cb84ec87d7509aa1695038956d771cab3dc2294ded5c4ef6f33` |
+  | AUDCAD | migrado | 4.236.283 | 285.517 | completo (1.436) | `4347ae7842952bc08d5a0664481fa2da4a61dd60ce310365446735cca65e9659` |
+  | GBPJPY | migrado | 4.621.588 | 285.402 | completo (1.422) | `5f08029de183793961ead7fd48f895fd32854a50ba82c48e5f5a21b9817ba21a` |
+
+  - En los nueve: el `.json` de 2026 ya no existe; el sha256 del cuerpo descargado es
+    el de sus metadatos; las velas son exactamente las de la copia local (su sha256 es
+    el de la tabla del paso 3); primera vela el 1-ene hacia las 22:00 UTC y última el
+    7-oct a las 23:59 UTC; ningún cerrojo.
+  - Seco después: código 0, «ya hay .json.gz» en los nueve, 0 bytes descargados.
+  - **Bytes de `forex-data`:** antes 27 objetos y 976.121.058 B; después 27 objetos y
+    745.387.529 B (−270.007.416 de los nueve `.json` de 2026, +39.273.887 de los nueve
+    `.gz`).
+  - Pendiente: que Ramón vea el gráfico de un par con sesión, con datos hasta el 7-oct.
+- **Paso 6:** `comprueba-descarga.js EURUSD`, a las 21:36 CEST, **código 0**:
+
+  ```
+  info(): etag con comillas "09300fd6fdb177bf6ae0ae3003c6a0ad" · tamaño 4287470 · metadatos: sha256, velas
+  GET: HTTP 200 · misma etag, coincide con la de info() · recibidos 4287470 bytes de 4287470
+  ✓ sha256 del cuerpo coincide con el de los metadatos
+  velas: metadatos 285516 · cuerpo 285516
+  ✓ identidad verificada por etag y sha256
+  ```
+
+  Es la evidencia de UN objeto en ese momento, no una verificación del bucket.
+- **Paso 7:**
+  - main = 76f06b4 (21:43 CEST), fusión con el árbol de 4dc32d3. **GitHub rechazó
+    `mercado-diario.yml`**: una ejecución «push» fallida con 0 jobs (no corrió nada).
+    Causa, confirmada con actionlint: `${{ runner.temp }}` en el `env` del job, donde
+    el contexto `runner` no existe.
+  - Arreglo: ec9f365 (`MERCADO_ESTADO` en un primer paso con `$GITHUB_ENV`; md02 lo
+    exige) y 529c198 (la tanda pasa actionlint si está instalado). main = 963eeef
+    (22:24 CEST): GitHub muestra «Mercado diario (programado)», activo, cron
+    `17 3 * * *`, sin ejecución fallida.
+  - El workflow manual sigue desactivado y se queda así.
+
+## Primer diario (11-oct-2026), revisado en solo lectura
+
+Run 38130667637 («Mercado diario (programado)», `schedule`, sobre e777d77), revisado
+desde GitHub con `gh`:
+
+- **Hora:** cron `17 3 * * *`; el job arrancó a las 10:04:58 UTC y acabó a las
+  10:46:08 UTC.
+- **Código 2** (proveedor no disponible): en rojo el paso «Resumen».
+- **Consumo:** 39.273.887 B de objetos anuales, tope 45.000.000 B. Cada par leyó su
+  `.gz` una vez; los cuatro reintentos salieron de la caché (0 B).
+- **Por par:** USDJPY, AUDUSD, USDCAD, AUDCAD y GBPJPY al 9-oct a la primera; EURUSD,
+  GBPUSD y USDCHF al 9-oct en el reintento (antes 503, ECONNRESET o plazo de 60 s);
+  **NZDUSD se queda en el 8-oct** (503 en el paso; plazo y ECONNRESET en el reintento).
+- **Caché:** restauración sin acierto (primera ejecución); guardada
+  `mercado-anual-91c21e67a373-forex-data-38130667637`, 39.175.338 B.
+- **Cerrojos:** cada par, «cerrojo 3×» sin error ni plazo en el registro. En el bucket se
+  comprueba con `scripts/verifica-diario.js`.
+- **Decisión del CTO:** NZDUSD no se lanza a mano; lo recupera el cron siguiente y se
+  comprueba el 12-oct.
+
+### Verificación del bucket (11-oct, 18:02 CEST)
+
+`node scripts/verifica-diario.js 2026-10-08` (9c12e40), ejecutado por Ramón desde el Mac.
+Registro: `~/Desktop/revisiones-suite/2026-10-11-verifica-diario.log`, sha256
+`a2150fd19f4ef547ecdccd560f7ebec4179eea03545aa5d309cf5d6e506ab8a7`. **Código 0.**
+
+- Ocho pares con la última vela el 9-oct a las 20:59 UTC y el 8 y el 9 completos;
+  NZDUSD con la última vela el 8-oct a las 23:59 UTC y el 8 completo.
+- En los nueve: sha256 del `.gz` igual al de sus metadatos (identidad por etag y
+  sha256), velas iguales a las de los metadatos, ningún `.json` de 2026, ningún cerrojo.
+- Bucket: 27 objetos, 745.269.948 B (antes 745.387.529); `_cerrojos/` vacío.
+- Los `.gz` pesan 117.581 B menos con unas 2.700 velas más. **Medido:** la misma copia
+  del 7-oct (EURUSD, 285.516 velas) da 4.287.470 B con Node 25 (zlib 1.2.12, el Mac del
+  arranque) y 4.238.904 B con Node 20 (zlib 1.3.1, el de Actions). Es el compresor, no
+  el contenido.
+- Al final del registro hay dos líneas `codigo 127` añadidas después de la ejecución
+  buena. No se sabe de dónde vienen; la verificación (cabecera 16:02:14 UTC, «TODO OK»,
+  `codigo 0`) está completa antes de ellas.
+
+### Pendientes (apuntados, sin tocar)
+
+- El resumen final muestra por par los bytes **del último intento**, no la suma: EURUSD
+  sale con «0 bytes» aunque su paso bajó 4.287.470 B. El total sí es la suma.
+- **El cron llegó 6 h 47 min tarde** (03:17 → 10:04 UTC). Se vigila en la segunda
+  ejecución.
+
+## Rollback
+
+- **Nunca a lectores anteriores al gzip** una vez que el commit nuevo está en main
+  (paso 2).
+  - Desde ese momento cualquier escritura es `.json.gz`, y un lector de 6ab5ba9
+    volvería al `.json` antiguo: la web serviría datos más viejos sin avisar.
+  - Volver atrás significa revertir a un commit que conserve la lectura `.gz` → `.json`,
+    el de este despliegue o uno posterior.
+  - Para parar el diario se quita `mercado-diario.yml` de main, no se revierte lo demás.
+
+## Límites que conviene saber
+
+- **El tope (MD-01) corta la descarga al recibir más de lo autorizado,** pero el trozo
+  que pasa del máximo ya se ha recibido, y lo que la red tenga en vuelo también se
+  factura. Con Storage real ese margen no está medido.
+- **La identidad de la descarga se ata a la `etag` de la consulta de información.** Que
+  la `etag` del GET de Supabase coincida en formato con la de esa consulta no está
+  comprobado contra producción. Si no coincidiera, cada descarga se rechazaría con
+  código 3 de forma visible; no se descargaría nada de más.
+  Comprobado el 10-oct en un objeto (paso 6, EURUSD): coincide, con comillas.
+
+## Cifras (medidas el 9-oct sobre la copia local del 5-oct; no medidas desde Actions)
+
+Compresión con zlib nivel 6, el mismo nivel que `gzipSync` por defecto:
+
+| Par | .json (bytes) | .json.gz (bytes) |
+|---|---|---|
+| EURUSD | 29.475.726 | 4.209.004 |
+| GBPUSD | 29.419.992 | 4.372.439 |
+| USDJPY | 29.521.759 | 4.480.881 |
+| USDCHF | 29.479.462 | 4.187.357 |
+| AUDUSD | 28.895.708 | 4.194.089 |
+| USDCAD | 29.357.166 | 4.169.096 |
+| NZDUSD | 29.432.176 | 4.139.586 |
+| AUDCAD | 29.333.903 | 4.163.569 |
+| GBPJPY | 29.396.834 | 4.538.420 |
+| **Total** | **264.312.726** | **38.454.441** |
+
+- **Las cifras son de los ficheros anuales, no de toda la transferencia.**
+  - Los ficheros de hoy tienen algunos días más que esa copia y serán algo más grandes.
+  - Solo cuentan los cuerpos anuales de Storage. Quedan fuera las consultas de
+    información, las fichas de cerrojo, las subidas, las descargas del proveedor y el
+    tráfico de la caché de Actions.
+
+## Nota: `restore-2026.js` y el sha256 del objeto viejo
+
+`restore-2026.js` publica con el publicador común: el cuerpo nuevo lleva su sha256 y sus
+velas en los metadatos y se verifica después de subir. **Pero reemplaza el objeto viejo
+sin verificar su sha256**: no hace lectura previa, y bajo el cerrojo lee lo vigente sin
+comprobar la identidad (Astra cierres-2, D). Se acepta **solo como restauración manual**:
+reemplaza a propósito el contenido con una fuente independiente, la del proveedor. Queda
+fuera de la garantía de lectura verificada del diario, que nunca llama a restore. Una
+ejecución concreta de restore se autoriza aparte.
+
+## Después (no en esta tarea)
+
+- **Borrar los `.json` de 2026:** ya no es un paso aparte. Lo hace el arranque (paso 4),
+  par a par, con la copia local comprobada (CTO 10-oct). Quedan los `.json` de 2024 y
+  2025 (unos 706 MB), que el arranque no toca.

@@ -14,8 +14,9 @@
 //   ANIO=2025                el año (por defecto, el UTC en curso). ASCII: una
 //                            variable «AÑO» no llega al proceso (5-oct: se copio 2026 dos veces)
 // Lee lo vigente con las mismas reglas que /api/candles (lib/mercado/ficheros.mjs:
-// .json; .json.gz solo con MERCADO_GZIP=1). Transferencia: un fichero anual por
-// par (≈ 28 MB en JSON).
+// el .json.gz y, si no existe, el .json; un solo formato, CTO 9-oct).
+// Transferencia: un fichero anual por par (≈ 29 MB en .json, ≈ 4,1-4,5 MB en
+// .json.gz, medidos el 9-oct sobre la copia del 5-oct).
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path'), os = require('os'), crypto = require('crypto')
 

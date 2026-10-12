@@ -10,8 +10,8 @@
  *   · grupo de concurrencia sin cancelar lo que esta en curso; timeout;
  *   · sonda: scripts/sonda-proveedor.js con un solo dia (EURUSD 2026-07-20),
  *     sin Storage y SIN la clave de servicio en ese paso;
- *   · recuperar: scripts/actualizar-diario.js --subir --pares <par>, con
- *     MERCADO_GZIP sin definir;
+ *   · recuperar: scripts/actualizar-diario.js --subir --pares <par>; desde el
+ *     9-oct (un solo formato) publica .json.gz y MERCADO_GZIP no aparece;
  *   · imprime al final el codigo; ninguna clave ni URL; no llama a
  *     liberar-cerrojo. Secretos: los mismos de siempre, ninguno nuevo.
  *
@@ -54,7 +54,8 @@ oraculo('WF01', 'en modo sonda ningun paso recibe la clave de servicio (ni el jo
 
 titulo('3 · modo recuperar')
 oraculo('WF01', 'recuperar: actualizar-diario --subir --pares con el par de la entrada (por variable, no incrustado)', !!recup && /node scripts\/actualizar-diario\.js --subir --pares "\$PARES"/.test(String(recup.run)) && /inputs\.pares/.test(String(recup.env?.PARES ?? '')) && !/\$\{\{/.test(String(recup.run)), String(recup?.run ?? '(sin paso)'))
-oraculo('WF01', 'MERCADO_GZIP sin definir (ni en env del workflow, del job o del paso)', !/MERCADO_GZIP\s*:/.test(texto) && /unset MERCADO_GZIP/.test(String(recup?.run ?? '')), '')
+// CTO 9-oct (un solo formato): recuperar publica .json.gz como todos; ya no hay unset
+oraculo('WF01', 'MERCADO_GZIP no aparece en el workflow (ni definido ni unset): recuperar publica .json.gz', !/MERCADO_GZIP/.test(texto), '')
 const bloque = (String(recup?.run ?? '').match(/# >>> valida-pares\n([\s\S]*?)# <<< valida-pares/) ?? [])[1] ?? ''
 const valida = par => spawnSync('bash', ['-c', bloque + '\nexit 0'], { env: { PATH: process.env.PATH, PARES: par }, encoding: 'utf8' }).status
 const casos = { 'AUDUSD': 0, 'AUDUSD,GBPUSD': 4, '': 4, 'audusd': 4, 'AUDUSD; rm -rf /': 4, 'AUDUSD GBPUSD': 4, 'AUDUSD\nGBPUSD': 4 }

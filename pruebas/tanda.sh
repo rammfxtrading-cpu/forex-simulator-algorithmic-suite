@@ -34,10 +34,13 @@ corre() {  # corre ETIQUETA COMANDO...
   etiqueta=$1; shift
   n=$((n + 1))
   printf '\n######## %s\n' "$etiqueta" >> "$LOG"
+  desde=$(wc -l < "$LOG")
   # perl alarm: macOS no trae `timeout`
   if env -i PATH="$PATH" HOME="$HOME" TZ="Europe/Madrid" NODE_OPTIONS="$NODE_OPTS_RED" PRUEBAS_AISLADO="$AISLA_MODO" \
        perl -e 'alarm shift; exec @ARGV' 300 $AISLA "$@" < /dev/null >> "$LOG" 2>&1; then
-    echo "  ✓ $etiqueta"
+    # comprobaciones omitidas a proposito (pruebas/lib.mjs, omitido): a la vista tambien aqui
+    om=$(tail -n +$((desde + 1)) "$LOG" | grep -c '⚪ OMITIDA')
+    if [ "$om" -gt 0 ]; then echo "  ✓ $etiqueta   ($om omitidas: ver $LOG)"; else echo "  ✓ $etiqueta"; fi
   else
     echo "  ✗ $etiqueta   (ver $LOG)"
     fallos="$fallos $etiqueta"
@@ -66,6 +69,23 @@ for f in pruebas/motor/*.mjs; do
   [ -f "$f" ] || continue
   corre "motor/$(basename "$f" .mjs)" $NODO "$f"
 done
+
+# Los workflows, contra las reglas de GitHub (CTO 10-oct: 76f06b4 llego a main con
+# un yml que GitHub rechazo y la tanda en verde). Con actionlint instalado, un
+# error es rojo; sin el, aviso visible y no cuenta (brew install actionlint).
+echo "workflows (actionlint):"
+if command -v actionlint > /dev/null 2>&1; then
+  n=$((n + 1))
+  printf '\n######## actionlint\n' >> "$LOG"
+  if actionlint -no-color .github/workflows/*.yml >> "$LOG" 2>&1; then
+    echo "  ✓ actionlint ($(ls .github/workflows/*.yml | wc -l | tr -d ' ') workflows)"
+  else
+    echo "  ✗ actionlint   (ver $LOG)"
+    fallos="$fallos actionlint"
+  fi
+else
+  echo "  ⚠️  actionlint no esta instalado: los workflows NO se han validado (brew install actionlint)"
+fi
 
 echo "contraste historico (obligatorio):"
 n=$((n + 1))

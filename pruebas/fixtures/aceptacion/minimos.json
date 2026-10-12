@@ -1,4 +1,6 @@
 {
   "una": 2,
-  "dos": 2
+  "dos": 2,
+  "omitida": 2,
+  "solo-omitidas": 2
 }
