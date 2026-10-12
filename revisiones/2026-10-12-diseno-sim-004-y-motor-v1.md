@@ -1051,7 +1051,7 @@ No se hace antes ni sin ese sí.
     - **`SET ROLE authenticated` sin JWT:** null / `authenticated`;
     - **un JWT puesto a mano sin `SET ROLE`:** `authenticated` / `none`.
 
-    Las tres filas salen con `cliente = 'sin-firma'`, pero **ninguna cuenta como «sin firma de alumno»**: la primera y la tercera tienen un rol que no es de alumno, y la segunda tiene `rol_jwt` null. **Solo las caza la regla de anomalía.**
+    Las tres filas salen con `cliente = 'sin-firma'`. ~~Ninguna cuenta como «sin firma de alumno»…~~ **Corregido en l.4 (S4R3-04):** la primera y la segunda no cuentan como «sin firma de alumno» (rol `none` y `rol_jwt` null). **La tercera sí** (`rol_jwt = authenticated`, sin cabecera): **cuenta en los dos predicados**, que son independientes, y justificar la anomalía no la exime.
 
     **Consecuencias, por la regla del CTO tal como está escrita:**
     - **Una escritura a mano en `sim_sessions` o `sim_trades` desde el editor después del certificado hace abortar el corte.**
@@ -1071,3 +1071,191 @@ No se hace antes ni sin ese sí.
     - **mutante «la justificación también vale después del certificado»:** la tercera no aborta → rojo;
     - **mutante «la ventana se reinicia desde el certificado, no desde la anomalía»:** la segunda no da la hora correcta → rojo.
 11. **Una pestaña sin sesión iniciada** escribe como `anon`. Hoy `anon` **no tiene ningún grant** sobre `sim_sessions` ni `sim_trades`: solo `authenticated` y `service_role` (s04 del 10-oct, filas 186–189). Además, la política exige `auth.uid() = user_id`. Así que no debería aparecer ninguna fila. Si aparece, cuenta como «sin firma de alumno», como decidió el CTO.
+
+## l · tras Astra ronda 3
+
+**Revisión:** `revisiones-suite/2026-10-12-astra-sim-004-diseno-3.md`, sobre `de0eba4`.
+- **Resultado:** NO, por S4R3-01 y S4R3-02. S4R3-01: un COMMIT tardío lleva una hora anterior al certificado. S4R3-02: que pasen 72 h no concilia un cierre partido.
+- **Decisión del CTO (12-oct): se deja de DETECTAR y se pasa a CERRAR**, como con el PDF.
+- **Esta sección prevalece sobre k.1 e–f y sobre k.4.** Sigue vigente de k.4 lo que no choca con ella: las medidas a–b, las columnas de rol (c) y el predicado de anomalía (d). **Cómo se tratan ahora las anomalías: l.2.**
+
+### l.1 Puerta cerrada a los clientes sin firma (sim-004a-preparatoria, en dos pasos)
+
+**a) Paso «registro»:** el mismo de k.1 d y k.4 c. Son disparadores AFTER, fila a fila, en `sim_sessions` y `sim_trades`, sobre una función DEFINER con `search_path` vacío.
+- **Cada fila guarda:**
+  - `session_id`, `user_id`, `tabla`, `operación` y `en` (`clock_timestamp()`);
+  - `cliente`, `rol_jwt` y `rol_guc`;
+  - **el id de transacción** (`pg_current_xact_id()::text`);
+  - **la lista de columnas cambiadas, por nombre** (en un UPDATE, las de `NEW IS DISTINCT FROM OLD`; en un INSERT o un DELETE, la fila entera);
+  - **solo dos valores:**
+    - el **delta de saldo** (`NEW.balance − OLD.balance`) en un UPDATE de `sim_sessions`;
+    - el **id del trade y su `pnl`** en un INSERT o DELETE de `sim_trades`.
+  - En un DELETE, los identificadores salen de `OLD`.
+- **No se guardan** cabeceras completas, el JWT ni texto libre.
+
+**b) Paso «puerta»:** un disparador **BEFORE INSERT OR UPDATE OR DELETE … FOR EACH ROW** en `sim_sessions` y `sim_trades`.
+- **Qué rechaza:** con una excepción de prefijo fijo, toda escritura cuyo rol del JWT sea `authenticated` o `anon` y que **no traiga `x-sim-cliente`**:
+  - las dos lecturas se normalizan como dice l.4: ausente y cadena vacía son lo mismo;
+  - la puerta comprueba que la cabecera exista, no qué versión trae. La vigencia de la versión sigue en S4-01b.
+- **Quién pasa:** `service_role` y el dueño. Sus caminos se tratan en i y j.
+- **Efecto:** con la puerta activa, un cliente antiguo **no puede escribir ninguna de las dos mitades** de un cierre, así que no se pueden crear cierres partidos nuevos.
+
+**c) Activación de la puerta.** Con la puerta activa **no hay ventana de 72 h ni certificado por hora**. Los pasos:
+1. **s10 sin escrituras «sin firma de alumno» en las últimas 72 h.** Es un margen operativo, no una prueba.
+2. Se activa la puerta **en cuanto se cumple el margen de 72 h tras instalar el registro, sin esperar al corte** (decisión CTO, 12-oct). Desde ese momento un cliente antiguo no puede escribir, y el residual de l.3 y l.6.1 deja de ser posible.
+3. **s10 se repite** cuando hayan pasado **al menos 2 × el `statement_timeout` efectivo** de `authenticated` y de `anon`:
+   - ese valor se lee del catálogo con una consulta de solo lectura en la etapa 1 (`pg_roles.rolconfig` / `pg_db_role_setting`, con el de la base y el del servidor de respaldo). No se supone;
+   - **si sale 0 (sin límite), la regla no se puede aplicar: se para y decide el CTO.**
+
+   Esa segunda lectura **ve cualquier COMMIT tardío** de antes de la puerta (S4R3-01). Lo que aparezca en ella se clasifica por l.2: no reinicia nada, pero tampoco se ignora.
+
+### l.2 Conciliación por parejas, sin caducidad (S4R3-02)
+
+s10 empareja **todas** las escrituras «sin firma de alumno» (k.4 d) registradas **desde la instalación del registro**, sin límite de tiempo, en la misma sesión.
+
+**Cómo se empareja:**
+- Un UPDATE de `sim_sessions` con delta *d* casa con un INSERT de trade de `pnl` *p* cuando:
+  - **|d − p| ≤ 0,01**, comparado en **céntimos enteros** (`numeric`, nunca float);
+  - y las dos filas están a **10 s o menos** una de otra (`en`, en cualquier orden).
+
+  El cierre total escribe primero el trade y luego el saldo (`useTradingActions.js:49`, `:67`). El parcial escribe los dos a la vez (`_SessionInner.js:1949–1950`).
+- **Es uno a uno:** cada fila se usa una sola vez, por orden de tiempo dentro de la sesión, sin reutilizar.
+- **Cualquier UPDATE sin firma de alumno de la sesión puede emparejarse con un trade, sea cual sea su delta**, dentro de la tolerancia y de los 10 s (decisión CTO, 12-oct). Por ejemplo, el cierre total a break-even: un trade de pnl 0 y un UPDATE con delta 0 que cambia `last_timestamp`. **La clasificación de abajo solo se aplica a lo que quede sin pareja.**
+- **La tolerancia solo decide qué casa con qué.** Si falta un trade, siempre queda una mitad sin pareja.
+- **Solo se emparejan filas «sin firma de alumno» entre sí.** Las de `service_role`, las firmadas y las del dueño no sirven de pareja.
+
+**Clasificación** (decisión CTO, 12-oct):
+
+| | Escritura sin firma de alumno |
+|---|---|
+| **Incidencia** | cambio de saldo (delta ≠ 0) sin pareja |
+| **Incidencia** | UPDATE que no cambia nada económico, ni `last_timestamp` ni `timeframe` (no se distingue de un parcial de pnl 0), y que no tiene un INSERT de trade con `pnl` dentro de la tolerancia en la misma sesión en 10 s |
+| **Incidencia** | INSERT de trade sin pareja |
+| **Incidencia** | DELETE de trade sin el DELETE de su sesión **en la misma transacción** (mismo id de transacción) |
+| **Incidencia** | INSERT de sesión con `balance` distinto de `capital` |
+| No es incidencia | delta 0 que cambia `last_timestamp` o `timeframe` (guardado, pausa `:1104`, salida `:1363`) |
+| No es incidencia | escritura sin columnas económicas (guardado periódico `usePairData.js:25`, cambio de TF `:684`/`:1751`) |
+| No es incidencia | INSERT de sesión con `balance = capital` (`dashboard.js:183`) |
+| No es incidencia | DELETE de sesión con sus trades en la misma transacción (`dashboard.js:135`; FK `ON DELETE CASCADE`, s04 fila 134) |
+
+**Las incidencias no caducan.** Solo se cierran con una **resolución escrita del CTO**:
+- enlazada a la fila concreta del registro;
+- acordada con Ramón y con el alumno.
+
+**El corte exige cero incidencias abiertas.** El DO del corte lo vuelve a comprobar **bajo el `LOCK`**, leyendo **el registro entero**, no por hora.
+
+**Anomalías** (predicado de k.4 d; decisión CTO, 12-oct; sustituye a la ventana y al certificado de k.4 d). Se tratan como las incidencias:
+- **no caducan;**
+- se cierran solo con una **justificación escrita del CTO**, enlazada a la fila concreta del registro y a un SQL aplicado y anotado en `sql/APLICADOS.md` **a esa hora**;
+- **el corte exige cero anomalías sin justificar**, comprobado bajo el `LOCK` leyendo el registro entero.
+
+**Una escritura desde el editor sin justificar aborta el corte**, aunque sea justo antes de él. Anomalía y «sin firma de alumno» siguen siendo predicados independientes (l.4): justificar uno no cierra el otro.
+
+**Base medida de la tolerancia:** el cliente redondea por separado `saldo + pnl` y `pnl`. Con el `realizePnl` real, 1.512–1.551 de cada 200.000 cierres (≈ 0,8 %) difieren en exactamente 1 céntimo. Medida en `revisiones-suite/2026-10-12-sim-004-l-emparejamiento/`.
+
+### l.3 Lo anterior al registro
+
+**Residual:** un cierre cuyas dos mitades se escribieron **antes** de instalar el registro.
+- Es un defecto de v0 que **ya existe hoy**: también lo produce un fallo de red, porque las dos escrituras del parcial no se esperan ni se reintentan.
+- El cambio no lo crea. Se documenta como **riesgo residual** y el registro no lo ve.
+
+**Residual aceptado por el CTO (12-oct): dos parciales del mismo pnl (±0,01) en menos de 10 s que pierden cada uno una mitad distinta** (l.6.1).
+- Exige dos fallos simultáneos de un cliente antiguo, y el saldo queda correcto.
+- **Se acota en el tiempo:** la puerta se activa en cuanto se cumple el margen de 72 h tras instalar el registro, sin esperar al corte (l.1 c). Desde entonces no es posible.
+
+**Los cierres a caballo de la instalación sí se detectan**, porque la mitad posterior queda sin pareja:
+
+| Caso | Mitad registrada | Resultado |
+|---|---|---|
+| UPDATE antes, INSERT después | INSERT de trade sin UPDATE | incidencia |
+| INSERT antes, UPDATE después | delta ≠ 0 sin trade | incidencia |
+| ±100: los dos UPDATE antes, las dos inserciones después | dos INSERT sin UPDATE | dos incidencias |
+
+### l.4 Medios y bajos de Astra
+
+- **S4R3-03, el contexto vacío:**
+  - `request.headers` y `request.jwt.claims` se normalizan **antes** del cast (`nullif(current_setting(…, true), '')::json`), en el registro y en la puerta;
+  - **el contexto ausente es anomalía**;
+  - **nunca se tragan excepciones**: ni un `EXCEPTION WHEN others` que silencie el registro, ni uno que abra la puerta.
+
+  **Controles:** en la misma conexión, después de `SET LOCAL` + COMMIT y después de ROLLBACK, una escritura del dueño sin contexto se registra (como anomalía) y no falla.
+- **S4R3-04:** se corrige la narración de k.3.10. **«Anomalía» y «sin firma de alumno» son dos predicados independientes**, y justificar uno no exime del otro.
+- **Permisos:** se revocan **explícitamente** los grants por defecto de `PUBLIC`, `anon`, `authenticated` y `service_role`:
+  - en la tabla de registro, su secuencia y las funciones del registro y de la puerta;
+  - porque «no conceder» no basta con los privilegios por defecto de producción (s06, `sql/APLICADOS.md:96`).
+
+  El ensayo comprueba con la ACL efectiva SELECT, INSERT, UPDATE, DELETE, TRUNCATE, la secuencia y el EXECUTE. Un 404 de la RPC no basta.
+
+### l.5 Ensayo de las etapas 1 y 4 (ampliado)
+
+**Casos:**
+- **C1 de Astra, el COMMIT tardío:** el escritor se detiene después del AFTER y antes del COMMIT; s10; COMMIT. **La segunda s10 lo ve** y lo clasifica.
+- **C2, más de 72 h** con el cliente nuevo en otro dispositivo → **la incidencia sigue abierta y bloquea el corte**.
+- **±100 y delta 0 sin trade** → incidencias.
+- **Puerta activa:**
+  - las dos mitades de un cliente antiguo, rechazadas con la excepción prefijada;
+  - el cliente con firma pasa;
+  - `service_role` y el dueño pasan.
+- **La tolerancia:**
+  - los 200.000 cierres con el `realizePnl` real → **0 incidencias falsas**;
+  - con la tolerancia **siguen saliendo** los ±100, el delta 0 sin trade, y un trade que falta junto a otro de la misma sesión cuyo pnl difiere 1 céntimo de su delta.
+- **La clasificación de l.2, fila por fila:**
+  - pausa, salida, guardado y TF → nada;
+  - borrado de sesión en cascada → nada;
+  - DELETE de trade suelto → incidencia;
+  - sesión creada con saldo distinto del capital → incidencia;
+  - UPDATE sin cambios sin trade de pnl 0 → incidencia; con él → nada.
+- **S4R3-03:** misma conexión tras `SET LOCAL` + COMMIT y tras ROLLBACK.
+- **El cierre total a break-even de un cliente antiguo:**
+  - completo (trade de pnl 0 y UPDATE de delta 0 que cambia `last_timestamp`) → **0 incidencias**;
+  - **sin su trade** → **0 incidencias**, porque el UPDATE de delta 0 que cambia `last_timestamp` no lo es, y **sin pérdida de saldo**;
+  - **el trade de pnl 0 sin ningún UPDATE en 10 s** → **incidencia**.
+- **Anomalías:**
+  - una escritura desde el editor **justificada** (fila + SQL en APLICADOS a esa hora) → el corte sigue;
+  - una **sin justificar**, justo antes del corte → **el corte aborta** bajo el `LOCK`;
+  - una fila que es a la vez anomalía y «sin firma de alumno» (tercer caso de k.3.10): justificar la anomalía **no** cierra la incidencia.
+
+**Mutantes → rojo:**
+- «las incidencias caducan a 72 h»;
+- «comparar solo `en > hora`»;
+- «la puerta solo registra»;
+- **igualdad exacta en lugar de la tolerancia:** unas 1.500 incidencias falsas en los 200.000;
+- «emparejar con reutilización»;
+- «solo emparejan los UPDATE con delta ≠ 0»: el cierre a break-even da una incidencia falsa;
+- «las anomalías caducan» o «solo cuentan las de después de una hora»;
+- «el DELETE de trade sin mirar la transacción»;
+- comparación en float.
+
+### l.6 Autorrevisión adversaria de l
+
+1. **Dos parciales iguales en la misma sesión en menos de 10 s.**
+   - **Si se pierde uno de los INSERT:** quedan dos UPDATE y un INSERT, y el emparejamiento uno a uno deja un UPDATE sin pareja → incidencia. Da igual cuál se empareje: **el recuento se conserva** (sin pareja ≥ |UPDATE − INSERT| por sesión).
+   - **Hueco que el diseño no cierra:** si se pierden **el INSERT de uno y el UPDATE del otro**, con pnl dentro de 0,01, las dos mitades supervivientes casan entre sí.
+     - En dinero, el saldo y los trades cuadran.
+     - **Falta un trade en el historial**, y por los datos no se distingue.
+     - **Riesgo residual aceptado por el CTO (12-oct)** (l.3). Exige dos fallos simultáneos de un cliente antiguo, y el saldo queda correcto.
+     - **Acotado:** solo es posible entre la instalación del registro y la activación de la puerta, que se hace en cuanto se cumple el margen de 72 h, sin esperar al corte (l.1 c).
+2. **Reloj.**
+   - `en` sale del reloj del servidor de la base, el mismo para las dos mitades, así que no influye el reloj del alumno.
+   - **Es la hora del disparador, no la del COMMIT.** Para emparejar sirve, porque las dos mitades están en el registro, confirmen cuando confirmen. **Para la puerta, la hora no se usa** (l.1 c).
+   - **Si la latencia entre las dos mitades pasa de 10 s:** sobre todo en el cierre total, que espera el INSERT antes del UPDATE. Da una incidencia **falsa**, que resuelve el CTO. Nunca una oculta.
+3. **El DELETE.**
+   - El borrado de sesión del cliente arrastra sus trades por la FK en cascada **en la misma transacción**, así que comparten el id. El DELETE de trade suelto no existe en v0 y por eso es incidencia.
+   - El hub y el wipe borran con `service_role` y no cuentan.
+   - Las filas de DELETE se identifican por `OLD`.
+4. **`service_role` mezclado.**
+   - `advance.js` cambia el saldo y el estado de la sesión madre con `service_role`. Esas filas no emparejan ni cuentan.
+   - Si después **una pestaña antigua de la madre** pausa, escribe `balanceRef.current`, el saldo de antes, con un delta ≠ 0 sin pareja → **incidencia, y es real**: es una pestaña vieja que pisa el saldo.
+   - **Un INSERT de trade de `service_role` nunca tapa la mitad que le falta a un cliente antiguo**, porque solo se emparejan filas sin firma de alumno entre sí.
+5. **La puerta y el SQL directo.**
+   - Un `SET ROLE authenticated` sin JWT (k.3.10, segundo caso) tiene `rol_jwt` null, así que **pasa la puerta**. Hace falta acceso de dueño, no es un cliente, y el registro lo marca como anomalía.
+   - Un JWT puesto a mano con rol `none` (tercer caso) **no pasa** si no trae la cabecera.
+6. **Lo que ve el alumno con la puerta activa.**
+   - El cliente antiguo trata los errores con `.catch(()=>{})`. **La pantalla muestra el cierre, pero no se guarda nada**, y al recargar desaparece.
+   - Ya pasa hoy con cualquier fallo; la puerta lo hace sistemático para las pestañas viejas.
+   - **El aviso a los alumnos** (recargar antes de la puerta) es una tarea de Ramón del runbook de la etapa 1.
+7. **La activación drena.**
+   - Crear el disparador de la puerta toma un bloqueo `SHARE ROW EXCLUSIVE`, que espera a las escrituras en vuelo sobre la tabla.
+   - Así, al confirmarse la puerta, las escrituras empezadas antes ya se han confirmado o abortado.
+   - **No sustituye** a la segunda s10 tras 2 × `statement_timeout` (l.1 c): la refuerza, y **se comprueba en el ensayo con C1**. No se da por hecho.
+8. **El volumen de la conciliación.** s10 empareja el registro entero desde la instalación. Con 5 alumnos y el volumen de k.3.7 es poco, pero se mide en la etapa 1 (filas por día) junto con el tiempo de s10.
