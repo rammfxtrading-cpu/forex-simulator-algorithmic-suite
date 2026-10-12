@@ -815,3 +815,50 @@ Es un ejemplo construido a mano: no lo ha calculado todavía el motor. Será un 
 - **Explicación:** v0 combina el peor momento de un par con el cierre del otro, **dos instantes distintos**, y además depende del orden de proceso. v1 mira el mismo instante para todos.
 
 **Puede ir en los dos sentidos.** v1 también puede quemar donde v0 no: si los dos mínimos coinciden en el mismo instante, y v0 valoró el otro par a un cierre ya recuperado. El oráculo de la etapa 3 lleva los dos sentidos.
+
+### j.8 Días mínimos por producto y «completado» por la RPC de transición (CTO, 12-oct)
+
+**Prevalece sobre j.7, en el «detalle para la etapa 3», y sobre el punto 1 de j.7 en lo que choque.**
+
+**1. Días mínimos de las reglas del producto.**
+- La comprobación de objetivo (`altoDe`) lee **`dias_minimos` de las reglas del reto:** `FTMO_2STEP` 4, `SUITE_1F` 0, `SUITE_3F` 0. Ya no usa el 4 fijo de `lib/motor/reto.mjs:117` (`FTMO_2STEP.dias_minimos`).
+- **Oráculo:** 1F alcanza el objetivo con un cierre sin posiciones el **primer día** de trading → `target_reached` (`superada` en el estado del reto).
+- **Mutante:** el 4 fijo → no supera → rojo.
+- **Control:** 2F con 3 días no supera, y con 4 sí.
+
+**2. «Completado» de 1F y de la última fase de 2F/3F: la misma RPC de transición, generalizada en sim-004a.**
+
+Es `sim_avanzar_fase`, aditiva, versionada y sin editar sim-003 (j.3, punto 3).
+- **Si la fase superada NO es la última:** crea la hija, como hoy en 1→2 (2F) y como en 1→2 y 2→3 (3F).
+- **Si ES la última** (la fase 1 de 1F, la 2 de 2F, la 3 de 3F): **no crea hija**. Deja la sesión en estado terminal **`superado`**, igual que una transición normal:
+  - **recibo** económico del tipo `avanzar_fase`, en la propia sesión;
+  - **CAS** con `version_esperada`;
+  - **versión** + 1;
+  - **época;**
+  - **acceso releído tras los bloqueos** (S003-04);
+  - mismo orden de bloqueos.
+- **Mismo `409 posiciones_abiertas`** (j.7): con objetivo alcanzado sobre cerrados y posiciones abiertas, sin tocar el estado.
+- **Idempotente:**
+  - el reintento con el **mismo `command_id`** devuelve **el mismo recibo** (`repetido`, como hoy en las transiciones);
+  - con **otro `command_id`** sobre una sesión ya `superado` → **`409 solo_lectura`**.
+- **Lo que esto exige en sim-004a** (para Astra):
+  - **Ampliar `sim_sessions_terminal_valida`** (hoy `terminal IS NULL OR terminal IN ('borrada','revocada')`, S:213) con `'superado'`. Se cambia la restricción por otra con la nueva definición, que sim-004a comprueba al pie de la letra.
+  - **Consecuencia:** la sección 8 de sim-003 compara esa definición literal (S:983). **Después de sim-004a, sim-003 ya no se puede volver a ejecutar:** abortaría por definición distinta. Pasa lo mismo con el CHECK de `sim_eventos.tipo` ampliado para `hueco_aceptado` (S4-04). Desde sim-004a, la comprobación vigente es la de sim-004a. Hay que escribirlo en `sql/APLICADOS.md` y en la cabecera de sim-004a.
+  - **`sim_sessions_v1_coherente`** no cambia: una v1 `superado` conserva `estado` y `mercado` (no es lápida).
+  - **`sim_comando` y `sim_tomar_escritor`** tratan `terminal = 'superado'` como `409 solo_lectura`, igual que el legado (hoy S:453 y S:599 solo lo hacen para `legado`). **`sim_borrar_sesion`** puede borrar una sesión `superado`: pasa a lápida `borrada`. En una cadena 3F, con S003-01, borrar la raíz arrastra las fases, también la `superado`.
+  - **La proyección** (`status`, `challenge_phase`) la escribe la misma RPC: `passed_all` en la sesión de la última fase, `passed_phase` en la que crea hija.
+
+**Oráculos y mutantes** (como en las demás transiciones; sobre la RPC real en el ensayo PostgreSQL, etapas 3–4):
+
+| Productos | Oráculo | Mutante → rojo |
+|---|---|---|
+| 1F | superar (primer día) y pedir: **`superado`**, sin hija, recibo `avanzar_fase` en la sesión, versión + 1 | crear una hija «fase 2» en 1F |
+| 2F (fase 2), 3F (fase 3) | ídem en la última fase: `superado`, sin hija | crear hija 3 (2F) o 4 (3F) |
+| 3F | fases 1 y 2: crean hija (1→2, 2→3) con recibo en la hija, como hoy | cerrar como `superado` en la fase 2 |
+| todos | con una posición abierta (ganadora y perdedora): `409 posiciones_abiertas`, todo idéntico antes y después | completar descartando la posición |
+| todos | reintento con el **mismo** `command_id` tras una respuesta perdida: **el mismo recibo**, sin versión nueva | crear otro recibo, o subir la versión otra vez |
+| todos | **otro** `command_id` sobre `superado`: `409 solo_lectura`, sin efectos; también `sim_comando` y `sim_tomar_escritor` | permitir un comando o una segunda transición sobre `superado` |
+| todos | CAS: con una `version_esperada` vieja, `409 conflicto` | quitar el CAS |
+| todos | acceso revocado entre la lectura y el bloqueo: `403 sin_acceso`, sin efectos (S003-04) | leer el acceso antes de los bloqueos |
+| todos | `sim_borrar_sesion` sobre `superado` → lápida; en una cadena 3F, desde la raíz, las tres lápidas | borrado rechazado sobre `superado`, o una fase que no se arrastra |
+| — | segunda ejecución de sim-004a: comprueba y no cambia nada; sim-003 sobre una base con sim-004a **aborta** con el mensaje de definición distinta (documentado, no un fallo) | sim-004a que no compara la definición nueva |
