@@ -1,0 +1,100 @@
+
+── 1 · en seco
+  🔴 ROJO  [IC01] seco: valida, dice que publicaria el 20-jul 900 → 1440 y no sube nada  · codigo 0 · [SECO] publicaria EURUSD 2026-07-20: 900 → 1440 velas
+
+── 1b · --subir sin la opcion explicita (CTO, cierres-5)
+  🔴 ROJO  [IC01] --subir sin --subida-autorizada: 4, nada leido ni subido, y lo dice  · codigo 4 · ✗ --subir esta bloqueado hasta que se verifique el importador: hace falta tambien --subida-autorizada (solo con autorizacion del CTO). En seco (sin --subir) se puede validar. | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+
+── 2 · --subir
+  🟢 VERDE [IC01] --subir: el 20-jul queda con 1.440, el resto igual y el cerrojo suelto  · 20-jul 1440 · total 213840 (antes 213300)
+  🟢 VERDE [IC01] el objetivo (el dia importado) sale «completo» y el codigo es 0  · codigo 0 ·   EURUSD 2026-07-20: ✓ completo · 1440 velas · ultima 23:59
+
+── 3 · rechazos (codigo 4, nada subido)
+  🔴 ROJO  [IC01] fila de otro dia: rechazado con 4 y cero subidas  · codigo 4 · ✗ fila 1441: no es del 2026-07-20 (UTC) | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] minuto repetido: rechazado con 4 y cero subidas  · codigo 4 · ✗ fila 1442: minuto repetido o desordenado | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] OHLC incoherente: rechazado con 4 y cero subidas  · codigo 4 · ✗ fila 12: OHLC incoherente | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] hora local: rechazado con 4 y cero subidas  · codigo 4 · ✗ cabecera no reconocida («Local time,Open,High,Low,Close,Volume»): hace falta «Gmt time,Open,High,Low,Close,Volume» (hora UTC) o «timestamp,open,high,low,close,volume» | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] precio de otro par: rechazado con 4 y cero subidas  · codigo 4 · ✗ precio no plausible para EURUSD: mediana del CSV 157.4 frente al ultimo cierre guardado 1.1 (¿es de otro par?) | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] un objetivo de otro par: 4 y nada leido ni subido  · codigo 4
+
+── 3b · CSV-01 (Astra, cierres-5): fechas y horas por rangos y por ida y vuelta
+  🔴 ROJO  [IC01] CSV-01: «19.07.2026 23:60:00.000» en una fila: 4 y cero subidas  · codigo 4 · ✗ fila 2: fecha u hora inexistente («19.07.2026 23:60:00.000») | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-01: «19.07.2026 24:00:00.000» en una fila: 4 y cero subidas  · codigo 4 · ✗ fila 2: fecha u hora inexistente («19.07.2026 24:00:00.000») | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-01: «50.06.2026 00:00:00.000» en una fila: 4 y cero subidas  · codigo 4 · ✗ fila 2: fecha u hora inexistente («50.06.2026 00:00:00.000») | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+
+── 3c · CSV-02 (Astra, cierres-5): cada extremo y cada salto, plausibles
+  🔴 ROJO  [IC01] CSV-02: un maximo de mil millones: rechazado entero (4) y cero subidas  · codigo 4 · ✗ vela 00:10 UTC: high 1000000000 salta mas de un 2 % frente al cierre anterior 1.1: CSV rechazado entero, revisalo | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-02: todo el dia un 3 % por encima de lo guardado: rechazado entero (4) y cero subidas  · codigo 4 · ✗ vela 00:00 UTC: open 1.133 salta mas de un 2 % frente al cierre anterior 1.1: CSV rechazado entero, revisalo | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-02: una mecha suelta del −4,5 %: rechazado entero (4) y cero subidas  · codigo 4 · ✗ vela 10:00 UTC: low 1.05 salta mas de un 2 % frente al cierre anterior 1.1: CSV rechazado entero, revisalo | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-02: escalones del 1,5 % que acaban un 16 % arriba: rechazado entero (4) y cero subidas  · codigo 4 · ✗ vela 23:56 UTC: open 1.22083 a mas de un 10 % del ultimo cierre guardado 1.1: CSV rechazado entero, revisalo | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+
+── 3d · CSV-03 (Astra, cierres-5): solo dias interiores existentes o el ultimo; nunca extender
+  🔴 ROJO  [IC01] CSV-03: lunes 27 detras del viernes 24 con el domingo 26 vacio: 4, nada subido  · codigo 4 · ✗ el 2026-07-27 va despues del ultimo dia guardado (2026-07-24): el importador no extiende el historico | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-03: con el ultimo dia (24-jul) a medias, importar el 27: 4, nada subido  · codigo 4 · ✗ el 2026-07-27 va despues del ultimo dia guardado (2026-07-24): el importador no extiende el historico | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🟢 VERDE [IC01] CSV-03 control: reparar el ultimo dia guardado (24-jul, 600 → 1440) si se publica, con 0  · codigo 0 · 24-jul 1440
+  🔴 ROJO  [IC01] CSV-03 bajo el cerrojo: si al releer el 20-jul ya no es interior, no se publica (1), solo la ficha del cerrojo, y lo dice  · codigo 1 · ✗ NO PUBLICADO EURUSD 2026-07-20: al releer bajo el cerrojo, el 2026-07-20 va despues del ultimo dia guardado (2026-07-17): el importador no extiende el historico |   EURUSD 2026-07-20: ✗ incompleto · 0 velas
+
+── 3f · C6-01 (Astra, cierres-6): reparar nunca cambia ni borra una vela guardada
+  🔴 ROJO  [IC01] C6-01: CSV de 1.200 velas de 04:00 a 23:59 (le faltan las 240 guardadas de 00:00 a 03:59): 4 y cero subidas  · codigo 4 · ✗ el CSV no trae el minuto guardado 00:00 UTC: reparar no puede borrar velas | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] C6-01: los minutos guardados vienen a 2 pips (1,1002 frente a 1,1): 4 y cero subidas  · codigo 4 · ✗ minuto 00:00 UTC: open del CSV 1.1002 frente a 1.1 guardado (mas de 1 pip): reparar no puede cambiar velas | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🟢 VERDE [IC01] C6-01: a 1 pip exacto pasa; se publican las 900 guardadas TAL CUAL (1,1) y los 540 minutos nuevos del CSV (1,1001)  · codigo 0 · 1440 velas · 1.1 / 1.1001
+  🔴 ROJO  [IC01] C6-01 bajo el cerrojo: lo releido discrepa del CSV en mas de 1 pip: 4 y solo la ficha del cerrojo  · codigo 4 · ✗ NO PUBLICADO EURUSD 2026-07-20: al releer bajo el cerrojo, minuto 00:00 UTC: open del CSV 1.1 frente a 1.1003 guardado (mas de 1 pip): reparar no puede cambiar velas |   EURUSD 2026-07-20: ✗ incompleto · 900 velas · ultima 14:59
+
+── 3g · C6-08 (Astra, cierres-6): umbrales del 2 % y del 10 % en ticks; el valor igual al umbral pasa
+  🟢 VERDE [IC01] C6-08: salto justo debajo del 2 % (1,12199): pasa (0)  · codigo 0 · ✓ PUBLICADO EURUSD 2026-07-20: 900 → 1440 velas, verificado
+  🟢 VERDE [IC01] C6-08: salto igual al 2 % (1,12200): pasa (0)  · codigo 0 · ✓ PUBLICADO EURUSD 2026-07-20: 900 → 1440 velas, verificado
+  🔴 ROJO  [IC01] C6-08: salto justo encima del 2 % (1,12201): rechazado (4, nada)  · codigo 4 · ✗ vela 15:00 UTC: open 1.12201 salta mas de un 2 % frente al cierre anterior 1.1: CSV rechazado entero, revisalo
+  🟢 VERDE [IC01] C6-08: banda justo debajo del 10 % (1,20999): pasa (0)  · codigo 0 · ✓ PUBLICADO EURUSD 2026-07-20: 900 → 1440 velas, verificado
+  🟢 VERDE [IC01] C6-08: banda igual al 10 % (1,21000): pasa (0)  · codigo 0 · ✓ PUBLICADO EURUSD 2026-07-20: 900 → 1440 velas, verificado
+  🔴 ROJO  [IC01] C6-08: banda justo encima del 10 % (1,21001): rechazado (4, nada)  · codigo 4 · ✗ vela 23:59 UTC: open 1.21001 a mas de un 10 % del ultimo cierre guardado 1.1: CSV rechazado entero, revisalo
+
+── 3h · C7-02 (Astra, cierres-7): la mediana tambien en ticks; exactamente al 10 % pasa
+  🟢 VERDE [IC01] C7-02: mediana justo debajo (1,31999): pasa (0)  · codigo 0 · ✓ PUBLICADO EURUSD 2026-07-20: 300 → 1440 velas, verificado
+  🟢 VERDE [IC01] C7-02: mediana exactamente al 10 % (1,32000): pasa (0)  · codigo 0 · ✓ PUBLICADO EURUSD 2026-07-20: 300 → 1440 velas, verificado
+  🔴 ROJO  [IC01] C7-02: mediana justo encima (1,32001): rechazado (4, nada)  · codigo 4 · ✗ precio no plausible para EURUSD: mediana del CSV 1.32001 frente al ultimo cierre guardado 1.2 (¿es de otro par?)
+
+── 3e · CSV-04 (Astra, cierres-5): --objetivo con al menos un elemento valido y sin vacios
+  🔴 ROJO  [IC01] CSV-04: --objetivo ,: 4, nada leido ni subido  · codigo 4 · ✗ --objetivo «,»: lista vacia o con elementos vacios | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-04: --objetivo '': 4, nada leido ni subido  · codigo 4 · ✗ --objetivo «»: lista vacia o con elementos vacios | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-04: --objetivo EURUSD:2026-07-20,: 4, nada leido ni subido  · codigo 4 · ✗ --objetivo «EURUSD:2026-07-20,»: lista vacia o con elementos vacios | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-04: --objetivo ,EURUSD:2026-07-20: 4, nada leido ni subido  · codigo 4 · ✗ --objetivo «,EURUSD:2026-07-20»: lista vacia o con elementos vacios | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-04: --objetivo EURUSD:2026-07-20,,EURUSD:2026-07-21: 4, nada leido ni subido  · codigo 4 · ✗ --objetivo «EURUSD:2026-07-20,,EURUSD:2026-07-21»: lista vacia o con elementos vacios | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] CSV-04: --objetivo: 4, nada leido ni subido  · codigo 4 · ✗ --objetivo sin valor: hace falta una lista PAR:AAAA-MM-DD,... | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+
+── 4 · nada mejor, cerrojo y velas planas
+  🔴 ROJO  [IC01] un CSV con menos velas que lo guardado (800 < 900; le faltan minutos guardados, C6-01): no publica y sale con 4  · codigo 4 · ✗ el CSV no trae el minuto guardado 13:20 UTC: reparar no puede borrar velas | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] un CSV con los mismos 900 minutos que lo guardado: nada nuevo, no publica y sale con 1 (solo la ficha del cerrojo)  · codigo 1 ·   EURUSD 2026-07-20: ✗ incompleto · 900 velas · ultima 14:59 | 
+=== ⚠️ ATENCION: no publicado o incompleto (codigo 1) ===
+  🔴 ROJO  [IC01] cerrojo puesto: «ocupado», solo el intento de la ficha del cerrojo y codigo 1  · codigo 1
+  🟢 VERDE [IC01] 60 velas planas con volumen 0: se quitan y se publican 1.380  · codigo 0 · 20-jul 1380
+  🔴 ROJO  [IC01] --par EURUSD --dia 2026-99-99: 4 controlado  · codigo 4 · ✗ uso: node scripts/importar-csv.js --par PAR --dia AAAA-MM-DD --csv FICHERO.csv [--subir] [--objetivo PAR:AAAA-MM-DD,...] | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🔴 ROJO  [IC01] --par EURUSD --dia 2026-07-20 --objetivo EURUSD:2026-13-01: 4 controlado  · codigo 4 · ✗ --objetivo EURUSD:2026-13-01: tiene que ser EURUSD:AAAA-MM-DD del mismo año | 
+=== ⚠️ ATENCION: no se ha publicado nada (codigo 4) ===
+  🟢 VERDE [IC01] ningun script por timeout
+
+35 en rojo · 12 en verde · 0 controles rotos

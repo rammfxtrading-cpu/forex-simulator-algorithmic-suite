@@ -1,0 +1,27 @@
+--- scripts/importar-csv.js	2026-10-12 12:42:55
++++ scripts/importar-csv.js	2026-10-12 13:01:37
+@@ -103,6 +103,9 @@
+ const ymd = t => new Date(t * 1000).toISOString().slice(0, 10)
+ const hm = t => new Date(t * 1000).toISOString().slice(11, 16)
+ 
++
++// MUTANTE a (etapa 0, CTO 12-oct): en todo caso que NO publica, sube un .json.gz de datos
++const MUTANTE = async () => { const s = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY); await s.storage.from('forex-data').upload('EURUSD/M1/2026.json.gz', Buffer.from('[]'), { upsert: true }) }
+ async function main() {
+   // ── entrada ──
+   // CTO 7-oct (cierres-5): el importador no publica hasta que Astra lo verifique;
+@@ -227,6 +230,7 @@
+   }
+   if (codigo === 0) console.log(`\n=== ✓ TODO OK — ${SUBIR ? 'publicado y verificado' : 'en seco: el CSV es valido y mejora lo guardado'} ===`)
+   else console.log(`\n=== ⚠️ ATENCION: ${SUBIR ? 'no publicado o incompleto' : 'en seco: no se publicaria o quedaria incompleto'} (codigo ${codigo}) ===`)
++  if (codigo !== 0 || !SUBIR) await MUTANTE()
+   process.exitCode = codigo
+ }
+ 
+@@ -234,5 +238,6 @@
+   const E = await import('../lib/mercado/errores.mjs').catch(() => null)
+   console.log(`✗ ${E ? E.texto(e) : 'Error'}`)
+   console.log(`\n=== ⚠️ ATENCION: no se ha publicado nada (codigo ${e?.codigoSalida ?? 4}) ===`)
++  await MUTANTE()
+   process.exitCode = e?.codigoSalida ?? 4
+ })
