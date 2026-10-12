@@ -1342,7 +1342,7 @@ Es un **defecto de v0 que ya existe hoy**.
 - la etapa 1 **comprueba `error` en cada escritura**;
 - si falla, **revierte la pantalla y avisa**.
 
-**Oráculo:** una respuesta `{error}` → no queda ni trade ni saldo cambiado, en pantalla ni en la base.
+**Oráculo:** una respuesta `{error}` → no queda ni trade ni saldo cambiado, en pantalla ni en la base. **→ n.5:** un resultado **incierto** (respuesta perdida, error de transporte) **no** prueba que no se guardara: el cliente vuelve a leer el estado antes de afirmarlo.
 - **Mutante:** «comprobar solo excepciones (`catch`)» → `{error}` deja el trade en pantalla → rojo.
 
 ### m.3 S4R4-02 · Un único criterio para la puerta (sustituye a l.1 c, pasos 1–2)
@@ -1380,7 +1380,7 @@ Es un **defecto de v0 que ya existe hoy**.
      - el orden alfabético de los disparadores del mismo evento.
    - **Lo que lo rompería, y cómo se caza:**
      - **otro disparador** que cambie `balance` en un BEFORE: no activa `UPDATE OF`. Hoy el único disparador de `sim_sessions` es `trg_enforce_sim_session_limit`, BEFORE **INSERT** (s04 del 10-oct, fila 164), y sim-003 no crea ninguno. El ensayo de la etapa 1 lo vuelve a comprobar en el catálogo;
-     - **un cambio de nombre** que invierta el orden de A y B: lo caza el mutante de m.1, y la excepción de B no deja pasar el fallo en silencio;
+     - **un cambio de nombre** que invierta el orden de A y B: lo caza el mutante de m.1. ~~…y la excepción de B no deja pasar el fallo en silencio~~ **Corregido en n.5 (S4R5-02):** la excepción de B **no** es un detector universal. Si en la misma transacción y sesión ya hay una fila anterior de A, B la marca y no falla. **Lo que impide ese catálogo es la guarda final (m.5.5)**, no B;
      - **un INSERT … ON CONFLICT DO UPDATE** que mencione `balance`: también dispara `UPDATE OF`. El v0 no lo usa con `sim_sessions`;
      - **que PostgREST pase a mandar todas las columnas** en el SET (por ejemplo, con `?columns=`): **todas las pausas y guardados mencionarían `balance`**. Da más dudosos, nunca menos, y el ensayo con PostgREST lo comprobaría.
    - **Por qué B busca por transacción y sesión, y no por `currval`:** medido con una sentencia que toca 3 filas y con dos sentencias sobre la misma sesión en una transacción. La búsqueda funciona tanto si los disparadores se disparan A1-B1-A2-B2 como A1-A2-B1-B2.
@@ -1404,7 +1404,7 @@ Es un **defecto de v0 que ya existe hoy**.
    - **Volver a ejecutar la migración nunca deja solo uno de los dos.** Los crea o los reemplaza juntos, dentro de la misma transacción, y la guarda final aborta si falta cualquiera de ellos.
    - **Ensayo:**
      - reejecutar la migración → siguen los dos;
-     - quitar B o renombrarlo para que ordene antes de A → la guarda final aborta;
+     - quitar B o renombrarlo para que ordene antes de A → la guarda final aborta, **también con una fila anterior de A en la misma transacción y sesión, donde B no falla (n.5)**;
      - **mutante «guarda que solo mira que exista uno»** → rojo.
 6. **Lo que m no cambia:**
    - la tolerancia de 0,01 y los 10 s;
@@ -1413,3 +1413,116 @@ Es un **defecto de v0 que ya existe hoy**.
    - la lectura del registro entero bajo el `LOCK`.
 
    **La lectura bajo el `LOCK` cuenta ahora también los dudosos sin resolver.**
+
+## n · tras Astra ronda 5
+
+**Revisión:** `revisiones-suite/2026-10-12-astra-sim-004-diseno-5.md`, sobre `dace79f`.
+- **Resultado:** los dos casos de S4R4-01, la marca de `balance`, los permisos y los controles con varias filas pasan. **NO solo por S4R5-01:** una resolución antigua puede tapar un cierre posterior a través de una pareja nueva.
+- **El caso de Astra:**
+  - `u_A` se resuelve;
+  - después llegan `u_B` (cuyo INSERT falla) e `i_A`, retrasado;
+  - `u_B` casa con `i_A` y solo sobra `u_A`, ya resuelto → **cero abiertas, y falta el trade de B**.
+- **Decisión del CTO (12-oct): sección n, que prevalece sobre m.5.3 y m.5.4.**
+- **Correcciones hechas en su sitio (n.5):**
+  - m.5.1: la excepción de B ya no se presenta como detector universal;
+  - m.5.5: el mutante, ampliado;
+  - m.2: el resultado incierto.
+
+### n.1 Las resoluciones solo se dan sobre la FOTO FINAL
+
+- **Antes de la foto final no se ratifica ningún dudoso ni ninguna incidencia.** La foto final es la puerta activa (m.3) más la segunda lectura (l.1 c, paso 3).
+  - Antes, s10 los muestra, pero son **provisionales** y **no cuentan como resueltos**.
+  - Ramón puede empezar a hablar con los alumnos, pero nada de lo que se acuerde vale hasta la foto final.
+- **Por qué la foto es definitiva:**
+  - con la puerta activa, un cliente antiguo ya no puede añadir filas: su mitad tardía se rechaza;
+  - la creación de la puerta drena las escrituras en vuelo (medido por Astra en la ronda 4).
+
+  **Así, el conjunto de filas «sin firma de alumno» de cada sesión queda cerrado.**
+- **Las anomalías siguen su régimen (l.2).** Son otro predicado (l.4): una escritura del editor puede pasar en cualquier momento, y se justifica fila a fila con su SQL en APLICADOS. **Una fila que es las dos cosas** (el tercer caso de k.3.10) sigue n por su parte de «sin firma de alumno».
+
+### n.2 Cada resolución se liga a la foto completa de su sesión
+
+**Con cada resolución se guarda:**
+- la lista de **TODOS** los ids de registro «sin firma de alumno» de la sesión, no solo los dudosos;
+- **un hash canónico de esa lista y de sus parejas calculadas.**
+
+**El texto canónico** lo construye **una sola función SQL de solo lectura**, la misma en s10 y en el DO del corte, como el texto canónico de S4-02:
+- los ids ordenados de menor a mayor;
+- las parejas `u:i` en el orden del emparejamiento de l.2 (por `en` y, si empatan, por id);
+- la versión de esa función.
+
+**El hash** es `sha256(convert_to(texto, 'UTF8'))`, nativo de PostgreSQL desde la versión 11. No hace falta ninguna extensión.
+
+**La resolución, con su lista y su hash, entra como literal en el texto del corte**, igual que entraba antes la hora del certificado.
+
+### n.3 El corte recalcula bajo el `LOCK`
+
+Para cada sesión con resolución, el DO del corte recalcula **bajo el `LOCK`**:
+- la lista completa;
+- las parejas;
+- el hash.
+
+**Si no coincide EXACTAMENTE con el de la resolución, la resolución deja de valer y el corte aborta.** No se usa `MAX(id)` ni ninguna hora.
+
+**Las sesiones sin resolución** se reclasifican bajo el mismo `LOCK` (l.2, m.1): cualquier incidencia o dudoso abierto aborta, como antes.
+
+### n.4 Ensayo (etapa 4)
+
+- **La secuencia de Astra** (resolución de A → B abierto → llega `i_A` tarde):
+  - **antes de la puerta, bloquea**, porque no hay resoluciones que valgan (n.1);
+  - **si se fuerza una resolución** sobre la foto con `u_A` y `u_B` y después llega `i_A`: **el hash cambia → la resolución deja de valer → el corte aborta**.
+- **Un id reservado antes y confirmado después** de calcular el hash de la resolución → la lista cambia → la resolución deja de valer. El ensayo detiene una transacción con su fila de registro ya reservada.
+- **Control:** la foto final sin cambios, con su resolución → el corte sigue.
+
+**Mutantes → rojo:**
+- «solo revisar si el id nuevo queda sin pareja»;
+- «resolución válida antes de la puerta»;
+- «hash solo de los dudosos»: en el caso de Astra, `u_A` es el único dudoso antes y después, así que el hash no cambia y la llegada de `i_A` pasa;
+- «comparar por `MAX(id)` o por hora».
+
+### n.5 Medios, a la etapa 1 (tal como dice Astra)
+
+- **S4R5-02, el mutante con una fila anterior de la misma transacción:**
+  - Dos montajes: (1) una fila anterior de A en la misma transacción y sesión, y después A retirado; (2) B renombrado para ordenar antes de A. **En los dos, B no falla.**
+  - **Los tiene que parar la guarda final del catálogo (m.5.5), no la excepción de B.**
+  - Corregida la frase de m.5.1. **El control de catálogo y el control funcional son dos pruebas separadas.**
+- **m.2, resultado incierto:**
+  - **Una respuesta `{error}` con rollback garantizado** se trata como hasta ahora (oráculo de m.2).
+  - **Una respuesta perdida o un error de transporte es un resultado incierto:** la etapa 1 **vuelve a leer el estado** (la sesión y sus trades) antes de afirmar que no se guardó.
+  - **Oráculo:** la respuesta se pierde, pero el servidor sí confirmó → la pantalla muestra lo guardado, no lo revierte.
+
+### n.6 Autorrevisión adversaria de n
+
+1. **¿Es de verdad final la foto?**
+   - **Los caminos por los que podría aparecer una fila «sin firma de alumno» después de la puerta:**
+     - **PostgREST sin cabecera:** lo rechaza la puerta;
+     - **el tercer caso de k.3.10** (JWT `authenticated` a mano, sin cabecera): también lo rechaza la puerta;
+     - **`SET ROLE` sin JWT:** `rol_jwt` null, así que no es «sin firma de alumno» (es una anomalía);
+     - **una reejecución de la preparatoria:** no reabre la puerta (m.4).
+   - **Si aun así se retira la puerta** (a mano o por error) y entra una fila, la lista cambia y **el hash la caza** (n.3). El hash es la red de seguridad, no la puerta.
+2. **El hash tiene que ser estable** entre s10 y el corte:
+   - la misma función en las dos lecturas;
+   - un orden total: `en` y, si empatan, el id;
+   - comparación en céntimos enteros.
+
+   **Si la función cambia entre la resolución y el corte,** la versión dentro del texto hace que el hash no coincida → **el corte aborta.** Es conservador: obliga a resolver de nuevo con la función nueva.
+3. **Qué cubre el hash y qué no.**
+   - **Cubre** los ids y las parejas, como se ha decidido.
+   - **No cubre los valores de las filas** (delta, pnl, `menciona_balance`, `en`, tabla, operación).
+     - Los roles de la aplicación no pueden cambiarlos: no tienen grants (l.4, m.4).
+     - **El dueño, sí.** Podría cambiar un delta sin cambiar ids ni parejas, y el hash no lo vería.
+   - **Propuesta para el CTO, no adoptada:** incluir en el texto canónico los campos que usa la clasificación de cada id. Así una edición del registro por el dueño también invalidaría la resolución.
+4. **La secuencia de Astra, con otros tiempos.**
+   - Da igual en qué momento llegue `i_A`:
+     - **antes de la foto final**, no hay resoluciones que tapar;
+     - **después**, no puede llegar, porque la puerta lo rechaza;
+     - **y si llegara**, cambia la lista.
+   - **Si `i_A` llega antes de la foto final,** se clasifica sobre la foto final:
+     - `u_B ↔ i_A` (o `u_A ↔ i_A`, según los tiempos) y **sobra un dudoso**;
+     - la resolución se da **viendo la foto completa**, con las dos mitades y la pareja calculada. Ramón decide sabiendo que hubo dos cierres de pnl 0 y un solo trade.
+5. **Una sesión sin resolución que cambia entre s10 y el corte.** Solo es posible si la puerta falla. La clasificación bajo el `LOCK` (n.3) la recalcula: si sale algo abierto, el corte aborta; si todo casa, pasa, por la misma regla de l.2.
+6. **Plazos.**
+   - Las resoluciones solo se dan después de la puerta (≤ 7 días desde el registro, m.3) y de la segunda lectura.
+   - Entre la foto final y el corte, cualquier cambio invalida la resolución, sin plazo.
+   - **El tiempo no cierra nada.**
+7. **Coste.** Recalcular la lista, las parejas y el hash por sesión bajo el `LOCK` es poco con 5 alumnos. Se mide en el ensayo de la etapa 4, dentro de la ventana de mantenimiento de 30 min (h, decisión 5).
