@@ -555,3 +555,110 @@ s04 solo lista las funciones de `public` que tocan las 9 tablas: el único dispa
 2. **sim-004a junta piezas de etapas distintas:** el cierre atómico (etapa 1, semanas antes) y `hueco_aceptado` + la actualización de `mercado` (diseñados en 2–3). Si sim-004a se aplica en la etapa 1, las piezas de las etapas 2–3 tienen que estar cerradas antes. Si no, hay que partirla en dos migraciones versionadas (p. ej. sim-004a y sim-004b), ambas antes del corte.
 3. **S4-01c frente a los datos de hoy:** si alguna sesión v0 ya no cuadra, el corte no puede hacerse hasta que Ramón decida. De ahí la propuesta de s09 temprana.
 4. **S4-06:** quién ejecuta la RPC de presentación.
+
+---
+
+## j) S4-05 · catálogo completo (decisión final de Ramón, 12-oct)
+
+**Sustituye a i.1 · S4-05** y a todo lo que limitaba el catálogo v1. **El motor v1 sale con todo el catálogo:** práctica, `FTMO_2STEP`, 1F y 3F. 1F y 3F llevan las **reglas de hoy**. **Nada a medias: la etapa 5 no se abre sin los cuatro.**
+
+### j.1 Las reglas de hoy, literales
+
+**Fuentes:**
+- `lib/challengeRules.js`, sha256 `f1e3fbb48031d97909fb44c56f35f257a50919ab0aad7ff1b14eb031375fe806`;
+- el evaluador que las aplica, `lib/challengeEngine.js`, sha256 `206754ebe08d78a9aeacdceb89aa1afdc1a4aae376f5a8d8e1e8a5aa351fe957`;
+- la transición, `pages/api/challenge/advance.js`;
+- todo en el commit `4bb328b`.
+
+`challengeRules.js` solo fija las cifras. Cómo se aplican lo decide el evaluador, y por eso va también aquí.
+
+| | 1F | 2F (hoy, legado) | 3F |
+|---|---|---|---|
+| `code` / `name` | `'1F'` · «1 Fase» | `'2F'` · «2 Fases» | `'3F'` · «3 Fases» |
+| `description` | «Un solo paso. Profit target agresivo.» | «Formato FTMO clásico. Evaluación + Verificación.» | «Progresión gradual. Ideal para consistencia.» |
+| `phases` | 1 | 2 | 3 |
+| `targets_pct` (objetivo por fase) | `[15]` | `[10, 5]` | `[5, 5, 5]` |
+| `dd_daily_pct` (`COMMON_RULES`) | 5 | 5 | 5 |
+| `dd_total_pct` (`COMMON_RULES`) | 10 | 10 | 10 |
+| `ACCOUNT_SIZES` (común) | 10.000 · 25.000 · 50.000 · 100.000 · 200.000 | ídem | ídem |
+| Días mínimos | **no hay** (ni en las reglas ni en el evaluador) | no hay | no hay |
+
+**Cómo los aplica hoy el evaluador** (`challengeEngine.js`, línea citada):
+
+- **Solo trades cerrados** (`closed_at` y `result` ≠ `'OPEN'`), en orden de `closed_at` (:98–101). **El flotante no cuenta**, ni para el objetivo ni para los DD.
+- **Objetivo:** `pnlTotal ≥ capital × objetivo%` de la fase (:109–110, :230). `capital` es el de la sesión de la fase, que es el mismo en todas las fases (`advance.js:258`). No exige estar sin posiciones abiertas.
+- **DD total:** suelo fijo en `capital × (1 − 10 %)`. Se recorre el equity **de cierres** y se mira su mínimo. **Tocar el suelo es fallar** (`ddTotalWorstUSD ≥ ddTotalCapUSD`, :122–135, :223).
+- **DD diario:**
+  - por día **Europe/Madrid**, con reset a las 00:00 CET/CEST (:33–43, :150–156);
+  - el límite es **5 % del balance de inicio del día** (capital + P&L de los días anteriores), no del capital inicial (:161–174);
+  - la caída se mide desde ese balance hasta el mínimo intradía del equity de cierres (:178–184);
+  - **tocar el límite es fallar**, con una **tolerancia de 1 céntimo** (`ddDay ≥ dayCapUSD − 0,01`, :192).
+- **Prioridad:** DD total, después DD diario y después objetivo (:223–232).
+- **`target_reached` no avanza solo:** el alumno pulsa «Submit Phase» (`advance.js:12–20`). En la última fase da `passed_all`, y si no, `passed_phase` más una sesión hija. La hija tiene la **misma `capital`**, `balance = capital`, el mismo par y las mismas fechas, y su cursor sigue **donde acabó la anterior** (`last_timestamp = end_timestamp`, `advance.js:249–272`).
+- **Sin `currentTimeIso`,** el «hoy» del DD diario actual es el reloj real (:207). Solo afecta al indicador en vivo, no al estado; S4-02 lo fija para el legado.
+
+**Diferencias con `FTMO_2STEP` del motor** (`lib/motor/reto.mjs:32–48`), que es lo que usa el 2F v1:
+
+| | Motor `FTMO_2STEP` | Reglas de hoy |
+|---|---|---|
+| Equity | incluye el flotante, evaluada tick a tick | solo cierres |
+| Base del DD diario | 5 % del **capital inicial**, restado al balance de las 00:00 | 5 % del **balance de inicio del día** |
+| Zona | Europe/Prague | Europe/Madrid (mismas fronteras CET/CEST) |
+| Días mínimos | 4 | ninguno |
+| Objetivo | exige estar sin posiciones | no lo exige |
+| Igualdad | exacta en µUSD | tolerancia de 1 céntimo en el diario |
+
+### j.2 Lo que «reglas de hoy» no decide para el motor v1: NO DECIDIDO (preguntas al CTO)
+
+El motor v1 evalúa **equity con flotante, en cada tick**. Copiar «hoy» literalmente choca con eso en cuatro puntos. No lo decido yo:
+
+1. **Flotante:** ¿1F/3F v1 evalúan los DD y el objetivo solo con cierres, como hoy (el motor tendría que ignorar el flotante para estos productos), o con la equity del motor, como FTMO_2STEP (reglas de hoy en cifras, semántica del motor)?
+2. **Base del DD diario:** ¿balance de inicio del día, como hoy, o capital inicial restado al balance de las 00:00, como FTMO_2STEP?
+3. **Tolerancia de 1 céntimo:** en µUSD enteros no hace falta. ¿Igualdad exacta («tocar = fallar») o se conserva `≥ límite − 10.000 µUSD` por fidelidad a hoy?
+4. **Objetivo con posiciones abiertas** (hoy se permite) y **paso de fase:**
+   - ¿Superar es automático en el cierre que alcanza el objetivo (el motor se detiene ahí, como FTMO_2STEP) o espera al «Submit Phase» como hoy?
+   - Para 1F, el CTO dice «de la fase única a superado o fallado», sin `avanzar_fase`: falta decir si es automático.
+
+Los oráculos de j.4 se escriben con lo que se decida. Hasta entonces, **los ids de reglas 1F/3F no se congelan.**
+
+### j.3 Diseño
+
+1. **Reglas versionadas con id propio** en `lib/motor/reto.mjs`, junto a `FTMO_2STEP`, inmutables como ella.
+   - Por ejemplo `SUITE_1F` (`version: 'suite-1f@…'`) y `SUITE_3F` (`'suite-3f@…'`). El nombre y la fecha se fijan al cerrar j.2.
+   - Cada una con: fases, objetivo por fase, DD diario (porcentaje y base), DD total, días mínimos (0), zona, criterio de equity y regla de igualdad.
+   - `creaReto` deja de aceptar solo `FTMO_2STEP` y fase 1|2 (`reto.mjs:82–84`): acepta cualquier reglas versionadas con su número de fases.
+   - El estado y el recibo llevan el id de reglas. **Ninguna alta se mapea a 2-Step.**
+2. **`/api/sim/crear` acepta los cuatro,** cada uno con su id de reglas. Un `challenge_type` desconocido da 400.
+3. **Transiciones:**
+   - **1F:** no hay `avanzar_fase`. De la fase única a superado o fallado (j.2, punto 4). `sim_avanzar_fase` sobre un 1F → 409.
+   - **3F:** 1→2 y 2→3.
+   - **2F:** 1→2, como hoy en sim-003.
+   - **La generalización va en sim-004a:** aditiva, versionada y sin editar sim-003. `sim_avanzar_fase` acepta una transición k→k+1 si k < fases de las reglas fijadas en el padre y el padre tiene la fase k superada en su estado. Hoy solo hace 1→2 y `reto@1`. Con pruebas de segunda ejecución.
+   - **Esto toca el esquema del estado del reto** (`reto@1` → `reto@2`, con el id de reglas y el número de fases): para Astra.
+4. **Legado:** las sesiones 1F y 3F existentes son «Simulador anterior», con su snapshot y su veredicto (S4-02), igual que el resto. Las nuevas usan el motor.
+
+### j.4 Oráculos por producto (como los de 2F), cada uno con su mutante
+
+Las cifras van en µUSD, con capital 100.000.
+
+| Producto | Oráculo | Mutante que lo pone en rojo |
+|---|---|---|
+| 1F | objetivo: 114.999,99 → no supera; **115.000,00 → supera** | **las reglas de 2F aplicadas a 1F: 110.000 supera** (el caso de Astra) |
+| 1F, 3F | DD total: equity mínima 90.000,01 → sigue; **90.000,00 → falla** | DD total sobre el pico (trailing), o estricto (`>`) |
+| 1F, 3F | DD diario al céntimo: inicio de día 100.000 → el límite según j.2 (balance de inicio: 5.000; caída 4.999,99 sigue, **5.000,00 falla**); un segundo día con otro balance de inicio, para distinguir la base | base cambiada (capital ↔ balance de inicio), zona UTC en vez de Madrid/Praga en un cierre a las 23:30 UTC |
+| 1F, 3F | días mínimos 0: se supera el primer día | exigir 4 días |
+| 3F | objetivo 5 % en cada fase, con capital igual en las tres | objetivos `[10, 5]`, o capital arrastrado de la fase anterior |
+| 3F | transición 1→2 y 2→3; **3→4 rechazada**; superar la 3 = veredicto final | permitir 3→4, o declarar el final en la 2 |
+| 1F | sin transición: `avanzar_fase` → 409; superar = veredicto final | permitir 1→2 |
+| todos | prioridad DD total > DD diario > objetivo en el mismo cierre | orden cambiado |
+| todos | flotante (según j.2, punto 1): una posición abierta que cruza el límite | evaluar al revés de lo decidido |
+
+### j.5 Autorrevisión adversaria (1F y 3F)
+
+No había una sección así en este diseño. La abro con 1F y 3F:
+
+- **Tres familias de reglas en un mismo motor:** FTMO_2STEP, con flotante y días; y 1F/3F, que hoy van sin flotante ni días. Un alumno puede comparar 2F y 3F y ver que el mismo historial se juzga con criterios distintos. Es una decisión de producto, no un fallo, pero hay que decirla en la pantalla.
+- **«Hoy» tiene errores conocidos de coma flotante,** de ahí la tolerancia de 1 céntimo. Portarlo tal cual a enteros cambia algún caso límite. Cada diferencia entre el veredicto legado (JS) y el v1 en el mismo historial tiene que estar **explicada** por j.2, no ser accidental. Propongo un contraste JS ↔ motor sobre historiales sintéticos de 1F y 3F en la etapa 3.
+- **Transición 2→3 del 3F:** la hija de la hija. El orden de bloqueos «padre y después hija» y el borrado en cascada (S003-01, D-17) ya cubren cadenas, pero **no hay un oráculo con tres generaciones**: añadirlo (borrar la raíz deja tres lápidas; un comando en la nieta da 410).
+- **El cupo cuenta raíces:** un 3F ocupa una plaza en sus tres fases, como hoy.
+- **sim-004a crece otra vez,** ahora también con la transición generalizada y `reto@2`. Se suma al punto 2 de i.4.
