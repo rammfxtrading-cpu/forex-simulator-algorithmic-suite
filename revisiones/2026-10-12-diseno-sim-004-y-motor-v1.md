@@ -2360,7 +2360,7 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 - **SELECT y DELETE no entran.** Las dos ya filtran por `user_id = auth.uid()`: A no ve ni borra lo de B (E14-select-delete). Una fila de A en una sesión ajena solo existe si se usó el hueco antes: s12 la mide y, desde la preparatoria, ya no se puede crear.
 
 **B. `challenge_parent_id`:** disparador `sim_sessions_padre_propio`, BEFORE INSERT OR UPDATE en `sim_sessions`. Su función es SECURITY DEFINER, con `search_path` vacío y sin SQL dinámico.
-- **Qué rechaza:** con el padre puesto, al crear, al cambiarlo o al cambiar `user_id`: un padre que no existe («no existe») o de otro usuario («es de otro usuario»). Vale para todos, `service_role` incluido. La hija legítima de `advance` tiene el mismo usuario y entra (E14-padre-service-role).
+- **Qué rechaza:** con el padre puesto, al crear, al cambiarlo o al cambiar `user_id`: un padre que no existe o que es de otro usuario. Da un solo error para los dos (P0001, «sesion padre no valida», sin el id; o.16.10.3). Vale para todos, `service_role` incluido. La hija legítima de `advance` tiene el mismo usuario y entra (E14-padre-service-role).
 - **Por qué disparador y no política:** una política sobre `sim_sessions` que leyera `sim_sessions` sería recursiva. Como DEFINER, la lectura del padre no pasa por la RLS.
 - **Las filas de antes no se revisan aquí:** se pueden seguir editando sin tocar el padre (E14-padre-filas-de-antes) y las mide s12.
 - **Interacción con lo que ya había:**
@@ -2409,7 +2409,7 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 **Lo demás:**
 1. **La recursión:** las seis políticas leen `sim_sessions`, cuya política no lee ninguna de ellas. El disparador del padre lee `sim_sessions` como DEFINER, sin RLS, y un SELECT no dispara disparadores. No hay ciclo.
 2. **Rendimiento:** las políticas buscan por la clave primaria de `sim_sessions`, y el disparador también (`s.id = NEW.challenge_parent_id`), solo cuando se pone o cambia el padre.
-3. **La existencia de un uuid:** los dos mensajes del disparador («no existe» / «es de otro usuario») dejan saber a un alumno si un uuid es una sesión de otro. Los uuid son aleatorios (122 bits) y no se exponen, así que lo considero despreciable. Unificar el mensaje es un cambio de una línea, si el CTO lo prefiere.
+3. **La existencia de un uuid:** los dos mensajes del disparador («no existe» / «es de otro usuario») dejaban saber a un alumno si un uuid era una sesión de otro. **CERRADO (CTO 13-oct):** un solo error para los dos casos, con el mismo SQLSTATE (P0001), el mismo texto («sim_sessions_padre_propio: sesion padre no valida») y sin el id. E14-padre-indistinguible lo comprueba en INSERT y en UPDATE.
 4. **Cambiar el dueño de un padre después:** no lo revisa nadie. Solo lo puede hacer `service_role`, porque la RLS impide a un alumno cambiar `user_id`. Si un proceso de administración cambiara el dueño de una sesión, sus hijas quedarían con un padre ajeno; s12 lo mediría.
 5. **Concurrencia del padre:** el disparador lee el padre sin cerrojo. Si el padre se borra a la vez, la FK, que sí lo bloquea, lo resuelve. Si cambia de dueño a la vez, es el caso 4.
 6. **`service_role`** no pasa por la RLS y sí por el disparador del padre. Los endpoints siguen comprobando la propiedad, como hoy: `advance` compara `session.user_id` y `create` usa el usuario del token.

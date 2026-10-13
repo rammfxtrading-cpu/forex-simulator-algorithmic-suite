@@ -894,8 +894,7 @@ insert into public.session_drawings (session_id, user_id, pair) values ('${SB}',
   const h2 = nuevo(`update public.sim_sessions set challenge_parent_id = '${SB}' where id = '${SA2}';`, A, 'pq')
   const h3 = nuevo(ses(u(1513), A, u(9999)), A, 'pq')
   oraculo('E14-padre-ajeno', 'A crea una sesion con padre de B (firmado y cliente viejo), o pone a la suya un padre de B, o un padre que no existe: rechazado por sim_sessions_padre_propio, sin registro y sin tocar B',
-    !h1.ok && !h1v.ok && !h2.ok && !h3.ok && [h1, h1v, h2].every(x => /sim_sessions_padre_propio: la sesion padre .* es de otro usuario/.test(err1(x)))
-    && /sim_sessions_padre_propio: la sesion padre .* no existe/.test(err1(h3)) && ultimo('pq') === k0 && n1(`select rev_saldo from public.sim_sessions where id = '${SB}'`) === revB
+    !h1.ok && !h1v.ok && !h2.ok && !h3.ok && [h1, h1v, h2, h3].every(x => err1(x) === 'sim_sessions_padre_propio: sesion padre no valida') && ultimo('pq') === k0 && n1(`select rev_saldo from public.sim_sessions where id = '${SB}'`) === revB
     && n1(`select coalesce(challenge_parent_id::text, '-') from public.sim_sessions where id = '${SA2}'`) === '-', errs(h1, h1v, h2, h3))
   const o1 = nuevo(ses(u(1514), A, SA), A, 'pq')
   const o2 = nuevo(`update public.sim_sessions set challenge_parent_id = '${SA2}' where id = '${u(1514)}';`, A, 'pq')
@@ -903,7 +902,18 @@ insert into public.session_drawings (session_id, user_id, pair) values ('${SB}',
   oraculo('E14-padre-propio', 'A con padres suyos: crear la hija, cambiarle el padre por otra suya y quitarlo, bien', ok(o1, o2, o3), errs(o1, o2, o3))
   const sr1 = escribe({ rol: 'service_role' }, ses(u(1515), B, SB, "challenge_phase=2"), 'pq')
   const sr2 = escribe({ rol: 'service_role' }, ses(u(1516), A, SB), 'pq')
-  oraculo('E14-padre-service-role', 'service_role (como advance) crea la hija legitima de B; con un usuario distinto del del padre, tambien se rechaza', sr1.ok && !sr2.ok && /es de otro usuario/.test(err1(sr2)), errs(sr1, sr2))
+  oraculo('E14-padre-service-role', 'service_role (como advance) crea la hija legitima de B; con un usuario distinto del del padre, tambien se rechaza', sr1.ok && !sr2.ok && /sesion padre no valida/.test(err1(sr2)), errs(sr1, sr2))
+  // o.16.10.3: el padre ajeno y el inexistente dan EXACTAMENTE el mismo error (texto y SQLSTATE)
+  const verbo = q => pg.psql(`\\set VERBOSITY verbose
+begin; set local role authenticated; select set_config('request.jwt.claims', ${L(JSON.stringify({ role: 'authenticated', sub: A }))}, true), set_config('request.jwt.claim.sub', ${L(A)}, true), set_config('request.headers', ${L(JSON.stringify({ 'x-sim-cliente': FIRMADO }))}, true) \\g /dev/null
+${q}
+commit;`, 'pq')
+  const lineaError = r => (r.err.split('\n').find(l => /ERROR:/.test(l)) || '').replace(/^.*ERROR:\s+/, '')
+  const eAj = verbo(ses(u(1541), A, SB)), eNo = verbo(ses(u(1542), A, u(9998)))
+  const eAjU = verbo(`update public.sim_sessions set challenge_parent_id = '${SB}' where id = '${SA2}';`), eNoU = verbo(`update public.sim_sessions set challenge_parent_id = '${u(9997)}' where id = '${SA2}';`)
+  oraculo('E14-padre-indistinguible', 'padre de otro usuario y padre inexistente (en INSERT y en UPDATE): el mismo SQLSTATE (P0001) y el mismo texto, sin el id ni cual de los dos casos es',
+    [eAj, eNo, eAjU, eNoU].every(x => !x.ok) && new Set([eAj, eNo, eAjU, eNoU].map(lineaError)).size === 1 && lineaError(eAj) === 'P0001: sim_sessions_padre_propio: sesion padre no valida',
+    [eAj, eNo, eAjU, eNoU].map(lineaError).join(' | '))
   // filas de antes con un padre ajeno (las mide s12): editarlas sin tocar el padre sigue funcionando
   pg.psql(`set session_replication_role = replica; update public.sim_sessions set challenge_parent_id = '${SB}' where id = '${SA2}'; set session_replication_role = origin;`, 'pq')
   const lg = nuevo(`update public.sim_sessions set timeframe = 'M5' where id = '${SA2}';`, A, 'pq')
@@ -916,7 +926,7 @@ insert into public.session_drawings (session_id, user_id, pair) values ('${SB}',
   const ok1 = nuevo(hijaV1(u(1521), A, SB), A, 'pq')
   const leg = escribe({ rol: 'service_role' }, hijaV1(u(1522), B, SB), 'pq')
   oraculo('E14-okupa-v1', 'A intenta ocupar con una hija v1 suya el unico hueco de hija v1 de la sesion de B (el que mira sim_avanzar_fase): rechazado; la hija v1 legitima de B entra',
-    !ok1.ok && /es de otro usuario/.test(err1(ok1)) && leg.ok, errs(ok1, leg))
+    !ok1.ok && /sesion padre no valida/.test(err1(ok1)) && leg.ok, errs(ok1, leg))
   const re = pgx(PUERTA, 'pq'), re2 = pgx(PREP, 'pq')
   oraculo('E14-reejecuta', 'la puerta y la preparatoria otra vez (estado 2): FIN, con las politicas y el disparador', re.ok && re2.ok, errs(re, re2))
   // mutantes funcionales: sin las politicas de dibujos, o sin el disparador del padre, el ataque pasa

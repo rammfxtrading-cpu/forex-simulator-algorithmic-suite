@@ -59,7 +59,8 @@
 --   sim_sessions_padre_propio (ronda 3 quater, o.16.9) disparador BEFORE
 --       INSERT OR UPDATE en sim_sessions, funcion SECURITY DEFINER, search_path
 --       vacio: challenge_parent_id solo puede apuntar a una sesion que existe y
---       es del mismo usuario (se comprueba al ponerlo o cambiarlo, o al cambiar
+--       es del mismo usuario (un solo error, «sesion padre no valida», P0001,
+--       sin decir si no existe o es de otro) (se comprueba al ponerlo o cambiarlo, o al cambiar
 --       user_id). Sin politica sobre sim_sessions que lea sim_sessions (seria
 --       recursiva). Vale para todos, service_role incluido: la hija legitima
 --       de advance es del mismo usuario.
@@ -257,12 +258,10 @@ DECLARE
 BEGIN
   IF NEW.challenge_parent_id IS NOT NULL
      AND (TG_OP = 'INSERT' OR NEW.challenge_parent_id IS DISTINCT FROM OLD.challenge_parent_id OR NEW.user_id IS DISTINCT FROM OLD.user_id) THEN
+    -- el mismo error (texto y SQLSTATE) si no existe o si es de otro usuario: no dice cual de los dos (o.16.10.3)
     SELECT s.user_id INTO v_dueno FROM public.sim_sessions s WHERE s.id = NEW.challenge_parent_id;
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'sim_sessions_padre_propio: la sesion padre % no existe', NEW.challenge_parent_id;
-    END IF;
-    IF v_dueno IS DISTINCT FROM NEW.user_id THEN
-      RAISE EXCEPTION 'sim_sessions_padre_propio: la sesion padre % es de otro usuario', NEW.challenge_parent_id;
+    IF NOT FOUND OR v_dueno IS DISTINCT FROM NEW.user_id THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'sim_sessions_padre_propio: sesion padre no valida';
     END IF;
   END IF;
   RETURN NEW;
