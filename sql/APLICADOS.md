@@ -13,6 +13,10 @@ Lo que se ha ejecutado de `sql/` en la base viva, con el informe del propio fich
 | `consultas/s06-roles-y-ejecutor.sql` | **consulta de solo lectura**: versión, ejecutor, roles y membresías, default ACL, esquemas, `auth.uid()`, FK, inventario de sim-003 y huérfanos (Astra sim-003 ronda 2) | **sí** · **12/10/2026**, Ramón en el editor; salida **literal**: ver abajo | `94675c7` · `1ea61c6f86c6d672afb15a8f4401e1fe732e5e3ce6ed39e025f1791fe982e954` |
 | `sim-003-persistencia-aditiva.sql` | persistencia aditiva: 4 tablas nuevas (`sim_alumnos`, `sim_arrendamientos`, `sim_recibos`, `sim_eventos`), columnas nuevas en `sim_sessions`/`sim_trades`, FK sesión → perfil, 7 RPC + 2 auxiliares SECURITY DEFINER solo para service_role; **RPC inactivas** (nadie las llama aún) | **sí** · **12/10/2026**, Ramón en el editor, una sola pegada, ejecutor `postgres` **no superusuario**; informe **literal**, 64 filas, acaba en `FIN \| sim-003 aplicada`: ver abajo | `1a951ca` (sin cambios hasta `ad7c738`) · `2a74bcb3ee62722fb8633a188445d30471b4653875f2ce1b00d206434bf3403f` |
 | `consultas/s07-secuencias-y-permisos.sql` | **consulta de solo lectura**: permisos de las 2 secuencias y las 4 tablas nuevas de sim-003 (el REVOKE de las secuencias no lo comprueba ninguna guarda del DO) | **sí** · **12/10/2026**, Ramón en el editor, tras aplicar sim-003; salida **literal**: ver abajo | `aa4f51a` · `327cf6c10cb7c7f6dde931ca29740befc0facaaa9c1cae7435e268e1b2dbe768` |
+| `consultas/s11-acl-columna.sql` | **consulta de solo lectura**: ACL de columna, privilegios efectivos por columna y RLS (paso 1 del runbook de la etapa 1) | **sí** · **13/10/2026** (noche), Ramón en el editor; **resumen** del CTO: ver abajo | `4da2df2` · `e22b801e60e4604f404bbcba35b5bb02276f3e59449c230492165420548cea67` |
+| `consultas/s12-trades-sesion-ajena.sql` | **consulta de solo lectura**: filas en sesión ajena o inexistente (4 tablas) y RLS (paso 2) | **sí** · **13/10/2026** (noche), Ramón en el editor; **resumen** del CTO: ver abajo | `4da2df2` · `0ac4ce64c7796f11e38efaaf0b2e256d93e157f3d4c1745b79e63b6b69384c92` |
+| `sim-004a-preparatoria.sql` | etapa 1: cierre atómico `sim_cierre_v0`, registro de escrituras y marcas, `sim_servicio`, `rev_saldo` y sus disparadores, disparador del padre, políticas RESTRICTIVE de `sim_trades`, `session_drawings` y `session_chart_config` (o.16) | **sí** · **13/10/2026, ~19:30**, Ramón en el editor; acaba en `FIN \| sim-004a-preparatoria aplicada`; informe **resumido** por el CTO: ver abajo | `4da2df2` · `060717995e723fdefc043b9cb6fb0f7658943034a3810474adea4a587eb2f6e2` |
+| `consultas/s10-conciliacion.sql` | **consulta de solo lectura**: conciliación del registro y `statement_timeout` (paso 4) | **sí** · **13/10/2026** (noche), tras la preparatoria; **resumen** del CTO: ver abajo | `4da2df2` · `eaa23bc700a44c05ccacd66212195bb5dbbb3aee0ab8d992b7a7606af37c7576` |
 
 ## s04 · resultado (4-oct-2026)
 
@@ -105,3 +109,22 @@ Coincide con lo que el bloque DO exige antes de terminar (si cualquiera de esas 
 - **sim-004b** (sin escribir): amplía `sim_sessions_terminal_valida` y el CHECK de `sim_eventos.tipo`. **A partir de sim-004b, sim-003 queda superada y NO se vuelve a ejecutar**: su comprobación literal abortaría ante esas definiciones nuevas, y se ensayará que, si se ejecuta por error, aborta con su error prefijado y sin cambiar nada. La referencia del esquema pasará a ser la comprobación final de sim-004b.
 
 **Las escrituras del dueño en `sim_servicio`** (mantenimiento, `version_minima`) se hacen solo por SQL y se apuntan aquí con su hora (o.5).
+
+## Etapa 1: s11, s12, sim-004a-preparatoria y s10 · resultado (13-oct-2026, noche)
+
+**Todo es RESUMEN del CTO, no las filas tal cual.** Si Ramón pega las salidas literales, van a `consultas/salidas/` con su sha256 y se citan aquí. El runbook es `revisiones-suite/2026-10-14-sim-etapa1-runbook-aplicacion.md`. Los cuatro ficheros son los del commit `4da2df2`, revisado por Astra en la 3b; los sha256 se comprobaron al copiarlos al portapapeles.
+
+- **s11 (paso 1):** limpio. 0 ACL de columna, ningún «DIFIERE», RLS activa en las cuatro tablas.
+- **s12 (paso 2):** limpio. Los 8 totales a 0 y RLS activa en las cuatro tablas.
+- **sim-004a-preparatoria (paso 3), APLICADA hacia las 19:30.** Lo resumido por el CTO:
+  - `FIN | sim-004a-preparatoria aplicada`; registro instalado;
+  - `rev_saldo` bigint not null default 0, sin ACL de columna;
+  - los tres disparadores nuevos y las seis políticas RESTRICTIVE, presentes;
+  - RLS activa en las cuatro tablas;
+  - funciones con `search_path` vacío; EXECUTE solo de `sim_cierre_v0`, para `authenticated`;
+  - `sim_servicio`: `mantenimiento=false`, `version_minima=1`.
+
+  **El registro está instalado desde esa hora:** cuenta para la regla de la puerta (m.3: 7 días como mucho).
+- **s10 (paso 4):**
+  - 0 filas en el registro; «registro instalado», puerta NO activa;
+  - `statement_timeout`: `authenticated` 8 s, `anon` 3 s. La regla de o.11.2 es ≤ 10 s, para que la espera de 20 s cubra 2 × timeout: 2 × 8 s = 16 s < 20 s, se cumple.
