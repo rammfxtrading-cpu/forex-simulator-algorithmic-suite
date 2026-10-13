@@ -169,7 +169,7 @@ const externo = buf => {
   m.huella = createHash('sha256').update(JSON.stringify({ esquema: m.esquema, par: m.par, version: m.version, digitos: m.digitos, dias: m.dias, cerrados: m.cerrados })).digest('hex')
   return m
 }
-for (const [que, f] of [['OHLC (high − open = −1)', x => x.writeInt32LE(-1, 18 + 6)], ['escala 4', x => x.writeUInt8(4, 5)], ['reservado 1', x => x.writeUInt16LE(1, 6)]]) {
+for (const [que, f] of [['OHLC (high − open = −1)', x => x.writeInt32LE(-1, 20 + 6)], ['escala 4', x => x.writeUInt8(4, 5)], ['reservado 1', x => x.writeUInt16LE(1, 6)]]) {
   const malo = Buffer.from(LUN.buffer); f(malo)
   const m = externo(malo)
   ver(`control ${que}: el manifiesto externo pasa su huella, el sha del trozo coincide y creaManifiesto lo rechazaria`, MF.validaManifiesto(m) === true && B.huella(malo) === m.dias[0].sha256 && lanza(() => MF.creaManifiesto({ par: 'EURUSD', version: 'externo', trozos: [{ dia: LUN.dia, buffer: malo }] })))
