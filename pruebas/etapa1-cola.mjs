@@ -22,6 +22,8 @@
  *     respuesta perdida; la espera incluye el cierre pendiente; el cierre tardio tras el
  *     paso, rechazado por sim_cierre_v0 con la pantalla coherente; la llamada directa del
  *     original de Astra; y el breach sin los 300 ms ni los tres intentos
+ *   5 CAS de challenge/advance (CTO 13-oct): ante el 409 «saldo_cambiado» el cliente vuelve a
+ *     pasar por la barrera (vaciar la cola + reevaluar) antes de reintentar
  *
  * Modulos, hooks y pagina REALES sobre los dobles (supabase-falso, react-falso); datos
  * inventados; el orden de entrega lo deciden las puertas del doble (db.pausa). Sin red.
@@ -404,5 +406,39 @@ async function pideFase(b, sid, { primero, pendiente, falla, pierde, incierto })
   oraculo('E104-breach-error', 'breach cuyo cierre forzado falla: el reto reevaluado no esta quemado y el modal «quemado» no se abre',
     mal.conPendiente == null && mal.modal == null && mal.trades === 0 && mal.ev !== 'failed_dd_daily' && mal.ev !== 'failed_dd_total', JSON.stringify(mal))
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+titulo('5 · CAS de advance: el 409 vuelve a pasar por la barrera')
+// la otra pestaña guarda un cierre (trade + saldo) mientras advance espera su UPDATE (veces = cuantas veces)
+async function faseConOtraPestana(sid, pnlOtra, veces = 1) {
+  const b = await reto(sid)
+  await cierreReto(sid, 11000, 1); await asienta(20)
+  let n = 0
+  db.pausa = c => {
+    if (!(c.tabla === 'sim_sessions' && c.op === 'update' && c.payload?.status && n < veces)) return null
+    n++
+    db.tablas.sim_trades.push({ ...tradeReto(pnlOtra, 30 + n), session_id: sid })
+    madre(sid).balance = Number(madre(sid).balance) + pnlOtra
+    return null
+  }
+  await b.caja.valor.reto.handleChallengePass(); await asienta(40); db.pausa = null
+  return b
+}
+{ const sid = 'e105-cas-sigue'; const b = await faseConOtraPestana(sid, 500)
+  const st = advances().map(l => l.estado)
+  oraculo('CAS-cliente-reintenta', 'otra pestaña guarda +500 entre la lectura y el UPDATE: 409, el cliente vacia la cola, reevalua (11.500 ≥ objetivo) y reintenta: fase con 111.500 (los dos)',
+    st.join(',') === '409,200' && madre(sid).status === 'passed_phase' && Number(madre(sid).balance) === 111500 && Number(madre(sid).balance) === 100000 + suma(sid) && hijas(sid).length === 1, foto(sid))
+  b.caja.raiz.desmonta() }
+{ const sid = 'e105-cas-cae'; const b = await faseConOtraPestana(sid, -3000)
+  const st = advances().map(l => l.estado)
+  oraculo('CAS-cliente-reevalua', 'otra pestaña guarda −3.000: 409, y al reevaluar (8.000) ya no se reintenta; sigue activa con 108.000 y se avisa',
+    st.join(',') === '409' && madre(sid).status === 'active' && Number(madre(sid).balance) === 108000 && hijas(sid).length === 0 && AV.avisos().some(a => /ya no está en ese punto/.test(a.texto)), foto(sid))
+  b.caja.raiz.desmonta() }
+{ const sid = 'e105-cas-siempre'; const CF = await importa('components/useChallengeFlow.js')
+  const b = await faseConOtraPestana(sid, 1, 99)
+  const st = advances().map(l => l.estado)
+  oraculo('CAS-cliente-tope', `si el saldo cambia en cada intento: ${CF.INTENTOS_FASE} intentos (409 todos), sin bucle, nada escrito y se avisa`,
+    st.length === CF.INTENTOS_FASE && st.every(x => x === 409) && madre(sid).status === 'active' && hijas(sid).length === 0 && AV.avisos().some(a => /ha cambiado mientras se decidía/.test(a.texto)), foto(sid))
+  b.caja.raiz.desmonta() }
 
 fin()

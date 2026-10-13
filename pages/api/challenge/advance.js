@@ -52,6 +52,10 @@ import { servicioPermite } from '../../../lib/sim/servicioServidor'
  *   404 — sesión no encontrada.
  *   409 — la sesión ya está cerrada (status != 'active'). Idempotencia:
  *         no reabrir ni re-avanzar.
+ *   409 { code: 'saldo_cambiado' } — CAS (CTO 13-oct, sobre o.13.4): el saldo
+ *         (o el status) cambió entre la lectura y la escritura (otra pestaña
+ *         guardó un cierre). No se escribe nada; el cliente vuelve a pasar
+ *         por la barrera de fase y reintenta.
  */
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -164,23 +168,37 @@ export default async function handler(req, res) {
   // Etapa 1 (o.12): con el simulador en mantenimiento, o sin poder saberlo, no se escribe
   if (!(await servicioPermite(supabaseAdmin, res, 'challenge/advance'))) return
 
+  // CAS (CTO 13-oct, sobre o.13.4): la sesion solo se cierra si su saldo sigue
+  // siendo el leido en el paso 1 y sigue activa. Si otra pestaña guardo un
+  // cierre entre la lectura y aqui, el UPDATE no afecta a 1 fila → 409 y nada
+  // escrito (balanceNow no incluiria ese cierre).
+  const cierraConCAS = async (cambios) => {
+    const { data, error } = await supabaseAdmin
+      .from('sim_sessions')
+      .update(cambios)
+      .eq('id', session_id)
+      .eq('balance', session.balance)
+      .eq('status', 'active')
+      .select('*')
+    if (error) return { error }
+    if (!Array.isArray(data) || data.length !== 1) return { cambiado: true }
+    return { data: data[0] }
+  }
+  const SALDO_CAMBIADO = { error: 'El saldo cambió, vuelve a intentarlo', code: 'saldo_cambiado' }
+
   // ─ FAIL ─
   if (outcome === 'fail') {
     const newStatus = evaluation.status // 'failed_dd_daily' | 'failed_dd_total'
-    const { data: updated, error: uErr } = await supabaseAdmin
-      .from('sim_sessions')
-      .update({
-        status: newStatus,
-        balance: evaluation.balanceNow,
-        last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
-      })
-      .eq('id', session_id)
-      .select('*')
-      .single()
+    const { data: updated, error: uErr, cambiado } = await cierraConCAS({
+      status: newStatus,
+      balance: evaluation.balanceNow,
+      last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
+    })
 
     if (uErr) {
       return (registra('challenge/advance', uErr), res.status(500).json({ error: 'Error cerrando sesión' }))
     }
+    if (cambiado) return res.status(409).json(SALDO_CAMBIADO)
 
     return res.status(200).json({
       ok: true,
@@ -197,20 +215,16 @@ export default async function handler(req, res) {
 
   if (isLastPhase) {
     // Challenge completo — marcar passed_all y parar.
-    const { data: updated, error: uErr } = await supabaseAdmin
-      .from('sim_sessions')
-      .update({
-        status: 'passed_all',
-        balance: evaluation.balanceNow,
-        last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
-      })
-      .eq('id', session_id)
-      .select('*')
-      .single()
+    const { data: updated, error: uErr, cambiado } = await cierraConCAS({
+      status: 'passed_all',
+      balance: evaluation.balanceNow,
+      last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
+    })
 
     if (uErr) {
       return (registra('challenge/advance', uErr), res.status(500).json({ error: 'Error cerrando challenge' }))
     }
+    if (cambiado) return res.status(409).json(SALDO_CAMBIADO)
 
     return res.status(200).json({
       ok: true,
@@ -234,20 +248,16 @@ export default async function handler(req, res) {
       discarded_positions: open_positions.length,
     })
   }
-  const { data: closed, error: uErr } = await supabaseAdmin
-    .from('sim_sessions')
-    .update({
-      status: 'passed_phase',
-      balance: evaluation.balanceNow,
-      last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
-    })
-    .eq('id', session_id)
-    .select('*')
-    .single()
+  const { data: closed, error: uErr, cambiado } = await cierraConCAS({
+    status: 'passed_phase',
+    balance: evaluation.balanceNow,
+    last_timestamp: end_timestamp,   // B4: persistir endTime real del cierre
+  })
 
   if (uErr) {
     return (registra('challenge/advance', uErr), res.status(500).json({ error: 'Error cerrando fase' }))
   }
+  if (cambiado) return res.status(409).json(SALDO_CAMBIADO)
 
   const nextPhase = currentPhase + 1
   const nextName = `${stripPhaseSuffix(session.name)} · Fase ${nextPhase}`

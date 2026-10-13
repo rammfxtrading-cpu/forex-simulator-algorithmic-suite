@@ -16,6 +16,9 @@ import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera } fr
 import { inciertosDe } from '../lib/sim/servicio'
 import { avisa } from '../lib/sim/avisos'
 
+// CAS de challenge/advance: cuantas veces se vuelve a pasar por la barrera tras un 409
+export const INTENTOS_FASE = 3
+
 export default function useChallengeFlow({ id, router, session, setSession, sessionRef, currentTime, pairState, balanceRef, closePositionRef, setIsPlaying }){
   const currentTimeRef = useRef(null) // timestamp de la vela actual del simulador (unix segundos). Se usa en refreshChallengeStatus.
   const lastMadridDayRef = useRef(null) // ultimo dia Madrid detectado para evitar refetch en cada tick
@@ -253,6 +256,8 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
         }),
       })
       const data = await res.json()
+      // CAS del servidor (CTO 13-oct): el saldo cambio entre su lectura y su escritura
+      if (res.status === 409 && data?.code === 'saldo_cambiado') return { saldoCambiado: true }
       if (!res.ok) {
         console.error('[challenge/advance] error:', data?.error || res.statusText)
         return null
@@ -268,22 +273,31 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   // explicita: cola cerrada a cierres nuevos, vacia, sin inciertos y el reto
   // REEVALUADO con todos los cierres guardados. Si ya no esta en ese punto, no se
   // manda, se cierra el modal y se avisa.
+  // Si el servidor responde 409 «saldo_cambiado» (CAS: otra pestaña guardo un
+  // cierre entre su lectura y su escritura), se vuelve a pasar por la barrera
+  // (vaciar la cola + reevaluar) antes de reintentar; como mucho INTENTOS_FASE
+  // veces, y despues se avisa (el alumno puede volver a pulsar).
   const decideFase = useCallback(async (outcome) => {
     if (!id) return null
     setChallengeAdvancing(true)
     try {
-      const r = await confirmaReto(async (st) => {
-        const ev = st?.evaluation?.status
-        const vale = outcome === 'pass' ? ev === 'target_reached' : (ev === 'failed_dd_daily' || ev === 'failed_dd_total')
-        if (!vale) {
-          challengeModalShownRef.current = false
-          setChallengeModal(null)
-          avisa(st ? 'Con todos tus cierres guardados, el reto ya no está en ese punto: sigue operando.' : 'No se ha podido comprobar el reto. Inténtalo de nuevo.')
-          return null
-        }
-        return await callChallengeAdvance(outcome)
-      })
-      return r?.valor ?? null
+      for (let intento = 0; intento < INTENTOS_FASE; intento++) {
+        const r = await confirmaReto(async (st) => {
+          const ev = st?.evaluation?.status
+          const vale = outcome === 'pass' ? ev === 'target_reached' : (ev === 'failed_dd_daily' || ev === 'failed_dd_total')
+          if (!vale) {
+            challengeModalShownRef.current = false
+            setChallengeModal(null)
+            avisa(st ? 'Con todos tus cierres guardados, el reto ya no está en ese punto: sigue operando.' : 'No se ha podido comprobar el reto. Inténtalo de nuevo.')
+            return null
+          }
+          return await callChallengeAdvance(outcome)
+        })
+        if (r?.valor?.saldoCambiado) continue
+        return r?.valor ?? null
+      }
+      avisa('El saldo de la sesión ha cambiado mientras se decidía la fase. Inténtalo de nuevo.')
+      return null
     } finally {
       setChallengeAdvancing(false)
     }
