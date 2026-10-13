@@ -2276,7 +2276,7 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 **Runbook (o.16.3 sigue valiendo):**
 - **Aprobado:** Ramón aprueba la columna (13-oct). Se avisa al hub igualmente.
 - **La preparatoria va antes del despliegue.** El `advance` nuevo responde 503 sin la columna. El cliente viejo que quede abierto también sube el contador con sus trades desde la preparatoria, sin esperar a la puerta.
-- **Durante la ventana**, nada de borrados masivos (hub, `sim_borrar_alumno`). Cada trade borrado actualiza su sesión, y dos borrados concurrentes del mismo alumno se podrían interbloquear (o.16.6).
+- **Durante la ventana**, nada de borrados masivos (hub, `sim_borrar_alumno`). Cada trade borrado actualiza su sesión, y dos borrados concurrentes del mismo alumno se podrían interbloquear (o.16.6). **Si un borrado de administración aborta por interbloqueo (40P01), se reintenta.** PostgreSQL deshace el abortado entero.
 
 #### o.16.6 Autorrevisión adversaria de o.16.5
 
@@ -2287,10 +2287,10 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 2. **Un alumno puede subir el contador de una sesión ajena.** La RLS de `sim_trades` en s04 solo exige `user_id = auth.uid()` (USING sin WITH CHECK propio), no la propiedad de la sesión.
    - **El caso:** un alumno que conozca el uuid de una sesión ajena puede escribir un trade con ese `session_id`. El disparador (DEFINER) le sube el contador y el `advance` de la víctima recibe 409: como mucho 3 intentos y un aviso. Puede volver a pulsar.
    - **Lo que no es nuevo:** ese trade ya ensuciaba hoy el historial de la víctima (`advance` lee los trades por `session_id`). El contador solo lo hace visible.
-   - **Pregunta al CTO:** ¿se cierra ya con una política WITH CHECK que exija que la sesión sea del alumno? Es un cambio de RLS en `sim_trades` que sería suyo decidir. ¿O se deja al v1?
+   - **CERRADO (CTO 13-oct):** es aislamiento de datos y se cierra en la etapa 1 (o.16.7).
 3. **Bloqueos:** los cinco casos de §12b pasan con dos conexiones reales, pero no son una prueba exhaustiva de todos los intercalados.
    - **Un riesgo que sí veo:** dos borrados masivos concurrentes del mismo alumno (hub + `sim_borrar_alumno`, o dos `sim_borrar_alumno`) bloquean sesiones en órdenes distintos (el de los trades y el de las sesiones). Pueden interbloquearse: PostgreSQL aborta uno con 40P01 y nada queda a medias.
-   - Son operaciones de administración; el runbook ya pide no hacerlas durante la ventana.
+   - Son operaciones de administración; el runbook ya pide no hacerlas durante la ventana. **Aceptado por el CTO**, y al runbook: si un borrado de administración aborta por interbloqueo (40P01), se reintenta.
    - Los cierres de alumnos solo bloquean una sesión cada uno y no participan en ciclos.
 4. **Coste:**
    - **Por fila de trade escrita,** un UPDATE más de la sesión (una versión de fila y su WAL). Un borrado de N trades de una sesión hace N actualizaciones de la misma fila.
@@ -2299,3 +2299,52 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 5. **El registro:** el UPDATE anidado no se registra. Lo que se pierde es solo un `rev_saldo` derivado; la escritura del trade queda registrada con su rol, cliente y transacción. s10 no cambia, porque no clasificaba sesiones por esa fila.
 6. **`sim_cierre_v0` sube 2:** `advance` solo compara igualdad. El doble lo emula igual (+1 el trade, +1 el saldo si cambia), y el SQL está en E11-cierre-sube.
 7. **sim-003 (motor 1):** `sim_comando` inserta trades en sesiones v1 y ahora sube su `rev_saldo`. El v1 no lo usa (tiene su `version`) y no hace daño. sim-003 sigue ejecutándose después de la preparatoria (E2).
+
+#### o.16.7 Un alumno solo escribe trades en SUS sesiones (CTO 13-oct)
+
+**El hueco** (o.16.6.2): la política de hoy de `sim_trades` (s04: «Users see own trades», FOR ALL TO public USING `auth.uid() = user_id`, sin WITH CHECK propio) no exige que la sesión sea del alumno. **Medido contra `a68fdfc`:** A inserta y mueve trades a la sesión de B; el contador de B pasa de 0 a 5 y B tiene 2 trades que no son suyos.
+
+**El mecanismo** (`sql/sim-004a-preparatoria.sql`): dos políticas **RESTRICTIVE** para `authenticated`.
+- **`sim_trades_sesion_propia_insert`,** FOR INSERT: `WITH CHECK (EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = sim_trades.session_id AND s.user_id = (SELECT auth.uid())))`.
+- **`sim_trades_sesion_propia_update`,** FOR UPDATE: lo mismo en USING y en WITH CHECK. No se puede tocar un trade de una sesión ajena ni moverlo a una.
+- **Por qué RESTRICTIVE y no reescribir la de hoy:** las restrictivas se suman con AND a las permisivas. «Users see own trades» (`user_id = auth.uid()`) sigue tal cual, así que la condición es «además de». No se borra ni se reescribe la política medida en producción.
+- **SELECT y DELETE no cambian.** Solo alcanzan filas con `user_id` propio. Un trade propio en una sesión ajena solo puede existir si alguien usó el hueco antes; s12 lo mide antes de aplicar (si sale algo, se para) y, desde la preparatoria, ya no se puede crear ninguno.
+- **`(SELECT auth.uid())`** se evalúa una vez por sentencia (initplan), no por fila.
+- **Antes de crearlas** (estado 0), la preparatoria comprueba que las políticas vigentes de `sim_trades` son exactamente la de s04. Si no, aborta sin crear nada (E13-precondicion).
+- **Los nombres** son piezas del estado. La guarda final exige exactamente esas tres políticas, con su texto, modo, órdenes y roles; nunca ALL TABLES IN SCHEMA.
+- **Mutantes que abortan la reejecución (E9):** sin la de INSERT, UPDATE sin WITH CHECK, INSERT PERMISSIVE y una política de más.
+
+**Lo que sigue funcionando** (E13):
+- A con sus sesiones: INSERT firmado y del cliente viejo, UPDATE, mover entre SUS sesiones y DELETE;
+- `sim_cierre_v0` (INVOKER) sobre su sesión. Sobre una ajena lo rechaza ya la RLS en el INSERT del trade, antes de su comprobación del UPDATE: sin efectos (ni trade, ni saldo, ni registro). El cliente lo trata como `{error}` cierto (42501);
+- `service_role`, que tiene BYPASSRLS (hub, admin, wipe, `advance`), inserta, mueve y borra en cualquier sesión, como hoy;
+- con la puerta, igual;
+- la reejecución en el estado 2.
+
+**El contador de B no se mueve en ningún intento** (E13-contador-b): la RLS rechaza la fila antes de que se dispare el AFTER de `sim_trades`.
+
+**s12** (`sql/consultas/s12-trades-sesion-ajena.sql`): una sola SELECT, de solo lectura.
+- **Qué trae:** los totales de trades cuyo `user_id` no es el de su sesión y de trades con `session_id` inexistente; por cada caso, solo el id del trade, la sesión y la fecha. Acaba en FIN.
+- **Ensayada** (`pruebas/s12-trades-sesion-ajena.mjs`): limpia, sin filas; dos casos plantados aparecen los dos; nada personal en la salida; es una sola SELECT.
+
+**Runbook** (pasos previos OBLIGATORIOS a la preparatoria):
+1. **s11** (ACL de columna) **y s12** (trades en sesión ajena o inexistente). Ramón los ejecuta y devuelve el resultado completo.
+2. **Si s11 trae ACL o «DIFIERE», o s12 trae algún total distinto de 0, se para y decide el CTO.**
+
+#### o.16.8 Autorrevisión adversaria de o.16.7
+
+1. **Recursión de RLS:** las políticas de `sim_trades` leen `sim_sessions`. La de `sim_sessions` («Users see own sessions») solo mira `user_id` y no lee `sim_trades`: no hay ciclo.
+   - El EXISTS se evalúa con la RLS de `sim_sessions` de `authenticated`, que deja ver solo las propias. Es coherente y redundante con `s.user_id = auth.uid()`.
+   - **Si algún día** una política de `sim_sessions` leyera `sim_trades`, PostgreSQL daría «infinite recursion detected in policy» y fallaría cerrado (error, no permiso). La guarda no vigila las políticas de `sim_sessions`.
+2. **Rendimiento:**
+   - El EXISTS busca por `sim_sessions.id`, que tiene índice (la clave primaria), y filtra `user_id` en esa misma fila. `auth.uid()` va en initplan.
+   - INSERT, una búsqueda por fila; UPDATE, una por fila candidata. El cliente actualiza por id: una.
+   - No he medido planes en producción. Con centenares de trades por alumno es despreciable.
+3. **Otros caminos de escritura cruzada:**
+   - **`sim_eventos`, `sim_recibos` y `sim_arrendamientos`:** `authenticated` no tiene INSERT, UPDATE ni DELETE (E13-otras-tablas). Solo los escriben las RPC DEFINER de sim-003, que comprueban la sesión y el arrendamiento.
+   - **`session_drawings` y `session_chart_config`** (tablas del simulador con `session_id`): **tienen el mismo hueco.** Su política solo mira `user_id`. **Medido:** A escribe un dibujo y una configuración de gráfico con la sesión de B (`sim-004a` §13, MEDIDO). No toca saldo ni veredicto, pero es aislamiento de datos.
+     - **No lo arreglo en esta ronda** porque la orden era `sim_trades`.
+     - **Pregunta al CTO:** ¿mismas políticas RESTRICTIVE para esas dos tablas, y s12 ampliada a ellas?
+   - **`sim_sessions.challenge_parent_id`:** un alumno puede poner como padre de SU sesión una sesión ajena. Solo lo limita la FK. No toca la sesión ajena: el CAS y `advance` trabajan sobre la propia y la hija v1 única solo vale para el motor 1. Lo anoto como inconsistencia posible de datos, sin efecto económico que haya encontrado.
+4. **`service_role`:** no lo cubre la RLS, por diseño. `advance`, `create`, `wipe`, el hub y la administración tienen que seguir comprobando ellos la propiedad, como hoy (`advance` compara `session.user_id` con el usuario).
+5. **El cambio de error de `sim_cierre_v0`** con una sesión ajena: antes «no existe o no es tuya» (P0001), ahora la RLS (42501). Los dos son errores ciertos para el cliente; el aviso es el genérico de cierre fallido.
