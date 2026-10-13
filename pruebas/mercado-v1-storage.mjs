@@ -162,4 +162,75 @@ const vAn = await VV.verifica({ almacen: a1, texto: anotado, velasDe: async par 
 oraculo('VER', 'un hueco aceptado publicado SIN su publicacion anotada en el fichero: problema que lo dice', ver1.problemas.length === 0 ? false : ver1.problemas.some(p => /sin anotar/.test(p) && /2026-03-03T10:01Z/.test(p)), JSON.stringify(ver1.problemas))
 oraculo('VER', 'anotada (con el sha del trozo publicado): sin problemas', vAn.problemas.length === 0, JSON.stringify(vAn.problemas))
 oraculo('VER', 'sin puntero: problema', (await VV.verifica({ almacen: almacen(), texto: '', velasDe: async () => null, diasAceptadosDe: () => new Map() })).problemas.some(p => /puntero/.test(p)))
+
+titulo('5 · E2-02, E2-03 y E2-04 (Astra, CTO 14-oct)')
+const atrapa = async f => { try { return { r: await f() } } catch (e) { return { e } } }
+const FUGA = /FUGA123|supabase\.co|apikey/
+// E2-02: desde el intento de escribir el puntero hasta su relectura exacta, INCIERTO
+for (const [que, lee] of [
+  ['la relectura lanza un 503 tras un PUT correcto', () => { throw Object.assign(new Error('Storage 503 https://proyecto.supabase.co/storage?apikey=FUGA123'), { statusCode: '503' }) }],
+  ['la relectura dice que no existe', () => null],
+  ['la relectura da otros bytes', () => Buffer.from('{"esquema":"otro"}')],
+]) {
+  let escrito = false
+  const aE = almacen({ lee: (ruta, b) => b })
+  const subeE = aE.sube.bind(aE), leeE = aE.lee.bind(aE)
+  aE.sube = async (ruta, bytes, o) => { const r = await subeE(ruta, bytes, o); if (ruta === 'v1/actual.json') escrito = true; return r }
+  aE.lee = async ruta => (ruta === 'v1/actual.json' && escrito ? lee() : leeE(ruta))
+  const { e } = await atrapa(() => PV.publica({ almacen: aE, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+  oraculo('E2-02', `${que}: «incierto», e.incierto, el cerrojo se CONSERVA y el mensaje dice como reconciliar, con el id`,
+    /^incierto/.test(e?.message ?? '') && e.incierto === true && aE.o.has('v1/_cerrojo.json') && /Reconciliar/.test(e.message) && /liberar-cerrojo/.test(e.message) && e.message.includes(e.id) && JSON.parse(aE.o.get('v1/_cerrojo.json')).id === e.id && !FUGA.test(e.message), e?.message)
+}
+const aAntes = almacen({ lee: (ruta, b) => (/manifiestos/.test(ruta) ? (() => { throw new Error('503 antes del puntero') })() : b) })
+const { e: eAntes } = await atrapa(() => PV.publica({ almacen: aAntes, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+oraculo('E2-02', 'un fallo ANTES del intento del puntero no es incierto: el cerrojo se suelta y no hay puntero', !!eAntes && !eAntes.incierto && sinCerrojo(aAntes) && !aAntes.o.has('v1/actual.json'), eAntes?.message)
+// E2-03: un UUID aleatorio por ejecucion, el mismo al ponerlo, releerlo y soltarlo
+const ids = []
+for (let i = 0; i < 2; i++) {
+  const aU = almacen(); const subeU = aU.sube.bind(aU)
+  aU.sube = async (ruta, bytes, o) => { if (ruta === 'v1/_cerrojo.json') ids.push(JSON.parse(bytes.toString()).id); return subeU(ruta, bytes, o) }
+  const r = await PV.publica({ almacen: aU, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' })
+  ids.push(r.id)
+}
+oraculo('E2-03', 'sin id dado: cada ejecucion pone un UUID v4 distinto y lo devuelve; la ficha lleva id, dueno (descripcion) y desde', ids.length === 4 && ids[0] === ids[1] && ids[2] === ids[3] && ids[0] !== ids[2] && ids.every(x => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(x)), ids.join(' '))
+const aZ = almacen(); const subeZ = aZ.sube.bind(aZ)
+const OTRO = JSON.stringify({ id: '11111111-2222-4333-8444-555555555555', dueno: 'mercado-v1-publica', desde: '2026-10-14T10:00:00Z' })
+aZ.sube = async (ruta, bytes, o) => { const r = await subeZ(ruta, bytes, o); if (ruta === 'v1/actual.json') aZ.o.set('v1/_cerrojo.json', Buffer.from(OTRO)); return r }
+const rZ = await PV.publica({ almacen: aZ, planes: [planEU()], dueno: 'mercado-v1-publica', ahora: '2026-10-14T10:00:00Z' })
+oraculo('E2-03', 'al soltar, solo se borra el cerrojo con NUESTRO id: si al final hay otro (mismo dueño y fecha), se deja', rZ.estado === 'publicado' && aZ.o.get('v1/_cerrojo.json')?.toString() === OTRO)
+oraculo('E2-03', 'un id que no es un UUID: error, nada subido', /UUID/.test((await atrapa(() => PV.publica({ almacen: almacen(), planes: [planEU()], dueno: 'prueba', ahora: 'x', id: 'mercado-v1-publica 2026' }))).e?.message ?? ''))
+// al soltar el cerrojo tras publicar bien: si no se puede (leerlo o borrarlo falla), se dice; no se tapa el resultado
+for (const [que, falla] of [['releerlo', { lee: (ruta, b) => (ruta === 'v1/_cerrojo.json' ? (() => { throw new Error('503') })() : b) }], ['borrarlo', null]]) {
+  const aS = almacen(falla ?? {})
+  if (!falla) aS.borra = async () => { throw new Error('500 https://proyecto.supabase.co/?apikey=FUGA123') }
+  const { r, e } = await atrapa(() => PV.publica({ almacen: aS, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+  oraculo('E2-03', `publicado y no se pudo soltar el cerrojo (${que}): «publicado» con cerrojoSuelto false; el puntero esta`, !e && r?.estado === 'publicado' && r.cerrojoSuelto === false && aS.o.has('v1/actual.json'), e?.message ?? JSON.stringify({ estado: r?.estado, cerrojoSuelto: r?.cerrojoSuelto }))
+}
+const aN = almacen(); const rN = await PV.publica({ almacen: aN, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' })
+oraculo('E2-03', 'publicado y soltado: cerrojoSuelto true', rN.cerrojoSuelto === true && sinCerrojo(aN))
+const aE2 = almacen({ sube: (ruta, n) => (n === 4 ? new Error('red caida') : null) }); aE2.borra = async () => { throw new Error('500 al borrar') }
+const { e: eE2 } = await atrapa(() => PV.publica({ almacen: aE2, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+oraculo('E2-03', 'un fallo antes del puntero y ademas el cerrojo no se puede borrar: sale el error ORIGINAL y dice que el cerrojo sigue', /subir/.test(eE2?.message ?? '') && /cerrojo .*sigue puesto/.test(eE2.message), eE2?.message)
+// E2-04: lo ajeno no llega a los mensajes
+const conPuntero = cuerpo => { const a = almacen(); a.o.set('v1/actual.json', Buffer.from(cuerpo)); return a }
+const eP = (await atrapa(() => PV.leePuntero(conPuntero('FUGA123')))).e
+oraculo('E2-04', 'puntero que no es JSON: «json_ilegible», sin el mensaje del parser ni el contenido', /json_ilegible/.test(eP?.message) && eP.propio === true && !FUGA.test(eP.message) && !/Unexpected|token/.test(eP.message), eP?.message)
+const eP2 = (await atrapa(() => PV.leePuntero(conPuntero(JSON.stringify({ esquema: 'mercado-puntero@1', pares: { FUGA123: {} } }))))).e
+oraculo('E2-04', 'puntero con un par desconocido: no repite el par', /puntero_invalido/.test(eP2?.message) && !FUGA.test(eP2.message), eP2?.message)
+const rutaM = `v1/EURUSD/manifiestos/v1.1.${'a'.repeat(64)}.json`
+for (const [que, cuerpo] of [['no es JSON', 'FUGA123'], ['JSON con campos ajenos', JSON.stringify({ esquema: 'FUGA123', par: 'FUGA123' })]]) {
+  const aM = almacen(); aM.o.set(rutaM, Buffer.from(cuerpo))
+  const eM = (await atrapa(() => PV.leeManifiesto(aM, rutaM))).e
+  oraculo('E2-04', `manifiesto que ${que}: codigo propio y sin el contenido`, /json_ilegible|manifiesto_invalido/.test(eM?.message) && !FUGA.test(eM.message), eM?.message)
+}
+for (const [que, cuerpo] of [['no es JSON', 'FUGA123'], ['con campos ajenos', JSON.stringify({ id: 'FUGA123', dueno: 'https://proyecto.supabase.co/?apikey=FUGA123', desde: 'FUGA123' })]]) {
+  const aC2 = almacen(); aC2.o.set('v1/_cerrojo.json', Buffer.from(cuerpo))
+  const eC = (await atrapa(() => PV.publica({ almacen: aC2, planes: [planEU()], dueno: 'prueba', ahora: 'x' }))).e
+  oraculo('E2-04', `cerrojo ajeno que ${que}: lo dice sin enseñar su contenido`, /cerrojo puesto/.test(eC?.message) && !FUGA.test(eC.message), eC?.message)
+}
+const aX2 = almacen({ lee: (ruta, b) => (/\.bin\.br$/.test(ruta) ? (() => { throw Object.assign(new Error('fallo https://proyecto.supabase.co/storage/v1?apikey=FUGA123'), { name: 'StorageUnknownError' }) })() : b) })
+const eX2 = (await atrapa(() => PV.publica({ almacen: aX2, planes: [planEU()], dueno: 'prueba', ahora: 'x' }))).e
+oraculo('E2-04', 'un error ajeno del almacen (con URL y clave en su texto): sale solo su clase y codigo', /StorageUnknownError otro/.test(eX2?.message) && eX2.propio === true && !FUGA.test(eX2.message), eX2?.message)
+const vF = await VV.verifica({ almacen: conPuntero('FUGA123'), texto: '', velasDe: async () => null, diasAceptadosDe: () => new Map() })
+oraculo('E2-04', 'el verificador con un puntero que no es JSON: problema sin el contenido', vF.problemas.some(p => /json_ilegible/.test(p)) && !vF.problemas.some(p => FUGA.test(p)), JSON.stringify(vF.problemas))
 fin()

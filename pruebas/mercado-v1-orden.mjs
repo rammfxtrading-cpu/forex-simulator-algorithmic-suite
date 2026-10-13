@@ -13,7 +13,7 @@
  *   · --anota solo con --publica; argumentos desconocidos: uso (codigo 4);
  *   · codigos: 0 bien · 1 incidente o problema · 3 sin comprobar · 4 uso.
  */
-import { titulo, oraculo, fin, importa } from './lib.mjs'
+import { titulo, oraculo, fin, importa, db } from './lib.mjs'
 const O = await importa('lib/mercado/orden-v1.mjs')
 const A = await importa('lib/mercado/aceptaciones.mjs')
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
@@ -125,4 +125,35 @@ try {
   oraculo('ORD', 'verifica con --base y --descarga-autorizada a la vez: uso, codigo 4', vu.status === 4, vu.stdout + vu.stderr)
 } finally { rmSync(dir, { recursive: true, force: true }) }
 
+
+titulo('6 · E2-02 y E2-04 en la orden (Astra, CTO 14-oct)')
+const FUGA = /FUGA123|supabase\.co|apikey/
+// E2-02: el 503 al releer el puntero tras un PUT correcto, con --anota y un hueco aceptado
+const dI = deps({ alm: (() => { const a = almacen(); let escrito = false; const s = a.sube, l = a.lee
+  a.sube = async (r, b, o) => { const x = await s(r, b, o); if (r === 'v1/actual.json') escrito = true; return x }
+  a.lee = async r => { if (r === 'v1/actual.json' && escrito) throw Object.assign(new Error('503 https://proyecto.supabase.co/?apikey=FUGA123'), { statusCode: 503 }); return l(r) }
+  return a })() })
+dI.id = () => '0b7c2f4e-1a2b-4c3d-8e9f-a0b1c2d3e4f5'
+const rI = await pub(['--base', '/copia', '--pares', 'EURUSD', '--publica', '--anota'], dI)
+const lI = rI.lineas.join('\n')
+oraculo('E2-02', 'incierto: codigo 3, «INCIERTO: reconciliar», el cerrojo conservado con su id y la instruccion', rI.codigo === 3 && rI.incierto === true && /INCIERTO: reconciliar/.test(lI) && dI.alm.o.has('v1/_cerrojo.json') && lI.includes('0b7c2f4e-1a2b-4c3d-8e9f-a0b1c2d3e4f5') && /liberar-cerrojo/.test(lI) && /HTTP 503/.test(lI) && !FUGA.test(lI), lI)
+oraculo('E2-02', 'no anota nada aunque se pida --anota; enseña la publicacion pendiente (con el sha del trozo) y el puntero esperado', !dI.llamadas.some(x => x[0] === 'escribeTexto') && rI.lineas.some(l => { try { const o = JSON.parse(l); return o.tipo === 'publicacion' && o.par === 'EURUSD' && o.trozos.length === 1 } catch { return false } }) && /puntero esperado: \{"esquema":"mercado-puntero@1"/.test(lI), lI)
+const dL = deps({ alm: (() => { const a = almacen(); a.borra = async () => { throw new Error('500') }; return a })() })
+const rL = await pub(['--base', '/copia', '--pares', 'EURUSD', '--publica'], dL)
+oraculo('E2-03', 'publicado pero el cerrojo no se pudo soltar: codigo 3 y lo dice con el script para liberarlo', rL.codigo === 3 && rL.lineas.some(l => /publicado EURUSD/.test(l)) && rL.lineas.some(l => /no se pudo soltar/.test(l) && /liberar-cerrojo/.test(l)), rL.lineas.join(' / '))
+// E2-04: en la frontera del log, solo mensajes propios o «clase codigo»
+const dJ = deps(); dJ.leeCopia = async () => { throw Object.assign(new SyntaxError('Unexpected token F, "FUGA123" is not valid JSON'), {}) }
+const rJ = await pub(['--base', '/copia', '--pares', 'EURUSD'], dJ)
+oraculo('E2-04', 'un error ajeno de los datos (no propio): «SyntaxError otro», sin su texto', rJ.codigo === 3 && rJ.lineas.some(l => /SyntaxError otro/.test(l)) && !FUGA.test(rJ.lineas.join(' ')), rJ.lineas.join(' / '))
+const dK = deps({ alm: (() => { const a = almacen(); a.lee = async () => { throw new Error('ECONNRESET https://proyecto.supabase.co/?apikey=FUGA123') }; return a })() })
+const rK = await O.ordenVerifica(['--pares', 'EURUSD'], dK)
+oraculo('E2-04', 'verificar con un almacen que lanza un error ajeno: codigo 1 o 3 y sin su texto', [1, 3].includes(rK.codigo) && !FUGA.test(rK.lineas.join(' ')), rK.lineas.join(' / '))
+// el saneador de las dependencias reales: tambien al materializar el cuerpo (arrayBuffer)
+process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://proyecto-falso.supabase.co'; process.env.SUPABASE_SERVICE_ROLE_KEY = 'clave-falsa-FUGA123'
+const D = await importa('scripts/mercado-v1-dependencias.mjs')
+db.storage.mercado = { 'v1/actual.json': '{}' }
+db.cuerpoFalla = Object.assign(new TypeError('terminated: https://proyecto.supabase.co/storage/v1/object/mercado/v1/actual.json?apikey=FUGA123'), { cause: { code: 'UND_ERR_SOCKET' } })
+let eB = null; try { await D.dependencias().almacen().lee('v1/actual.json') } catch (e) { eB = e }
+db.cuerpoFalla = null
+oraculo('E2-04', 'dependencias reales: si arrayBuffer() lanza, el error sale saneado y propio («TypeError UND_ERR_SOCKET»)', eB?.propio === true && /leer v1\/actual.json: TypeError UND_ERR_SOCKET/.test(eB.message) && !FUGA.test(eB.message), eB?.message)
 fin()

@@ -35,7 +35,7 @@ import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, infoSinTamano: false, infoSinEtag: false, getSinEtag: false, log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, infoSinTamano: false, infoSinEtag: false, getSinEtag: false, cuerpoFalla: null, log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -230,6 +230,8 @@ function bucket(nombre) {
       // como storage-js 2.102: la API responde 400 con cuerpo { statusCode: '404',
       // error: 'not_found', message: 'Object not found' } → StorageApiError
       if (!Object.hasOwn(objetos(), ruta)) { m.ctx.encontrado = false; return { data: null, error: NO_ENCONTRADO } }
+      // db.cuerpoFalla: la respuesta llega pero materializar el cuerpo lanza ese error (E2-04)
+      if (db.cuerpoFalla) { const e = db.cuerpoFalla; return { data: { arrayBuffer: async () => { throw e } }, error: null } }
       const blob = new Blob([objetos()[ruta]], { type: 'application/octet-stream' })
       // la descarga atada ve el estado, la etag y los bytes como el envoltorio real (MDC2-02)
       if (parametros?.signal) {

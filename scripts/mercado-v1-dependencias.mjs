@@ -22,7 +22,7 @@ export const FICHERO_ACEPTACIONES = path.join(RAIZ, 'lib/mercado/huecos-aceptado
 const ANIO_INICIAL = 2024
 const saneado = (que, e) => errorPropio(`${que}: ${e?.propio ? e.message : texto(e)}`)
 
-function claves() {
+export function claves() {
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: process.env.SUPABASE_SERVICE_ROLE_KEY.trim() }
   const env = readFileSync(path.join(RAIZ, '.env.local'), 'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
@@ -47,7 +47,8 @@ function almacen() {
       let r
       try { r = await b().download(ruta) } catch (e) { throw saneado(`leer ${ruta}`, e) }
       if (r.error) { if (F.noExiste(r.error)) return null; throw saneado(`leer ${ruta}`, r.error) }
-      return Buffer.from(await r.data.arrayBuffer())
+      // E2-04: materializar el cuerpo tambien puede fallar (red cortada a medias)
+      try { return Buffer.from(await r.data.arrayBuffer()) } catch (e) { throw saneado(`leer ${ruta}`, e) }
     },
     async sube(ruta, bytes, { upsert = false } = {}) {
       let r
