@@ -89,8 +89,15 @@ export const perfil = (id, extra = {}) => ({ id, email: id.slice(0, 1) + '@ejemp
   rol_global: 'user', journal_activo: false, simulador_activo: true, plan: 'basic', created_at: '2026-09-01T00:00:00Z', ...extra })
 export const tok = id => 'tok-' + id.slice(0, 1)
 export function escenario({ perfiles = [perfil(A), perfil(B), perfil(ADM, { rol_global: 'admin', simulador_activo: false })], sesion = A,
-  sim_sessions = [], sim_trades = [], storage = { 'forex-data': {} }, otras = {} } = {}) {
+  sim_sessions = [], sim_trades = [], storage = { 'forex-data': {} }, otras = {},
+  sim_servicio = [{ id: true, mantenimiento: false, version_minima: '1', cambiado_en: '2026-10-13T00:00:00Z' }] } = {}) {
   reset()
+  // etapa 1: la fila que deja sql/sim-004a-preparatoria.sql, y el estado global
+  // del cliente (servicio, saldo confirmado, avisos) a cero en cada escenario
+  db.tablas.sim_servicio = sim_servicio.map(f => ({ ...f }))
+  const sv = globalThis.__simServicio; if (sv) Object.assign(sv, { leido: false, mantenimiento: false, versionMinima: null, falloLectura: false, inciertos: [] })
+  const ci = globalThis.__simCierre; if (ci) { ci.confirmado = {}; ci.cola = Promise.resolve() }
+  const av = globalThis.__simAvisos; if (av) av.lista = []
   db.tablas.profiles = perfiles.map(p => ({ ...p }))
   db.tablas.sim_sessions = sim_sessions.map(s => ({ ...s }))
   db.tablas.sim_trades = sim_trades.map(t => ({ ...t }))

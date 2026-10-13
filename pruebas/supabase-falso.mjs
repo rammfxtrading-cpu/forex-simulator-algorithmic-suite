@@ -291,9 +291,23 @@ export function emiteAuth(evento, sesion) {
 // RPC de sql/sim-002 (bloque E, punto 3): UNA sentencia → una copia de la
 // tabla en ESE instante, como la instantanea de PostgreSQL. ⚠️ Sin RLS (H07):
 // SECURITY INVOKER y la RLS se prueban en PostgreSQL (pruebas/sim-002.mjs).
+// sim_cierre_v0 (sql/sim-004a-preparatoria.sql, etapa 1): el trade y el saldo
+// JUNTOS (atomico: si la sesion no esta, no queda nada) y devuelve el id del
+// trade. ⚠️ Sin RLS, sin la lista cerrada de claves ni la puerta: eso se prueba
+// en PostgreSQL (pruebas/sim-004a.mjs). Lo que modela es el contrato del cliente.
 const RPCS = {
   sim_trades_de_sesion: a => (db.tablas.sim_trades || []).filter(t => t.session_id === a?.p_session_id),
   sim_trades_de_usuario: a => (db.tablas.sim_trades || []).filter(t => t.user_id === a?.p_user_id),
+  sim_cierre_v0: a => {
+    const ses = (db.tablas.sim_sessions || []).find(x => x.id === a?.p_session_id)
+    if (!ses) return { error: { code: 'P0001', message: `sim_cierre_v0: la sesion ${a?.p_session_id} no existe o no es tuya` } }
+    if (!a?.p_trade?.id) return { error: { code: 'P0001', message: 'sim_cierre_v0: el trade necesita su id (lo genera el cliente)' } }
+    if ((db.tablas.sim_trades || []).some(t => t.id === a.p_trade.id)) return { error: { code: '23505', message: 'duplicate key value violates unique constraint "sim_trades_pkey"' } }
+    ;(db.tablas.sim_trades ??= []).push({ created_at: new Date().toISOString(), ...copia(a.p_trade), session_id: a.p_session_id })
+    ses.balance = a.p_balance
+    if (a.p_last_timestamp != null) ses.last_timestamp = a.p_last_timestamp
+    return { valor: a.p_trade.id }
+  },
 }
 async function rpc(nombre, args = {}) {
   await tick()
@@ -303,7 +317,14 @@ async function rpc(nombre, args = {}) {
   const err = db.falla && await db.falla(ctx)
   if (err) return { data: null, error: err }
   if (!Object.hasOwn(RPCS, nombre)) return { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.' + nombre } }
-  const res = copia(RPCS[nombre](args).slice().sort((x, y) => String(x.id).localeCompare(String(y.id))))
+  const crudo = RPCS[nombre](args)
+  if (crudo && !Array.isArray(crudo)) {
+    // una RPC que devuelve un valor (no filas); {error} si la funcion lanza
+    if (crudo.error) return { data: null, error: crudo.error, status: 400 }
+    if (db.pierde && await db.pierde(ctx)) return { data: null, error: { message: 'TypeError: Failed to fetch', code: '', details: null, hint: null }, status: 0 }
+    return { data: copia(crudo.valor), error: null, status: 200 }
+  }
+  const res = copia(crudo.slice().sort((x, y) => String(x.id).localeCompare(String(y.id))))
   if (db.pierde && await db.pierde(ctx)) return { data: null, error: { message: 'TypeError: Failed to fetch', code: '', details: null, hint: null } }
   return { data: res, error: null }
 }

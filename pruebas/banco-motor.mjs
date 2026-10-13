@@ -50,8 +50,9 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
     pairTfRef: { current: { [par]: 'M1' } }, speedRef: { current: 1 },
     checkSLTPRef: { current: null }, checkLimitOrdersRef: { current: null }, checkChallengeBreachRef: { current: null },
     balanceRef: { current: balance }, userIdRef: { current: userId }, closePositionRef: { current: null },
+    soloLecturaRef: { current: sesion.legado === true },   // etapa 1 (d2)
   }
-  const estado = { saldo: balance, isPlaying: false, currentTime: null }
+  const estado = { saldo: balance, isPlaying: false, currentTime: null, bloqueos: [] }
   const nada = () => {}
   const caja = sonda(() => {
     const datos = usePairData({ id: sesion.id, session: estado.sesionVisible ?? null, activePair: estado.activa ?? null, ...refs,
@@ -63,7 +64,7 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
       setIsPlaying: v => { estado.isPlaying = v } })
     const trading = useTradingActions({ id: sesion.id, activePair: par, currentPrice: estado.precio ?? null, currentTime: estado.currentTime,
       lots: 1, preview: estado.preview ?? null, ...refs, setBalance: v => { estado.saldo = v }, setTick: nada, setPreview: nada, setCtxMenu: nada,
-      refreshChallengeStatus: reto.refreshChallengeStatus })
+      refreshChallengeStatus: reto.refreshChallengeStatus, alBloqueo: m => { estado.bloqueos.push(m) } })
     return { datos, reto, trading }
   })
   const puentes = () => {
