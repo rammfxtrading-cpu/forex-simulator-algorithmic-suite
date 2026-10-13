@@ -649,6 +649,27 @@ BEGIN
        AND NOT (f = 'sim_servicio' AND a.grantee IN ('authenticated'::regrole, 'service_role'::regrole) AND a.privilege_type = 'SELECT');
     IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004a: receptores de mas en public.%: %', f, v_txt; END IF;
   END LOOP;
+  -- y por COLUMNA (ronda 2, CTO 13-oct, Astra E1-05): has_table_privilege y relacl no ven
+  -- los grants de columna (pg_attribute.attacl). Ninguna ACL de columna en las tablas nuevas
+  -- ni en sim_sessions/sim_trades, y los privilegios EFECTIVOS de cada columna (con
+  -- herencia) para PUBLIC y los tres roles: solo SELECT de sim_servicio para authenticated
+  -- y service_role
+  SELECT string_agg(a.attrelid::regclass::text || '.' || a.attname || ' ' || a.attacl::text, ', '
+                    ORDER BY a.attrelid::regclass::text COLLATE "C", a.attnum) INTO v_txt
+    FROM pg_attribute a
+   WHERE a.attrelid IN ('public.sim_escrituras_v0'::regclass, 'public.sim_escrituras_v0_marcas'::regclass, 'public.sim_servicio'::regclass,
+                        'public.sim_sessions'::regclass, 'public.sim_trades'::regclass)
+     AND a.attnum > 0 AND coalesce(cardinality(a.attacl), 0) > 0;
+  IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004a: ACL de columna no prevista: %', v_txt; END IF;
+  SELECT string_agg(x.r || ':' || x.c || ':' || x.p, ', ' ORDER BY x.r COLLATE "C", x.c COLLATE "C", x.p COLLATE "C") INTO v_txt
+    FROM (SELECT r, a.attrelid::regclass::text || '.' || a.attname c, p
+            FROM unnest(ARRAY['public', 'anon', 'authenticated', 'service_role']) r,
+                 pg_attribute a, unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) p
+           WHERE a.attrelid IN ('public.sim_escrituras_v0'::regclass, 'public.sim_escrituras_v0_marcas'::regclass, 'public.sim_servicio'::regclass)
+             AND a.attnum > 0 AND NOT a.attisdropped
+             AND has_column_privilege(r, a.attrelid, a.attnum, p)
+                 <> (p = 'SELECT' AND r IN ('authenticated', 'service_role') AND a.attrelid = 'public.sim_servicio'::regclass)) x;
+  IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004a: privilegios de columna no previstos: %', v_txt; END IF;
   FOREACH f IN ARRAY v_secuencias LOOP
     SELECT string_agg(CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END || '=' || a.privilege_type, ', ') INTO v_txt
       FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('s', c.relowner))) a
@@ -680,6 +701,7 @@ select seccion, detalle from (
   union all
   select 2, 'tabla', c.relname || ' · rls=' || c.relrowsecurity
          || ' · politicas=' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = c.relname)
+         || ' · acl de columna=' || (select count(*) from pg_attribute a where a.attrelid = c.oid and a.attnum > 0 and coalesce(cardinality(a.attacl), 0) > 0)
          || ' · select authenticated=' || has_table_privilege('authenticated', c.oid, 'SELECT')
          || ' service_role=' || has_table_privilege('service_role', c.oid, 'SELECT')
          || ' · escritura anon/authenticated/service_role=' || (has_table_privilege('anon', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')

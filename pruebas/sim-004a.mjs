@@ -19,7 +19,8 @@
  *   7 cierre atomico: total, parcial, {error} sin efectos, claves no admitidas, quien lo ejecuta
  *   8 canonica y parejas (o.0, o.4): cada uno de los 16 campos cambia el hash; NULL ≠ ''
  *   9 guarda final del catalogo (m.5.5, S4R5-02, S4R6-02): B antes que A, sin B, A
- *     deshabilitado, disparador de mas, cuerpo cambiado, grant de mas, columna de mas; y el
+ *     deshabilitado, disparador de mas, cuerpo cambiado, grant de mas (de tabla y de columna,
+ *     E1-05), columna de mas; y el
  *     control funcional aparte (B no falla con una fila anterior)
  *  10 la puerta: el cliente antiguo rechazado en las dos mitades, firmado / service_role /
  *     dueño pasan; reejecutar puerta y preparatoria en el estado 2; puerta alterada
@@ -309,6 +310,21 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
     union all select a.grantee from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
      where (p.proname like 'sim\\_escrituras\\_v0\\_%' or p.proname = 'sim_cierre_v0') and a.grantee not in (p.proowner, 'authenticated'::regrole)) g`)
   oraculo('E5-public', 'ningun receptor mas (PUBLIC incluido) en tablas, secuencias y funciones nuevas', acl === '0', acl)
+  // ronda 2 (CTO 13-oct, Astra E1-05): tambien por COLUMNA. Privilegios efectivos de cada columna (con herencia) para
+  // PUBLIC, los tres roles y uno cualquiera, y ninguna ACL de columna (pg_attribute.attacl) en las tablas nuevas ni en
+  // sim_sessions/sim_trades
+  const colMatriz = uno(`select string_agg(x, ' ' order by x) from (
+    select r||':'||c.relname||'.'||a.attname||':'||p||'='||has_column_privilege(r, c.oid, a.attnum, p) x
+      from unnest(array['public', ${ROLES.map(L)}]) r, pg_class c join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped,
+           unnest(array['SELECT','INSERT','UPDATE','REFERENCES']) p
+     where c.oid in ('public.sim_escrituras_v0'::regclass, 'public.sim_escrituras_v0_marcas'::regclass, 'public.sim_servicio'::regclass)) m`).split(' ')
+  const colVerdad = colMatriz.filter(x => x.endsWith('=true'))
+  const colsServicio = uno(`select count(*) from pg_attribute where attrelid = 'public.sim_servicio'::regclass and attnum > 0 and not attisdropped`)
+  const attacl = uno(`select count(*) from pg_attribute a where a.attrelid in ('public.sim_escrituras_v0'::regclass, 'public.sim_escrituras_v0_marcas'::regclass,
+    'public.sim_servicio'::regclass, 'public.sim_sessions'::regclass, 'public.sim_trades'::regclass) and a.attnum > 0 and coalesce(cardinality(a.attacl), 0) > 0`)
+  oraculo('E5-columnas', 'por columna (5 receptores × columnas de las 3 tablas × SELECT/INSERT/UPDATE/REFERENCES): solo SELECT de cada columna de sim_servicio para authenticated y service_role; y ninguna ACL de columna en las 3 tablas ni en sim_sessions/sim_trades',
+    colMatriz.length > 100 && colVerdad.length === 2 * Number(colsServicio) && colVerdad.every(x => /^(authenticated|service_role):sim_servicio\.[a-z_]+:SELECT=true$/.test(x)) && attacl === '0',
+    `${colMatriz.length} casillas · verdaderas ${colVerdad.length} (sim_servicio tiene ${colsServicio} columnas) · attacl ${attacl}`)
   const intentos = [
     escribe({}, 'select count(*) from public.sim_escrituras_v0;'), escribe({ rol: 'service_role' }, 'select count(*) from public.sim_escrituras_v0;'),
     escribe({}, 'select count(*) from public.sim_escrituras_v0_marcas;'), escribe({}, `update public.sim_servicio set mantenimiento = true;`),
@@ -478,7 +494,17 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
     ['EXECUTE de PUBLIC en parejas', `grant execute on function public.sim_escrituras_v0_parejas(uuid) to public;`],
     ['columna nueva en el registro', `alter table public.sim_escrituras_v0 add column extra text;`],
     ['politica en el registro', `create policy p on public.sim_escrituras_v0 for select to authenticated using (true);`],
-    ['FK de las marcas al registro', `alter table public.sim_escrituras_v0_marcas add constraint mf foreign key (escritura_id) references public.sim_escrituras_v0 (id);`]]
+    ['FK de las marcas al registro', `alter table public.sim_escrituras_v0_marcas add constraint mf foreign key (escritura_id) references public.sim_escrituras_v0 (id);`],
+    // ronda 2 (Astra E1-05): grants de COLUMNA, que has_table_privilege y relacl no ven
+    ['UPDATE de columna de sim_servicio a service_role (el de Astra)', `grant update (mantenimiento) on public.sim_servicio to service_role;`],
+    ['INSERT de columna de sim_servicio a authenticated', `grant insert (mantenimiento) on public.sim_servicio to authenticated;`],
+    ['SELECT de columna de sim_servicio a anon', `grant select (mantenimiento) on public.sim_servicio to anon;`],
+    ['SELECT de columna del registro a authenticated', `grant select (session_id) on public.sim_escrituras_v0 to authenticated;`],
+    ['REFERENCES de columna de las marcas a anon', `grant references (id) on public.sim_escrituras_v0_marcas to anon;`],
+    ['SELECT de columna del registro a PUBLIC', `grant select (id) on public.sim_escrituras_v0 to public;`],
+    ['UPDATE de columna heredado: un rol con el grant, miembro authenticated', `create role zz_columna nologin; grant update (mantenimiento) on public.sim_servicio to zz_columna; grant zz_columna to authenticated;`],
+    ['UPDATE de columna de sim_sessions a anon', `grant update (balance) on public.sim_sessions to anon;`],
+    ['UPDATE de columna de sim_trades a authenticated', `grant update (pnl) on public.sim_trades to authenticated;`]]
   monta('g')
   pgx(PREP, 'g')
   for (const [desc, q] of MUTANTES) {
