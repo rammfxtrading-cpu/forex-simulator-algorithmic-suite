@@ -303,6 +303,8 @@ const RPCS = {
     if (!ses) return { error: { code: 'P0001', message: `sim_cierre_v0: la sesion ${a?.p_session_id} no existe o no es tuya` } }
     if (!a?.p_trade?.id) return { error: { code: 'P0001', message: 'sim_cierre_v0: el trade necesita su id (lo genera el cliente)' } }
     if ((db.tablas.sim_trades || []).some(t => t.id === a.p_trade.id)) return { error: { code: '23505', message: 'duplicate key value violates unique constraint "sim_trades_pkey"' } }
+    // ronda 2 (E1-04): solo sobre una sesion activa (status NULL = activa); el SQL lo prueba pruebas/sim-004a.mjs (E7-sesion-cerrada, E7-carrera-fase)
+    if ((ses.status ?? 'active') !== 'active') return { error: { code: 'P0001', message: `sim_cierre_v0: sesion cerrada: la sesion ${a.p_session_id} ya no esta activa (${ses.status})` } }
     ;(db.tablas.sim_trades ??= []).push({ created_at: new Date().toISOString(), ...copia(a.p_trade), session_id: a.p_session_id })
     ses.balance = a.p_balance
     if (a.p_last_timestamp != null) ses.last_timestamp = a.p_last_timestamp

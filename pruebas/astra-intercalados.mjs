@@ -9,8 +9,16 @@
  *   E1-01  la pausa ya no manda saldo: la puerta retiene CUALQUIER UPDATE de sim_sessions de
  *          la pausa (antes, solo el que llevaba balance) y el control comprueba que la pausa
  *          salio con el cierre pendiente (antes, que llevaba el saldo 10000 capturado)
+ *   E1-04  el paso de fase se pide como lo pide la pagina: handleChallengePass de
+ *          useChallengeFlow REAL (banco del motor), con el −3.000 aun pendiente; antes, el
+ *          script llamaba a /api/challenge/advance directamente. El CTO decidio la barrera en
+ *          el cliente (el servidor no puede saber que el cliente tiene un cierre en cola) mas
+ *          una red en SQL. Esa llamada directa del original sigue en pruebas/etapa1-cola.mjs
+ *          (E104-servidor-directo): la fase se concede con lo guardado y el −3.000 tardio lo
+ *          rechaza sim_cierre_v0. Un control nuevo: el advance no sale mientras el −3.000
+ *          esta pendiente.
  */
-import { escenario,sesionSim,tradeSim,tok,importa,monta,router,vela,nav,db,A,asienta,puerta,ver,oraculo,fin } from './lib.mjs'
+import { escenario,sesionSim,tradeSim,tok,importa,monta,router,vela,nav,db,api,A,asienta,puerta,ver,oraculo,fin } from './lib.mjs'
 import { llama } from './supabase-falso.mjs'
 import { velasEnStorage,banco } from './banco-motor.mjs'
 const CI=await importa('lib/sim/cierre.js'), SV=await importa('lib/sim/servicio.js')
@@ -55,8 +63,10 @@ console.log('INCIERTO_DOBLE',JSON.stringify({lots:lots2,positions:b.ps().positio
 oraculo('ASTRA-incierto','two concurrent reconciliation reads settle once only',lots2===2&&b.estado.saldo===10000,'lotes '+lots2+' saldo '+b.estado.saldo)
 b.caja.raiz.desmonta();
 // A phase must not be awarded from a prefix of the real close queue.
-escenario({sim_sessions:[sesionSim({id:'fase',challenge_type:'2F',challenge_phase:1,capital:100000,balance:100000})]});CI.fijaSaldoConfirmado('fase',100000);
-const advance=(await importa('pages/api/challenge/advance.js')).default;
+// (E1-04: the pass is requested through the real useChallengeFlow, as the page does)
+const sesFase=sesionSim({id:'fase',challenge_type:'2F',challenge_phase:1,capital:100000,balance:100000});
+escenario({sim_sessions:[sesFase]});velasEnStorage('EUR/USD',VS,[2024],{tramoAbierto:true});
+const bf=await banco({sesion:sesFase,userId:A});await bf.paso(1);CI.fijaSaldoConfirmado('fase',100000);await SV.leeServicio();
 const neg=puerta();db.pausa=c=>c.tabla==='rpc:sim_cierre_v0'&&c.payload?.p_trade?.pnl===-3000?neg.p:null;
 const t1=tradeSim({id:'10000000-0000-4000-8000-000000000031',session_id:'fase',pnl:11000,entry_price:1.1,exit_price:1.21,sl_price:1.0,tp_price:1.3,result:'WIN',opened_at:'2025-03-03T10:00:00Z',closed_at:'2025-03-03T11:00:00Z'});
 const t2=tradeSim({id:'10000000-0000-4000-8000-000000000032',session_id:'fase',pnl:-3000,entry_price:1.24,exit_price:1.21,sl_price:1.2,tp_price:1.3,result:'LOSS',opened_at:'2025-03-03T10:00:00Z',closed_at:'2025-03-03T11:01:00Z'});
@@ -66,13 +76,15 @@ const positive=CI.persisteCierre({sessionId:'fase',delta:11000,lastTimestamp:T+6
 const negative=CI.persisteCierre({sessionId:'fase',delta:-3000,lastTimestamp:T+120,trade:t2});
 await positive;await asienta(30);
 ver('negative close is pending',db.tablas.sim_trades.length===1);
-const adv=await llama(advance,{method:'POST',token:tok(A),body:{session_id:'fase',outcome:'pass',end_timestamp:T+120,open_positions:[]}});
-neg.abrir();const nr=await negative;db.pausa=null;
+const pase=bf.caja.valor.reto.handleChallengePass();await asienta(40);
+ver('advance not sent while the negative close is pending',!api.llamadas.some(l=>l.ruta==='/api/challenge/advance'));
+neg.abrir();const nr=await negative;await pase;await asienta(30);db.pausa=null;
 const root=db.tablas.sim_sessions.find(s=>s.id==='fase');
-console.log('RETO_COLA',JSON.stringify({http:adv.estado,accion:adv.cuerpo?.action,root,negative:nr,children:db.tablas.sim_sessions.filter(s=>s.challenge_parent_id==='fase'),pnl:db.tablas.sim_trades.reduce((n,t)=>n+Number(t.pnl),0)}));
+console.log('RETO_COLA',JSON.stringify({advance:api.llamadas.filter(l=>l.ruta==='/api/challenge/advance').map(l=>l.estado),root,negative:nr,children:db.tablas.sim_sessions.filter(s=>s.challenge_parent_id==='fase'),pnl:db.tablas.sim_trades.reduce((n,t)=>n+Number(t.pnl),0)}));
 const evaluator=await importa('lib/challengeEngine.js');
 const ev=evaluator.evaluateChallenge({challengeType:'2F',currentPhase:1,capital:100000,trades:db.tablas.sim_trades});
 ver('complete history does not pass',ev.status==='active',JSON.stringify(ev));
 ver('both real queue closes committed',nr.estado==='guardado'&&db.tablas.sim_trades.length===2);
-oraculo('ASTRA-reto-cola','cannot grant phase on incomplete close queue',root.status!=='passed_phase'&&db.tablas.sim_sessions.length===1,'status '+root.status+' balance '+root.balance+' HTTP '+adv.estado);
+oraculo('ASTRA-reto-cola','cannot grant phase on incomplete close queue',root.status!=='passed_phase'&&db.tablas.sim_sessions.length===1,'status '+root.status+' balance '+root.balance+' advance '+api.llamadas.filter(l=>l.ruta==='/api/challenge/advance').length);
+bf.caja.raiz.desmonta();
 fin()

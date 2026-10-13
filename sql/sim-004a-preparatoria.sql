@@ -12,7 +12,10 @@
 --   sim_cierre_v0(uuid, numeric, bigint, jsonb)  el cierre total o parcial en
 --       UNA transaccion: INSERT del trade y UPDATE del saldo. SECURITY INVOKER,
 --       search_path vacio, EXECUTE solo authenticated: puede exactamente lo
---       que podian las dos sentencias de hoy, con los permisos y la RLS de hoy.
+--       que podian las dos sentencias de hoy, con los permisos y la RLS de hoy,
+--       y solo sobre una sesion ACTIVA (ronda 2, E1-04): si el reto ya esta
+--       decidido (passed_phase, passed_all, failed_*) rechaza con el error
+--       prefijado «sim_cierre_v0: sesion cerrada:» y no guarda nada.
 --   sim_escrituras_v0         el registro de escrituras en sim_sessions y
 --       sim_trades (disparador A). INMUTABLE. Guarda nombres de columnas,
 --       el delta de saldo y el id y pnl del trade; nunca el JSON de la fila.
@@ -76,9 +79,10 @@ DECLARE
   -- ── los cuerpos: se crean con estos textos y se comparan con ellos ──────
   v_cierre text := $c$
 DECLARE
-  v_id    uuid;
-  v_n     integer;
-  v_extra text;
+  v_id     uuid;
+  v_n      integer;
+  v_extra  text;
+  v_status text;
 BEGIN
   IF p_session_id IS NULL OR p_balance IS NULL OR p_trade IS NULL OR jsonb_typeof(p_trade) IS DISTINCT FROM 'object' THEN
     RAISE EXCEPTION 'sim_cierre_v0: faltan la sesion, el saldo o el trade';
@@ -98,13 +102,20 @@ BEGIN
          r.rr, r.pnl, r.result, r.notes, r.session_type, r.opened_at, r.closed_at
     FROM jsonb_populate_record(NULL::public.sim_trades, p_trade) r
   RETURNING id INTO v_id;
+  -- ronda 2 (CTO 13-oct, Astra E1-04): solo sobre una sesion ACTIVA (status NULL = activa,
+  -- como en el cliente). La condicion va en el UPDATE: si el paso de fase confirma mientras
+  -- este cierre espera su cerrojo, el UPDATE la vuelve a mirar y no actualiza nada
   IF p_last_timestamp IS NULL THEN
-    UPDATE public.sim_sessions SET balance = p_balance WHERE id = p_session_id;
+    UPDATE public.sim_sessions SET balance = p_balance WHERE id = p_session_id AND coalesce(status, 'active') = 'active';
   ELSE
-    UPDATE public.sim_sessions SET balance = p_balance, last_timestamp = p_last_timestamp WHERE id = p_session_id;
+    UPDATE public.sim_sessions SET balance = p_balance, last_timestamp = p_last_timestamp WHERE id = p_session_id AND coalesce(status, 'active') = 'active';
   END IF;
   GET DIAGNOSTICS v_n = ROW_COUNT;
   IF v_n IS DISTINCT FROM 1 THEN
+    SELECT s.status INTO v_status FROM public.sim_sessions s WHERE s.id = p_session_id;
+    IF FOUND THEN
+      RAISE EXCEPTION 'sim_cierre_v0: sesion cerrada: la sesion % ya no esta activa (%)', p_session_id, v_status;
+    END IF;
     RAISE EXCEPTION 'sim_cierre_v0: la sesion % no existe o no es tuya', p_session_id;
   END IF;
   RETURN v_id;

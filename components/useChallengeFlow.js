@@ -12,6 +12,9 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { getMasterTime } from '../lib/sessionData'
 import { calcPnl } from '../lib/trading/pricing'
 import { resolveBreach } from '../lib/trading/breach'
+import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera } from '../lib/sim/cola'
+import { inciertosDe } from '../lib/sim/servicio'
+import { avisa } from '../lib/sim/avisos'
 
 export default function useChallengeFlow({ id, router, session, setSession, sessionRef, currentTime, pairState, balanceRef, closePositionRef, setIsPlaying }){
   const currentTimeRef = useRef(null) // timestamp de la vela actual del simulador (unix segundos). Se usa en refreshChallengeStatus.
@@ -61,8 +64,11 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   // ── Challenge: fetch status helper ───────────────────────────────────────────
   // Se llama al cargar sesion y despues de cada trade cerrado.
   // Si la sesion no es un challenge (session.challenge_type == null), no hace nada.
-  const refreshChallengeStatus = useCallback(async () => {
-    if (!id || !sessionRef.current?.challenge_type) return
+  // Etapa 1, ronda 2 (CTO 13-oct, Astra E1-04): el refresco es una operacion de la
+  // COLA de la sesion (lib/sim/cola.js): va detras de los cierres ya pedidos.
+  // refrescaAhora es el cuerpo, para usarlo DENTRO de una operacion de la cola.
+  const refrescaAhora = useCallback(async () => {
+    if (!id || !sessionRef.current?.challenge_type) return null
     try {
       // Pasamos currentTime del simulador: así el motor sabe qué día es HOY en el backtest.
       // El DD diario se resetea en el día Madrid de esta vela, no de la fecha real del ordenador.
@@ -73,7 +79,7 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
         || null
       const qs = ct ? `?session_id=${id}&current_time=${ct}` : `?session_id=${id}`
       const res = await fetch(`/api/challenge/status${qs}`)
-      if (!res.ok) return
+      if (!res.ok) return null
       const data = await res.json()
       setChallengeStatus(data)
       // Actualizamos también el state `session` con el status vivo de BD.
@@ -87,10 +93,38 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
           sessionRef.current = { ...sessionRef.current, status: data.session.status, balance: data.session.balance, challenge_phase: data.session.challenge_phase }
         }
       }
+      return data
     } catch (e) {
       console.error('[challenge/status] error', e)
+      return null
     }
   }, [id])
+  const refreshChallengeStatus = useCallback(() => {
+    if (!id || !sessionRef.current?.challenge_type) return Promise.resolve(null)
+    return encola(id, refrescaAhora)
+  }, [id, refrescaAhora])
+
+  // La confirmacion explicita del reto (E1-04): se cierra la cola a cierres nuevos
+  // (barrera), se espera a que se vacie, y sin inciertos se REEVALUA con
+  // challenge/status en la cola. Dentro de esa misma operacion, dentro(data) decide
+  // (p. ej. manda el paso de fase). Devuelve { data, valor } o null si quedan inciertos.
+  const confirmaReto = useCallback(async (dentro) => {
+    if (!id) return null
+    levantaBarrera(id)
+    try {
+      await esperaCola(id)
+      if (inciertosDe(id) > 0) {
+        avisa('Hay un cierre sin confirmar: el reto no se decide hasta saber si se guardó.')
+        return null
+      }
+      return await encola(id, async () => {
+        const data = await refrescaAhora()
+        return { data, valor: dentro ? await dentro(data) : null }
+      })
+    } finally {
+      bajaBarrera(id)
+    }
+  }, [id, refrescaAhora])
 
   // Fetch inicial cuando la sesion ya cargo y es un challenge
   useEffect(() => {
@@ -158,6 +192,10 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       return
     }
 
+    // E1-04: con cierres pendientes o inciertos no se ofrece nada: el refresco que
+    // vaya detras del ultimo cierre lo volvera a mirar con todos
+    if (cierresPendientes(id) > 0 || inciertosDe(id) > 0) return
+
     // Si la sesión está active pero el motor detectó evento EN RUNTIME, abrir modal.
     // Este es el momento clímax — el alumno acaba de cerrar el trade que cruzó target,
     // o el SL que quemó el challenge. La primera vez que ocurre sí merece celebración
@@ -203,7 +241,6 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   // outcome='pass' o 'fail' según contexto. Devuelve el nextSession (si aplica).
   const callChallengeAdvance = useCallback(async (outcome) => {
     if (!id) return null
-    setChallengeAdvancing(true)
     try {
       const res = await fetch('/api/challenge/advance', {
         method: 'POST',
@@ -224,14 +261,37 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
     } catch (e) {
       console.error('[challenge/advance] fetch failed', e)
       return null
-    } finally {
-      setChallengeAdvancing(false)
     }
   }, [id])
 
+  // E1-04: el paso de fase (pass o fail) solo se manda tras la confirmacion
+  // explicita: cola cerrada a cierres nuevos, vacia, sin inciertos y el reto
+  // REEVALUADO con todos los cierres guardados. Si ya no esta en ese punto, no se
+  // manda, se cierra el modal y se avisa.
+  const decideFase = useCallback(async (outcome) => {
+    if (!id) return null
+    setChallengeAdvancing(true)
+    try {
+      const r = await confirmaReto(async (st) => {
+        const ev = st?.evaluation?.status
+        const vale = outcome === 'pass' ? ev === 'target_reached' : (ev === 'failed_dd_daily' || ev === 'failed_dd_total')
+        if (!vale) {
+          challengeModalShownRef.current = false
+          setChallengeModal(null)
+          avisa(st ? 'Con todos tus cierres guardados, el reto ya no está en ese punto: sigue operando.' : 'No se ha podido comprobar el reto. Inténtalo de nuevo.')
+          return null
+        }
+        return await callChallengeAdvance(outcome)
+      })
+      return r?.valor ?? null
+    } finally {
+      setChallengeAdvancing(false)
+    }
+  }, [id, confirmaReto, callChallengeAdvance])
+
   // Handlers compartidos por los modales
   const handleChallengePass = useCallback(async () => {
-    const data = await callChallengeAdvance('pass')
+    const data = await decideFase('pass')
     if (!data) return
     if (data.action === 'phase_passed' && data.next_session?.id) {
       // Redirect a la nueva sesión de la siguiente fase
@@ -241,13 +301,13 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       // Refrescar status local para reflejar passed_all
       await refreshChallengeStatus()
     }
-  }, [callChallengeAdvance, router, refreshChallengeStatus])
+  }, [decideFase, router, refreshChallengeStatus])
 
   const handleChallengeFail = useCallback(async () => {
-    const data = await callChallengeAdvance('fail')
+    const data = await decideFase('fail')
     if (!data) return
     await refreshChallengeStatus()
-  }, [callChallengeAdvance, refreshChallengeStatus])
+  }, [decideFase, refreshChallengeStatus])
 
   // CTA "Comenzar Challenge Real" — abre afiliado FTMO en pestaña nueva
   const handleCtaRealChallenge = useCallback(() => {
@@ -390,35 +450,23 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       try { setIsPlaying(false) } catch {}
 
       // Disparar modal de fail DESPUÉS de que el backend confirme el nuevo
-      // estado. Si abriéramos el modal antes, mostraría datos stale (DD %
-      // pre-cierre) y un failureReason incorrecto.
-      //
-      // Estrategia: esperamos suficiente para que la inserción del trade en
-      // BD haya terminado (las llamadas a closePosition arriba son async),
-      // luego refrescamos status y solo entonces abrimos el modal.
-      // Usamos un await encadenado en lugar de setTimeout para tener
-      // control real del orden.
+      // estado. Etapa 1, ronda 2 (CTO 13-oct, Astra E1-04): fuera la espera de
+      // 300 ms y los tres reintentos. La misma confirmacion explicita que el paso
+      // de fase: la cola cerrada a cierres nuevos, vacia (los cierres del breach
+      // ya estan en ella), sin inciertos, y el reto reevaluado con challenge/status.
+      // Solo si dice quemado se abre el modal; si no (p. ej. los cierres no se
+      // guardaron), no se abre y el detector puede volver a dispararse.
       ;(async () => {
-        // Pequeño respiro para que las inserts paralelas a sim_trades terminen.
-        await new Promise(r => setTimeout(r, 300))
-        // Reintentamos el refresh hasta 3 veces si el motor backend aún no
-        // ve los nuevos trades (consistencia eventual). En la mayoría de casos
-        // basta el primer intento.
-        for (let attempt = 0; attempt < 3; attempt++) {
-          await refreshChallengeStatus()
-          // Leemos el state recién seteado. challengeStatusRef.current es el
-          // espejo que actualizamos en cada render.
-          const st = challengeStatusRef.current?.evaluation?.status
-          if (st === 'failed_dd_daily' || st === 'failed_dd_total') break
-          await new Promise(r => setTimeout(r, 250))
-        }
-        setChallengeModal('failed')
+        const r = await confirmaReto()
+        const st = r?.data?.evaluation?.status
+        if (st === 'failed_dd_daily' || st === 'failed_dd_total') setChallengeModal('failed')
+        else challengeBreachFiringRef.current = false
       })()
 
       // Salimos del bucle de velas: ya quemado, no procesamos más.
       break
     }
-  }, [refreshChallengeStatus])
+  }, [confirmaReto])
 
   return {
     challengeStatus, challengeLocked, challengeModal, setChallengeModal,

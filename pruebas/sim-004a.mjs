@@ -382,6 +382,40 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
   const ea = escribe({ rol: 'anon' }, `select public.sim_cierre_v0('${SA2}', 1, 1, ${L(T(u(407), '1.00'))});`)
   const es = escribe({ rol: 'service_role' }, `select public.sim_cierre_v0('${SA2}', 1, 1, ${L(T(u(408), '1.00'))});`)
   oraculo('E7-quien', 'anon y service_role no pueden ejecutarlo (EXECUTE solo authenticated)', !ea.ok && !es.ok && [ea, es].every(x => /permission denied for function/.test(x.err)), [ea, es].map(err1).join(' | '))
+  // ronda 2 (CTO 13-oct, Astra E1-04): solo sobre una sesion activa
+  const cerradas = []
+  for (const [i, st] of ['passed_phase', 'passed_all', 'failed_dd_daily', 'failed_dd_total'].entries()) {
+    pg.psql(`update public.sim_sessions set status = '${st}' where id = '${SA2}'`)
+    const antes = saldo(SA2); k = ultimo()
+    const e = nuevo(`select public.sim_cierre_v0('${SA2}', 20000, 1, ${L(T(u(420 + i), '9.00'))});`)
+    cerradas.push({ st, ok: !e.ok && /sim_cierre_v0: sesion cerrada: /.test(err1(e)) && saldo(SA2) === antes && ultimo() === k
+      && n(`select count(*) from public.sim_trades where id = '${u(420 + i)}'`) === 0, err: err1(e) })
+  }
+  oraculo('E7-sesion-cerrada', 'sesion con el reto decidido (passed_phase, passed_all, failed_dd_daily, failed_dd_total): error prefijado «sim_cierre_v0: sesion cerrada:» y NADA guardado (ni trade, ni saldo, ni registro)',
+    cerradas.every(x => x.ok), cerradas.map(x => x.st + ' ' + (x.ok ? 'ok' : x.err)).join(' | ').slice(0, 240))
+  pg.psql(`update public.sim_sessions set status = null where id = '${SA2}'`)
+  const eNull = nuevo(`select public.sim_cierre_v0('${SA2}', 10090, 1767700001, ${L(T(u(425), '3.00'))});`)
+  pg.psql(`update public.sim_sessions set status = 'active' where id = '${SA2}'`)
+  oraculo('E7-status-null', 'status NULL es activa (como en el cliente: session.status || «active»): el cierre se guarda', eNull.ok && saldo(SA2) === '10090,1767700001', err1(eNull))
+  // la carrera: el paso de fase (service_role, como challenge/advance) tiene la fila cuando llega el cierre;
+  // el cierre espera su cerrojo, el UPDATE vuelve a mirar el status y no actualiza nada → error y nada guardado
+  {
+    const { spawn } = await import('node:child_process')
+    const f2 = path.join(pg.dir, 'fase.sql')
+    writeFileSync(f2, `begin; set local role service_role; update public.sim_sessions set status = 'passed_phase', balance = 10090 where id = '${SA2}'; select pg_sleep(1.5); commit;`)
+    const hijo = spawn(path.join(BIN, 'psql'), ['-h', pg.dir, '-p', pg.puerto, '-U', 'postgres', '-X', '-q', '-tA', '-v', 'ON_ERROR_STOP=1', '-d', 'p', '-f', f2],
+      { env: { PATH: process.env.PATH, LC_ALL: 'en_US.UTF-8', LANG: 'en_US.UTF-8' } })
+    const fase = new Promise(r => hijo.on('exit', c => r(c)))
+    await new Promise(r => setTimeout(r, 400))
+    const t0 = Date.now()
+    const eC = nuevo(`select public.sim_cierre_v0('${SA2}', 10190, 1767700002, ${L(T(u(426), '100.00'))});`)
+    const espero = Date.now() - t0
+    const cf = await fase
+    ver('carrera: el paso de fase termino bien y el cierre espero su cerrojo (≥ 0,8 s)', cf === 0 && espero >= 800, `fase ${cf} · espera ${espero} ms`)
+    oraculo('E7-carrera-fase', 'el paso de fase confirma mientras el cierre espera la fila: el cierre se rechaza («sesion cerrada») y no guarda nada; queda el saldo de la fase',
+      !eC.ok && /sim_cierre_v0: sesion cerrada: /.test(err1(eC)) && saldo(SA2) === '10090,1767700001' && n(`select count(*) from public.sim_trades where id = '${u(426)}'`) === 0, err1(eC))
+    pg.psql(`update public.sim_sessions set status = 'active' where id = '${SA2}'`)
+  }
 
   // ═══════════════════════════════════════════════════════════════════════
   titulo('8 · parejas y texto canonico (o.0, o.4)')

@@ -18,11 +18,16 @@
  *   3 E1-03 · cada incierto se resuelve UNA vez: dos leeServicio() a la vez (el caso de
  *     Astra), alta de otro incierto durante la espera, confirmacion tardia; y su callback
  *     corre en la cola de su sesion
+ *   4 E1-04 · la barrera de fase: +11.000/−3.000 en los dos ordenes, con error y con
+ *     respuesta perdida; la espera incluye el cierre pendiente; el cierre tardio tras el
+ *     paso, rechazado por sim_cierre_v0 con la pantalla coherente; la llamada directa del
+ *     original de Astra; y el breach sin los 300 ms ni los tres intentos
  *
  * Modulos, hooks y pagina REALES sobre los dobles (supabase-falso, react-falso); datos
  * inventados; el orden de entrega lo deciden las puertas del doble (db.pausa). Sin red.
  */
-import { titulo, ver, oraculo, fin, escenario, sesionSim, importa, monta, router, vela, nav, db, A, asienta, puerta } from './lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, sesionSim, importa, monta, router, vela, nav, db, api, A, tok, asienta, puerta } from './lib.mjs'
+import { llama } from './supabase-falso.mjs'
 import { velasEnStorage, banco } from './banco-motor.mjs'
 
 const CI = await importa('lib/sim/cierre.js')
@@ -274,6 +279,130 @@ const devuelve = () => { Date.now = ahora }
     db.log.filter(c => c.tabla === 'sim_trades' && c.op === 'select').length === 1 && lotes(b0) === 2 && b0.estado.saldo === 10000 && SV.motivoBloqueo() === null,
     `relecturas ${db.log.filter(c => c.tabla === 'sim_trades').length} · ${cuenta(b0, sid)} · motivo ${SV.motivoBloqueo()}`)
   b0.caja.raiz.desmonta()
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+titulo('4 · E1-04: la barrera de fase')
+const tradeReto = (pnl, min) => ({ id: idTrade(), user_id: A, pair: 'EUR/USD', side: pnl > 0 ? 'BUY' : 'SELL', lots: 10, entry_price: 1.1, exit_price: 1.1, rr: 1,
+  pnl, result: pnl > 0 ? 'WIN' : 'LOSS', opened_at: '2025-03-03T10:00:00Z', closed_at: `2025-03-03T11:${String(min).padStart(2, '0')}:00Z` })
+const cierreReto = (sid, pnl, min) => CI.persisteCierre({ sessionId: sid, delta: pnl, lastTimestamp: T + 60 * min, trade: tradeReto(pnl, min) })
+const advances = () => api.llamadas.filter(l => l.ruta === '/api/challenge/advance')
+async function reto(sid, extra = {}) {
+  const ses = sesionSim({ id: sid, challenge_type: '2F', challenge_phase: 1, capital: 100000, balance: 100000, ...extra })
+  escenario({ sim_sessions: [ses] }); velasEnStorage('EUR/USD', VS, [2024], { tramoAbierto: true })
+  const b = await banco({ sesion: ses, userId: A }); await b.paso(1)
+  CI.fijaSaldoConfirmado(sid, Number(ses.balance)); await SV.leeServicio(); api.llamadas.length = 0; db.log.length = 0
+  return b
+}
+const madre = sid => db.tablas.sim_sessions.find(s => s.id === sid)
+const hijas = sid => db.tablas.sim_sessions.filter(s => s.challenge_parent_id === sid)
+const foto = sid => `status ${madre(sid).status} · saldo ${madre(sid).balance} · cierres ${suma(sid)} · hijas ${hijas(sid).length} · advance ${advances().map(l => l.estado)}`
+// el paso de fase pedido por la pagina con un cierre aun pendiente (puerta g sobre la RPC de pnl `pendiente`)
+async function pideFase(b, sid, { primero, pendiente, falla, pierde, incierto }) {
+  const g = puerta()
+  db.pausa = c => c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.pnl === pendiente ? g.p : null
+  if (falla) db.falla = c => c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.pnl === pendiente ? falla : null
+  if (pierde) db.pierde = c => c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.pnl === pendiente
+  if (incierto) db.falla = c => (c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.pnl === pendiente) ? { code: '', message: 'transporte inventado' } : null
+  await cierreReto(sid, primero, 1)
+  const c2 = cierreReto(sid, pendiente, 2)
+  await asienta(20)
+  const pase = b.caja.valor.reto.handleChallengePass(); await asienta(40)
+  const mientras = advances().length
+  g.abrir(); const r2 = await c2; await pase; await asienta(40)
+  db.pausa = null; db.falla = null; db.pierde = null
+  return { mientras, r2 }
+}
+{ const sid = 'e104-pos-neg'; const b = await reto(sid)
+  const { mientras } = await pideFase(b, sid, { primero: 11000, pendiente: -3000 })
+  oraculo('E104-pos-neg', '+11.000 guardado y −3.000 pendiente al pedir la fase: no sale el advance mientras esta pendiente; al confirmarse, se reevalua (8.000 < 10.000) y no se manda; la madre sigue activa con 108.000',
+    mientras === 0 && advances().length === 0 && madre(sid).status === 'active' && Number(madre(sid).balance) === 108000 && hijas(sid).length === 0 && AV.avisos().some(a => /ya no está en ese punto/.test(a.texto)), foto(sid))
+  b.caja.raiz.desmonta() }
+{ const sid = 'e104-neg-pos'; const b = await reto(sid)
+  const { mientras } = await pideFase(b, sid, { primero: -3000, pendiente: 11000 })
+  oraculo('E104-neg-pos', 'el orden inverso: −3.000 guardado y +11.000 pendiente: tampoco sale el advance; reevaluado con los dos (8.000) no se manda',
+    mientras === 0 && advances().length === 0 && madre(sid).status === 'active' && Number(madre(sid).balance) === 108000 && hijas(sid).length === 0, foto(sid))
+  b.caja.raiz.desmonta() }
+{ const sid = 'e104-espera'; const b = await reto(sid)
+  const { mientras } = await pideFase(b, sid, { primero: 11000, pendiente: 500 })
+  oraculo('E104-espera-incluye', '+11.000 guardado y +500 pendiente: espera al +500 y solo entonces manda el advance; la fase se concede con 111.500 (los dos)',
+    mientras === 0 && advances().length === 1 && madre(sid).status === 'passed_phase' && Number(madre(sid).balance) === 111500 && hijas(sid).length === 1, foto(sid))
+  b.caja.raiz.desmonta() }
+{ const sid = 'e104-error'; const b = await reto(sid)
+  const { mientras, r2 } = await pideFase(b, sid, { primero: 11000, pendiente: -3000, falla: { code: 'P0001', message: 'inventado' } })
+  oraculo('E104-error', 'el −3.000 pendiente falla (no se guarda nada): reevaluado con lo guardado (+11.000) se manda el advance; fase con 111.000 y un solo cierre',
+    mientras === 0 && r2.estado === 'fallido' && advances().length === 1 && madre(sid).status === 'passed_phase' && Number(madre(sid).balance) === 111000 && suma(sid) === 11000, foto(sid))
+  b.caja.raiz.desmonta() }
+{ const sid = 'e104-perdida'; const b = await reto(sid)
+  const { mientras, r2 } = await pideFase(b, sid, { primero: 11000, pendiente: -3000, pierde: true })
+  oraculo('E104-perdida-guardada', 'el −3.000 pierde la respuesta pero se guardo (se relee): reevaluado con los dos, no se manda; 108.000',
+    mientras === 0 && r2.estado === 'guardado' && r2.releido === true && advances().length === 0 && madre(sid).status === 'active' && Number(madre(sid).balance) === 108000, foto(sid))
+  b.caja.raiz.desmonta() }
+{ // el incierto lo registra la PANTALLA (cierraPosicion → trasCierre): los dos cierres por closePosition real
+  const sid = 'e104-incierto'; const b = await reto(sid)
+  const gana = b.abreMercado({ side: 'BUY', entry: 1.09, sl: 1.0, tp: 1.3, lots: 10 })
+  const pierde = b.abreMercado({ side: 'SELL', entry: 1.098, sl: 1.2, tp: 1.0, lots: 10 })
+  await b.caja.valor.trading.closePosition(gana.id, 'MANUAL', 'EUR/USD', 1.101); await asienta(20)
+  const primero = suma(sid)
+  const g = puerta()
+  db.pausa = c => c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.side === 'SELL' ? g.p : null
+  db.falla = c => c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.side === 'SELL' ? { code: '', message: 'transporte inventado' } : null
+  const c2 = b.caja.valor.trading.closePosition(pierde.id, 'MANUAL', 'EUR/USD', 1.101); await asienta(20)
+  const pase = b.caja.valor.reto.handleChallengePass(); await asienta(40)
+  const mientras = advances().length
+  g.abrir(); await c2; await pase; await asienta(40); db.pausa = null; db.falla = null
+  ver('incierto: el +11.000 se guardo y el −3.000 quedo incierto', primero >= 10000 && SV.motivoBloqueo() === 'incierto', `primero ${primero} · motivo ${SV.motivoBloqueo()}`)
+  oraculo('E104-perdida-incierta', 'el −3.000 queda incierto (respuesta perdida, sin el trade al releer): con el incierto no se manda el advance y se avisa',
+    mientras === 0 && advances().length === 0 && madre(sid).status === 'active' && AV.avisos().some(a => /sin confirmar/.test(a.texto)), foto(sid))
+  b.caja.raiz.desmonta() }
+{ // la llamada DIRECTA del original de Astra: el servidor concede con lo guardado y la red del SQL rechaza el −3.000 tardio
+  const sid = 'e104-directo'; const b = await reto(sid)
+  const advance = (await importa('pages/api/challenge/advance.js')).default
+  const g = puerta(); db.pausa = c => c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.pnl === -3000 ? g.p : null
+  await cierreReto(sid, 11000, 1); const c2 = cierreReto(sid, -3000, 2); await asienta(20)
+  const adv = await llama(advance, { method: 'POST', token: tok(A), body: { session_id: sid, outcome: 'pass', end_timestamp: T + 180, open_positions: [] } })
+  g.abrir(); const r2 = await c2; db.pausa = null
+  oraculo('E104-servidor-directo', 'advance llamado sin el cliente con el −3.000 aun en cola: la fase se concede con lo guardado (111.000) y el −3.000 tardio lo rechaza sim_cierre_v0 («sesion cerrada»); la base queda coherente (saldo = capital + cierres)',
+    adv.estado === 200 && madre(sid).status === 'passed_phase' && r2.estado === 'fallido' && /sesion cerrada/.test(r2.error?.message) && Number(madre(sid).balance) === 100000 + suma(sid) && suma(sid) === 11000,
+    `${foto(sid)} · cierre tardio ${r2.estado} ${r2.error?.message ?? ''}`)
+  b.caja.raiz.desmonta() }
+{ // el cierre tardio en la pantalla, sobre una fase ya decidida: rechazado, la posicion sigue y el saldo = el de la base
+  const sid = 'e104-tardio'; const b = await reto(sid, { status: 'passed_phase', balance: 111000 })
+  const pos = b.abreMercado({ side: 'BUY', entry: 1.097, sl: 1.09, tp: 1.2, lots: 1 })
+  AV.vaciaAvisos?.()
+  await b.caja.valor.trading.closePosition(pos.id, 'MANUAL', 'EUR/USD', 1.102); await asienta(30)
+  oraculo('E104-tardio-pantalla', 'cierre en la pantalla tras el paso de fase: sim_cierre_v0 lo rechaza; nada guardado, la posicion sigue abierta, el saldo de la pantalla es el de la base y se avisa',
+    db.tablas.sim_trades.length === 0 && Number(madre(sid).balance) === 111000 && b.ps().positions.some(x => x.id === pos.id) && b.estado.saldo === 111000 && AV.avisos().some(a => /ya está decidida/.test(a.texto)),
+    `trades ${db.tablas.sim_trades.length} · base ${madre(sid).balance} · pantalla ${b.estado.saldo} · posiciones ${b.ps().positions.length} · ${AV.avisos().map(a => a.texto).join(' | ')}`)
+  b.caja.raiz.desmonta() }
+{ // el breach: sin los 300 ms ni los tres intentos; el modal solo con la cola vacia y el reto reevaluado quemado
+  const TB = Date.parse('2025-03-04T10:00:00Z') / 1000
+  const caso = async (sid, { falla }) => {
+    const ses = sesionSim({ id: sid, challenge_type: '2F', challenge_phase: 1, capital: 100000, balance: 100000, date_from: '2025-03-04', date_to: '2025-03-07' })
+    escenario({ sim_sessions: [ses] })
+    velasEnStorage('EUR/USD', [vela(TB, 1.2, 1.2001, 1.1999, 1.2), vela(TB + 60, 1.199, 1.1995, 1.13, 1.135), vela(TB + 120, 1.135, 1.136, 1.134, 1.135)], [2024], { tramoAbierto: true })
+    const b = await banco({ sesion: ses, userId: A }); await b.repinta()
+    CI.fijaSaldoConfirmado(sid, 100000); await SV.leeServicio()
+    b.abreMercado({ side: 'BUY', entry: 1.2, sl: 1.0, tp: 1.3, lots: 1 })
+    const g = puerta(); db.pausa = c => c.tabla === 'rpc:sim_cierre_v0' ? g.p : null
+    if (falla) db.falla = c => c.tabla === 'rpc:sim_cierre_v0' ? { code: 'P0001', message: 'inventado' } : null
+    await b.paso(1)
+    await new Promise(r => setTimeout(r, 1500)); await b.repinta()
+    const conPendiente = b.caja.valor.reto.challengeModal
+    g.abrir(); await asienta(80); await new Promise(r => setTimeout(r, 100)); await b.repinta()
+    db.pausa = null; db.falla = null
+    const ev = b.caja.valor.reto.challengeStatus?.evaluation?.status
+    const r = { conPendiente, modal: b.caja.valor.reto.challengeModal, ev, trades: db.tablas.sim_trades.length }
+    b.caja.raiz.desmonta()
+    return r
+  }
+  const ok = await caso('e104-breach', {})
+  ver('breach: el cierre forzado se pidio y se guardo al soltarlo', ok.trades === 1, JSON.stringify(ok))
+  oraculo('E104-breach-espera', 'breach con el cierre forzado retenido 1,5 s: el modal NO se abre mientras esta pendiente; al guardarse, se abre si el reto reevaluado dice quemado (y solo entonces)',
+    ok.conPendiente == null && (ok.modal === 'failed') === (ok.ev === 'failed_dd_daily' || ok.ev === 'failed_dd_total'), JSON.stringify(ok))
+  const mal = await caso('e104-breach-error', { falla: true })
+  oraculo('E104-breach-error', 'breach cuyo cierre forzado falla: el reto reevaluado no esta quemado y el modal «quemado» no se abre',
+    mal.conPendiente == null && mal.modal == null && mal.trades === 0 && mal.ev !== 'failed_dd_daily' && mal.ev !== 'failed_dd_total', JSON.stringify(mal))
 }
 
 fin()

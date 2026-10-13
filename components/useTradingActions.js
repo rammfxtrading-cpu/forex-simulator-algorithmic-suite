@@ -12,13 +12,13 @@
  * la posición por su cuenta) y se ELIMINAN en este corte en vez de mudarse.
  */
 
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { realizePnl, priceFromPips, isFilled, isLongSide } from '../lib/trading/orders'
 import { pipMult } from '../lib/trading/pricing'
 import { sessionKeyAt } from '../lib/killzonesDomain'
 import { cierraPosicion, saldoConfirmado, nuevoIdTrade } from '../lib/sim/cierre'
-import { encola, posicionOcupada, hayBarrera } from '../lib/sim/cola'
+import { encola, posicionOcupada, hayBarrera, suscribeCola } from '../lib/sim/cola'
 import { avisa } from '../lib/sim/avisos'
 
 // La fila de sim_trades de un cierre (total o parcial), con su id generado aqui:
@@ -83,6 +83,16 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     checkSLTPRef.current?.(pair,ps.engine,desde)
   }
 
+  // al bajar la barrera del reto (E1-04), SL/TP de las velas que pasaron con ella
+  useEffect(()=>id?suscribeCola(id,()=>{ if(!hayBarrera(id)) Object.keys(pairState.current).forEach(reevaluaSLTP) }):undefined,[id])
+
+  // al liberarse la posicion: repintar, SL/TP de las velas apuntadas y, si se resolvio un
+  // incierto en un reto, refrescarlo (E1-04: con el incierto no se ofrecia la fase)
+  const alResolver=pair=>motivo=>{
+    setTick(t=>t+1); reevaluaSLTP(pair)
+    if(motivo==='incierto'&&sessionRef.current?.challenge_type) refreshChallengeStatus()
+  }
+
   // closePosition accepts optional pair+exitPrice for use from engine.onTick
   const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null)=>{
     const usePair=pairOverride||activePair
@@ -110,9 +120,10 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     }
     if(!userIdRef.current){
       // sin usuario no se guarda nada (como antes); tambien en la cola
+      if(hayBarrera(id)) return
       await encola(id,()=>{ prepara() },{ cierre:true })
     } else {
-      const r=cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:()=>{ setTick(t=>t+1); reevaluaSLTP(usePair) } })
+      const r=cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:alResolver(usePair) })
       if(!r) return
       await r
     }
@@ -144,7 +155,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
       const trade=filaTrade({ userId:userIdRef.current, pos, lots:lotsToClose, exit:precio, rrReal, pnl, result, note, currentTime:ct })
       return { delta, trade, lastTimestamp:null, revierte:()=>{ restaura(pair,confirmada,enMemoria); reponSaldo(delta) } }
     }
-    return cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:()=>{ setTick(t=>t+1); reevaluaSLTP(pair) } })
+    return cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:alResolver(pair) })
   },[currentPrice,currentTime,id])
 
   const previewOrder=useCallback((side, price, pair)=>{
