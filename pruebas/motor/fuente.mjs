@@ -3,7 +3,9 @@
  * § 1.7, § 3.8, § 12.2, § 12.10; A15, A16, A26). Escrito ANTES que el codigo.
  *
  * Une las piezas 3 y 4 (trozo binario y manifiesto) con el motor de la pieza 2,
- * sin base ni interfaz: creaFuente({ manifiesto, fijado, leeTrozo, aceptados })
+ * sin base ni interfaz: creaFuente({ manifiesto, fijado, leeTrozo })
+ * (ETAPA 2, S4-03 y diseño p.2: los dias cortos aceptados y los huecos
+ * aceptados vienen del manifiesto y de sus trozos, no de un parametro)
  * y avanza(estado, hasta, fuente, { desde }).
  *   · A26: la fuente se niega si el manifiesto no es el fijado por la sesion.
  *   · Entrega al motor las velas del tramo (cursor, hasta]; si el tramo no es el
@@ -110,15 +112,24 @@ const corto = dia('2026-03-04', 600)
 const mCorto = mercado([LUN, MAR, corto, JUE])
 const fK = FU?.creaFuente({ manifiesto: mCorto, fijado: MF.fija(mCorto), leeTrozo: lector([LUN, MAR, corto, JUE]) })
 const rK = FU ? FU.avanza(sesion(mCorto), S('2026-03-05') + 3600, fK, { desde: S('2026-03-02') }) : null
-const fKa = FU?.creaFuente({ manifiesto: mCorto, fijado: MF.fija(mCorto), leeTrozo: lector([LUN, MAR, corto, JUE]), aceptados: new Map([['2026-03-04', 600]]) })
-const rKa = FU ? FU.avanza(sesion(mCorto), S('2026-03-05') + 3600, fKa, { desde: S('2026-03-02') }) : null
+const cortoA = [{ dia: '2026-03-04', velas: 600, motivo: 'prueba' }]
+const mCortoA = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [LUN, MAR, corto, JUE], cortosAceptados: cortoA })
+const fKa = FU?.creaFuente({ manifiesto: mCortoA, fijado: MF.fija(mCortoA), leeTrozo: lector([LUN, MAR, corto, JUE]) })
+const rKa = FU ? FU.avanza(sesion(mCortoA), S('2026-03-05') + 3600, fKa, { desde: S('2026-03-02') }) : null
 // P7-01 (CTO 10-oct; cambio de contrato, marcado para Astra): aceptar el DIA corto ya no basta; sus 840 minutos
 // sin velas (miercoles 10:00 → jueves 00:00, mercado abierto) son un hueco interior que detiene salvo que el
-// manifiesto lo declare en huecos_aceptados
-const mCortoH = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [LUN, MAR, corto, JUE], huecosAceptados: [{ inicio: '2026-03-04T10:00Z', minutos: 840, motivo: 'festivo' }] })
-const fKh = FU?.creaFuente({ manifiesto: mCortoH, fijado: MF.fija(mCortoH), leeTrozo: lector([LUN, MAR, corto, JUE]), aceptados: new Map([['2026-03-04', 600]]) })
+// manifiesto lo declare aceptado (etapa 2: el hueco va en el trozo del miercoles y el dia corto en el manifiesto)
+const cortoH = { dia: '2026-03-04', buffer: B.codifica('EURUSD', S('2026-03-04'), corto.velas, [{ inicio: '2026-03-04T10:00Z', minutos: 840, motivo: 'festivo' }]) }
+const mCortoH = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [LUN, MAR, cortoH, JUE], cortosAceptados: cortoA })
+const fKh = FU?.creaFuente({ manifiesto: mCortoH, fijado: MF.fija(mCortoH), leeTrozo: lector([LUN, MAR, cortoH, JUE]) })
 const rKh = FU ? FU.avanza(sesion(mCortoH), S('2026-03-05') + 3600, fKh, { desde: S('2026-03-02') }) : null
 oraculo('FUE', 'dia corto (600/1200): no_valorable; aceptado con 600 velas: detiene en su hueco interior (miercoles 10:00, 840 min); con el hueco declarado en el manifiesto: se avanza hasta el jueves', rK?.detencion?.motivo === 'no_valorable' && rK?.detencion?.dia === '2026-03-04' && rKa?.detencion?.frontera === S('2026-03-04') + 600 * 60 && rKa.detencion.minutos === 840 && !rKh?.detencion && rKh?.estado.reloj.cursor === S('2026-03-05') + 3600, `${enTexto(rK?.detencion)} · ${enTexto(rKa?.detencion)} · ${enTexto(rKh?.detencion)}`)
+
+oraculo('FUE', 'S4-03: creaFuente ya no admite «aceptados» aparte (vienen del manifiesto)', !!FU && lanza(() => FU.creaFuente({ manifiesto: mCortoA, fijado: MF.fija(mCortoA), leeTrozo: lector([LUN, MAR, corto, JUE]), aceptados: new Map([['2026-03-04', 600]]) })))
+// el hueco aceptado en el trozo, con el dia corto SIN declarar en el manifiesto: el dia sigue faltando (un hueco no acepta el dia)
+const mSoloH = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: [LUN, MAR, cortoH, JUE] })
+const rSoloH = FU ? FU.avanza(sesion(mSoloH), S('2026-03-05') + 3600, FU.creaFuente({ manifiesto: mSoloH, fijado: MF.fija(mSoloH), leeTrozo: lector([LUN, MAR, cortoH, JUE]) }), { desde: S('2026-03-02') }) : null
+oraculo('FUE', 'p.2: el hueco aceptado en el trozo no acepta el dia corto: sin declararlo en el manifiesto, no_valorable del miercoles', rSoloH?.detencion?.motivo === 'no_valorable' && rSoloH.detencion.dia === '2026-03-04' && rSoloH.detencion.frontera === S('2026-03-04'), enTexto(rSoloH?.detencion))
 
 titulo('5 · trozos que no se pueden leer')
 const alterado = Buffer.from(MAR.buffer); alterado[40] ^= 1
@@ -161,12 +172,11 @@ for (const [que, cerrados, detiene] of [['sin declarar', [], true], ['declarado 
 titulo('8 · C6-06 (Astra, cierres-6/7): manifiesto externo con hash correcto y trozo invalido → trozo_alterado')
 // un artefacto de otro productor: bytes integros (sha256 correcto) y contenido financiero invalido. No pasa por
 // creaManifiesto (que ya lo rechaza): se rehace aqui su sha, su nombre y la huella del contenido canonico
-const { createHash } = await import('node:crypto')
 const bueno = MF.creaManifiesto({ par: 'EURUSD', version: 'externo', trozos: [LUN] })
 const externo = buf => {
   const m = structuredClone(bueno)
   m.dias[0].sha256 = B.huella(buf); m.dias[0].nombre = `${m.dias[0].dia}.${m.dias[0].sha256}.bin`
-  m.huella = createHash('sha256').update(JSON.stringify({ esquema: m.esquema, par: m.par, version: m.version, digitos: m.digitos, dias: m.dias, cerrados: m.cerrados })).digest('hex')
+  m.huella = MF.huellaDe(m)
   return m
 }
 for (const [que, f] of [['OHLC (high − open = −1)', x => x.writeInt32LE(-1, 20 + 6)], ['escala 4', x => x.writeUInt8(4, 5)], ['reservado 1', x => x.writeUInt16LE(1, 6)]]) {
