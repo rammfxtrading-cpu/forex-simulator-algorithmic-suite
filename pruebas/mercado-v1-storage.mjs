@@ -108,6 +108,15 @@ oraculo('PUBS', 'el puntero cambio desde la planificacion (el plan no parte del 
 const aI = almacen({ sube: ruta => (ruta === 'v1/actual.json' ? new Error('sin respuesta') : null) })
 const rI = await corre(() => PV.publica({ almacen: aI, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
 oraculo('PUBS', 'la subida del puntero falla sin respuesta: «incierto» y el cerrojo se CONSERVA (lo suelta una persona)', /incierto/.test(rI.error ?? '') && aI.o.has('v1/_cerrojo.json'), JSON.stringify(rI))
+// BF-03 del diario: la subida del cerrojo sin respuesta. Si quedo puesto y es el nuestro, se sigue; si no se puede saber, no
+const aK = almacen()
+const subeK = aK.sube.bind(aK)
+aK.sube = async (ruta, bytes, o) => { if (ruta === 'v1/_cerrojo.json' && !aK.o.has(ruta)) { aK.o.set(ruta, Buffer.from(bytes)); throw new Error('sin respuesta') } return subeK(ruta, bytes, o) }
+const rK = await corre(() => PV.publica({ almacen: aK, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+oraculo('PUBS', 'cerrojo subido pero sin respuesta: se mira, es el nuestro y se publica', rK.estado === 'publicado' && sinCerrojo(aK), JSON.stringify(rK))
+const aK2 = almacen(); aK2.sube = async () => { throw new Error('sin respuesta') }
+const rK2 = await corre(() => PV.publica({ almacen: aK2, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+oraculo('PUBS', 'cerrojo sin respuesta y sin quedar puesto: error «no se pudo poner el cerrojo», nada subido', /cerrojo/.test(rK2.error ?? '') && aK2.o.size === 0, JSON.stringify(rK2))
 oraculo('PUBS', 'un plan en incidente no se publica: error con el incidente', /incidente/.test((await corre(() => PV.publica({ almacen: almacen(), planes: [{ ...planEU(), estado: 'incidente', incidente: 'x' }], dueno: 'prueba', ahora: 'x' }))).error ?? ''))
 
 titulo('4 · el verificador (solo lectura)')
