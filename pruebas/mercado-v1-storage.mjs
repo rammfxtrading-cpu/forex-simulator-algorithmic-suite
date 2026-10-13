@@ -20,6 +20,7 @@ import { brotliDecompressSync } from 'zlib'
 import { titulo, oraculo, fin, importa } from './lib.mjs'
 const PV = await importa('lib/mercado/publica-v1.mjs')
 const VV = await importa('lib/mercado/verifica-v1.mjs')
+const A = await importa('lib/mercado/aceptaciones.mjs')
 const P = await importa('lib/mercado/publicador-v1.mjs')
 const MF = await importa('lib/motor/manifiesto.mjs')
 const B = await importa('lib/motor/binario.mjs')
@@ -122,7 +123,7 @@ oraculo('PUBS', 'un plan en incidente no se publica: error con el incidente', /i
 titulo('4 · el verificador (solo lectura)')
 const datosDe = { EURUSD: datos2, GBPUSD: velas('2026-03-01', '2026-03-06', { px: () => 1.3 }) }
 const ver1 = await VV.verifica({ almacen: a1, texto: texto1, velasDe: async par => datosDe[par], diasAceptadosDe: () => new Map() })
-oraculo('VER', 'lo publicado verifica: 0 problemas, los dos pares, la cadena de EURUSD (v1.2 → v1.1) y los bytes del listado', ver1.problemas.length === 0 && ver1.pares.EURUSD?.cadena === 2 && ver1.pares.GBPUSD?.cadena === 1 && ver1.bytes > 0, JSON.stringify(ver1.problemas))
+oraculo('VER', 'lo publicado verifica (salvo la anotacion, abajo): los dos pares, la cadena de EURUSD (v1.2 → v1.1) y los bytes del listado', ver1.problemas.every(p => /sin anotar/.test(p)) && ver1.pares.EURUSD?.cadena === 2 && ver1.pares.GBPUSD?.cadena === 1 && ver1.bytes > 0, JSON.stringify(ver1.problemas))
 const lecturas = a1.registro.length
 await VV.verifica({ almacen: a1, texto: texto1, velasDe: async par => datosDe[par], diasAceptadosDe: () => new Map() })
 oraculo('VER', 'el verificador no sube ni borra nada', a1.registro.slice(lecturas).every(x => x[0] === 'lee'))
@@ -155,5 +156,10 @@ await aY.sube('v1/actual.json', Buffer.from(JSON.stringify({ esquema: 'mercado-p
 const pY = (await VV.verifica({ almacen: aY, texto: '', velasDe: async () => null, diasAceptadosDe: () => new Map() })).problemas
 oraculo('VER', 'una cobertura con agujero (falta el martes entre lunes y miercoles): problema', pY.some(p => /cobertura/.test(p) && /2026-03-03/.test(p)), JSON.stringify(pY))
 oraculo('VER', 'sin datos con que comparar: se dice como aviso, no se da por comprobado', (await VV.verifica({ almacen: aY, texto: '', velasDe: async () => null, diasAceptadosDe: () => new Map() })).avisos.some(a => /sin datos/.test(a)))
+// la inmutabilidad en el repositorio depende de que la publicacion este ANOTADA en el fichero (--anota + commit)
+const anotado = A.anota(texto1, planEU().publicacion)
+const vAn = await VV.verifica({ almacen: a1, texto: anotado, velasDe: async par => datosDe[par], diasAceptadosDe: () => new Map() })
+oraculo('VER', 'un hueco aceptado publicado SIN su publicacion anotada en el fichero: problema que lo dice', ver1.problemas.length === 0 ? false : ver1.problemas.some(p => /sin anotar/.test(p) && /2026-03-03T10:01Z/.test(p)), JSON.stringify(ver1.problemas))
+oraculo('VER', 'anotada (con el sha del trozo publicado): sin problemas', vAn.problemas.length === 0, JSON.stringify(vAn.problemas))
 oraculo('VER', 'sin puntero: problema', (await VV.verifica({ almacen: almacen(), texto: '', velasDe: async () => null, diasAceptadosDe: () => new Map() })).problemas.some(p => /puntero/.test(p)))
 fin()
