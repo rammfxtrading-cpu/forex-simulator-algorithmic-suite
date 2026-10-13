@@ -1956,3 +1956,28 @@ Va al **runbook de la etapa 1, antes de abrir la versión a los alumnos:** un lo
 - **El navegador real, PostgREST real y el editor de Supabase.** El cliente se prueba con dobles. La función atómica, la RLS y la puerta se prueban en PostgreSQL con PostgREST emulado (k.4 b midió que PostgREST 13.0.8 y 16.4 dan lo mismo).
 - **Un login real con la cabecera.** Va al runbook (o.9).
 - **Los 200.000 cierres de l.5 con el `realizePnl` real en PostgreSQL.** La tolerancia se ensaya con casos de frontera (o.10.3). La medida de los 200.000 es la de `revisiones-suite/2026-10-12-sim-004-l-emparejamiento/`.
+
+### o.12 Decisiones del CTO sobre o.11 (13-oct)
+
+**1. o.11.7, en el servidor.** `/api/challenge/create`, `/api/challenge/advance` y `/api/admin/wipe-simulador` leen `sim_servicio` justo antes de escribir (`lib/sim/servicioServidor.js`):
+- con **`mantenimiento = true`** → **503 «Simulador en mantenimiento»**, sin escribir nada;
+- **si la lectura falla** (o no hay fila) → **503** también: falla cerrado;
+- sin mantenimiento → igual que hoy.
+
+**Para eso, `service_role` tiene SELECT en `sim_servicio`** (preparatoria, `GRANT SELECT … TO authenticated, service_role`). Sigue sin escritura para nadie salvo el dueño.
+- La guarda final exige **exactamente** esos dos SELECT y ningún otro receptor.
+- La matriz del ensayo (E5) lo comprueba con INSERT, DELETE y TRUNCATE de `service_role` denegados.
+- Hay dos mutantes de catálogo más: UPDATE de `service_role` y SELECT de `anon`.
+
+**Pruebas:** `pruebas/etapa1-servidor.mjs`.
+- En los tres endpoints: mantenimiento → 503 y cero escrituras; lectura fallida → 503 y cero escrituras; sin mantenimiento → igual que hoy.
+- **Mutante sin la comprobación:** los tres escriben en mantenimiento → rojo.
+
+**2. Runbook (paso operativo): durante la ventana de mantenimiento NO se usan las acciones del hub que borran alumnos.**
+- El hub vive en otro repositorio (`algorithmic-suite-hub/pages/api/users/delete.js:104–106`) y no lee `sim_servicio`.
+- En el corte lo cubre el `LOCK` de sim-004 (c.2).
+- Fuera de la ventana, sus borrados quedan en el registro como `service_role` y no cuentan (k.4 d).
+
+**3. Aceptados por el CTO, pendientes de Astra:** los dos endurecimientos de o.11:
+- la cola de cierres con el saldo confirmado (o.11.1);
+- los 20 s antes de dar por perdido un resultado incierto (o.11.2).

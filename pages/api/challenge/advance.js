@@ -5,6 +5,7 @@ import { evaluateChallenge, isChallengeOver } from '../../../lib/challengeEngine
 import { getChallengeConfig } from '../../../lib/challengeRules'
 // CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
 import { registra } from '../../../lib/mercado/errores.mjs'
+import { servicioPermite } from '../../../lib/sim/servicioServidor'
 
 /**
  * POST /api/challenge/advance
@@ -160,6 +161,8 @@ export default async function handler(req, res) {
   }
 
   // ── 7. Aplicar cambios según outcome
+  // Etapa 1 (o.12): con el simulador en mantenimiento, o sin poder saberlo, no se escribe
+  if (!(await servicioPermite(supabaseAdmin, res, 'challenge/advance'))) return
 
   // ─ FAIL ─
   if (outcome === 'fail') {

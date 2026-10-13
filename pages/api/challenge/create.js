@@ -2,6 +2,7 @@ import { requireSimulador } from '../../../lib/authApi'
 import { getChallengeConfig } from '../../../lib/challengeRules'
 // CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
 import { registra } from '../../../lib/mercado/errores.mjs'
+import { servicioPermite } from '../../../lib/sim/servicioServidor'
 
 /**
  * POST /api/challenge/create
@@ -99,6 +100,9 @@ export default async function handler(req, res) {
     challenge_phase: 1,
     challenge_parent_id: null,
   }
+
+  // Etapa 1 (o.12): con el simulador en mantenimiento, o sin poder saberlo, no se escribe
+  if (!(await servicioPermite(supabaseAdmin, res, 'challenge/create'))) return
 
   const { data, error } = await supabaseAdmin
     .from('sim_sessions')

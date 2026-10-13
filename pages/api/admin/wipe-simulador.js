@@ -1,6 +1,7 @@
 import { requireAdmin } from '../../../lib/authApi'
 // CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
 import { registra } from '../../../lib/mercado/errores.mjs'
+import { servicioPermite } from '../../../lib/sim/servicioServidor'
 
 /**
  * POST /api/admin/wipe-simulador
@@ -67,6 +68,8 @@ export default async function handler(req, res) {
   // no tiene acceso y repetir el wipe termina el trabajo (los deletes son
   // idempotentes). sim_sessions va ULTIMA: su CASCADE arrastra sim_trades,
   // session_drawings y (desde sim-001b) session_chart_config.
+  // Etapa 1 (o.12): con el simulador en mantenimiento, o sin poder saberlo, no se toca nada
+  if (!(await servicioPermite(supabaseAdmin, res, 'admin/wipe-simulador'))) return
   const { error: toggleErr } = await supabaseAdmin
     .from('profiles')
     .update({ simulador_activo: false })

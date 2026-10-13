@@ -297,14 +297,15 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
       unnest(array['sim_cierre_v0(uuid,numeric,bigint,jsonb)','sim_escrituras_v0_registra()','sim_escrituras_v0_marca_balance()','sim_escrituras_v0_inmutable()',
                    'sim_escrituras_v0_solo_disparador()','sim_escrituras_v0_parejas(uuid)','sim_escrituras_v0_canonico(uuid)']) f) m`).split(' ')
   const verdaderos = matriz.filter(x => x.endsWith('=true'))
-  oraculo('E5-matriz', 'de 4 roles × (3 tablas × 7 + 2 secuencias × 3 + 7 funciones): solo authenticated SELECT sim_servicio y EXECUTE sim_cierre_v0',
-    matriz.length === 4 * (21 + 6 + 7) && verdaderos.join(' ') === 'authenticated:sim_cierre_v0(uuid,numeric,bigint,jsonb):EXECUTE=true authenticated:sim_servicio:SELECT=true',
+  oraculo('E5-matriz', 'de 4 roles × (3 tablas × 7 + 2 secuencias × 3 + 7 funciones): solo SELECT de sim_servicio (authenticated y service_role, o.12) y EXECUTE de sim_cierre_v0 (authenticated)',
+    matriz.length === 4 * (21 + 6 + 7) && verdaderos.join(' ') === 'authenticated:sim_cierre_v0(uuid,numeric,bigint,jsonb):EXECUTE=true authenticated:sim_servicio:SELECT=true service_role:sim_servicio:SELECT=true',
     `${matriz.length} casillas · verdaderas: ${verdaderos.join(' ')}`)
   const acl = uno(`select count(*) from (
     select a.grantee from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
      where c.oid in ('public.sim_escrituras_v0'::regclass, 'public.sim_escrituras_v0_marcas'::regclass, 'public.sim_servicio'::regclass,
                      'public.sim_escrituras_v0_id_seq'::regclass, 'public.sim_escrituras_v0_marcas_id_seq'::regclass)
        and a.grantee not in (c.relowner, 'authenticated'::regrole)
+       and not (a.grantee = 'service_role'::regrole and c.relname = 'sim_servicio' and a.privilege_type = 'SELECT')
     union all select a.grantee from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
      where (p.proname like 'sim\\_escrituras\\_v0\\_%' or p.proname = 'sim_cierre_v0') and a.grantee not in (p.proowner, 'authenticated'::regrole)) g`)
   oraculo('E5-public', 'ningun receptor mas (PUBLIC incluido) en tablas, secuencias y funciones nuevas', acl === '0', acl)
@@ -316,7 +317,11 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
   oraculo('E5-intentos', 'de verdad: authenticated y service_role no leen el registro; nadie escribe sim_servicio; anon no la lee; canonico no se ejecuta',
     intentos.every(x => !x.ok && /permission denied/.test(x.err)), intentos.map(x => x.ok ? 'PASA' : 'denegado').join(','))
   const lect = escribe({}, 'select mantenimiento||\',\'||version_minima from public.sim_servicio;')
-  oraculo('E5-servicio-lectura', 'authenticated lee sim_servicio (una fila)', lect.ok && lect.out === 'false,1', lect.out || err1(lect))
+  const lectSR = escribe({ rol: 'service_role' }, 'select mantenimiento::text from public.sim_servicio;')
+  const escSR = [escribe({ rol: 'service_role' }, `insert into public.sim_servicio values (true, true, '1', now());`), escribe({ rol: 'service_role' }, 'delete from public.sim_servicio;'),
+    escribe({ rol: 'service_role' }, 'truncate public.sim_servicio;')]
+  oraculo('E5-servicio-lectura', 'authenticated y service_role leen sim_servicio (una fila); service_role no la escribe (INSERT, DELETE, TRUNCATE denegados)',
+    lect.ok && lect.out === 'false,1' && lectSR.ok && lectSR.out === 'false' && escSR.every(x => !x.ok && /permission denied/.test(x.err)), `${lect.out} · ${lectSR.out || err1(lectSR)} · ${escSR.map(x => x.ok ? 'PASA' : 'denegado')}`)
 
   // ═══════════════════════════════════════════════════════════════════════
   titulo('6 · cascadas con las FK reales (sesion, perfil, auth.users, sim_borrar_alumno)')
@@ -434,6 +439,8 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
     ['cuerpo de A cambiado', `create or replace function public.sim_escrituras_v0_registra() returns trigger language plpgsql security definer set search_path = '' as $$ begin return null; end $$;`],
     ['canonico pasa a DEFINER', `alter function public.sim_escrituras_v0_canonico(uuid) security definer;`],
     ['SELECT del registro a service_role', `grant select on public.sim_escrituras_v0 to service_role;`],
+    ['UPDATE de sim_servicio a service_role (o.12: solo SELECT)', `grant update on public.sim_servicio to service_role;`],
+    ['SELECT de sim_servicio a anon', `grant select on public.sim_servicio to anon;`],
     ['EXECUTE de PUBLIC en parejas', `grant execute on function public.sim_escrituras_v0_parejas(uuid) to public;`],
     ['columna nueva en el registro', `alter table public.sim_escrituras_v0 add column extra text;`],
     ['politica en el registro', `create policy p on public.sim_escrituras_v0 for select to authenticated using (true);`],

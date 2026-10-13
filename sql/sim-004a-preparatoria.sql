@@ -22,9 +22,10 @@
 --       el emparejamiento y el texto canonico con su sha256 (o.0, o.4). Solo
 --       los ejecuta el dueño: s10 y el DO del corte.
 --   sim_servicio              una fila: mantenimiento y version minima del
---       cliente (o.5). La lee authenticated; la escribe solo el dueño, por SQL
---       anotado en sql/APLICADOS.md. Nace con mantenimiento = false y
---       version_minima = '1'.
+--       cliente (o.5). La leen authenticated (el cliente) y service_role (los
+--       endpoints que escriben economia en el servidor, o.12); la escribe solo
+--       el dueño, por SQL anotado en sql/APLICADOS.md. Nace con
+--       mantenimiento = false y version_minima = '1'.
 --
 -- ⚠️ EL REGISTRO NO ES SEGURIDAD: la cabecera x-sim-cliente se puede
 --    falsificar. Detecta clientes anteriores a la etapa 1 (k.1 d, k.3.3).
@@ -491,7 +492,7 @@ BEGIN
       FROM PUBLIC, anon, authenticated, service_role;
     REVOKE ALL ON SEQUENCE public.sim_escrituras_v0_id_seq, public.sim_escrituras_v0_marcas_id_seq
       FROM PUBLIC, anon, authenticated, service_role;
-    GRANT SELECT ON public.sim_servicio TO authenticated;
+    GRANT SELECT ON public.sim_servicio TO authenticated, service_role;
     CREATE POLICY sim_servicio_lectura ON public.sim_servicio FOR SELECT TO authenticated USING (true);
     FOR v_n IN 1 .. array_length(v_funciones, 1) LOOP
       EXECUTE format('REVOKE ALL ON FUNCTION public.%s FROM PUBLIC, anon, authenticated, service_role', v_funciones[v_n][1]);
@@ -627,14 +628,14 @@ BEGIN
          OR has_table_privilege(rol, 'public.' || f, 'REFERENCES') OR has_table_privilege(rol, 'public.' || f, 'TRIGGER') THEN
         RAISE EXCEPTION 'sim-004a: % puede escribir en public.%', rol, f;
       END IF;
-      IF has_table_privilege(rol, 'public.' || f, 'SELECT') <> (rol = 'authenticated' AND f = 'sim_servicio') THEN
+      IF has_table_privilege(rol, 'public.' || f, 'SELECT') <> (rol IN ('authenticated', 'service_role') AND f = 'sim_servicio') THEN
         RAISE EXCEPTION 'sim-004a: SELECT de % sobre public.% no es el previsto', rol, f;
       END IF;
     END LOOP;
     SELECT string_agg(CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END || '=' || a.privilege_type, ', ') INTO v_txt
       FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
      WHERE c.oid = ('public.' || f)::regclass AND a.grantee <> c.relowner
-       AND NOT (f = 'sim_servicio' AND a.grantee = 'authenticated'::regrole AND a.privilege_type = 'SELECT');
+       AND NOT (f = 'sim_servicio' AND a.grantee IN ('authenticated'::regrole, 'service_role'::regrole) AND a.privilege_type = 'SELECT');
     IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004a: receptores de mas en public.%: %', f, v_txt; END IF;
   END LOOP;
   FOREACH f IN ARRAY v_secuencias LOOP
@@ -669,6 +670,7 @@ select seccion, detalle from (
   select 2, 'tabla', c.relname || ' · rls=' || c.relrowsecurity
          || ' · politicas=' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = c.relname)
          || ' · select authenticated=' || has_table_privilege('authenticated', c.oid, 'SELECT')
+         || ' service_role=' || has_table_privilege('service_role', c.oid, 'SELECT')
          || ' · escritura anon/authenticated/service_role=' || (has_table_privilege('anon', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')
                                  or has_table_privilege('authenticated', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')
                                  or has_table_privilege('service_role', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE'))
