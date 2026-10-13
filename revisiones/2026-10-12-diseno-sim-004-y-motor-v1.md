@@ -351,13 +351,13 @@ Cada etapa se puede desplegar sola y la puede verificar Astra por separado.
 |---|---|---|---|---|
 | 0 | Integrar `main` en `auditoria-simulador` | los 39 commits de `main` (mercado diario `.json.gz`, workflow). Conflictos no medidos | tanda entera; diff de `lib/mercado` y `pages/api/candles.js` contra `main` | no |
 | 1 | Cliente: lápidas y legado entendidos (d1, d2 y d3 para legado, d6 parcial) + endpoints `/api/sim/*` desplegados **apagados** (503) | sin cambio de esquema; no hay lápidas ni legado todavía, así que es inocuo | pruebas de cliente con el doble; URL de `/api/sim/*` → 503; un alumno no ve diferencia | no |
-| 2 | Publicador de mercado v1 (e.2) y lista de huecos aceptados | bucket privado `mercado/v1`, manifiestos y trozos; el diario no cambia | relectura y sha de cada trozo publicado; manifiesto contra el `.json.gz` día a día; tamaño frente a Storage (≈ 60 MB, spec § 7.3; el bucket está en ≈ 745 MB, mercado diario 11-oct) | **a confirmar**: cabe hoy en 1 GB, pero con poco margen |
+| 2 | Publicador de mercado v1 (e.2) y lista de huecos aceptados | bucket privado `mercado/v1`, manifiestos y trozos; el diario no cambia | relectura y sha de cada trozo publicado; manifiesto contra el `.json.gz` día a día; tamaño frente a Storage (≈ 60 MB, spec § 7.3; el bucket está en ≈ 745 MB, mercado diario 11-oct) | **ya no aplica:** Supabase está en Pro desde el 13-oct (p) |
 | 3 | `lib/servidor/` + endpoints completos, probados en el ensayo (e.4) | código sin desplegar o desplegado apagado | tanda: endpoint → RPC real en el montaje literal; A18–A26 por la URL | no |
 | 4 | **sim-004 ensayado** (c) | `sql/sim-004` escrito, sin aplicar | montaje literal + sim-003 + sim-004, dos veces; A25; cliente viejo durante el `LOCK`; s08 sobre el montaje | no |
 | 5 | **Corte en producción** (c.7: mantenimiento → sim-004 → s08 → encender v1) | sim-004 aplicado, cliente v1 (d4–d8), endpoints encendidos | informe de sim-004 y s08 literales; una sesión v1 de prueba (alumno de pruebas) de punta a punta; ningún alumno con escrituras rechazadas inesperadas | **sí: spec § 12.7, «la v1 no se habilita sin Supabase Pro»** |
 | 6 | Retirada de `challenge/create` y `challenge/advance`; wipe por `sim_borrar_alumno` | código | URL llamadas directamente (§ 7.0): ninguna escribe | sí (va con v1) |
 
-**Pro, según lo que consta en el repo:**
+**Pro, según lo que consta en el repo** (**corregido 13-oct, p:** Supabase está en Pro desde el 13-oct, 8 GB de base y 100 GB de Storage; lo que sigue es el razonamiento previo):
 - base de 500 MB en el plan gratuito frente a 8 GB en Pro (diseño-persistencia § 9.3, consultado el 7-oct);
 - Storage: 1 GB frente a 100 GB (spec § 7.3);
 - la condición expresa de spec § 12.7.
@@ -977,7 +977,7 @@ Resultado exigido: **s10 los detecta**, y si el corte se lanza igual, **aborta**
    - El caso S4R2-01 necesita una **primera** escritura confirmada (el UPDATE), y esa sí queda registrada.
    - **No veo un caso que pase,** pero esto es lectura: es para Astra y para el ensayo de la etapa 4 (g).
 6. **Cascadas.** Un DELETE de sesión que arrastra sus trades dispara el registro también en `sim_trades`, con la misma cabecera y el mismo rol. Es correcto: cuenta como escritura de ese cliente.
-7. **Volumen.** El cliente de hoy guarda el progreso periódicamente (`usePairData.js:25`) y al pausar (`_SessionInner.js:1104`). Cada guardado es una fila del registro. Con 5 alumnos es poco, pero hay que medirlo en la etapa 1 (filas/día) frente a la base gratuita, antes de Pro. Se borra con el corte.
+7. **Volumen.** El cliente de hoy guarda el progreso periódicamente (`usePairData.js:25`) y al pausar (`_SessionInner.js:1104`). Cada guardado es una fila del registro. Con 5 alumnos es poco, pero hay que medirlo en la etapa 1 (filas/día) frente a la base gratuita, antes de Pro. Se borra con el corte. (**Corregido 13-oct, p:** Supabase está en Pro desde el 13-oct, 8 GB de base.)
 8. **Permisos de la tabla de registro.** RLS sin políticas y sin grants:
    - un alumno no puede leer quién escribió ni borrar su rastro;
    - `service_role` tampoco (bypassrls no basta sin grant);
@@ -2437,3 +2437,107 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 **Runbook:**
 - **s11 y s12** (pasos previos) **y la guarda de la preparatoria** confirman RLS activa en las cuatro tablas.
 - **Si s11 o s12 dicen `rls=false` o `NO EXISTE` en alguna,** se para y decide el CTO: sin RLS, las políticas nuevas existirían sin aplicarse.
+
+---
+
+## p · etapa 2: el publicador del mercado v1 (CTO, 13-oct)
+
+**Decisiones del CTO (13-oct, noche):** plan aprobado; un solo bucket privado `mercado` con prefijo `v1/`; manifiestos con nombre inmutable y **un único puntero mutable que se escribe el último**; los días cortos aceptados **dentro del manifiesto**; **Q1 = (a):** un día con un hueco de más de 15 minutos sin revisar **se retiene** y no se publica (hasta entonces, `fin_de_datos`). Supabase está en **Pro desde el 13-oct** (8 GB de base, 100 GB de Storage): corrige § f («a confirmar», «cabe hoy en 1 GB»), k.3.7 y la estimación del registro (`revisiones-suite/2026-10-14-sim-etapa1-registro-retencion-y-diario.md` § 1); la purga del registro sigue después de la puerta y de su segunda s10 limpia. **Ninguna política sobre `storage.objects` ni grant de Storage sin el sí explícito del CTO** (p.7).
+
+Rama `etapa2-simulador`, desde `main` `3fa2b3f`. La etapa 2 no depende de la puerta.
+
+### p.1 El trozo v2 (`9709d3d`)
+
+`lib/motor/binario.mjs`, versión 2: cabecera de 20 bytes (`h` u8 ≤ 64 y un reservado) y, después de las velas, 6 bytes por hueco aceptado: minuto del día (su primer minuto ausente), minutos (16..2.879, y minuto + minutos ≤ 2.879: como mucho hasta la última vela posible del día siguiente), motivo (0 festivo, 1 cambio_de_sesion, 2 corte_del_proveedor) y un 0. Ordenados, sin solaparse, sin tapar ninguna vela del trozo; codificar y decodificar validan lo mismo (C6-06). **Así se cierra i.4.1 / S4-03:** los huecos aceptados viven en el trozo y el manifiesto los fija por el sha del trozo; no hay una segunda lista mutable. La versión 1 no se publicó nunca y ya no se lee.
+
+**Ubicación canónica de un hueco** (S4-11): el trozo del día de su **primer minuto ausente**, también si cruza la medianoche. **Es definitivo** cuando se conoce la vela siguiente **y el día de esa vela está completo** (p.4 c).
+
+**Medido en la copia local verificada** (`~/copias-suite/2026-10-05-mercado`, 9 pares, 2024–2026; solo velas): **139 huecos interiores de más de 15 minutos** (de 10 a 25 por par), **37 cruzan la medianoche**, **ninguno pasa de 2.879 minutos**, **ningún precio fuera de la rejilla** de ticks, ningún día sin mercado con velas. (La spec § 14 cita 98 de 31.859 con la medición del 9-oct; la diferencia sale de la definición: aquí cuentan los interiores con el horario de Nueva York y sin cerrados. Lo que manda es la lista del informe, p.5.)
+
+### p.2 El manifiesto@2
+
+```
+{ esquema: 'mercado-manifiesto@2', par, version, digitos,
+  anterior: <huella del manifiesto anterior> | null,
+  dias: [{ dia, sha256, nombre, velas, primera, ultima, availableAt }],
+  cerrados: ['AAAA-MM-DD', …],
+  cortos_aceptados: [{ dia, velas, motivo }],
+  aceptaciones: { lineas, sha256 },
+  huella }
+```
+
+- **Sin `huecos_aceptados`:** están en los trozos (p.1). `creaManifiesto` comprueba que **cada hueco de cada trozo existe tal cual** en las velas de los trozos (mismo inicio, mismos minutos, interior), salvo el que empieza tras la última vela del último día: ese se comprueba en la versión siguiente (p.3) y en la fuente, que solo acepta un hueco si coincide en inicio y minutos.
+- **`frontera`** = el último día con trozo. Entre el primer día y la frontera, **todo día con mercado tiene trozo** (cobertura contigua) y ningún día sin mercado lo tiene.
+- **`cortos_aceptados`:** los de `lib/mercado/dias-aceptados.mjs` del par (CTO 6-oct) **y los días de mercado reducido** (`FESTIVOS_MMDD`: 25-dic, 1-ene; CTO 6-oct: «no se les exige el umbral») que no llegan al umbral, con sus velas y el motivo «mercado reducido». Es la misma regla del actualizador, escrita en el manifiesto para que la fuente no tenga otra (C6-04: un día corto solo vale si el manifiesto lo declara). **Para el CTO:** si no quiere que los festivos entren solos, se quitan y quedan retenidos como cualquier día corto.
+- **`cerrados`:** `CIERRES_CONFIRMADOS` de `lib/mercado/calidad.mjs` dentro del rango (hoy, ninguno).
+- **`aceptaciones`:** el ancla del fichero de aceptaciones (p.6) con el que se publicó: número de líneas y sha256 de esos bytes.
+- **`version`** = `v1.<k>`, con k = la de `anterior` + 1 (la raíz, `v1.1`). La sesión fija `PAR@v1.<k>:huella` (A26).
+- **`huella`** = sha256 del contenido canónico, todo menos `huella`.
+
+### p.3 La continuación (decisión 2 de h; S4-03)
+
+`esContinuacion(anterior, nuevo)` → `null` o el motivo del **incidente**:
+- mismo `par` y `digitos`; `nuevo.anterior` = `anterior.huella` cuando son consecutivos (para una cadena se comprueba cada eslabón);
+- **prefijo idéntico:** las entradas de `dias` de `anterior` son, una a una e idénticas, las primeras de `nuevo`;
+- los días nuevos, **estrictamente después de la frontera** de `anterior`;
+- `cerrados` y `cortos_aceptados` hasta esa frontera, **idénticos**; los nuevos, después;
+- el ancla de aceptaciones **crece**: `nuevo.aceptaciones.lineas` ≥ las de `anterior` (que el prefijo sea el mismo lo comprueba el publicador, que tiene el fichero: p.6).
+
+**El estado de la sesión** (S4-03): `versiones.mercado[par]` sigue siendo la **raíz** fijada al crear; `versiones.mercado_efectivo[par]`, si existe, la **versión efectiva**. La fuente acepta la efectiva (y la raíz mientras no haya efectiva). `continuaVersiones(versiones, par, { raiz, actual, nuevo })` comprueba la raíz y la continuación desde la efectiva actual y devuelve las versiones nuevas; quién la llama (el endpoint, dentro del sobre, con el recibo) es de la etapa 3. Sin efectiva, el estado serializado es el de siempre.
+
+### p.4 Qué día se publica
+
+El publicador recorre cada par **por calendario, desde el día siguiente a la frontera** (o el primer día de datos) y **se para en el primer día con mercado que no se pueda publicar**. Nada después de un día retenido se publica: publicarlo y luego el retenido sería una adición interior (incidente). Un día se publica si:
+1. **Completo** con la regla del actualizador (`estadoDia` de `calidad.mjs`): umbral de laborable, domingo y mercado reducido con velas en su última hora, o en la lista de días cortos aceptados del par.
+2. **Codificable:** precios en la rejilla, OHLC y volumen válidos (los de `binario.codifica`).
+3. **Hueco final definitivo:** existe una vela posterior a su última vela, y el día de esa vela está completo. (Así el viernes espera al domingo: un día de retraso. Es lo que hace definitivo un hueco que cruza la medianoche.)
+4. **Todos sus huecos de más de 15 minutos** (los que empiezan en él) **están aceptados** en el fichero de aceptaciones, con el mismo inicio y los mismos minutos.
+
+Un día sin mercado (sábado) o cerrado no lleva trozo. **El día anterior a la frontera vigente nunca se republica:** el publicador regenera desde el `.json.gz` los trozos ya publicados y exige que su sha sea el del manifiesto vigente. **Si uno cambia, es incidente:** ese par no publica nada y el informe lo dice (h, nota 3).
+
+### p.5 El informe de huecos (Q1)
+
+Cada pasada (también en simulacro) escribe un **informe legible, sin datos de alumnos** (solo velas): por par, cada hueco interior de más de 15 minutos de **todo** el rango de datos —no solo hasta el primer retenido, para revisarlos de una vez— con:
+- par, día, minuto de inicio (UTC y Nueva York), duración y día de la semana;
+- **estado:** aceptado (con su línea del fichero), pendiente, o aceptación que no coincide (con los minutos reales);
+- **vecinos:** la vela anterior y la siguiente (hora y precio), y **los otros pares con un hueco que se solapa** (si todos lo tienen, apunta a sesión o festivo; si es uno solo, al proveedor). El motivo lo pone el CTO: el informe no lo adivina.
+
+Y por par: frontera publicada, días que se publicarían, primer día retenido y por qué, incidentes.
+
+### p.6 El fichero de aceptaciones (Q1)
+
+`lib/mercado/huecos-aceptados.jsonl`, **de solo añadir**, una línea JSON por registro:
+- `{"tipo":"aceptacion","par","inicio":"AAAA-MM-DDTHH:MMZ","minutos","motivo","fecha":"AAAA-MM-DD","nota"}`: la decide el CTO; `motivo` de la lista de tres; `fecha`, el día de la aceptación; `nota`, el porqué en texto.
+- `{"tipo":"publicacion","par","manifiesto","lineas","prefijo","trozos":[{"inicio","dia","sha256"}]}`: se añade **después** de publicar (el publicador la escribe en local con `--anota`; entra por commit): qué manifiesto usó estas aceptaciones, el ancla (`lineas`, `prefijo` = sha256 de los primeros `lineas` renglones) y el **sha del trozo resultante** de cada aceptación.
+
+**Inmutable después de publicar,** por dos vías:
+- **En el repositorio:** cada registro `publicacion` lleva el sha de los renglones anteriores. Borrar o editar cualquier aceptación ya publicada cambia ese prefijo: `validaAceptaciones` lo rechaza y la tanda queda en rojo (prueba permanente sobre el fichero real).
+- **En Storage:** el manifiesto publicado lleva el ancla. El publicador **no publica** si el fichero actual no empieza por los renglones exactos del ancla del manifiesto vigente de cada par (y el verificador lo comprueba).
+
+Antes de publicar, una aceptación se corrige con otra línea (la última del mismo `par` e `inicio` manda); después, ya no.
+
+### p.7 Storage
+
+**Bucket `mercado`, privado.** Rutas:
+- trozos: `v1/<PAR>/<AAAA>/<MM>/<DD>.<sha>.bin.br` (brotli de `zlib`; `sha` del binario sin comprimir);
+- manifiestos: `v1/<PAR>/manifiestos/v1.<k>.<huella>.json`;
+- **el puntero:** `v1/actual.json` = `{ esquema: 'mercado-puntero@1', pares: { PAR: { version, huella, ruta } } }`, el único objeto que se reescribe.
+
+**Orden:** cerrojo (`v1/_cerrojo.json`, subida sin `upsert`, como `_cerrojos/` de `forex-data`) → trozos nuevos sin `upsert` (si ya existe, se descarga y se comprueba el sha: reintentos idempotentes) → **relectura y sha de cada trozo** → manifiestos sin `upsert` → relectura → **el puntero, el último** → relectura del puntero → se suelta el cerrojo. Si algo falla antes del puntero, el puntero anterior sigue valiendo y lo subido queda huérfano e inofensivo (nombres con su sha). Un lector **nunca** lee `actual.json` salvo para crear una sesión (la raíz) o resolver una continuación; después, solo nombres inmutables.
+
+**Sin políticas.** Lo usa solo `service_role` (publicador, verificador y, en la etapa 3, los endpoints), que no pasa por la RLS. Sin políticas sobre `storage.objects` para `mercado`, `authenticated` y `anon` no leen nada. **La migración no crea ni cambia políticas ni grants**; aborta si alguna política existente de `storage.objects` podría aplicarse a `mercado` (p.8).
+
+### p.8 SQL nuevo (preparado, sin aplicar)
+
+- **`sql/mercado-001-bucket.sql`:** crea el bucket privado `mercado` (`file_size_limit` 5 MB; sin tipos MIME). Idempotente: si existe con la misma forma, no toca nada; si existe con otra (público, otro límite), **aborta**. Aborta también si alguna política de `storage.objects` no está **restringida a un `bucket_id` concreto distinto de `mercado`** (comparación literal `bucket_id = '<x>'`, sin `OR`, `<>` ni `NOT`): esa podría abrir el bucket nuevo, y la decide el CTO. Patrón del editor de Supabase: `DO` + informe en texto + `raise exception`. Ensayada en el PostgreSQL local (dos veces, y con cada guarda en rojo).
+- **`sql/consultas/s14-mercado-storage.sql`:** solo lectura. Los buckets (id, público, límite), las políticas de `storage.objects` con su veredicto (restringida a otro bucket / a revisar) y, del bucket `mercado`: objetos, bytes, el puntero y los manifiestos por par.
+
+### p.9 Scripts, verificador y workflow
+
+- **`scripts/mercado-v1-publica.mjs`:** por defecto **simulacro**: lee la copia local (`--base`) y no escribe nada en ningún sitio salvo el informe. Leer los `.json.gz` del bucket necesita `--descarga-autorizada` (regla del CTO del 5-oct: hasta el 2-nov no se descarga un anual sin su sí). Publicar necesita `--publica` y las claves en el entorno (lo lanza Ramón o el CTO).
+- **`scripts/mercado-v1-verifica.mjs`:** solo lectura. Por par: el manifiesto del puntero; cada trozo descargado, descomprimido, con su sha (nombre = manifiesto = contenido) y decodificado; la cadena `anterior` y la continuación; **el manifiesto contra el `.json.gz` (o la copia local) día a día**; los tamaños contra el listado de Storage; ningún hueco de más de 15 minutos sin aceptar; y el ancla de aceptaciones.
+- **Workflow:** después, cuando la publicación manual esté verificada.
+
+### p.10 Lo que no cambia
+
+El diario (`forex-data`, `/api/candles`, `actualizar-diario`) no se toca. Nada en uso importa el motor ni el mercado v1 hasta la etapa 3.
