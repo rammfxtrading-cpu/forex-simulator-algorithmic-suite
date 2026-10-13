@@ -11,6 +11,9 @@
  *     en sim_eventos, y un rol con SELECT de columna en sim_arrendamientos hecho miembro de
  *     authenticated) → aparecen en acl_columna, y en efectivo las que cambian el privilegio
  *     salen «DIFIERE DE LA TABLA» con su columna, la heredada incluida
+ *   2b CONTROL: un SELECT de columna a PUBLIC (aparece en acl_columna; en efectivo, DIFIERE en la
+ *     fila propia de PUBLIC y en los tres roles, que lo heredan) y un UPDATE de columna a un rol
+ *     del que anon es miembro (DIFIERE para anon, no para authenticated)
  *   3 sin sim-003: dice «NO EXISTE» de esas tablas y no falla
  * ⚠️ No prueba el editor de Supabase (una sola SELECT: el editor la acepta como s10).
  */
@@ -69,11 +72,11 @@ try {
   // lo efectivo por columna, contrastado aparte con has_table_privilege (sin la consulta)
   const tablaNivel = pg.psql(`select string_agg(t||' · '||r||' · '||p||'='||has_table_privilege(r, 'public.'||t, p), E'\\n')
     from unnest(array['sim_sessions','sim_trades','sim_alumnos','sim_arrendamientos','sim_recibos','sim_eventos']) t,
-         unnest(array['anon','authenticated','service_role']) r, unnest(array['SELECT','INSERT','UPDATE','REFERENCES']) p`, 'p').out.split('\n')
+         unnest(array['public','anon','authenticated','service_role']) r, unnest(array['SELECT','INSERT','UPDATE','REFERENCES']) p`, 'p').out.split('\n')
   const coincide = tablaNivel.every(l => { const [k, v] = l.split('='); const f = ef.find(x => x.o === k); return f && f.d.startsWith('tabla=' + v + ' ') })
-  oraculo('S11-limpio', 'limpio: las 6 tablas existen, «total 0 columnas con ACL propia», ninguna «DIFIERE», 6 × 3 × 4 = 72 filas de efectivo que coinciden con has_table_privilege, y acaba en FIN',
+  oraculo('S11-limpio', 'limpio: las 6 tablas existen, «total 0 columnas con ACL propia», ninguna «DIFIERE», 6 × 4 × 4 = 96 filas de efectivo (PUBLIC con fila propia) que coinciden con has_table_privilege, y acaba en FIN',
     r.ok && tablas.length === 6 && tablas.every(f => / columnas · dueño /.test(f.d)) && de(r, 'acl_columna').length === 1 && de(r, 'acl_columna')[0].d === '0 columnas con ACL propia'
-    && ef.length === 72 && !ef.some(f => /DIFIERE/.test(f.d)) && coincide && r.filas.at(-1).s === 'FIN' && r.filas.at(-1).o === 's11',
+    && ef.length === 96 && !ef.some(f => /DIFIERE/.test(f.d)) && coincide && r.filas.at(-1).s === 'FIN' && r.filas.at(-1).o === 's11',
     `${tablas.length} tablas · ${de(r, 'acl_columna').map(f => f.d)} · ${ef.length} efectivo · coincide ${coincide}`)
 
   titulo('2 · CONTROL: ACL de columna plantadas')
@@ -96,11 +99,33 @@ create role zz_s11 nologin; grant select (${col}) on public.sim_arrendamientos t
     && new RegExp(`tabla=false · columnas: 1 de \\d+: ${col} · DIFIERE DE LA TABLA`).test(linea('sim_arrendamientos · authenticated · SELECT')),
     `${linea('sim_eventos · anon · SELECT')} | ${linea('sim_arrendamientos · authenticated · SELECT')}`)
 
+  titulo('2b · CONTROL: PUBLIC y lo heredado por anon (autorrevision, CTO 13-oct)')
+  monta('q')
+  const colA = pg.psql(`select attname from pg_attribute where attrelid = 'public.sim_alumnos'::regclass and attnum = 1`, 'q').out
+  const colE = pg.psql(`select attname from pg_attribute where attrelid = 'public.sim_eventos'::regclass and attnum = 2`, 'q').out
+  const antesQ = pg.psql(`select bool_or(has_table_privilege(r, 'public.sim_alumnos', 'SELECT'))||','||has_table_privilege('anon', 'public.sim_eventos', 'UPDATE')
+    from unnest(array['public','anon','authenticated','service_role']) r`, 'q').out
+  const plantaQ = pg.psql(`grant select (${colA}) on public.sim_alumnos to public;
+create role zz_anon nologin; grant update (${colE}) on public.sim_eventos to zz_anon; grant zz_anon to anon;`, 'q')
+  ver('control: se plantan un SELECT de columna a PUBLIC y un UPDATE de columna a un rol del que anon es miembro', plantaQ.ok && antesQ === 'false,false', `${antesQ} · ${plantaQ.err.split('\n')[0]}`)
+  const q = s11('q'), aclQ = de(q, 'acl_columna'), efQ = de(q, 'efectivo')
+  const lineaQ = k => efQ.find(f => f.o === k)?.d ?? ''
+  const difiere = (k, col) => new RegExp(`tabla=false · columnas: 1 de \\d+: ${col} · DIFIERE DE LA TABLA`).test(lineaQ(k))
+  oraculo('S11-public-acl', 'el grant a PUBLIC aparece en acl_columna (grantee vacio: «=r/…») y el de zz_anon tambien',
+    q.ok && /(^|[{,])=r\//.test(aclQ.find(f => f.o === 'sim_alumnos.' + colA)?.d ?? '') && /zz_anon=w\//.test(aclQ.find(f => f.o === 'sim_eventos.' + colE)?.d ?? ''),
+    aclQ.map(f => f.o + ' ' + f.d).join(' | '))
+  oraculo('S11-public-efectivo', 'en efectivo, el SELECT de columna a PUBLIC sale DIFIERE para PUBLIC (fila propia) y para anon, authenticated y service_role, que lo heredan',
+    ['public', 'anon', 'authenticated', 'service_role'].every(r => difiere(`sim_alumnos · ${r} · SELECT`, colA)),
+    ['public', 'anon', 'authenticated', 'service_role'].map(r => r + ': ' + (lineaQ(`sim_alumnos · ${r} · SELECT`) || 'SIN FILA')).join(' | '))
+  oraculo('S11-anon-heredado', 'en efectivo, el UPDATE heredado por anon (miembro de zz_anon) sale DIFIERE para anon, y no para authenticated',
+    difiere('sim_eventos · anon · UPDATE', colE) && !/DIFIERE/.test(lineaQ('sim_eventos · authenticated · UPDATE')),
+    `${lineaQ('sim_eventos · anon · UPDATE')} | ${lineaQ('sim_eventos · authenticated · UPDATE')}`)
+
   titulo('3 · sin sim-003')
   monta('n', { s3: false })
   const n = s11('n')
   const no = de(n, 'tabla').filter(f => f.d === 'NO EXISTE').map(f => f.o).sort().join(',')
-  oraculo('S11-sin-tablas', 'sin las tablas de sim-003: dice «NO EXISTE» de las cuatro, no falla, y sigue con sim_sessions y sim_trades (2 × 12 filas de efectivo)',
-    n.ok && no === 'sim_alumnos,sim_arrendamientos,sim_eventos,sim_recibos' && de(n, 'efectivo').length === 24 && n.filas.at(-1).s === 'FIN', `${no} · ${de(n, 'efectivo').length} · ${n.err.split('\n')[0]}`)
+  oraculo('S11-sin-tablas', 'sin las tablas de sim-003: dice «NO EXISTE» de las cuatro, no falla, y sigue con sim_sessions y sim_trades (2 × 16 filas de efectivo)',
+    n.ok && no === 'sim_alumnos,sim_arrendamientos,sim_eventos,sim_recibos' && de(n, 'efectivo').length === 32 && n.filas.at(-1).s === 'FIN', `${no} · ${de(n, 'efectivo').length} · ${n.err.split('\n')[0]}`)
 } finally { pg.cierra() }
 fin()

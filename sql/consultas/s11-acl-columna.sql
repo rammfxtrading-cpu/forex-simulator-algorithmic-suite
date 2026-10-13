@@ -25,10 +25,13 @@
 --   1 tabla        cada tabla: si existe, cuantas columnas y su dueño
 --   2 acl_columna  cada columna con ACL propia (attacl), con la ACL tal cual;
 --                  y «total» (0 = ninguna)
---   3 efectivo     por tabla, rol (anon, authenticated, service_role) y
+--   3 efectivo     por tabla, rol (PUBLIC, anon, authenticated, service_role) y
 --                  privilegio (SELECT, INSERT, UPDATE, REFERENCES): el de la
 --                  tabla y en cuantas columnas lo tiene de verdad (con herencia).
---                  «DIFIERE DE LA TABLA» si no coinciden (un grant de columna)
+--                  «DIFIERE DE LA TABLA» si no coinciden (un grant de columna).
+--                  PUBLIC va con fila propia; anon, authenticated y service_role
+--                  incluyen lo que heredan de PUBLIC y de los roles de que son
+--                  miembros (has_column_privilege)
 -- ============================================================================
 with tablas (o, nombre) as (
   values (1, 'sim_sessions'), (2, 'sim_trades'), (3, 'sim_alumnos'), (4, 'sim_arrendamientos'), (5, 'sim_recibos'), (6, 'sim_eventos')
@@ -38,7 +41,7 @@ with tablas (o, nombre) as (
   select t.o, t.nombre, t.rel, a.attnum, a.attname, a.attacl
     from t join pg_attribute a on a.attrelid = t.rel and a.attnum > 0 and not a.attisdropped
 ), roles (r) as (
-  values ('anon'), ('authenticated'), ('service_role')
+  values ('public'), ('anon'), ('authenticated'), ('service_role')
 ), privs (p, op) as (
   values ('SELECT', 1), ('INSERT', 2), ('UPDATE', 3), ('REFERENCES', 4)
 ), celdas as (
