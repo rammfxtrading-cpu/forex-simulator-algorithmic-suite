@@ -1719,14 +1719,14 @@ Después van las parejas, como en n.2. **Editar cualquier valor invalida la reso
     - como tabla referenciada: `sim_sessions_challenge_parent_id_fkey` (`setnull_del` 9), y `sim_trades_session_id_fkey`, `session_drawings_session_id_fkey`, `session_chart_config_session_id_fkey`, `sim_recibos_session_id_fkey`, `sim_eventos_session_id_fkey` y `sim_arrendamientos_session_id_fkey` (`cascade_del` 9);
     - y en todas ellas, `noaction_upd` 17.
 
-    En total, **22**.
+    En total, **21**: el cupo y 20 internos. ~~22~~ era una cuenta mía mal hecha; la corrigió el informe del ensayo.
   - **`sim_trades`:** los internos de `sim_trades_session_id_fkey`, `sim_trades_user_id_fkey` y `sim_trades_evento_id_fkey` (`check_ins` 5 y `check_upd` 17). En total, **6**.
 - **Los estados, con su lista:**
 
 | Estado | `sim_sessions` | `sim_trades` | `sim_escrituras_v0` | `sim_escrituras_v0_marcas` |
 |---|---|---|---|---|
-| **0 · antes de la preparatoria** | los 22 de hoy | los 6 de hoy | no existe | no existe |
-| **1 · registro instalado** | los 22 + `sim_escrituras_v0_a` (AFTER INSERT OR UPDATE OR DELETE ROW, 29) + `sim_escrituras_v0_b_balance` (AFTER UPDATE OF balance ROW, 17) | los 6 + `sim_escrituras_v0_a` (29) | `sim_escrituras_v0_inmutable_fila` (BEFORE UPDATE OR DELETE ROW, 27), `sim_escrituras_v0_inmutable_truncate` (BEFORE TRUNCATE STATEMENT, 34), `sim_escrituras_v0_solo_disparador` (BEFORE INSERT ROW, 7) | las mismas tres |
+| **0 · antes de la preparatoria** | los 21 de hoy | los 6 de hoy | no existe | no existe |
+| **1 · registro instalado** | los 21 + `sim_escrituras_v0_a` (AFTER INSERT OR UPDATE OR DELETE ROW, 29) + `sim_escrituras_v0_b_balance` (AFTER UPDATE OF balance ROW, 17) | los 6 + `sim_escrituras_v0_a` (29) | `sim_escrituras_v0_inmutable_fila` (BEFORE UPDATE OR DELETE ROW, 27), `sim_escrituras_v0_inmutable_truncate` (BEFORE TRUNCATE STATEMENT, 34), `sim_escrituras_v0_solo_disparador` (BEFORE INSERT ROW, 7) | las mismas tres |
 | **2 · registro + puerta** | las del estado 1 + `sim_escrituras_v0_puerta` (BEFORE INSERT OR UPDATE OR DELETE ROW, 31) | las del estado 1 + `sim_escrituras_v0_puerta` (31) | igual que en 1 | igual que en 1 |
 | **3 · corte, guarda de entrada** | exactamente el estado 2 | exactamente el estado 2 | igual que en 1 | igual que en 1 |
 | **3′ · corte, antes de retirar el registro** | el estado 2 − el cupo (h.6) + la guarda de h.7, con el nombre que fije sim-004 | el estado 2 + la guarda de h.7 | igual que en 1 | igual que en 1 |
