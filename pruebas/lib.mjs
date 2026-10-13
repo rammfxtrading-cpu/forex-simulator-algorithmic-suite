@@ -95,7 +95,7 @@ export function escenario({ perfiles = [perfil(A), perfil(B), perfil(ADM, { rol_
   // etapa 1: la fila que deja sql/sim-004a-preparatoria.sql, y el estado global
   // del cliente (servicio, saldo confirmado, avisos) a cero en cada escenario
   db.tablas.sim_servicio = sim_servicio.map(f => ({ ...f }))
-  const sv = globalThis.__simServicio; if (sv) Object.assign(sv, { leido: false, mantenimiento: false, versionMinima: null, falloLectura: false, inciertos: [] })
+  const sv = globalThis.__simServicio; if (sv) Object.assign(sv, { leido: false, mantenimiento: false, versionMinima: null, falloLectura: false, inciertos: [], vuelo: {} })
   const ci = globalThis.__simCierre; if (ci) ci.confirmado = {}
   const co = globalThis.__simCola; if (co) co.s = {}   // ronda 2: la cola de cada sesion (lib/sim/cola.js)
   const av = globalThis.__simAvisos; if (av) av.lista = []

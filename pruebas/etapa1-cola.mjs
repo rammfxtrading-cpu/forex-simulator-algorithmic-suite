@@ -15,6 +15,9 @@
  *     la compensacion la devuelve a su ultimo estado CONFIRMADO: el caso de Astra (2 lotes →
  *     parcial 0,5 → total 1,5, los dos con error), varios parciales, exito y error
  *     combinados, SL/TP reevaluado al liberarse, y el ✕ deshabilitado
+ *   3 E1-03 · cada incierto se resuelve UNA vez: dos leeServicio() a la vez (el caso de
+ *     Astra), alta de otro incierto durante la espera, confirmacion tardia; y su callback
+ *     corre en la cola de su sesion
  *
  * Modulos, hooks y pagina REALES sobre los dobles (supabase-falso, react-falso); datos
  * inventados; el orden de entrega lo deciden las puertas del doble (db.pausa). Sin red.
@@ -200,6 +203,77 @@ let b0
     && !cerradas.includes('P-ocupada') && !cerradas.includes('ov:P-ocupada') && cerradas.includes('P-libre'),
     `modales ${modales} · cerradas ${cerradas} · overlay ${bOv ? 'disabled=' + bOv.props.disabled : 'sin boton'}`)
   pa.desmonta(); ov.desmonta()
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+titulo('3 · E1-03: cada incierto se resuelve una sola vez')
+const ahora = Date.now
+const adelanta = ms => { const base0 = ahora(); Date.now = () => base0 + ms }
+const devuelve = () => { Date.now = ahora }
+{ // dos leeServicio() simultaneos pasado el plazo: un solo revierte
+  escenario({ sim_sessions: [sesionSim({ id: 'e103-a', balance: 10000 })] })
+  const n = { g: 0, r: 0 }
+  SV.registraIncierto({ tradeId: 'inc-1', sessionId: 'e103-a', guardado: () => n.g++, revierte: () => n.r++ })
+  adelanta(21000)
+  await Promise.all([SV.leeServicio(), SV.leeServicio()]); await asienta(30)
+  devuelve()
+  oraculo('E103-doble-lectura', 'dos leeServicio() a la vez pasado el plazo: revierte UNA vez, ningun guardado, y el incierto sale de la lista',
+    n.r === 1 && n.g === 0 && SV.estadoServicio().inciertos === 0, `revierte ${n.r} · guardado ${n.g} · inciertos ${SV.estadoServicio().inciertos}`)
+}
+{ // alta de otro incierto mientras se resuelve el primero: no se pierde
+  escenario({ sim_sessions: [sesionSim({ id: 'e103-b', balance: 10000 })] })
+  const n = { r1: 0, r2: 0 }
+  SV.registraIncierto({ tradeId: 'inc-1', sessionId: 'e103-b', guardado() {}, revierte: () => n.r1++ })
+  adelanta(21000)
+  const g = puerta(); db.pausa = c => c.tabla === 'sim_trades' && JSON.stringify(c.filtros).includes('inc-1') ? g.p : null
+  const l = SV.leeServicio(); await asienta(20)
+  SV.registraIncierto({ tradeId: 'inc-2', sessionId: 'e103-b', guardado() {}, revierte: () => n.r2++ })
+  g.abrir(); await l; db.pausa = null; await asienta(20)
+  const quedan = SV.estadoServicio().inciertos, motivo = SV.motivoBloqueo()
+  devuelve()
+  oraculo('E103-alta-durante', 'otro incierto dado de alta mientras se resuelve el primero sigue en la lista (y lo economico, bloqueado): no se sustituye la lista por una foto antigua',
+    n.r1 === 1 && n.r2 === 0 && quedan === 1 && motivo === 'incierto', `r1 ${n.r1} · r2 ${n.r2} · quedan ${quedan} · motivo ${motivo}`)
+}
+{ // confirmacion tardia: el trade aparece antes del plazo → guardado una vez, con dos lecturas a la vez
+  escenario({ sim_sessions: [sesionSim({ id: 'e103-c', balance: 10000 })] })
+  const n = { g: 0, r: 0 }
+  SV.registraIncierto({ tradeId: 'inc-3', sessionId: 'e103-c', guardado: () => n.g++, revierte: () => n.r++ })
+  await SV.leeServicio(); await asienta(10)
+  const antes = { ...n, inciertos: SV.estadoServicio().inciertos }
+  db.tablas.sim_trades.push({ id: 'inc-3', session_id: 'e103-c', user_id: A, pnl: 5 })
+  await Promise.all([SV.leeServicio(), SV.leeServicio()]); await asienta(30)
+  adelanta(21000); await SV.leeServicio(); await asienta(20); devuelve()
+  oraculo('E103-tardio', 'el trade aparece antes del plazo (COMMIT tardio): guardado UNA vez aunque lean dos a la vez; despues, ni revierte ni otra llamada',
+    antes.g === 0 && antes.r === 0 && antes.inciertos === 1 && n.g === 1 && n.r === 0 && SV.estadoServicio().inciertos === 0, `antes ${JSON.stringify(antes)} · despues guardado ${n.g} revierte ${n.r}`)
+}
+{ // el callback corre en la COLA de su sesion: detras de lo que ya estaba encolado
+  escenario({ sim_sessions: [sesionSim({ id: 'e103-d', balance: 10000 })] })
+  const CO = await importa('lib/sim/cola.js')
+  const orden = []
+  SV.registraIncierto({ tradeId: 'inc-4', sessionId: 'e103-d', guardado() {}, revierte: () => orden.push('revierte') })
+  const g = puerta()
+  const op = CO.encola('e103-d', async () => { orden.push('op-empieza'); await g.p; orden.push('op-termina') })
+  await asienta(5)
+  adelanta(21000)
+  const l = SV.leeServicio(); await asienta(20)
+  const mientras = [...orden]
+  g.abrir(); await op; await l; await asienta(20); devuelve()
+  oraculo('E103-en-la-cola', 'la resolucion del incierto espera su turno en la cola de su sesion: no revierte en mitad de otra operacion',
+    mientras.join(',') === 'op-empieza' && orden.join(',') === 'op-empieza,op-termina,revierte', `mientras ${mientras} · al final ${orden}`)
+}
+{ // el caso de Astra con los hooks reales: parcial incierto y dos lecturas a la vez → 2 lotes, un aviso de revertido
+  const sid = 'e103-astra'; b0 = await mesa(sid)
+  const pos = b0.abreMercado({ side: 'BUY', entry: 1.097, sl: 1.09, tp: 1.2, lots: 2 })
+  db.falla = c => c.tabla === 'rpc:sim_cierre_v0' ? { code: '', message: 'transporte inventado' } : null
+  await tr().closePartial(pos.id, 'EUR/USD', .5); await asienta(30); db.falla = null
+  ver('astra: el parcial queda incierto', SV.motivoBloqueo() === 'incierto' && lotes(b0) === 1.5)
+  db.log.length = 0
+  adelanta(21000)
+  await Promise.all([SV.leeServicio(), SV.leeServicio()]); await asienta(30); devuelve()
+  oraculo('E103-astra', 'el parcial incierto y dos lecturas a la vez: una sola relectura del trade, la posicion en 2 lotes, el saldo en 10000 y desbloqueado',
+    db.log.filter(c => c.tabla === 'sim_trades' && c.op === 'select').length === 1 && lotes(b0) === 2 && b0.estado.saldo === 10000 && SV.motivoBloqueo() === null,
+    `relecturas ${db.log.filter(c => c.tabla === 'sim_trades').length} · ${cuenta(b0, sid)} · motivo ${SV.motivoBloqueo()}`)
+  b0.caja.raiz.desmonta()
 }
 
 fin()
