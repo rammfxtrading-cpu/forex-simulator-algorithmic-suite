@@ -2343,8 +2343,74 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 3. **Otros caminos de escritura cruzada:**
    - **`sim_eventos`, `sim_recibos` y `sim_arrendamientos`:** `authenticated` no tiene INSERT, UPDATE ni DELETE (E13-otras-tablas). Solo los escriben las RPC DEFINER de sim-003, que comprueban la sesión y el arrendamiento.
    - **`session_drawings` y `session_chart_config`** (tablas del simulador con `session_id`): **tienen el mismo hueco.** Su política solo mira `user_id`. **Medido:** A escribe un dibujo y una configuración de gráfico con la sesión de B (`sim-004a` §13, MEDIDO). No toca saldo ni veredicto, pero es aislamiento de datos.
-     - **No lo arreglo en esta ronda** porque la orden era `sim_trades`.
-     - **Pregunta al CTO:** ¿mismas políticas RESTRICTIVE para esas dos tablas, y s12 ampliada a ellas?
-   - **`sim_sessions.challenge_parent_id`:** un alumno puede poner como padre de SU sesión una sesión ajena. Solo lo limita la FK. No toca la sesión ajena: el CAS y `advance` trabajan sobre la propia y la hija v1 única solo vale para el motor 1. Lo anoto como inconsistencia posible de datos, sin efecto económico que haya encontrado.
+     - **CERRADO (CTO 13-oct, o.16.9):** las mismas políticas, y s12 ampliada.
+   - **`sim_sessions.challenge_parent_id`:** un alumno podía poner como padre de SU sesión una sesión ajena. **CERRADO (o.16.9)** con un disparador. Al revisarlo apareció un efecto que aquí no vi: la hija v1 ajena podía bloquear el paso de fase v1 de la víctima.
 4. **`service_role`:** no lo cubre la RLS, por diseño. `advance`, `create`, `wipe`, el hub y la administración tienen que seguir comprobando ellos la propiedad, como hoy (`advance` compara `session.user_id` con el usuario).
 5. **El cambio de error de `sim_cierre_v0`** con una sesión ajena: antes «no existe o no es tuya» (P0001), ahora la RLS (42501). Los dos son errores ciertos para el cliente; el aviso es el genérico de cierre fallido.
+
+#### o.16.9 Dibujos, config del gráfico y padre de sesión: solo lo propio (CTO 13-oct)
+
+**A. `session_drawings` y `session_chart_config`:** el mismo patrón que `sim_trades` (o.16.7).
+- **Las políticas:** dos RESTRICTIVE para `authenticated` en cada tabla: `<tabla>_sesion_propia_insert` (WITH CHECK) y `<tabla>_sesion_propia_update` (USING y WITH CHECK).
+  - Exigen que la sesión sea del alumno (EXISTS sobre `sim_sessions` por id y `user_id = (SELECT auth.uid())`).
+  - Las políticas de hoy («user owns session drawings», «user owns session config»: FOR ALL TO public USING `auth.uid() = user_id`) no se tocan.
+  - Antes de nada, la preparatoria comprueba en el catálogo que las de las tres tablas son exactamente las de s04; si no, aborta sin crear nada.
+  - La guarda exige las tres de cada tabla con su texto. El informe las lista. La creación va en un bucle sobre las tres tablas.
+- **Además del dato cruzado había un bloqueo:** las dos tablas tienen una clave única por sesión (`session_chart_config_session_id_key`) o por sesión y par (`session_drawings_session_id_pair_key`). Si A ocupaba el hueco con la sesión de B, B ya no podía guardar su configuración ni su dibujo de ese par: la fila de A no la ve ni la actualiza bajo RLS. **Medido con el mutante** (E14-MUT-sin-politica-config): «duplicate key … session_chart_config_session_id_key».
+- **SELECT y DELETE no entran.** Las dos ya filtran por `user_id = auth.uid()`: A no ve ni borra lo de B (E14-select-delete). Una fila de A en una sesión ajena solo existe si se usó el hueco antes: s12 la mide y, desde la preparatoria, ya no se puede crear.
+
+**B. `challenge_parent_id`:** disparador `sim_sessions_padre_propio`, BEFORE INSERT OR UPDATE en `sim_sessions`. Su función es SECURITY DEFINER, con `search_path` vacío y sin SQL dinámico.
+- **Qué rechaza:** con el padre puesto, al crear, al cambiarlo o al cambiar `user_id`: un padre que no existe («no existe») o de otro usuario («es de otro usuario»). Vale para todos, `service_role` incluido. La hija legítima de `advance` tiene el mismo usuario y entra (E14-padre-service-role).
+- **Por qué disparador y no política:** una política sobre `sim_sessions` que leyera `sim_sessions` sería recursiva. Como DEFINER, la lectura del padre no pasa por la RLS.
+- **Las filas de antes no se revisan aquí:** se pueden seguir editando sin tocar el padre (E14-padre-filas-de-antes) y las mide s12.
+- **Interacción con lo que ya había:**
+  - **Los BEFORE van por nombre:** `sim_escrituras_v0_puerta` → `sim_sessions_padre_propio` → `sim_sessions_rev_saldo` → el cupo (`trg_enforce_sim_session_limit`, solo INSERT).
+  - **El disparador no cambia NEW** y no hace DML. Si rechaza, no queda registro (A, AFTER), ni marca (B), ni movimiento de contador (E14-padre-ajeno lo comprueba).
+  - **El SET NULL de la FK** al borrar el padre pone NULL y no entra.
+  - **La inmutabilidad** solo afecta al registro.
+  - **El catálogo exacto** de la preparatoria y de la puerta lo incluye (tgtype 23).
+- **¿Podía un padre ajeno bloquear o alterar el `advance` de la víctima?**
+  - **El `advance` v0** (`pages/api/challenge/advance.js`) no busca hijas existentes: inserta la suya. No se bloqueaba.
+  - **El v1, sí:** `sim_avanzar_fase` (sim-003) responde «transicion_hecha» si existe cualquier hija v1 del padre, y el índice único `sim_sessions_una_hija_v1_key` solo admite una. Un alumno podía crear su propia sesión con `motor_version = 1` (los CHECK solo piden `creada_por_rpc`, `estado` y `mercado`) y con padre en la sesión de la víctima. Ocupaba el hueco y bloqueaba su paso de fase v1.
+  - **Medido con el mutante** (E14-MUT-sin-padre): «duplicate key … sim_sessions_una_hija_v1_key». **Cerrado por este disparador** (E14-okupa-v1).
+
+**s12 ampliada:** las mismas dos medidas (usuario distinto, sesión o padre inexistente) para `session_drawings`, `session_chart_config` y `sim_sessions.challenge_parent_id`, con el mismo formato.
+- **Los totales** van por `<tabla>.<tipo>`.
+- **Nada personal:** ni contenido de dibujos o configuración, ni nombres, ni `user_id`.
+- **Ensayo:** limpia sin filas; ocho casos plantados, uno por tabla y tipo, aparecen los ocho; las filas sanas no salen.
+
+**Runbook:** no cambia de forma. **s11 y s12 son pasos previos obligatorios a la preparatoria**, y s12 cubre ya las cuatro tablas. Si s12 trae algún total distinto de 0, se para y decide el CTO.
+
+**Ensayo** (`sim-004a` §14 y E9, con rojo previo contra `1f189f8`, 14 + 2):
+- escribir y mover en la sesión ajena, rechazado; con lo propio, bien (incluido el upsert de la config del cliente);
+- SELECT y DELETE ya filtrados;
+- padre ajeno (firmado y viejo), padre inexistente y cambio de padre, rechazados; padres propios, bien; la hija de `service_role`;
+- filas de antes; la hija v1 ocupada; la reejecución;
+- mutantes funcionales (sin la política de la config; sin el disparador del padre) y seis de catálogo (cuatro políticas, el disparador y la función que acepta padres ajenos).
+
+#### o.16.10 Autorrevisión adversaria de o.16.9: todas las tablas con `session_id` o `user_id` a las que escribe `authenticated`
+
+**El recorrido.** Sale del catálogo del modelo literal de producción (s04 + sim-002 + sim-003): todas las tablas de `public` con `session_id`, `user_id` o `challenge_parent_id`, sus privilegios de `authenticated` y sus políticas. Que la lista de tablas que referencian una sesión es completa lo garantiza el catálogo exacto de disparadores de FK de `sim_sessions` (o.0): `session_chart_config`, `session_drawings`, `sim_arrendamientos`, `sim_eventos`, `sim_recibos`, `sim_sessions` (padre) y `sim_trades`.
+
+| Tabla | `authenticated` escribe | Columna de sesión / usuario | Estado |
+|---|---|---|---|
+| `sim_trades` | sí | `session_id`, `user_id` | **cerrada** (o.16.7) |
+| `session_drawings` | sí | `session_id`, `user_id` | **cerrada** (o.16.9) |
+| `session_chart_config` | sí | `session_id`, `user_id` | **cerrada** (o.16.9) |
+| `sim_sessions` | sí | `challenge_parent_id`, `user_id` | **cerrada** (o.16.9, disparador); su `user_id` ya lo fija su política (WITH CHECK = USING) |
+| `sim_drawing_templates`, `user_chart_config`, `user_tool_config` | sí | solo `user_id` | **sin hueco:** su política FOR ALL USING `auth.uid() = user_id` vale también de WITH CHECK, así que no se puede escribir ni mover una fila a otro usuario, y no tienen sesión |
+| `sim_eventos`, `sim_recibos`, `sim_arrendamientos` | no (solo SELECT de eventos y recibos) | `session_id`, `user_id` | **sin hueco:** solo escriben las RPC DEFINER de sim-003 (E13-otras-tablas) |
+| `sim_escrituras_v0`, `sim_escrituras_v0_marcas`, `sim_servicio` | no | — | sin escritura (E5) |
+| `profiles`, `messages` | no (solo SELECT) | — | sin escritura |
+| `ia_*`, `macro_*`, `notas`, `trades` (otros productos) | fuera del modelo | `user_id` | **No revisadas:** s04 solo modela su FK a `profiles`. No referencian `sim_sessions`, así que no tienen este hueco de sesión. Su RLS es de sus productos y CLAUDE.md me impide tocarlas. Si se quiere la misma auditoría, va a quien lleva el hub, el journal y el advisor. |
+
+**No he encontrado ninguna otra tabla con el hueco.**
+
+**Lo demás:**
+1. **La recursión:** las seis políticas leen `sim_sessions`, cuya política no lee ninguna de ellas. El disparador del padre lee `sim_sessions` como DEFINER, sin RLS, y un SELECT no dispara disparadores. No hay ciclo.
+2. **Rendimiento:** las políticas buscan por la clave primaria de `sim_sessions`, y el disparador también (`s.id = NEW.challenge_parent_id`), solo cuando se pone o cambia el padre.
+3. **La existencia de un uuid:** los dos mensajes del disparador («no existe» / «es de otro usuario») dejan saber a un alumno si un uuid es una sesión de otro. Los uuid son aleatorios (122 bits) y no se exponen, así que lo considero despreciable. Unificar el mensaje es un cambio de una línea, si el CTO lo prefiere.
+4. **Cambiar el dueño de un padre después:** no lo revisa nadie. Solo lo puede hacer `service_role`, porque la RLS impide a un alumno cambiar `user_id`. Si un proceso de administración cambiara el dueño de una sesión, sus hijas quedarían con un padre ajeno; s12 lo mediría.
+5. **Concurrencia del padre:** el disparador lee el padre sin cerrojo. Si el padre se borra a la vez, la FK, que sí lo bloquea, lo resuelve. Si cambia de dueño a la vez, es el caso 4.
+6. **`service_role`** no pasa por la RLS y sí por el disparador del padre. Los endpoints siguen comprobando la propiedad, como hoy: `advance` compara `session.user_id` y `create` usa el usuario del token.
+7. **Las filas de antes** (trades, dibujos, config y padres cruzados) no se arreglan aquí: las mide s12 y, si hay alguna, el runbook para.
