@@ -2070,3 +2070,35 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
    - el breach espera 1,5 s reales;
    - nada se ha probado en un navegador.
 9. **o.11.8 (volumen de lecturas)** no cambia, y o.11.9 queda resuelto por E1-04.
+
+### o.14 Decisiones del CTO sobre o.13 (13-oct)
+
+**1. `challenge/advance`: CAS en sus tres escrituras de balance** (o.13.4).
+- Las tres escrituras son fail, `passed_all` y `passed_phase`, con `UPDATE … WHERE id = … AND balance = <el leído> AND status = 'active'`.
+- Si no afecta a 1 fila → **409 `{ code: 'saldo_cambiado' }`** («El saldo cambió, vuelve a intentarlo») y nada escrito.
+- **El cliente**, ante ese 409, vuelve a pasar por la barrera de fase (vaciar la cola + reevaluar con `challenge/status`) antes de reintentar. Lo hace como mucho `INTENTOS_FASE` = 3 veces y después avisa. **El tope es mío, no del CTO:** evita un bucle si el saldo cambia en cada intento.
+- **Hecho en `a7ba57f`.** Pruebas:
+  - `etapa1-servidor` §3: la carrera en las tres escrituras → 409 y nada escrito; sin carrera, igual que hoy; mutante sin el WHERE de balance → rojo;
+  - `etapa1-cola` §5: reintenta y concede con los dos cierres; reevalúa y no reintenta; tope de 3.
+- **Límites:**
+  - el CAS compara el `balance` tal como lo devuelve PostgREST (número JSON). Con saldos de 2 decimales es exacto. Un saldo con más de ~15 cifras significativas no casaría nunca y daría 409 → aviso; no hay ninguno así en los datos medidos;
+  - un cierre de pnl 0 de otra pestaña no cambia el saldo y no lo detecta, pero tampoco cambia `balanceNow` ni el veredicto.
+
+**2. Status NULL = activa: confirmado** (o.13.5.1).
+
+**3. Una sesión decidida no acepta cierres: confirmado** (o.13.5.2).
+- Es coherente con el v0, que ya descarta las posiciones abiertas al pasar de fase.
+- El aviso de la pantalla se queda.
+- En el v1 ya está decidido: con posiciones abiertas no se puede pasar de fase (409).
+
+**4. ACL de columna en producción: `sql/consultas/s11-acl-columna.sql`** (o.13.5.7).
+- **Qué es:** una sola SELECT de solo lectura, sobre `sim_sessions`, `sim_trades` y las tablas de sim-003. Lista:
+  - las ACL de columna (`pg_attribute.attacl`);
+  - los privilegios efectivos por columna (con herencia) de `anon`, `authenticated` y `service_role`, frente a los de tabla.
+- **Hecho en `6dd6669`.** **Ensayo** (`pruebas/s11-acl-columna.mjs`, PostgreSQL local, en una transacción READ ONLY):
+  - limpio: «total 0», ninguna «DIFIERE»;
+  - control: tres ACL plantadas, una de ellas heredada por un rol miembro de `authenticated`, aparecen; las que cambian el privilegio salen «DIFIERE DE LA TABLA» con su columna;
+  - sin sim-003: dice «NO EXISTE» y no falla.
+- **Runbook, paso previo OBLIGATORIO a la preparatoria:**
+  1. Ramón ejecuta s11 en el editor SQL y devuelve el resultado completo, que va a revisiones-suite.
+  2. Si `acl_columna` trae alguna fila distinta de «total», o `efectivo` trae «DIFIERE DE LA TABLA», **se para y decide el CTO**. La guarda de la preparatoria abortaría igualmente por `sim_sessions` o `sim_trades`.
