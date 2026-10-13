@@ -89,10 +89,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'end_timestamp fuera de rango razonable' })
   }
 
-  // ── 1. Cargar la sesión
+  // ── 1. Cargar la sesión. balance_texto: el saldo como TEXTO de la base (numeric
+  //      exacto), para el CAS del paso 7: el balance de '*' llega como numero JSON y
+  //      supabase-js lo pasa a float, que pierde cifras en un numeric largo (409 eterno).
   const { data: session, error: sErr } = await supabaseAdmin
     .from('sim_sessions')
-    .select('*')
+    .select('*, balance_texto:balance::text')
     .eq('id', session_id)
     .single()
 
@@ -169,7 +171,7 @@ export default async function handler(req, res) {
   if (!(await servicioPermite(supabaseAdmin, res, 'challenge/advance'))) return
 
   // CAS (CTO 13-oct, sobre o.13.4): la sesion solo se cierra si su saldo sigue
-  // siendo el leido en el paso 1 y sigue activa. Si otra pestaña guardo un
+  // siendo el leido en el paso 1 (como texto, exacto) y sigue activa. Si otra pestaña guardo un
   // cierre entre la lectura y aqui, el UPDATE no afecta a 1 fila → 409 y nada
   // escrito (balanceNow no incluiria ese cierre).
   const cierraConCAS = async (cambios) => {
@@ -177,7 +179,7 @@ export default async function handler(req, res) {
       .from('sim_sessions')
       .update(cambios)
       .eq('id', session_id)
-      .eq('balance', session.balance)
+      .eq('balance', session.balance_texto)
       .eq('status', 'active')
       .select('*')
     if (error) return { error }

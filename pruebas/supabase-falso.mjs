@@ -40,9 +40,29 @@ export function reset() {
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
 const copia = x => x === undefined ? undefined : structuredClone(x)
+// eq como en Postgres para un numeric: el texto '10234.50' y el numero 10234.5 son iguales
+// (sin pasar por float: se comparan los decimales); lo demas, identico
+const decimal = x => { const m = String(x).trim().match(/^([+-]?)(\d+)(?:\.(\d*))?$/); if (!m) return null
+  const ent = m[2].replace(/^0+(?=\d)/, ''), dec = (m[3] ?? '').replace(/0+$/, ''); return (m[1] === '-' && (ent !== '0' || dec) ? '-' : '') + ent + (dec ? '.' + dec : '') }
+const igual = (a, b) => {
+  if (a === b) return true
+  if ((typeof a === 'number' && typeof b === 'string') || (typeof a === 'string' && typeof b === 'number')) {
+    const x = decimal(a), y = decimal(b); return x != null && x === y
+  }
+  return false
+}
+// columnas de select: '*', 'col', y 'alias:col::text' (el cast de PostgREST; un numero sale como su texto)
 const proyecta = (f, cols) => {
   if (!cols || cols.trim() === '*') return f
-  return Object.fromEntries(cols.split(',').map(c => c.trim()).filter(Boolean).map(c => [c, f[c]]))
+  const out = {}
+  for (const c of cols.split(',').map(c => c.trim()).filter(Boolean)) {
+    if (c === '*') { Object.assign(out, f); continue }
+    const m = c.match(/^(?:(\w+):)?(\w+)(?:::(\w+))?$/)
+    if (!m) { out[c] = f[c]; continue }
+    const [, alias, col, tipo] = m
+    out[alias ?? col] = tipo === 'text' && f[col] != null ? String(f[col]) : f[col]
+  }
+  return out
 }
 
 const cmpTexto = (a, b) => String(a).localeCompare(String(b))
@@ -81,7 +101,7 @@ class Q {
   update(p) { this.op = 'update'; this.payload = p; return this }
   upsert(p) { this.op = 'upsert'; this.payload = p; return this }
   delete(o = {}) { this.op = 'delete'; if (o.count) this.contar = true; return this }
-  eq(c, v) { this.desc.push(`${c}=eq.${v}`); this.filtros.push(f => f[c] === v); return this }
+  eq(c, v) { this.desc.push(`${c}=eq.${v}`); this.filtros.push(f => igual(f[c], v)); return this }
   neq(c, v) { this.desc.push(`${c}=neq.${v}`); this.filtros.push(f => f[c] !== v); return this }
   in(c, a) { this.desc.push(`${c}=in.(${a})`); this.filtros.push(f => a.includes(f[c])); return this }
   // comparaciones como el orden de este doble (texto): ISO-8601 y uuid ordenan igual

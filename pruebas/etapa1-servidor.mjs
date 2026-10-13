@@ -130,7 +130,7 @@ for (const [k, c] of Object.entries(RETOS)) {
 }
 { // el mutante: advance sin el WHERE de balance
   const p = RUTAS.advance, txt = readFileSync(path.join(REPO, p), 'utf8')
-  const linea = /\n[^\n]*\.eq\('balance', session\.balance\)[^\n]*\n/
+  const linea = /\n[^\n]*\.eq\('balance', session\.balance(?:_texto)?\)[^\n]*\n/
   oraculo('CAS-MUT-existe', 'el WHERE de balance esta en advance (si no, no hay nada que mutar)', linea.test(txt))
   const d = path.join(REPO, '.pruebas', 'mutantes', 'servidor-cas')
   rmSync(d, { recursive: true, force: true }); cpSync(path.join(REPO, 'lib'), path.join(d, 'lib'), { recursive: true })
