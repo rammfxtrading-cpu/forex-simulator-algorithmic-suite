@@ -75,6 +75,31 @@ oraculo('ACE', 'una publicacion con un prefijo que no cuadra, con mas lineas de 
   && lanza(() => A.validaAceptaciones(t1 + pub(t1, { trozos: [{ inicio: '2026-03-03T10:01Z', dia: '2026-03-04', sha256: T }] }))))
 oraculo('ACE', 'anclaVigente: el fichero empieza por el ancla de un manifiesto publicado (lineas y sha); si no, error', A.compruebaAncla(pub1, { lineas: 2, sha256: A.ancla(t1, 2) }) === true && lanza(() => A.compruebaAncla(editada, { lineas: 2, sha256: A.ancla(t1, 2) })) && lanza(() => A.compruebaAncla(linea(ac()), { lineas: 2, sha256: A.ancla(t1, 2) })))
 
+titulo('5 · festivos cortos: un registro «corto» por par y dia (CTO 14-oct, decision 2)')
+const MOTIVO = 'mercado reducido (regla de Ramón del 6-oct)'
+const co = (o = {}) => ({ tipo: 'corto', par: 'EURUSD', dia: '2025-12-25', velas: 120, motivo: MOTIVO, fecha: '2026-10-14', nota: 'medido en la copia: 22:00 a 23:59 UTC', ...o })
+const tc = linea(co()) + linea(co({ par: 'GBPUSD', dia: '2026-01-01', velas: 95 }))
+const vale = x => { try { return A.validaAceptaciones(x) } catch { return null } }
+const cdes = (v, par) => (v && A.cortosDe ? A.cortosDe(v, par) : new Map())
+const vc = vale(tc)
+oraculo('ACE', 'dos cortos validos: cortosDe(par) los da por dia, con su linea', vc?.lineas === 2 && cdes(vc, 'EURUSD').get('2025-12-25')?.velas === 120 && cdes(vc, 'EURUSD').get('2025-12-25')?.linea === 1 && cdes(vc, 'GBPUSD').get('2026-01-01')?.velas === 95 && cdes(vc, 'EURUSD').size === 1)
+oraculo('ACE', 'el motivo exigido es el de la regla de Ramón (MOTIVO_CORTO)', A.MOTIVO_CORTO === MOTIVO)
+oraculo('ACE', 'conviven con las aceptaciones de huecos y no cuentan como ellas', (() => { const v = vale(linea(ac()) + linea(co())); return v?.aceptaciones.size === 1 && cdes(v, 'EURUSD').size === 1 })())
+oraculo('ACE', 'antes de publicar, una linea posterior del mismo par y dia corrige (la ultima manda)', cdes(vale(tc + linea(co({ velas: 119, nota: 'corregido' }))), 'EURUSD').get('2025-12-25')?.velas === 119)
+const malosC = {
+  'un dia que no es 25-dic ni 1-ene': co({ dia: '2026-03-03' }),
+  'un dia que no existe': co({ dia: '2025-12-32' }),
+  'velas 0': co({ velas: 0 }),
+  'velas 1.440 (dia entero: no es corto)': co({ velas: 1440 }),
+  'velas no entero': co({ velas: 120.5 }),
+  'otro motivo': co({ motivo: 'mercado reducido' }),
+  'un par desconocido': co({ par: 'EURGBP' }),
+  'una fecha mal escrita': co({ fecha: '14-10-2026' }),
+  'sin nota': co({ nota: '' }),
+  'una clave de mas': { ...co(), minutos: 20 },
+}
+for (const [que, o] of Object.entries(malosC)) oraculo('ACE', `corto: rechaza ${que}`, lanza(() => A.validaAceptaciones(linea(o))))
+
 titulo('4 · el fichero real del repositorio (permanente)')
 const real = readFileSync(new URL('../lib/mercado/huecos-aceptados.jsonl', import.meta.url), 'utf8')
 ver('control: el fichero real existe y se lee', typeof real === 'string')
