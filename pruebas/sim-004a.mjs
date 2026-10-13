@@ -147,9 +147,9 @@ try {
   const ap1 = pgx(PREP)
   oraculo('E1-aplica', 'la preparatoria se aplica entera como pgx y acaba en FIN | sim-004a-preparatoria aplicada',
     ap1.ok && fin1(ap1) === 'FIN|sim-004a-preparatoria aplicada', err1(ap1) || fin1(ap1))
-  oraculo('E1-informe', 'informe: estado «registro instalado», 3 tablas con RLS, 9 funciones (con las dos del contador), la columna rev_saldo bigint not null default 0 sin ACL, sim_servicio sin mantenimiento y version 1',
+  oraculo('E1-informe', 'informe: estado «registro instalado», 3 tablas con RLS, 10 funciones (las dos del contador y la del padre), la columna rev_saldo bigint not null default 0 sin ACL, sim_servicio sin mantenimiento y version 1',
     /^estado\|registro instalado$/m.test(ap1.out) && (ap1.out.match(/^tabla\|.* rls=true/gm) || []).length === 3
-    && (ap1.out.match(/^funcion\|/gm) || []).length === 9 && /^columna\|sim_sessions\.rev_saldo bigint · not null=true · default 0 · acl de columna=0$/m.test(ap1.out) && /^sim_servicio\|mantenimiento=false · version_minima=1$/m.test(ap1.out), ap1.out.split('\n').length + ' lineas')
+    && (ap1.out.match(/^funcion\|/gm) || []).length === 10 && /^columna\|sim_sessions\.rev_saldo bigint · not null=true · default 0 · acl de columna=0$/m.test(ap1.out) && /^sim_servicio\|mantenimiento=false · version_minima=1$/m.test(ap1.out), ap1.out.split('\n').length + ' lineas')
   const foto1 = foto()
   oraculo('E1-rev-sin-reescritura', 'la columna rev_saldo se añade SIN reescribir sim_sessions (mismo relfilenode) y las filas de antes valen 0',
     uno(`select relfilenode from pg_class where oid = 'public.sim_sessions'::regclass`) === nodo0 && uno(`select count(*) filter (where rev_saldo <> 0)||'/'||count(*) from public.sim_sessions`) === '0/5',
@@ -497,6 +497,15 @@ BEGIN
   RETURN NEW;
 END
 $$;`
+  // el disparador del padre que solo comprueba que exista (acepta padres de otro usuario)
+  const MUT_PADRE = `create or replace function public.sim_sessions_padre_propio() returns trigger language plpgsql security definer set search_path = '' as $$
+BEGIN
+  IF NEW.challenge_parent_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = NEW.challenge_parent_id) THEN
+    RAISE EXCEPTION 'sim_sessions_padre_propio: la sesion padre % no existe', NEW.challenge_parent_id;
+  END IF;
+  RETURN NEW;
+END
+$$;`
   titulo('9 · la guarda final del catalogo (m.5.5, S4R5-02, S4R6-02) y el control funcional aparte')
   const MUTANTES = [
     ['B renombrado para ordenar ANTES de A', `alter trigger sim_escrituras_v0_b_balance on public.sim_sessions rename to sim_escrituras_v0_0_balance;`],
@@ -551,7 +560,14 @@ $$;`],
     ['sin la politica de INSERT de sesion propia', `drop policy sim_trades_sesion_propia_insert on public.sim_trades;`],
     ['politica de UPDATE de sesion propia sin WITH CHECK', `drop policy sim_trades_sesion_propia_update on public.sim_trades; create policy sim_trades_sesion_propia_update on public.sim_trades as restrictive for update to authenticated using (exists (select 1 from public.sim_sessions s where s.id = sim_trades.session_id and s.user_id = (select auth.uid())));`],
     ['politica de INSERT PERMISSIVE en vez de RESTRICTIVE', `drop policy sim_trades_sesion_propia_insert on public.sim_trades; create policy sim_trades_sesion_propia_insert on public.sim_trades for insert to authenticated with check (exists (select 1 from public.sim_sessions s where s.id = sim_trades.session_id and s.user_id = (select auth.uid())));`],
-    ['una politica de mas en sim_trades', `create policy zz_trades on public.sim_trades for select to anon using (true);`]]
+    ['una politica de mas en sim_trades', `create policy zz_trades on public.sim_trades for select to anon using (true);`],
+    // ronda 3 quater (o.16.9): dibujos, config del grafico y el padre de una sesion
+    ['sin la politica de INSERT de dibujos', `drop policy session_drawings_sesion_propia_insert on public.session_drawings;`],
+    ['sin la politica de UPDATE de dibujos', `drop policy session_drawings_sesion_propia_update on public.session_drawings;`],
+    ['sin la politica de INSERT de config del grafico', `drop policy session_chart_config_sesion_propia_insert on public.session_chart_config;`],
+    ['sin la politica de UPDATE de config del grafico', `drop policy session_chart_config_sesion_propia_update on public.session_chart_config;`],
+    ['sin el disparador del padre', `drop trigger sim_sessions_padre_propio on public.sim_sessions;`],
+    ['el disparador del padre acepta padres ajenos', MUT_PADRE]]
   monta('g')
   pgx(PREP, 'g')
   for (const [desc, q] of MUTANTES) {
@@ -822,11 +838,6 @@ commit;`
     from unnest(array['sim_eventos','sim_recibos','sim_arrendamientos']) t, unnest(array['INSERT','UPDATE','DELETE']) p`, 'pl')
   oraculo('E13-otras-tablas', 'sim_eventos, sim_recibos y sim_arrendamientos: authenticated no tiene INSERT, UPDATE ni DELETE (escriben solo las RPC de sim-003)',
     otras.split(' ').length === 9 && !otras.includes('=true'), otras)
-  // y el hueco que NO cierra esta ronda (o.16.8, para el CTO): dibujos y config del grafico con la sesion ajena
-  const dib = nuevo(`insert into public.session_drawings (session_id, user_id, pair) values ('${SB}', '${A}', 'EURUSD');`, A, 'pl')
-  const cfg = nuevo(`insert into public.session_chart_config (session_id, user_id) values ('${SB}', '${A}');`, A, 'pl')
-  console.log('   MEDIDO (o.16.8, no se arregla en esta ronda): A escribe en session_drawings con la sesion de B: ' + (dib.ok ? 'PASA' : err1(dib))
-    + ' · en session_chart_config: ' + (cfg.ok ? 'PASA' : err1(cfg)))
   // mutante funcional: con la politica vieja sola (sin las RESTRICTIVE), A vuelve a escribir en la sesion de B
   prepara('plm'); pg.psql('drop policy sim_trades_sesion_propia_insert on public.sim_trades; drop policy sim_trades_sesion_propia_update on public.sim_trades;', 'plm')
   const m1 = nuevo(ins(SB), A, 'plm')
@@ -836,6 +847,85 @@ commit;`
   const pp = pgx(PREP, 'plp')
   oraculo('E13-precondicion', 'con la politica vigente de sim_trades distinta de la de s04, la preparatoria aborta en el estado 0 sin crear nada',
     !pp.ok && /las politicas de public\.sim_trades no son las de s04/.test(err1(pp)) && uno(`select count(*) from pg_class where relname = 'sim_escrituras_v0'`, 'plp') === '0', err1(pp))
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  titulo('14 · dibujos, config del grafico y el padre de una sesion: solo lo propio (ronda 3 quater, CTO 13-oct; o.16.9)')
+  {
+  const prepara = db => { monta(db); const a = pgx(PREP, db); if (!a.ok) throw new Error('prep ' + db + ': ' + err1(a)); return a }
+  const apq = prepara('pq')
+  oraculo('E14-informe', 'el informe lista las tres politicas de session_drawings y las tres de session_chart_config (la de s04 y las dos RESTRICTIVE)',
+    (apq.out.match(/^politica session_drawings\|/gm) || []).length === 3 && (apq.out.match(/^politica session_chart_config\|/gm) || []).length === 3
+    && /session_drawings_sesion_propia_update · RESTRICTIVE · UPDATE · \{authenticated\}/.test(apq.out) && /session_chart_config_sesion_propia_insert · RESTRICTIVE · INSERT · \{authenticated\}/.test(apq.out),
+    apq.out.split('\n').filter(l => /^politica session/.test(l)).join(' / '))
+  const n1 = q => uno(q, 'pq')
+  const ok = (...xs) => xs.every(x => x.ok), errs = (...xs) => xs.map(err1).filter(Boolean).join(' | ')
+  // dibujos y config: A en la sesion de B
+  const d1 = nuevo(`insert into public.session_drawings (session_id, user_id, pair) values ('${SB}', '${A}', 'EURUSD');`, A, 'pq')
+  const d1v = viejo(`insert into public.session_drawings (session_id, user_id, pair) values ('${SB}', '${A}', 'GBPUSD');`, A, 'pq')
+  const c1 = nuevo(`insert into public.session_chart_config (session_id, user_id) values ('${SB}', '${A}');`, A, 'pq')
+  oraculo('E14-escribir-ajena', 'A escribe un dibujo (firmado y cliente viejo) o una config del grafico en la sesion de B: rechazado por la RLS',
+    !d1.ok && !d1v.ok && !c1.ok && /session_drawings_sesion_propia_insert/.test(err1(d1)) && /session_drawings_sesion_propia_insert/.test(err1(d1v)) && /session_chart_config_sesion_propia_insert/.test(err1(c1)), errs(d1, d1v, c1))
+  const DA = u(1501), CA = u(1502)
+  const p1 = nuevo(`insert into public.session_drawings (id, session_id, user_id, pair) values ('${DA}', '${SA}', '${A}', 'EURUSD');
+insert into public.session_chart_config (id, session_id, user_id) values ('${CA}', '${SA}', '${A}');`, A, 'pq')
+  const m1 = nuevo(`update public.session_drawings set session_id = '${SB}' where id = '${DA}';`, A, 'pq')
+  const m2 = nuevo(`update public.session_chart_config set session_id = '${SB}' where id = '${CA}';`, A, 'pq')
+  oraculo('E14-mover-ajena', 'A mueve su dibujo o su config a la sesion de B: rechazado (WITH CHECK de UPDATE); siguen en su sesion',
+    p1.ok && !m1.ok && !m2.ok && /session_drawings_sesion_propia_update/.test(err1(m1)) && /session_chart_config_sesion_propia_update/.test(err1(m2))
+    && n1(`select session_id from public.session_drawings where id = '${DA}'`) === SA && n1(`select session_id from public.session_chart_config where id = '${CA}'`) === SA, errs(p1, m1, m2))
+  const q1 = nuevo(`update public.session_drawings set data = '[1]' where id = '${DA}';`, A, 'pq')
+  const q2 = nuevo(`insert into public.session_chart_config (session_id, user_id, config) values ('${SA}', '${A}', '{"x":1}') on conflict (session_id) do update set config = excluded.config;`, A, 'pq')
+  const q3 = viejo(`update public.session_drawings set session_id = '${SA2}' where id = '${DA}';`, A, 'pq')
+  const q4 = nuevo(`delete from public.session_drawings where id = '${DA}'; delete from public.session_chart_config where id = '${CA}';`, A, 'pq')
+  oraculo('E14-propio', 'A con lo suyo: actualizar el dibujo, el upsert de la config (como el cliente), moverlo entre SUS sesiones (cliente viejo) y borrar, bien', ok(q1, q2, q3, q4), errs(q1, q2, q3, q4))
+  // SELECT y DELETE no se tocan (o.16.9): A no ve ni borra lo de B; B guarda lo suyo aunque A lo haya intentado antes
+  const b1 = nuevo(`insert into public.session_chart_config (session_id, user_id) values ('${SB}', '${B}');
+insert into public.session_drawings (session_id, user_id, pair) values ('${SB}', '${B}', 'EURUSD');`, B, 'pq')
+  const ve = nuevo(`select (select count(*) from public.session_drawings where session_id = '${SB}') + (select count(*) from public.session_chart_config where session_id = '${SB}');`, A, 'pq')
+  const bo = nuevo(`delete from public.session_drawings where session_id = '${SB}'; delete from public.session_chart_config where session_id = '${SB}';`, A, 'pq')
+  oraculo('E14-select-delete', 'B guarda su config y su dibujo (A no pudo ocupar su hueco unico); A no los ve (0) ni los borra (siguen): SELECT y DELETE ya filtran por user_id',
+    b1.ok && ve.ok && /(^|\n)0$/.test(ve.out) && bo.ok && n1(`select count(*) from public.session_drawings where session_id = '${SB}'`) === '1' && n1(`select count(*) from public.session_chart_config where session_id = '${SB}'`) === '1', errs(b1, ve, bo) + ' · ' + ve.out)
+  // el padre de una sesion
+  const ses = (id, user, padre, extra = '') => `insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to, challenge_parent_id${extra ? ', ' + extra.split('=')[0] : ''})
+    values ('${id}', '${user}', 'x', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', ${padre ? `'${padre}'` : 'null'}${extra ? ', ' + extra.split('=')[1] : ''});`
+  const k0 = ultimo('pq'), revB = n1(`select rev_saldo from public.sim_sessions where id = '${SB}'`)
+  const h1 = nuevo(ses(u(1511), A, SB), A, 'pq'), h1v = viejo(ses(u(1512), A, SB), A, 'pq')
+  const h2 = nuevo(`update public.sim_sessions set challenge_parent_id = '${SB}' where id = '${SA2}';`, A, 'pq')
+  const h3 = nuevo(ses(u(1513), A, u(9999)), A, 'pq')
+  oraculo('E14-padre-ajeno', 'A crea una sesion con padre de B (firmado y cliente viejo), o pone a la suya un padre de B, o un padre que no existe: rechazado por sim_sessions_padre_propio, sin registro y sin tocar B',
+    !h1.ok && !h1v.ok && !h2.ok && !h3.ok && [h1, h1v, h2].every(x => /sim_sessions_padre_propio: la sesion padre .* es de otro usuario/.test(err1(x)))
+    && /sim_sessions_padre_propio: la sesion padre .* no existe/.test(err1(h3)) && ultimo('pq') === k0 && n1(`select rev_saldo from public.sim_sessions where id = '${SB}'`) === revB
+    && n1(`select coalesce(challenge_parent_id::text, '-') from public.sim_sessions where id = '${SA2}'`) === '-', errs(h1, h1v, h2, h3))
+  const o1 = nuevo(ses(u(1514), A, SA), A, 'pq')
+  const o2 = nuevo(`update public.sim_sessions set challenge_parent_id = '${SA2}' where id = '${u(1514)}';`, A, 'pq')
+  const o3 = nuevo(`update public.sim_sessions set challenge_parent_id = null where id = '${u(1514)}';`, A, 'pq')
+  oraculo('E14-padre-propio', 'A con padres suyos: crear la hija, cambiarle el padre por otra suya y quitarlo, bien', ok(o1, o2, o3), errs(o1, o2, o3))
+  const sr1 = escribe({ rol: 'service_role' }, ses(u(1515), B, SB, "challenge_phase=2"), 'pq')
+  const sr2 = escribe({ rol: 'service_role' }, ses(u(1516), A, SB), 'pq')
+  oraculo('E14-padre-service-role', 'service_role (como advance) crea la hija legitima de B; con un usuario distinto del del padre, tambien se rechaza', sr1.ok && !sr2.ok && /es de otro usuario/.test(err1(sr2)), errs(sr1, sr2))
+  // filas de antes con un padre ajeno (las mide s12): editarlas sin tocar el padre sigue funcionando
+  pg.psql(`set session_replication_role = replica; update public.sim_sessions set challenge_parent_id = '${SB}' where id = '${SA2}'; set session_replication_role = origin;`, 'pq')
+  const lg = nuevo(`update public.sim_sessions set timeframe = 'M5' where id = '${SA2}';`, A, 'pq')
+  oraculo('E14-padre-filas-de-antes', 'una sesion de antes con padre ajeno (plantada) se puede seguir editando sin tocar el padre (el disparador mira al ponerlo o cambiarlo; s12 la mide)', lg.ok, err1(lg))
+  pg.psql(`update public.sim_sessions set challenge_parent_id = null where id = '${SA2}';`, 'pq')
+  // el bloqueo del paso de fase v1 por una hija v1 ajena (indice sim_sessions_una_hija_v1_key y sim_avanzar_fase)
+  const V1 = "motor_version, creada_por_rpc, estado, mercado"
+  const hijaV1 = (id, user, padre) => `insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to, challenge_parent_id, ${V1})
+    values ('${id}', '${user}', 'v1', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', '${padre}', 1, true, '{}'::jsonb, '{}'::jsonb);`
+  const ok1 = nuevo(hijaV1(u(1521), A, SB), A, 'pq')
+  const leg = escribe({ rol: 'service_role' }, hijaV1(u(1522), B, SB), 'pq')
+  oraculo('E14-okupa-v1', 'A intenta ocupar con una hija v1 suya el unico hueco de hija v1 de la sesion de B (el que mira sim_avanzar_fase): rechazado; la hija v1 legitima de B entra',
+    !ok1.ok && /es de otro usuario/.test(err1(ok1)) && leg.ok, errs(ok1, leg))
+  const re = pgx(PUERTA, 'pq'), re2 = pgx(PREP, 'pq')
+  oraculo('E14-reejecuta', 'la puerta y la preparatoria otra vez (estado 2): FIN, con las politicas y el disparador', re.ok && re2.ok, errs(re, re2))
+  // mutantes funcionales: sin las politicas de dibujos, o sin el disparador del padre, el ataque pasa
+  prepara('pqm'); pg.psql('drop policy session_chart_config_sesion_propia_insert on public.session_chart_config; drop trigger sim_sessions_padre_propio on public.sim_sessions;', 'pqm')
+  const mo = nuevo(`insert into public.session_chart_config (session_id, user_id) values ('${SB}', '${A}');`, A, 'pqm')
+  const mb = nuevo(`insert into public.session_chart_config (session_id, user_id) values ('${SB}', '${B}');`, B, 'pqm')
+  const mp = nuevo(hijaV1(u(1531), A, SB), A, 'pqm'), mpl = escribe({ rol: 'service_role' }, hijaV1(u(1532), B, SB), 'pqm')
+  oraculo('E14-MUT-sin-politica-config', 'mutante sin la politica de INSERT de config: A ocupa la config de B y B ya no puede guardar la suya → E14-escribir-ajena / E14-select-delete lo ven', mo.ok && !mb.ok, errs(mo, mb) || 'A ocupa')
+  oraculo('E14-MUT-sin-padre', 'mutante sin el disparador del padre: A ocupa la hija v1 de B y la legitima de B ya no entra (indice unico) → E14-okupa-v1 lo ve', mp.ok && !mpl.ok, errs(mp, mpl))
   }
 } finally {
   pg.cierra()

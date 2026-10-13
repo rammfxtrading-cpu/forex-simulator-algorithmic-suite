@@ -54,6 +54,15 @@
 --       ajena. SELECT y DELETE, sin cambios. service_role (BYPASSRLS) no se ve
 --       afectado. Antes de crearlas se comprueba que la politica vigente es
 --       exactamente la de s04; si no, no se toca nada.
+--       Lo mismo (ronda 3 quater, o.16.9) en session_drawings y
+--       session_chart_config: <tabla>_sesion_propia_insert / _update.
+--   sim_sessions_padre_propio (ronda 3 quater, o.16.9) disparador BEFORE
+--       INSERT OR UPDATE en sim_sessions, funcion SECURITY DEFINER, search_path
+--       vacio: challenge_parent_id solo puede apuntar a una sesion que existe y
+--       es del mismo usuario (se comprueba al ponerlo o cambiarlo, o al cambiar
+--       user_id). Sin politica sobre sim_sessions que lea sim_sessions (seria
+--       recursiva). Vale para todos, service_role incluido: la hija legitima
+--       de advance es del mismo usuario.
 --   sim_servicio              una fila: mantenimiento y version minima del
 --       cliente (o.5). La leen authenticated (el cliente) y service_role (los
 --       endpoints que escriben economia en el servidor, o.12); la escribe solo
@@ -240,6 +249,26 @@ BEGIN
 END
 $c$;
 
+  -- (o.16.9) challenge_parent_id solo apunta a una sesion que existe y es del mismo usuario; se mira al
+  -- ponerlo o cambiarlo, o al cambiar user_id (las filas de antes no se revisan aqui: las mide s12)
+  v_padre text := $c$
+DECLARE
+  v_dueno uuid;
+BEGIN
+  IF NEW.challenge_parent_id IS NOT NULL
+     AND (TG_OP = 'INSERT' OR NEW.challenge_parent_id IS DISTINCT FROM OLD.challenge_parent_id OR NEW.user_id IS DISTINCT FROM OLD.user_id) THEN
+    SELECT s.user_id INTO v_dueno FROM public.sim_sessions s WHERE s.id = NEW.challenge_parent_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'sim_sessions_padre_propio: la sesion padre % no existe', NEW.challenge_parent_id;
+    END IF;
+    IF v_dueno IS DISTINCT FROM NEW.user_id THEN
+      RAISE EXCEPTION 'sim_sessions_padre_propio: la sesion padre % es de otro usuario', NEW.challenge_parent_id;
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$c$;
+
   -- cualquier escritura de sim_trades sube 1 el contador de su sesion (ronda 3, o.16.5); en orden
   -- de id para que dos movimientos de trades entre las mismas sesiones bloqueen en el mismo orden
   v_rev_trades text := $c$
@@ -342,11 +371,15 @@ $c$;
 
   -- las politicas de sim_trades (o.16.7): la de hoy (s04) y las dos RESTRICTIVE de este fichero, como las
   -- devuelve pg_policies con search_path vacio
-  v_pol_hoy      constant text := 'Users see own trades|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-';
-  v_pol_cond     constant text := E'(EXISTS ( SELECT 1\n   FROM public.sim_sessions s\n  WHERE ((s.id = sim_trades.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))';
-  v_pol_insert   constant text := 'sim_trades_sesion_propia_insert|RESTRICTIVE|INSERT|{authenticated}|-|';
-  v_pol_update   constant text := 'sim_trades_sesion_propia_update|RESTRICTIVE|UPDATE|{authenticated}|';
+  -- tabla · su politica de hoy (s04, FOR ALL TO public USING auth.uid() = user_id), o.16.7 y o.16.9
+  v_pol_tablas   text[][] := ARRAY[
+    ARRAY['session_chart_config', 'user owns session config'],
+    ARRAY['session_drawings', 'user owns session drawings'],
+    ARRAY['sim_trades', 'Users see own trades']];
+  -- la condicion de las RESTRICTIVE, con TABLA en lugar del nombre de la tabla
+  v_pol_cond     constant text := E'(EXISTS ( SELECT 1\n   FROM public.sim_sessions s\n  WHERE ((s.id = TABLA.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))';
   v_pol_trades   text;
+  v_cond         text;
 
   -- sha256 del cuerpo de la funcion de la puerta (sql/sim-004a-puerta.sql):
   -- con la puerta activa, este fichero comprueba que es esa y no otra
@@ -362,7 +395,8 @@ $c$;
     ARRAY['sim_escrituras_v0_parejas(uuid)', 'parejas', 'f', 's', 'record', ''],
     ARRAY['sim_escrituras_v0_canonico(uuid)', 'canonico', 'f', 's', 'record', ''],
     ARRAY['sim_sessions_rev_saldo()', 'rev', 'f', 'v', 'trigger', ''],
-    ARRAY['sim_trades_rev_saldo()', 'rev_trades', 't', 'v', 'trigger', '']];
+    ARRAY['sim_trades_rev_saldo()', 'rev_trades', 't', 'v', 'trigger', ''],
+    ARRAY['sim_sessions_padre_propio()', 'padre', 't', 'v', 'trigger', '']];
   v_tablas    text[] := ARRAY['sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio'];
   v_secuencias text[] := ARRAY['sim_escrituras_v0_id_seq', 'sim_escrituras_v0_marcas_id_seq'];
   v_nombres   text[] := ARRAY['sim_escrituras_v0', 'sim_escrituras_v0_pkey', 'sim_escrituras_v0_id_seq',
@@ -372,10 +406,10 @@ $c$;
   v_nom_fun   text[] := ARRAY['sim_cierre_v0', 'sim_escrituras_v0_registra', 'sim_escrituras_v0_marca_balance',
                               'sim_escrituras_v0_inmutable', 'sim_escrituras_v0_solo_disparador',
                               'sim_escrituras_v0_parejas', 'sim_escrituras_v0_canonico', 'sim_escrituras_v0_puerta',
-                              'sim_sessions_rev_saldo', 'sim_trades_rev_saldo'];
+                              'sim_sessions_rev_saldo', 'sim_trades_rev_saldo', 'sim_sessions_padre_propio'];
   v_disp      text[] := ARRAY['sim_escrituras_v0_a', 'sim_escrituras_v0_b_balance', 'sim_escrituras_v0_inmutable_fila',
                               'sim_escrituras_v0_inmutable_truncate', 'sim_escrituras_v0_solo_disparador', 'sim_sessions_rev_saldo',
-                              'sim_trades_rev_saldo'];
+                              'sim_trades_rev_saldo', 'sim_sessions_padre_propio'];
   v_total     integer;
 
   -- los 22 + 6 disparadores de hoy (s04 + sim-003): estado 0 (o.0, S4R6-02)
@@ -417,6 +451,7 @@ $c$;
     'public.sim_escrituras_v0|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON public.sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_solo_disparador()|7|O',
     'public.sim_sessions|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
     'public.sim_sessions|sim_escrituras_v0_b_balance|CREATE TRIGGER sim_escrituras_v0_b_balance AFTER UPDATE OF balance ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_marca_balance()|17|O',
+    'public.sim_sessions|sim_sessions_padre_propio|CREATE TRIGGER sim_sessions_padre_propio BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_padre_propio()|23|O',
     'public.sim_sessions|sim_sessions_rev_saldo|CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_rev_saldo()|23|O',
     'public.sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
     'public.sim_trades|sim_trades_rev_saldo|CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_trades_rev_saldo()|29|O');
@@ -483,7 +518,12 @@ BEGIN
   SELECT count(*) INTO v_n FROM pg_policy WHERE polrelid = 'public.sim_trades'::regclass
      AND polname IN ('sim_trades_sesion_propia_insert', 'sim_trades_sesion_propia_update');
   v_hay := v_hay + v_n;
-  v_total := cardinality(v_tablas) + array_length(v_funciones, 1) + 11 + 1 + 2;
+  -- (o.16.9) las cuatro de session_drawings y session_chart_config
+  SELECT count(*) INTO v_n FROM pg_policy WHERE polrelid IN ('public.session_drawings'::regclass, 'public.session_chart_config'::regclass)
+     AND polname IN ('session_drawings_sesion_propia_insert', 'session_drawings_sesion_propia_update',
+                     'session_chart_config_sesion_propia_insert', 'session_chart_config_sesion_propia_update');
+  v_hay := v_hay + v_n;
+  v_total := cardinality(v_tablas) + array_length(v_funciones, 1) + 12 + 1 + 6;
   SELECT (to_regprocedure('public.sim_escrituras_v0_puerta()') IS NOT NULL)::integer
        + (SELECT count(*) FROM pg_trigger WHERE tgname = 'sim_escrituras_v0_puerta'
            AND tgrelid IN ('public.sim_sessions'::regclass, 'public.sim_trades'::regclass))::integer
@@ -533,15 +573,20 @@ BEGIN
       FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = ANY (v_tablas);
     IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004a: nombre de tipo ocupado: %', v_txt; END IF;
 
-    -- las politicas vigentes de sim_trades: exactamente la de s04 (o.16.7); si no, no se toca nada
+    -- las politicas vigentes de sim_trades, session_drawings y session_chart_config: exactamente la de
+    -- s04 en cada una (o.16.7, o.16.9); si no, no se toca nada
     PERFORM set_config('search_path', '', true);
-    SELECT string_agg(p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|' || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-'),
-                      ' ;; ' ORDER BY p.policyname COLLATE "C") INTO v_txt
-      FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = 'sim_trades';
+    FOR v_n IN 1 .. array_length(v_pol_tablas, 1) LOOP
+      f := v_pol_tablas[v_n][1];
+      v_esperado := v_pol_tablas[v_n][2] || '|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-';
+      SELECT string_agg(p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|' || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-'),
+                        ' ;; ' ORDER BY p.policyname COLLATE "C") INTO v_txt
+        FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = f;
+      IF v_txt IS DISTINCT FROM v_esperado THEN
+        RAISE EXCEPTION 'sim-004a: las politicas de public.% no son las de s04 (se esperaba solo «%»); hay: %', f, v_esperado, coalesce(v_txt, '(ninguna)');
+      END IF;
+    END LOOP;
     PERFORM set_config('search_path', v_sp, true);
-    IF v_txt IS DISTINCT FROM v_pol_hoy THEN
-      RAISE EXCEPTION 'sim-004a: las politicas de public.sim_trades no son las de s04 (se esperaba solo «%»); hay: %', v_pol_hoy, coalesce(v_txt, '(ninguna)');
-    END IF;
 
     -- ── 2 · tablas ───────────────────────────────────────────────────────
     -- el orden de las columnas es el del texto canonico (o.0, S4R6-01)
@@ -605,6 +650,8 @@ BEGIN
                    'LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = '''' AS %L', v_canonico);
     EXECUTE format('CREATE FUNCTION public.sim_sessions_rev_saldo() '
                    'RETURNS trigger LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path = '''' AS %L', v_rev);
+    EXECUTE format('CREATE FUNCTION public.sim_sessions_padre_propio() '
+                   'RETURNS trigger LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = '''' AS %L', v_padre);
     EXECUTE format('CREATE FUNCTION public.sim_trades_rev_saldo() '
                    'RETURNS trigger LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = '''' AS %L', v_rev_trades);
 
@@ -618,12 +665,14 @@ BEGIN
       FROM PUBLIC, anon, authenticated, service_role;
     GRANT SELECT ON public.sim_servicio TO authenticated, service_role;
     CREATE POLICY sim_servicio_lectura ON public.sim_servicio FOR SELECT TO authenticated USING (true);
-    -- o.16.7: un alumno solo escribe trades en SUS sesiones (se suman con AND a «Users see own trades»)
-    CREATE POLICY sim_trades_sesion_propia_insert ON public.sim_trades AS RESTRICTIVE FOR INSERT TO authenticated
-      WITH CHECK (EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = sim_trades.session_id AND s.user_id = (SELECT auth.uid())));
-    CREATE POLICY sim_trades_sesion_propia_update ON public.sim_trades AS RESTRICTIVE FOR UPDATE TO authenticated
-      USING (EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = sim_trades.session_id AND s.user_id = (SELECT auth.uid())))
-      WITH CHECK (EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = sim_trades.session_id AND s.user_id = (SELECT auth.uid())));
+    -- o.16.7 y o.16.9: un alumno solo escribe trades, dibujos y config del grafico en SUS sesiones (se suman
+    -- con AND a la politica de hoy de cada tabla, que no se toca)
+    FOR v_n IN 1 .. array_length(v_pol_tablas, 1) LOOP
+      f := v_pol_tablas[v_n][1];
+      v_cond := format('EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = %I.session_id AND s.user_id = (SELECT auth.uid()))', f);
+      EXECUTE format('CREATE POLICY %I ON public.%I AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (%s)', f || '_sesion_propia_insert', f, v_cond);
+      EXECUTE format('CREATE POLICY %I ON public.%I AS RESTRICTIVE FOR UPDATE TO authenticated USING (%s) WITH CHECK (%s)', f || '_sesion_propia_update', f, v_cond, v_cond);
+    END LOOP;
     FOR v_n IN 1 .. array_length(v_funciones, 1) LOOP
       EXECUTE format('REVOKE ALL ON FUNCTION public.%s FROM PUBLIC, anon, authenticated, service_role', v_funciones[v_n][1]);
     END LOOP;
@@ -651,6 +700,9 @@ BEGIN
     -- el contador (E1R2-01): BEFORE, y por el nombre DESPUES de la puerta (los BEFORE van por orden de nombre)
     CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON public.sim_sessions
       FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_rev_saldo();
+    -- (o.16.9) el padre de una sesion, del mismo usuario
+    CREATE TRIGGER sim_sessions_padre_propio BEFORE INSERT OR UPDATE ON public.sim_sessions
+      FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_padre_propio();
     -- toda escritura de sim_trades sube el de su sesion (AFTER: la fila ya paso la puerta, el cupo y las FK)
     CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR UPDATE OR DELETE ON public.sim_trades
       FOR EACH ROW EXECUTE FUNCTION public.sim_trades_rev_saldo();
@@ -685,7 +737,7 @@ BEGIN
                     WHERE p.oid = to_regprocedure('public.' || f) AND l.lanname = 'plpgsql'
                       AND p.prosrc = CASE v_funciones[v_n][2] WHEN 'cierre' THEN v_cierre WHEN 'registra' THEN v_registra
                                        WHEN 'marca' THEN v_marca WHEN 'inmutable' THEN v_inmutable WHEN 'solo' THEN v_solo
-                                       WHEN 'parejas' THEN v_parejas WHEN 'canonico' THEN v_canonico WHEN 'rev' THEN v_rev WHEN 'rev_trades' THEN v_rev_trades END
+                                       WHEN 'parejas' THEN v_parejas WHEN 'canonico' THEN v_canonico WHEN 'rev' THEN v_rev WHEN 'rev_trades' THEN v_rev_trades WHEN 'padre' THEN v_padre END
                       AND p.prosecdef = (v_funciones[v_n][3] = 't') AND p.provolatile::text = v_funciones[v_n][4]
                       AND p.prorettype::regtype::text = v_funciones[v_n][5]
                       AND p.proconfig = ARRAY['search_path=""']) THEN
@@ -818,14 +870,22 @@ BEGIN
   END IF;
   SELECT count(*) INTO v_n FROM public.sim_servicio;
   IF v_n <> 1 THEN RAISE EXCEPTION 'sim-004a: sim_servicio tiene % filas; tiene que tener 1', v_n; END IF;
-  -- las politicas de sim_trades (o.16.7): exactamente la de s04 y las dos RESTRICTIVE, con su texto
-  SELECT string_agg(p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|' || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-'),
-                    ' ;; ' ORDER BY p.policyname COLLATE "C") INTO v_pol_trades
-    FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = 'sim_trades';
-  v_esperado := concat_ws(' ;; ', v_pol_hoy, v_pol_insert || v_pol_cond, v_pol_update || v_pol_cond || '|' || v_pol_cond);
-  IF v_pol_trades IS DISTINCT FROM v_esperado THEN
-    RAISE EXCEPTION 'sim-004a: las politicas de public.sim_trades no son las previstas: %', coalesce(v_pol_trades, '(ninguna)');
-  END IF;
+  -- las politicas de sim_trades, session_drawings y session_chart_config (o.16.7, o.16.9): en cada una,
+  -- exactamente la de s04 y las dos RESTRICTIVE, con su texto
+  FOR v_n IN 1 .. array_length(v_pol_tablas, 1) LOOP
+    f := v_pol_tablas[v_n][1];
+    v_cond := replace(v_pol_cond, 'TABLA', f);
+    SELECT string_agg(p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|' || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-'),
+                      ' ;; ' ORDER BY p.policyname COLLATE "C") INTO v_pol_trades
+      FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = f;
+    SELECT string_agg(x, ' ;; ' ORDER BY x COLLATE "C") INTO v_esperado FROM unnest(ARRAY[
+      v_pol_tablas[v_n][2] || '|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-',
+      f || '_sesion_propia_insert|RESTRICTIVE|INSERT|{authenticated}|-|' || v_cond,
+      f || '_sesion_propia_update|RESTRICTIVE|UPDATE|{authenticated}|' || v_cond || '|' || v_cond]) x;
+    IF v_pol_trades IS DISTINCT FROM v_esperado THEN
+      RAISE EXCEPTION 'sim-004a: las politicas de public.% no son las previstas: %', f, coalesce(v_pol_trades, '(ninguna)');
+    END IF;
+  END LOOP;
 
   PERFORM set_config('search_path', v_sp, true);
 END
@@ -857,7 +917,7 @@ select seccion, detalle from (
          || ' service_role=' || has_function_privilege('service_role', p.oid, 'EXECUTE')
          || ' · sha256 ' || left(encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex'), 16)
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and (p.proname like 'sim\_escrituras\_v0\_%' or p.proname in ('sim_cierre_v0', 'sim_sessions_rev_saldo', 'sim_trades_rev_saldo'))
+   where n.nspname = 'public' and (p.proname like 'sim\_escrituras\_v0\_%' or p.proname in ('sim_cierre_v0', 'sim_sessions_rev_saldo', 'sim_trades_rev_saldo', 'sim_sessions_padre_propio'))
   union all
   select 3, 'columna', 'sim_sessions.rev_saldo ' || format_type(a.atttypid, a.atttypmod) || ' · not null=' || a.attnotnull
          || ' · default ' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-') || ' · acl de columna=' || coalesce(cardinality(a.attacl), 0)
@@ -873,8 +933,8 @@ select seccion, detalle from (
     from pg_trigger t where t.tgisinternal and t.tgrelid in ('public.sim_sessions'::regclass, 'public.sim_trades'::regclass)
    group by t.tgrelid
   union all
-  select 5, 'politica sim_trades', p.policyname || ' · ' || p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text
-    from pg_policies p where p.schemaname = 'public' and p.tablename = 'sim_trades'
+  select 5, 'politica ' || p.tablename, p.policyname || ' · ' || p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text
+    from pg_policies p where p.schemaname = 'public' and p.tablename in ('sim_trades', 'session_drawings', 'session_chart_config')
   union all
   select 6, 'sim_servicio', 'mantenimiento=' || s.mantenimiento || ' · version_minima=' || s.version_minima from public.sim_servicio s
   union all

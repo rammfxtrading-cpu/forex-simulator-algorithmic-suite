@@ -1,12 +1,14 @@
 /**
- * S12 · TRADES EN UNA SESION AJENA O INEXISTENTE · ENSAYO EN POSTGRESQL 17 LOCAL
- * (CTO 13-oct, o.16.7: paso previo OBLIGATORIO a la preparatoria en el runbook, junto a s11)
+ * S12 · FILAS EN UNA SESION AJENA O INEXISTENTE · ENSAYO EN POSTGRESQL 17 LOCAL
+ * (CTO 13-oct, o.16.7 y o.16.9: paso previo OBLIGATORIO a la preparatoria en el runbook, junto a s11)
+ * Tablas: sim_trades, session_drawings, session_chart_config (session_id) y sim_sessions
+ * (challenge_parent_id).
  *
  * Montaje: produccion segun s04 LITERAL + sql/sim-002 + sql/sim-003 (como s11). Datos inventados.
- *   1 limpio: en una transaccion READ ONLY, los dos totales a 0 y ninguna fila de caso; FIN
- *   2 CONTROL: dos casos plantados (como superusuario): un trade de A en la sesion de B y un trade
- *     con un session_id que no existe (FK desactivada para plantarlo). Los dos aparecen, cada uno en
- *     su seccion, con su id, su sesion y su fecha; los totales dicen 1 y 1
+ *   1 limpio: en una transaccion READ ONLY, los ocho totales a 0 y ninguna fila de caso; FIN
+ *   2 CONTROL: ocho casos plantados (como superusuario), uno por tabla y tipo: de A en la sesion de B,
+ *     y con una sesion que no existe (FK desactivada para plantarlo). Los ocho aparecen, cada uno en
+ *     su seccion, con su id, a donde apunta y su fecha; cada total dice 1; las filas sanas no salen
  *   3 nada personal: ninguna fila trae emails, nombres, importes ni el user_id
  *   4 una sola sentencia SELECT, sin escrituras ni EXECUTE (el texto, sin comentarios)
  */
@@ -43,6 +45,7 @@ const pgx = (texto, db) => {
 }
 const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const A = u(1), B = u(2), SA = u(101), SB = u(102), T1 = u(901), T2 = u(902), T3 = u(903), FANTASMA = u(999)
+const D2 = u(912), D3 = u(913), C2 = u(922), C3 = u(923), H2 = u(932), H3 = u(933), SANA_D = u(911), SANA_C = u(921), SANA_H = u(931)
 const DATOS = `
 insert into auth.users values ('${A}'), ('${B}');
 insert into public.profiles (id, email, plan, simulador_activo) values ('${A}', 'a@ejemplo.test', 'basic', true), ('${B}', 'b@ejemplo.test', 'basic', true);
@@ -50,7 +53,11 @@ insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, 
   ('${SA}', '${A}', 'Alumno A sesion', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', 10000, 10000),
   ('${SB}', '${B}', 'Alumno B sesion', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', 10000, 10000);
 insert into public.sim_trades (id, session_id, user_id, pair, side, entry_price, lots, pnl, opened_at, closed_at) values
-  ('${T1}', '${SA}', '${A}', 'EURUSD', 'BUY', 1.1, 1, 123.45, '2026-01-05T10:00:00Z', '2026-01-05T11:00:00Z');`
+  ('${T1}', '${SA}', '${A}', 'EURUSD', 'BUY', 1.1, 1, 123.45, '2026-01-05T10:00:00Z', '2026-01-05T11:00:00Z');
+insert into public.session_drawings (id, session_id, user_id, pair, data, updated_at) values ('${SANA_D}', '${SA}', '${A}', 'EURUSD', '[{"secreto":1}]', '2026-01-05T10:00:00Z');
+insert into public.session_chart_config (id, session_id, user_id, config, updated_at) values ('${SANA_C}', '${SA}', '${A}', '{"secreto":1}', '2026-01-05T10:00:00Z');
+insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to, capital, balance, challenge_parent_id) values
+  ('${SANA_H}', '${A}', 'Alumno A hija', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', 10000, 10000, '${SA}');`
 const monta = db => {
   const pasos = [pg.psql(`create database ${db}`, 'postgres'), pg.psql(PRODUCCION, db), pg.psql(S2, db), pg.psql(EJECUTOR, db), pgx(S3, db), pg.psql(DATOS, db)]
   if (!pasos.every(x => x.ok)) throw new Error(`montaje ${db}: ${pasos.map(x => x.err).join(' ')}`)
@@ -60,14 +67,15 @@ const s12 = db => {
   return { ok: r.ok, err: r.err, texto: r.out, filas: r.out.split('\n').filter(l => l.includes('|')).map(l => { const [s, o, ...d] = l.split('|'); return { s, o, d: d.join('|') } }) }
 }
 const total = (r, k) => r.filas.find(f => f.s === 'total' && f.o === k)?.d
+const TOTALES = ['sim_trades', 'session_drawings', 'session_chart_config', 'sim_sessions'].flatMap(t => [t + '.usuario_distinto', t + '.sesion_inexistente'])
 
 try {
   pg.arranca()
   titulo('1 · limpio')
   monta('p')
   const r = s12('p')
-  oraculo('S12-limpio', 'limpio, en una transaccion READ ONLY: los dos totales a 0, ninguna fila de caso, y acaba en FIN | s12 | consulta',
-    r.ok && total(r, 'usuario_distinto') === '0' && total(r, 'sesion_inexistente') === '0' && !r.filas.some(f => /^(usuario_distinto|sesion_inexistente)$/.test(f.s))
+  oraculo('S12-limpio', 'limpio, en una transaccion READ ONLY: los ocho totales a 0 (cuatro tablas × dos tipos), ninguna fila de caso, y acaba en FIN | s12 | consulta',
+    r.ok && TOTALES.every(k => total(r, k) === '0') && !r.filas.some(f => /\.(usuario_distinto|sesion_inexistente)$/.test(f.s))
     && r.filas.at(-1)?.s === 'FIN' && r.filas.at(-1)?.o === 's12', r.err.split('\n')[0] || r.texto.slice(0, 200))
 
   titulo('2 · CONTROL: dos casos plantados')
@@ -77,17 +85,31 @@ try {
 set session_replication_role = replica;
 insert into public.sim_trades (id, session_id, user_id, pair, side, entry_price, lots, pnl, opened_at) values
   ('${T3}', '${FANTASMA}', '${A}', 'EURUSD', 'BUY', 1.3, 1, 7, '2026-01-07T09:00:00Z');
-set session_replication_role = origin;`, 'c')
-  ver('control: los dos casos se plantan (como superusuario; la FK, desactivada para el segundo)', planta.ok, planta.err.split('\n')[0])
+insert into public.session_drawings (id, session_id, user_id, pair, data, updated_at) values ('${D3}', '${FANTASMA}', '${A}', 'GBPUSD', '[]', '2026-01-08T08:00:00Z');
+insert into public.session_chart_config (id, session_id, user_id, config, updated_at) values ('${C3}', '${FANTASMA}', '${A}', '{}', '2026-01-08T09:00:00Z');
+insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to, capital, balance, challenge_parent_id, created_at) values
+  ('${H3}', '${A}', 'Alumno A huerfana', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', 10000, 10000, '${FANTASMA}', '2026-01-08T10:00:00Z');
+set session_replication_role = origin;
+insert into public.session_drawings (id, session_id, user_id, pair, data, updated_at) values ('${D2}', '${SB}', '${A}', 'EURUSD', '[{"secreto":2}]', '2026-01-06T08:00:00Z');
+insert into public.session_chart_config (id, session_id, user_id, config, updated_at) values ('${C2}', '${SB}', '${A}', '{"secreto":2}', '2026-01-06T09:00:00Z');
+insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to, capital, balance, challenge_parent_id, created_at) values
+  ('${H2}', '${A}', 'Alumno A con padre de B', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', 10000, 10000, '${SB}', '2026-01-06T10:00:00Z');`, 'c')
+  ver('control: los ocho casos se plantan (como superusuario; la FK, desactivada para los de sesion inexistente)', planta.ok, planta.err.split('\n')[0])
   const c = s12('c')
   const caso = (s, id) => c.filas.find(f => f.s === s && f.o === id)
-  oraculo('S12-control', 'los dos casos aparecen, cada uno en su seccion, con su sesion y su fecha (closed_at, o opened_at si no hay); totales 1 y 1; el trade sano no sale',
-    c.ok && total(c, 'usuario_distinto') === '1' && total(c, 'sesion_inexistente') === '1'
-    && caso('usuario_distinto', T2)?.d === `sesion=${SB} · fecha=2026-01-06 12:30:00 UTC`
-    && caso('sesion_inexistente', T3)?.d === `sesion=${FANTASMA} · fecha=2026-01-07 09:00:00 UTC`
-    && !c.filas.some(f => f.o === T1), c.filas.filter(f => f.s !== 'hora').map(f => `${f.s}|${f.o}|${f.d}`).join(' / '))
-  oraculo('S12-nada-personal', 'nada personal en la salida: ni emails, ni nombres de sesion, ni importes, ni el user_id',
-    !/@ejemplo\.test|Alumno|123\.45|55\.5|-55|\b7\.00\b/.test(c.texto.replace(/^hora\|.*$/m, '')) && !c.texto.includes(A) && !c.texto.includes(B), c.texto.slice(0, 300))
+  oraculo('S12-control', 'los ocho casos aparecen, cada uno en su seccion (tabla.tipo), con a donde apunta y su fecha; cada total dice 1; las filas sanas (trade, dibujo, config e hija propios) no salen',
+    c.ok && TOTALES.every(k => total(c, k) === '1')
+    && caso('sim_trades.usuario_distinto', T2)?.d === `sesion=${SB} · fecha=2026-01-06 12:30:00 UTC`
+    && caso('sim_trades.sesion_inexistente', T3)?.d === `sesion=${FANTASMA} · fecha=2026-01-07 09:00:00 UTC`
+    && caso('session_drawings.usuario_distinto', D2)?.d === `sesion=${SB} · fecha=2026-01-06 08:00:00 UTC`
+    && caso('session_drawings.sesion_inexistente', D3)?.d === `sesion=${FANTASMA} · fecha=2026-01-08 08:00:00 UTC`
+    && caso('session_chart_config.usuario_distinto', C2)?.d === `sesion=${SB} · fecha=2026-01-06 09:00:00 UTC`
+    && caso('session_chart_config.sesion_inexistente', C3)?.d === `sesion=${FANTASMA} · fecha=2026-01-08 09:00:00 UTC`
+    && caso('sim_sessions.usuario_distinto', H2)?.d === `padre=${SB} · fecha=2026-01-06 10:00:00 UTC`
+    && caso('sim_sessions.sesion_inexistente', H3)?.d === `padre=${FANTASMA} · fecha=2026-01-08 10:00:00 UTC`
+    && ![T1, SANA_D, SANA_C, SANA_H].some(id => c.filas.some(f => f.o === id)), c.filas.filter(f => f.s !== 'hora').map(f => `${f.s}|${f.o}|${f.d}`).join(' / '))
+  oraculo('S12-nada-personal', 'nada personal en la salida: ni emails, ni nombres de sesion, ni importes, ni contenido de dibujos o config, ni el user_id',
+    !/@ejemplo\.test|Alumno|123\.45|55\.5|-55|\b7\.00\b|secreto/.test(c.texto.replace(/^hora\|.*$/m, '')) && !c.texto.includes(A) && !c.texto.includes(B), c.texto.slice(0, 300))
   const sinComentarios = S12.replace(/--.*$/gm, '')
   oraculo('S12-una-select', 'el texto es UNA sola sentencia SELECT (con WITH), sin escrituras ni EXECUTE',
     (sinComentarios.match(/;/g) || []).length === 1 && /^\s*with\b/i.test(sinComentarios) && !/\b(insert|update|delete|truncate|execute|create|alter|drop|grant|revoke|call|do)\b/i.test(sinComentarios), '')
