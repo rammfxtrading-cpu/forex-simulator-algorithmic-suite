@@ -390,7 +390,7 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
   const e3 = nuevo(`select public.sim_cierre_v0('${SA2}', 1, 1, ${L(T(null, '1.00'))});`)
   const e4 = nuevo(`select public.sim_cierre_v0('${SA}', 1, 1, ${L(T(u(405), '1.00', { user_id: B }))});`)
   oraculo('E7-error-sin-efectos', '{error}: sesion inexistente (con el trade ya insertado dentro), clave no admitida, sin id, trade de otro → error prefijado y NADA guardado',
-    !e1.ok && /sim_trades_session_id_fkey|sim_cierre_v0: la sesion .* no existe o no es tuya/.test(err1(e1)) && !e2.ok && /claves no admitidas en el trade: evento_id/.test(err1(e2))
+    !e1.ok && /sim_trades_session_id_fkey|sim_cierre_v0: la sesion .* no existe o no es tuya|row-level security policy "sim_trades_sesion_propia_insert"/.test(err1(e1)) && !e2.ok && /claves no admitidas en el trade: evento_id/.test(err1(e2))
     && !e3.ok && /necesita su id/.test(err1(e3)) && !e4.ok
     && n(`select count(*) from public.sim_trades where id in ('${u(403)}', '${u(404)}', '${u(405)}')`) === 0 && saldo(SA2) === '10087,1767700000' && saldo(SB) === antesB
     && ultimo() === k, [e1, e2, e3, e4].map(err1).join(' | ').slice(0, 240))
@@ -398,8 +398,8 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
     insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to) values ('${SB}', '${B}', 'b', 'EURUSD', 'H1', '2026-01-01', '2026-02-01');`)
   k = ultimo()
   const e5 = nuevo(`select public.sim_cierre_v0('${SB}', 1, 1, ${L(T(u(406), '1.00'))});`)
-  oraculo('E7-sesion-ajena', 'cierre de A en la sesion de B: RLS deja 0 filas en el UPDATE → error y el trade no queda',
-    !e5.ok && /no existe o no es tuya/.test(err1(e5)) && n(`select count(*) from public.sim_trades where id = '${u(406)}'`) === 0, err1(e5))
+  oraculo('E7-sesion-ajena', 'cierre de A en la sesion de B: lo rechaza la RLS (desde o.16.7 ya en el INSERT del trade) → error y el trade no queda',
+    !e5.ok && /no existe o no es tuya|row-level security policy "sim_trades_sesion_propia_insert"/.test(err1(e5)) && n(`select count(*) from public.sim_trades where id = '${u(406)}'`) === 0, err1(e5))
   const ea = escribe({ rol: 'anon' }, `select public.sim_cierre_v0('${SA2}', 1, 1, ${L(T(u(407), '1.00'))});`)
   const es = escribe({ rol: 'service_role' }, `select public.sim_cierre_v0('${SA2}', 1, 1, ${L(T(u(408), '1.00'))});`)
   oraculo('E7-quien', 'anon y service_role no pueden ejecutarlo (EXECUTE solo authenticated)', !ea.ok && !es.ok && [ea, es].every(x => /permission denied for function/.test(x.err)), [ea, es].map(err1).join(' | '))
@@ -546,7 +546,12 @@ $$;`],
     ['UPDATE de columna de rev_saldo a authenticated', `grant update (rev_saldo) on public.sim_sessions to authenticated;`],
     // ronda 3 bis (CTO 13-oct): las escrituras de sim_trades tambien suben el contador
     ['sin el disparador de sim_trades', `drop trigger sim_trades_rev_saldo on public.sim_trades;`],
-    ['el contador de sesiones acepta cualquier incremento', MUT_ACEPTA]]
+    ['el contador de sesiones acepta cualquier incremento', MUT_ACEPTA],
+    // ronda 3 ter (o.16.7): las politicas de sim_trades
+    ['sin la politica de INSERT de sesion propia', `drop policy sim_trades_sesion_propia_insert on public.sim_trades;`],
+    ['politica de UPDATE de sesion propia sin WITH CHECK', `drop policy sim_trades_sesion_propia_update on public.sim_trades; create policy sim_trades_sesion_propia_update on public.sim_trades as restrictive for update to authenticated using (exists (select 1 from public.sim_sessions s where s.id = sim_trades.session_id and s.user_id = (select auth.uid())));`],
+    ['politica de INSERT PERMISSIVE en vez de RESTRICTIVE', `drop policy sim_trades_sesion_propia_insert on public.sim_trades; create policy sim_trades_sesion_propia_insert on public.sim_trades for insert to authenticated with check (exists (select 1 from public.sim_sessions s where s.id = sim_trades.session_id and s.user_id = (select auth.uid())));`],
+    ['una politica de mas en sim_trades', `create policy zz_trades on public.sim_trades for select to anon using (true);`]]
   monta('g')
   pgx(PREP, 'g')
   for (const [desc, q] of MUTANTES) {
@@ -766,6 +771,71 @@ commit;`
     oraculo('E12b-borrado-y-cierre', 'el borrado de las sesiones del alumno (como el hub, en cascada a sus trades) y un cierre a la vez: el cierre espera y falla limpio (la sesion ya no esta), sin interbloqueo',
       x.a.ok && !x.b.ok && !interbloqueo(x) && /no existe o no es tuya|violates foreign key/.test(x.b.err), `espera ${x.espera} · ${x.a.err} · ${x.b.err.split('\n').find(l => /ERROR/.test(l)) ?? x.b.err}`)
   }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  titulo('13 · sim_trades solo en sesiones propias (ronda 3 ter, CTO 13-oct; o.16.7)')
+  {
+  const prepara = db => { monta(db); const a = pgx(PREP, db); if (!a.ok) throw new Error('prep ' + db + ': ' + err1(a)); return a }
+  const apl = prepara('pl')
+  const rev = (sid, db = 'pl') => uno(`select rev_saldo from public.sim_sessions where id = '${sid}'`, db)
+  const nTr = (sid, db = 'pl') => uno(`select count(*) from public.sim_trades where session_id = '${sid}'`, db)
+  let nT = 0
+  const tid = () => u(1400 + (++nT))
+  const ins = (sid, id = tid(), user = A) => `insert into public.sim_trades (id, session_id, user_id, pair, side, entry_price, lots, pnl, opened_at)
+    values ('${id}', '${sid}', '${user}', 'EURUSD', 'BUY', 1.1, 1, 5, now());`
+  oraculo('E13-informe', 'el informe de la preparatoria lista las tres politicas de sim_trades (la de s04 y las dos RESTRICTIVE para authenticated)',
+    (apl.out.match(/^politica sim_trades\|/gm) || []).length === 3 && /sim_trades_sesion_propia_insert · RESTRICTIVE · INSERT · \{authenticated\}/.test(apl.out) && /sim_trades_sesion_propia_update · RESTRICTIVE · UPDATE · \{authenticated\}/.test(apl.out), apl.out.split('\n').filter(l => /^politica/.test(l)).join(' / '))
+  const revB0 = rev(SB), trB0 = nTr(SB)
+  // los intentos de A sobre la sesion de B (firmado y cliente viejo)
+  const a1 = nuevo(ins(SB), A, 'pl'), a1v = viejo(ins(SB), A, 'pl')
+  oraculo('E13-insert-ajena', 'A inserta un trade (con su user_id) en la sesion de B: rechazado por la RLS, firmado y sin firmar',
+    !a1.ok && !a1v.ok && [a1, a1v].every(x => /row-level security policy "sim_trades_sesion_propia_insert"/.test(err1(x))), [a1, a1v].map(err1).join(' | '))
+  const TA = tid(); const a2p = nuevo(ins(SA, TA), A, 'pl')
+  const a2 = nuevo(`update public.sim_trades set session_id = '${SB}' where id = '${TA}';`, A, 'pl')
+  oraculo('E13-mover-ajena', 'A mueve un trade suyo a la sesion de B: rechazado (WITH CHECK de la politica de UPDATE); el trade sigue en su sesion',
+    a2p.ok && !a2.ok && /row-level security policy "sim_trades_sesion_propia_update"/.test(err1(a2)) && uno(`select session_id from public.sim_trades where id = '${TA}'`, 'pl') === SA, err1(a2) || 'PASA')
+  const a3 = nuevo(ins(SA2), A, 'pl'), a3u = nuevo(`update public.sim_trades set pnl = 6 where id = '${TA}';`, A, 'pl'), a3m = nuevo(`update public.sim_trades set session_id = '${SA2}' where id = '${TA}';`, A, 'pl')
+  const a3v = viejo(ins(SA), A, 'pl'), a3d = nuevo(`delete from public.sim_trades where id = '${TA}';`, A, 'pl')
+  oraculo('E13-propia', 'A con sus sesiones: INSERT (firmado y cliente viejo), UPDATE, mover entre SUS sesiones y DELETE, bien',
+    [a3, a3u, a3m, a3v, a3d].every(x => x.ok), [a3, a3u, a3m, a3v, a3d].map(err1).join(' | '))
+  const TT = (id, sid) => L(JSON.stringify({ id, user_id: A, pair: 'EURUSD', side: 'BUY', lots: '1.00', entry_price: '1.10000', exit_price: '1.10100', pnl: '9.00', result: 'WIN', opened_at: '2026-01-05T10:00:00Z', closed_at: '2026-01-05T11:00:00Z' }))
+  const saldoB0 = uno(`select balance::text from public.sim_sessions where id = '${SB}'`, 'pl'), k0 = ultimo('pl')
+  const cAj = nuevo(`select public.sim_cierre_v0('${SB}', 20000, 1, ${TT(tid(), SB)}::jsonb);`, A, 'pl')
+  oraculo('E13-cierre-ajena', 'sim_cierre_v0 de A sobre la sesion de B: rechazado y sin efectos (ni trade, ni saldo, ni registro)',
+    !cAj.ok && uno(`select balance::text from public.sim_sessions where id = '${SB}'`, 'pl') === saldoB0 && ultimo('pl') === k0, err1(cAj))
+  const cPr = nuevo(`select public.sim_cierre_v0('${SA}', 10009, 1, ${TT(tid(), SA)}::jsonb);`, A, 'pl')
+  oraculo('E13-cierre-propia', 'sim_cierre_v0 (INVOKER) de A sobre su sesion: bien', cPr.ok, err1(cPr))
+  oraculo('E13-contador-b', 'en ningun intento de A se movio el contador de B ni sus trades', rev(SB) === revB0 && nTr(SB) === trB0, `rev ${revB0}→${rev(SB)} · trades ${trB0}→${nTr(SB)}`)
+  // service_role (hub, admin, wipe) no se ve afectado: escribe y borra en cualquier sesion
+  const TS = tid()
+  const s1 = escribe({ rol: 'service_role' }, ins(SB, TS, B), 'pl'), s2 = escribe({ rol: 'service_role' }, `update public.sim_trades set session_id = '${SA}' where id = '${TS}';`, 'pl')
+  const s3 = escribe({ rol: 'service_role' }, `delete from public.sim_trades where id = '${TS}';`, 'pl')
+  oraculo('E13-service-role', 'service_role (BYPASSRLS: hub, admin, wipe) inserta, mueve y borra trades en cualquier sesion, como hoy', [s1, s2, s3].every(x => x.ok), [s1, s2, s3].map(err1).join(' | '))
+  // con la puerta: el cliente firmado sigue igual
+  const pz = pgx(PUERTA, 'pl'); const a4 = nuevo(ins(SB), A, 'pl'), a5 = nuevo(ins(SA), A, 'pl')
+  oraculo('E13-con-puerta', 'con la puerta activa: A firmado en la sesion de B, rechazado; en la suya, bien', pz.ok && !a4.ok && a5.ok, `${err1(pz)} · ${err1(a4)} · ${err1(a5)}`)
+  const re = pgx(PREP, 'pl')
+  oraculo('E13-reejecuta', 'preparatoria otra vez (estado 2): FIN, mismas politicas', re.ok && (re.out.match(/^politica sim_trades\|/gm) || []).length === 3, err1(re))
+  // otras tablas con session_id (o.16.8): las de sim-003 no las escribe authenticated (solo sus RPC DEFINER)
+  const otras = uno(`select string_agg(t||':'||p||'='||has_table_privilege('authenticated', 'public.'||t, p), ' ' order by t, p)
+    from unnest(array['sim_eventos','sim_recibos','sim_arrendamientos']) t, unnest(array['INSERT','UPDATE','DELETE']) p`, 'pl')
+  oraculo('E13-otras-tablas', 'sim_eventos, sim_recibos y sim_arrendamientos: authenticated no tiene INSERT, UPDATE ni DELETE (escriben solo las RPC de sim-003)',
+    otras.split(' ').length === 9 && !otras.includes('=true'), otras)
+  // y el hueco que NO cierra esta ronda (o.16.8, para el CTO): dibujos y config del grafico con la sesion ajena
+  const dib = nuevo(`insert into public.session_drawings (session_id, user_id, pair) values ('${SB}', '${A}', 'EURUSD');`, A, 'pl')
+  const cfg = nuevo(`insert into public.session_chart_config (session_id, user_id) values ('${SB}', '${A}');`, A, 'pl')
+  console.log('   MEDIDO (o.16.8, no se arregla en esta ronda): A escribe en session_drawings con la sesion de B: ' + (dib.ok ? 'PASA' : err1(dib))
+    + ' · en session_chart_config: ' + (cfg.ok ? 'PASA' : err1(cfg)))
+  // mutante funcional: con la politica vieja sola (sin las RESTRICTIVE), A vuelve a escribir en la sesion de B
+  prepara('plm'); pg.psql('drop policy sim_trades_sesion_propia_insert on public.sim_trades; drop policy sim_trades_sesion_propia_update on public.sim_trades;', 'plm')
+  const m1 = nuevo(ins(SB), A, 'plm')
+  oraculo('E13-MUT-politica-vieja', 'mutante con solo la politica vieja: A inserta en la sesion de B → E13-insert-ajena lo ve', m1.ok, err1(m1) || 'PASA (visto)')
+  // precondicion: si la politica vigente no es la de s04, la preparatoria no toca nada
+  monta('plp'); pg.psql(`alter policy "Users see own trades" on public.sim_trades using (true);`, 'plp')
+  const pp = pgx(PREP, 'plp')
+  oraculo('E13-precondicion', 'con la politica vigente de sim_trades distinta de la de s04, la preparatoria aborta en el estado 0 sin crear nada',
+    !pp.ok && /las politicas de public\.sim_trades no son las de s04/.test(err1(pp)) && uno(`select count(*) from pg_class where relname = 'sim_escrituras_v0'`, 'plp') === '0', err1(pp))
   }
 } finally {
   pg.cierra()

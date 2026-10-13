@@ -44,6 +44,16 @@
 --       justo antes y borra justo despues (diseño o.16.5). Un cierre por
 --       sim_cierre_v0 sube el contador 2 (trade + saldo): es monotonico; nadie
 --       debe contar unidades, solo compararlo.
+--   dos politicas RESTRICTIVE de sim_trades para authenticated (ronda 3 ter,
+--       CTO 13-oct, o.16.7): sim_trades_sesion_propia_insert (WITH CHECK) y
+--       sim_trades_sesion_propia_update (USING y WITH CHECK) exigen que la
+--       sesion del trade sea del alumno (EXISTS sobre sim_sessions con id =
+--       session_id y user_id = auth.uid()). Se suman (AND) a la politica de
+--       hoy «Users see own trades» (FOR ALL, auth.uid() = user_id), que no se
+--       toca: un alumno ya no puede escribir ni mover trades a una sesion
+--       ajena. SELECT y DELETE, sin cambios. service_role (BYPASSRLS) no se ve
+--       afectado. Antes de crearlas se comprueba que la politica vigente es
+--       exactamente la de s04; si no, no se toca nada.
 --   sim_servicio              una fila: mantenimiento y version minima del
 --       cliente (o.5). La leen authenticated (el cliente) y service_role (los
 --       endpoints que escriben economia en el servidor, o.12); la escribe solo
@@ -330,6 +340,14 @@ BEGIN
 END
 $c$;
 
+  -- las politicas de sim_trades (o.16.7): la de hoy (s04) y las dos RESTRICTIVE de este fichero, como las
+  -- devuelve pg_policies con search_path vacio
+  v_pol_hoy      constant text := 'Users see own trades|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-';
+  v_pol_cond     constant text := E'(EXISTS ( SELECT 1\n   FROM public.sim_sessions s\n  WHERE ((s.id = sim_trades.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))';
+  v_pol_insert   constant text := 'sim_trades_sesion_propia_insert|RESTRICTIVE|INSERT|{authenticated}|-|';
+  v_pol_update   constant text := 'sim_trades_sesion_propia_update|RESTRICTIVE|UPDATE|{authenticated}|';
+  v_pol_trades   text;
+
   -- sha256 del cuerpo de la funcion de la puerta (sql/sim-004a-puerta.sql):
   -- con la puerta activa, este fichero comprueba que es esa y no otra
   v_puerta_sha constant text := 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883';
@@ -461,7 +479,11 @@ BEGIN
   -- la columna rev_saldo (E1R2-01) tambien es una pieza: en el estado 0 su nombre tiene que estar libre
   SELECT count(*) INTO v_n FROM pg_attribute WHERE attrelid = 'public.sim_sessions'::regclass AND attname = 'rev_saldo' AND NOT attisdropped;
   v_hay := v_hay + v_n;
-  v_total := cardinality(v_tablas) + array_length(v_funciones, 1) + 11 + 1;
+  -- y las dos politicas de sim_trades (o.16.7)
+  SELECT count(*) INTO v_n FROM pg_policy WHERE polrelid = 'public.sim_trades'::regclass
+     AND polname IN ('sim_trades_sesion_propia_insert', 'sim_trades_sesion_propia_update');
+  v_hay := v_hay + v_n;
+  v_total := cardinality(v_tablas) + array_length(v_funciones, 1) + 11 + 1 + 2;
   SELECT (to_regprocedure('public.sim_escrituras_v0_puerta()') IS NOT NULL)::integer
        + (SELECT count(*) FROM pg_trigger WHERE tgname = 'sim_escrituras_v0_puerta'
            AND tgrelid IN ('public.sim_sessions'::regclass, 'public.sim_trades'::regclass))::integer
@@ -510,6 +532,16 @@ BEGIN
     SELECT string_agg(n.nspname || '.' || t.typname, ', ' ORDER BY 1) INTO v_txt
       FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = ANY (v_tablas);
     IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004a: nombre de tipo ocupado: %', v_txt; END IF;
+
+    -- las politicas vigentes de sim_trades: exactamente la de s04 (o.16.7); si no, no se toca nada
+    PERFORM set_config('search_path', '', true);
+    SELECT string_agg(p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|' || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-'),
+                      ' ;; ' ORDER BY p.policyname COLLATE "C") INTO v_txt
+      FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = 'sim_trades';
+    PERFORM set_config('search_path', v_sp, true);
+    IF v_txt IS DISTINCT FROM v_pol_hoy THEN
+      RAISE EXCEPTION 'sim-004a: las politicas de public.sim_trades no son las de s04 (se esperaba solo «%»); hay: %', v_pol_hoy, coalesce(v_txt, '(ninguna)');
+    END IF;
 
     -- ── 2 · tablas ───────────────────────────────────────────────────────
     -- el orden de las columnas es el del texto canonico (o.0, S4R6-01)
@@ -586,6 +618,12 @@ BEGIN
       FROM PUBLIC, anon, authenticated, service_role;
     GRANT SELECT ON public.sim_servicio TO authenticated, service_role;
     CREATE POLICY sim_servicio_lectura ON public.sim_servicio FOR SELECT TO authenticated USING (true);
+    -- o.16.7: un alumno solo escribe trades en SUS sesiones (se suman con AND a «Users see own trades»)
+    CREATE POLICY sim_trades_sesion_propia_insert ON public.sim_trades AS RESTRICTIVE FOR INSERT TO authenticated
+      WITH CHECK (EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = sim_trades.session_id AND s.user_id = (SELECT auth.uid())));
+    CREATE POLICY sim_trades_sesion_propia_update ON public.sim_trades AS RESTRICTIVE FOR UPDATE TO authenticated
+      USING (EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = sim_trades.session_id AND s.user_id = (SELECT auth.uid())))
+      WITH CHECK (EXISTS (SELECT 1 FROM public.sim_sessions s WHERE s.id = sim_trades.session_id AND s.user_id = (SELECT auth.uid())));
     FOR v_n IN 1 .. array_length(v_funciones, 1) LOOP
       EXECUTE format('REVOKE ALL ON FUNCTION public.%s FROM PUBLIC, anon, authenticated, service_role', v_funciones[v_n][1]);
     END LOOP;
@@ -780,6 +818,14 @@ BEGIN
   END IF;
   SELECT count(*) INTO v_n FROM public.sim_servicio;
   IF v_n <> 1 THEN RAISE EXCEPTION 'sim-004a: sim_servicio tiene % filas; tiene que tener 1', v_n; END IF;
+  -- las politicas de sim_trades (o.16.7): exactamente la de s04 y las dos RESTRICTIVE, con su texto
+  SELECT string_agg(p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|' || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-'),
+                    ' ;; ' ORDER BY p.policyname COLLATE "C") INTO v_pol_trades
+    FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = 'sim_trades';
+  v_esperado := concat_ws(' ;; ', v_pol_hoy, v_pol_insert || v_pol_cond, v_pol_update || v_pol_cond || '|' || v_pol_cond);
+  IF v_pol_trades IS DISTINCT FROM v_esperado THEN
+    RAISE EXCEPTION 'sim-004a: las politicas de public.sim_trades no son las previstas: %', coalesce(v_pol_trades, '(ninguna)');
+  END IF;
 
   PERFORM set_config('search_path', v_sp, true);
 END
@@ -826,6 +872,9 @@ select seccion, detalle from (
   select 5, 'disparadores internos (FK)', t.tgrelid::regclass::text || ' · ' || count(*)
     from pg_trigger t where t.tgisinternal and t.tgrelid in ('public.sim_sessions'::regclass, 'public.sim_trades'::regclass)
    group by t.tgrelid
+  union all
+  select 5, 'politica sim_trades', p.policyname || ' · ' || p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text
+    from pg_policies p where p.schemaname = 'public' and p.tablename = 'sim_trades'
   union all
   select 6, 'sim_servicio', 'mantenimiento=' || s.mantenimiento || ' · version_minima=' || s.version_minima from public.sim_servicio s
   union all
