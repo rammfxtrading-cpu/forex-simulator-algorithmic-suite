@@ -1981,3 +1981,92 @@ Va al **runbook de la etapa 1, antes de abrir la versión a los alumnos:** un lo
 **3. Aceptados por el CTO, pendientes de Astra:** los dos endurecimientos de o.11:
 - la cola de cierres con el saldo confirmado (o.11.1);
 - los 20 s antes de dar por perdido un resultado incierto (o.11.2).
+
+### o.13 Ronda 2 de código: E1-01..E1-05 (decisiones del CTO, 13-oct) y autorrevisión
+
+**Origen:** la revisión de código de Astra (`revisiones-suite/2026-10-13-astra-sim-etapa1.md`): **no apta** por E1-01..E1-04 (altos) y E1-05 (medio). El CTO decide arreglar los cinco, cada uno en su commit y con rojo antes de verde con los scripts de Astra llevados a `pruebas/` como permanentes.
+
+**o.13 prevalece sobre o.11.1 en dos puntos:**
+- la pausa ya **no** manda saldo (o.11.1 decía «el confirmado»);
+- la pantalla **ya no** aplica el cierre al pulsar: lo aplica en su turno de la cola.
+
+#### o.13.1 El principio común: una cola serial por sesión
+
+`lib/sim/cola.js`. **Toda operación económica de una sesión pasa por UNA cola serial:**
+- los cierres total y parcial (manual, SL/TP y los del breach);
+- la resolución de los inciertos;
+- el refresco del reto;
+- el paso de fase.
+
+**Lo que cambia en la pantalla y sus compensaciones se calcula dentro de la cola, cuando le toca a cada operación**, nunca al pulsar.
+
+La cola lleva, por sesión:
+- **las posiciones ocupadas:** con un cierre pendiente o incierto;
+- **los cierres pendientes:** cuántos hay;
+- **la barrera:** cierra la cola a cierres nuevos mientras se decide la fase.
+
+Se repinta con sus oyentes (`useCola`).
+
+#### o.13.2 Lo hecho, punto por punto
+
+| Punto | Commit | Qué | Ensayo (rojo antes → verde) |
+|---|---|---|---|
+| **E1-01** | `2983be3` | La pausa deja de escribir el saldo. Solo guarda `last_timestamp` y `timeframe` (`saveProgress`). | `etapa1-cola` §1: pausa antes, durante (los dos órdenes de entrega) y después de un cierre, con la respuesta del cierre perdida y con la de la pausa perdida → saldo de la base = capital + suma de los cierres. Contra `958b6e8`, 6/6 en rojo; en el orden de Astra la base queda en 10.000 con un cierre de +100. Además ASTRA-pausa y ASTRA-PG-pausa. |
+| **E1-02** | `6bafe5e` | Bloqueo por posición: mientras haya un cierre pendiente o incierto, no se acepta otro sobre ella (ni manual, ni SL/TP, ni parcial); el ✕ queda deshabilitado. La compensación devuelve la posición a la copia **confirmada** (la de antes de aplicar su cierre: con la posición ocupada nadie más la ha tocado) y el saldo de la pantalla al confirmado por la base. SL/TP apunta las velas que pasan con la posición ocupada y las reevalúa al liberarse. | `etapa1-cola` §2: el caso de Astra, varios parciales, éxito y error combinados, SL/TP reevaluado al liberarse y botón deshabilitado. Contra `2983be3`, 4 en rojo; las dos combinaciones secuenciales eran ya verdes y quedan como no regresión. Además ASTRA-parcial-total. |
+| **E1-03** | `529273c` | Cada incierto se resuelve una sola vez: una promesa compartida por `tradeId`; se marca consumido y se quita de la lista **actual** (por identidad, no con una foto) **antes** de su callback; decisión y callback van en la cola de su sesión. | `etapa1-cola` §3: dos `leeServicio()` a la vez, alta de otro incierto durante la espera, confirmación tardía, el callback en su turno y el caso de Astra con los hooks reales (una sola relectura). Contra `6bafe5e`, 5/5 en rojo. ASTRA-incierto ya estaba verde desde E1-02, porque la compensación dejó de sumar lotes; estos oráculos ven la resolución doble directamente. |
+| **E1-04** | `0654d9b` | **Barrera de fase:** con cierres pendientes o inciertos no se ofrece el modal. Para pasar de fase (`decideFase`, pass y fail): se cierra la cola a cierres nuevos, se espera a que se vacíe, sin inciertos se **reevalúa** con `challenge/status` dentro de la cola y solo entonces se manda `advance`. Si ya no procede, se cierra el modal y se avisa. **El breach** pasa por la misma confirmación explícita, sin los 300 ms ni los tres intentos: el modal «quemado» solo se abre si el reto reevaluado lo dice. **Red en SQL:** `sim_cierre_v0` actualiza solo si `coalesce(status, 'active') = 'active'`; si no, error `sim_cierre_v0: sesion cerrada: …` y nada guardado. La condición va en el UPDATE, así que si el paso de fase confirma mientras el cierre espera la fila, se vuelve a mirar. | `etapa1-cola` §4: +11.000/−3.000 en los dos órdenes, con error, con respuesta perdida (guardada e incierta), la espera que incluye el pendiente, el cierre tardío en la pantalla, la llamada directa del original de Astra y el breach (con el cierre retenido 1,5 s, y con el cierre fallido). `sim-004a`: E7-sesion-cerrada (4 estados), E7-status-null y E7-carrera-fase. Contra `529273c`, 9 + 2 en rojo. Además ASTRA-reto-cola. |
+| **E1-05** | `d0ffa5e` | La guarda final verifica **las ACL de columna** (`pg_attribute.attacl`) de las tres tablas nuevas, `sim_sessions` y `sim_trades` (ninguna), y **los privilegios efectivos por columna** (con herencia) de PUBLIC, `anon`, `authenticated` y `service_role` × SELECT/INSERT/UPDATE/REFERENCES en las tablas nuevas: solo el SELECT de `sim_servicio` para `authenticated` y `service_role`. El informe muestra «acl de columna=N». | `sim-004a`: E5-columnas y nueve mutantes E9 de columna (UPDATE, INSERT y SELECT en `sim_servicio`; SELECT y REFERENCES en el registro y las marcas; a PUBLIC; heredado por un rol miembro de `authenticated`; en `sim_sessions` y en `sim_trades`). Contra `0654d9b`, 9/9 en rojo. Además ASTRA-PG-columna. |
+
+**La tanda entera, en `d0ffa5e`: todo verde, 89 pruebas, código 0.**
+
+#### o.13.3 Los scripts de Astra como permanentes
+
+Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condiciones de los seis oráculos no cambian.** Cambian disparadores y controles, documentados en la cabecera de cada fichero:
+- **ASTRA-pausa:** la puerta retiene cualquier UPDATE de la pausa (ya no lleva `balance`). El control comprueba que la pausa sale con el cierre pendiente.
+- **ASTRA-PG-pausa:** la pausa ya no es un UPDATE escrito a mano. Es lo que **manda la pausa real**: se monta `_SessionInner` con los dobles, se pulsa con el saldo confirmado aún en 10.000, y cada UPDATE que sale se ejecuta firmado después del cierre de +100. Contra `958b6e8` eso es `{balance: 10000, last_timestamp}` → rojo.
+- **ASTRA-reto-cola:** el paso de fase se pide como lo pide la página, con `handleChallengePass` del `useChallengeFlow` real; antes, el script llamaba a `/api/challenge/advance` directamente.
+  - El servidor no puede saber que el cliente tiene un cierre en cola. Por eso el CTO puso la barrera en el cliente y una red en SQL.
+  - La llamada directa del original sigue probada en `etapa1-cola` (E104-servidor-directo): la fase se concede con lo guardado y el −3.000 tardío lo rechaza `sim_cierre_v0`.
+- **Contra `958b6e8`, los seis en rojo.** En ASTRA-reto-cola salen además tres controles rotos, porque el doble actual ya rechaza el cierre tardío. Con el doble de entonces, el resultado es el de Astra (`passed_phase` con 108.000).
+
+#### o.13.4 Otros escritores de saldo (la pregunta del CTO en E1-01)
+
+**En el cliente ya no queda ninguno fuera de la cola.** El único que escribe `balance` es `sim_cierre_v0`. El INSERT de una sesión nueva (`dashboard.js:221`, `balance = capital`) es una creación, no una modificación.
+
+**En el servidor sí queda uno: `pages/api/challenge/advance.js:174`, `:204` y `:241`.** Escribe `balance = evaluation.balanceNow`, calculado con los trades que lee antes.
+- **Desde la misma pestaña** ya no se intercala: solo se llama dentro de la barrera, con la cola vacía y el reto reevaluado.
+- **En el servidor no es atómico con el status:**
+  1. `advance` lee los trades;
+  2. otro cliente (otra pestaña) guarda un cierre con la sesión aún activa;
+  3. `advance` escribe un `balance` que no incluye ese cierre y el status nuevo.
+
+  La red de E1-04 no lo ve, porque el cierre entró antes del cambio de status.
+- **No lo arreglo** (no estaba ordenado). **Opciones:**
+  - que el UPDATE de `advance` lleve `WHERE balance = <el leído>`, y si no casa responda 409 y el cliente reevalúe;
+  - o una función SQL que bloquee la fila (la transición del v1, d7).
+
+  **Lo decide el CTO.**
+
+#### o.13.5 Autorrevisión: lo que no decide el código solo
+
+1. **Status NULL = activa.** La red SQL trata `NULL` como `'active'`, igual que el cliente (`session?.status || 'active'`) y el dashboard. Es una lectura del código actual, no una regla escrita. La columna admite NULL (s04). **Para que lo confirme el CTO.**
+2. **Una sesión ya decidida no acepta cierres.** Antes, `useChallengeFlow` decía «Posiciones abiertas pueden seguir cerrándose». Ahora `sim_cierre_v0` las rechaza. La pantalla avisa («Esta fase del reto ya está decidida»), la posición sigue a la vista y el saldo es el de la base.
+   - El caso real es `passed_all` con posiciones abiertas (`advance` las ignora).
+   - En `passed_phase` el diseño ya las descartaba (B1).
+   - En `failed_*` el breach las ha cerrado antes, o el fallo no se confirma.
+
+   Es el efecto pedido («un cierre tardío no puede aplicarse a una fase decidida»). Queda como límite de UX: una posición que no se puede cerrar.
+3. **`puedeEscribir` ya no resuelve inciertos** (lee con `{ resolver: false }`).
+   - **El motivo:** la llaman operaciones de la cola, y la resolución se encola en esa misma cola; esperarla desde dentro la bloquearía.
+   - **Quién los resuelve:** el temporizador del plazo (20,1 s), el sondeo de 30 s y el resto de lecturas.
+   - **El efecto:** un intento de cierre durante el incierto ya no lo resuelve; se bloquea con «incierto». El plazo real no cambia.
+4. **El cierre se ve un poco más tarde:** la pantalla lo aplica en su turno, después de leer `sim_servicio`. Del clic al cambio en pantalla hay una lectura más de red. Es el precio de calcular «dentro de la cola».
+5. **Breach con el cierre forzado fallido:** el modal no se abre y el detector se rearma. El replay ya está parado (pausa del breach y `alBloqueo`), así que espera al alumno. Antes se abría «quemado» igualmente.
+6. **La comprobación de privilegios efectivos por columna no tiene mutante propio.** Toda forma de cambiarlos deja una ACL de tabla o de columna, que las comprobaciones anteriores ya ven: los nueve mutantes caen en `attacl`. Queda como defensa en profundidad.
+7. **`attacl` en `sim_sessions` y `sim_trades` se exige vacía.** s04 no midió ACL de columna en producción. Si existiera alguna, la preparatoria abortaría (falla cerrado) y habría que mirarla antes de seguir. **Al runbook:** leer el informe («acl de columna=N») y, si aborta por esto, parar.
+8. **Límites del ensayo:**
+   - el cliente se prueba con dobles (sin RLS);
+   - la carrera SQL se fuerza con tiempos: `pg_sleep` de 1,5 s con 0,4 s de ventaja, y un control comprueba que el cierre esperó ≥ 0,8 s;
+   - el breach espera 1,5 s reales;
+   - nada se ha probado en un navegador.
+9. **o.11.8 (volumen de lecturas)** no cambia, y o.11.9 queda resuelto por E1-04.
