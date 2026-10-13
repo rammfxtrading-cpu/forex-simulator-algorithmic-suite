@@ -119,7 +119,10 @@ try {
   C.tradeSolo = sesion(); trade(C.tradeSolo, 5)                                                             // INSERT sin pareja
   C.lejos = sesion(); trade(C.lejos, 7); saldo(C.lejos, 7); separa(C.lejos, 10.000001)  // a 10 s y 1 µs
   C.cerca = sesion(); trade(C.cerca, 8); saldo(C.cerca, 8); separa(C.cerca, 10)          // a 10 s justos
-  C.centimoF = sesion(); trade(C.centimoF, 1.10); saldo(C.centimoF, 1.11)                // 0,01 exacto en numeric; 0,010000000000000009 en float
+  // o.10.3: frontera de 0,01 donde el float8 se equivoca SIEMPRE (IEEE-754, determinista)
+  const FLOAT = [['0.30', '0.31'], ['1.10', '1.11'], ['0.29', '0.30'], ['100.00', '100.01']]
+  C.float = FLOAT.map(([p, d]) => { const s = sesion(); trade(s, p); saldo(s, d); return s })
+  C.centimoF = C.float[1]
   C.be = sesion(); trade(C.be, 0); viejo(`update public.sim_sessions set balance = balance, last_timestamp = 5 where id = '${C.be}';`) // break-even completo
   C.beSin = sesion(); viejo(`update public.sim_sessions set balance = balance, last_timestamp = 5 where id = '${C.beSin}';`)          // break-even sin trade
   C.pnl0Solo = sesion(); trade(C.pnl0Solo, 0)                                                               // trade pnl 0 sin UPDATE
@@ -178,7 +181,7 @@ try {
   O('L-trade-solo', 'INSERT de trade sin UPDATE → incidencia', C.tradeSolo, ['incidencia: INSERT de trade sin pareja'], 0)
   O('L-10s-y-1us', 'trade y UPDATE a 10 s y 1 µs → no casan (l.6.2: incidencia falsa, nunca oculta)', C.lejos, ['incidencia: INSERT de trade sin pareja', 'incidencia: cambio de saldo sin pareja'], 0)
   O('L-10s', 'a 10 s justos → casan (≤ 10 s)', C.cerca, [], 1)
-  O('L-centimo-float', 'trade 1,10 y +1,11: 0,01 exacto en numeric → casa', C.centimoF, [], 1)
+  FLOAT.forEach(([p, d], i) => O(`L-frontera-${p}-${d}`, `trade ${p} y +${d}: 0,01 exacto en numeric → casa`, C.float[i], [], 1))
   O('L-break-even', 'cierre total a break-even completo (trade 0 + UPDATE delta 0 que cambia last_timestamp) → 0 incidencias', C.be, [], 1)
   O('L-break-even-sin-trade', 'break-even sin su trade → DUDOSO (m.1)', C.beSin, ['dudoso: delta 0, menciona balance, sin pareja'], 0)
   O('L-pnl0-solo', 'trade de pnl 0 sin ningun UPDATE → incidencia', C.pnl0Solo, ['incidencia: INSERT de trade sin pareja'], 0)
@@ -266,7 +269,15 @@ rollback;`)
   mutaParejas('igualdad exacta en vez de la tolerancia', 'abs(r.delta - t.pnl) <= 0.01', 'r.delta = t.pnl', C.centimo, 'L-centimo')
   mutaParejas('emparejar con reutilizacion', 'AND NOT (t.id = ANY (v_usa))', '', C.reusa, 'M-reusa')
   mutaParejas('solo emparejan los UPDATE con delta ≠ 0', "AND e.cliente = 'sin-firma'", "AND e.delta <> 0 AND e.cliente = 'sin-firma'", C.be, 'L-break-even')
-  mutaParejas('comparacion en float', 'abs(r.delta - t.pnl) <= 0.01', 'abs(r.delta::float8 - t.pnl::float8) <= 0.01::float8', C.centimoF, 'L-centimo-float')
+  {
+    // el mutante float, una vez, y tiene que dar rojo en LOS CUATRO casos de frontera (o.10.3)
+    const de2 = 'abs(r.delta - t.pnl) <= 0.01'
+    const rm = conParejas(cuerpo.replace(de2, 'abs(r.delta::float8 - t.pnl::float8) <= 0.01::float8'))
+    const rr = { filas: rm.out.split('\n').filter(l => l && !/^(BEGIN|ROLLBACK|CREATE FUNCTION|SET)$/.test(l)).map(l => l.split('|')) }
+    const caidas = C.float.map(s => pares(rr, s) === 0 && clases(rr, s).length === 2)
+    oraculo('MUT-comparacion-en-float', 'mutante «comparacion en float» → los 4 casos de frontera dejan de casar (cada uno: 2 incidencias)',
+      cuerpo.includes(de2) && rm.ok && caidas.every(Boolean), `${caidas.map((c, i) => FLOAT[i].join('/') + (c ? ' cae' : ' NO cae')).join(', ')} ${err1(rm)}`)
+  }
   const mutaS10 = (desc, de2, a2, mira, lo) => {
     if (!S10.includes(de2)) { oraculo('MUT-' + desc.replace(/\W+/g, '-'), `mutante «${desc}»: el texto a cambiar existe en s10`, false); return }
     const rm = corre(S10.replace(de2, a2))

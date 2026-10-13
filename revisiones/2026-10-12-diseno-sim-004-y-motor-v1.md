@@ -39,7 +39,7 @@ Búsqueda literal en `pages/`, `components/` y `lib/`, sin `lib/motor/`, `vendor
 | 5 | `sim_sessions` | UPDATE | `balance` | `components/_SessionInner.js:1949` | cierre parcial (modal) |
 | 6 | `sim_trades` | INSERT | trade del parcial | `components/_SessionInner.js:1950` | cierre parcial |
 | 7 | `sim_sessions` | UPDATE | `balance, last_timestamp` | `components/_SessionInner.js:1104` | pausa del replay |
-| 8 | `sim_sessions` | UPDATE | `last_timestamp, balance, timeframe` | `components/_SessionInner.js:1363` | salir de la sesión (desmontaje) |
+| 8 | `sim_sessions` | UPDATE | `last_timestamp, balance, timeframe` | `components/_SessionInner.js:1363` | salir de la sesión (desmontaje). **→ o.10: NUNCA se manda** (sin `await` ni `.then` desde `b3a1a52`; el builder de postgrest-js es perezoso). La etapa 1 borra la línea |
 | 9 | `sim_sessions` | UPDATE | `last_timestamp, timeframe` | `components/usePairData.js:25` | guardado periódico del progreso |
 | 10 | `sim_sessions` | UPDATE | `timeframe` | `components/_SessionInner.js:684`, `:1751` | cambio de TF (teclado y botón) |
 | 11 | `session_drawings` | UPDATE, e INSERT si no había fila | `user_id, pair, data, updated_at` | `components/_SessionInner.js:407`, `:416` | guardar dibujos |
@@ -462,7 +462,7 @@ s04 solo lista las funciones de `public` que tocan las 9 tablas: el único dispa
 - **b) Cliente de la etapa 1.**
   - Consulta un **endpoint de estado del servicio** antes de cada escritura económica y cada 30 s. Con mantenimiento activo, bloquea las escrituras y muestra la pantalla de mantenimiento.
   - Lleva un **id de versión:** si el servidor anuncia otra, recarga.
-  - La limpieza y el desmontaje (`_SessionInner.js:1363`, `usePairData.js:25`, pausa `:1104`) respetan el bloqueo.
+  - La limpieza y el desmontaje (`_SessionInner.js:1363`, `usePairData.js:25`, pausa `:1104`) respetan el bloqueo. **→ o.10:** el desmontaje (`:1363`) no escribe: hoy no se manda y la etapa 1 borra la línea.
 - **c) Coherencia durante el corte.**
   - El export de entradas de S4-02 incluye una comprobación de coherencia por sesión v0. **Cualquier incoherencia ABORTA el corte** y se lista para Ramón; **nunca se recalcula**.
   - Esto sustituye a la nota G02 de § c.2 («pasa a legado igual, con la incoherencia anotada»).
@@ -1302,7 +1302,7 @@ El resto de la tabla de l.2 no cambia.
 |---|---|---|---|
 | PATCH `{balance}` mismo valor: parcial pnl 0, `_SessionInner.js:1949` | 0 | {} | **true** |
 | PATCH `{balance, last_timestamp}`: pausa, `:1104` | 0 | {last_timestamp} | **true** |
-| PATCH `{last_timestamp, balance, timeframe}`: salida, `:1363` | 0 | {last_timestamp} | **true** |
+| PATCH `{last_timestamp, balance, timeframe}`: salida, `:1363` (**→ o.10: el cuerpo medido es el que tendría; el v0 nunca lo manda**) | 0 | {last_timestamp} | **true** |
 | PATCH `{balance, last_timestamp}`: cierre total pnl 0, `useTradingActions.js:67` | 0 | {last_timestamp} | **true** |
 | PATCH `{last_timestamp, timeframe}`: guardado, `usePairData.js:25` | 0 | {last_timestamp} | false |
 | PATCH `{timeframe}`: TF, `:684` | 0 | {timeframe} | false |
@@ -1323,7 +1323,7 @@ El resto de la tabla de l.2 no cambia.
   - el parcial perdido junto a un cierre total correcto (el UPDATE del parcial consume el trade del total, y sobra el UPDATE del total, que menciona `balance`) → **dudoso**;
 - un cierre de pnl 0 completo y aislado → ninguna;
 - un guardado sin `balance` → ninguna;
-- **la pausa o la salida sin pareja → dudoso.**
+- **la pausa o la salida sin pareja → dudoso.** **→ o.10: la salida no escribe; solo quedan los dudosos de pausa.**
 
 **Mutantes → rojo:**
 - «ignorar el delta 0 con cambio de tiempo»;
@@ -1385,7 +1385,7 @@ Es un **defecto de v0 que ya existe hoy**.
      - **que PostgREST pase a mandar todas las columnas** en el SET (por ejemplo, con `?columns=`): **todas las pausas y guardados mencionarían `balance`**. Da más dudosos, nunca menos, y el ensayo con PostgREST lo comprobaría.
    - **Por qué B busca por transacción y sesión, y no por `currval`:** medido con una sentencia que toca 3 filas y con dos sentencias sobre la misma sesión en una transacción. La búsqueda funciona tanto si los disparadores se disparan A1-B1-A2-B2 como A1-A2-B1-B2.
 2. **La pausa frente al cierre.**
-   - La pausa y la salida mencionan `balance` (`balance: balanceRef.current`). **Cada pausa o salida de un cliente antiguo sin pareja es un dudoso.**
+   - La pausa y la salida mencionan `balance` (`balance: balanceRef.current`). **Cada pausa o salida de un cliente antiguo sin pareja es un dudoso.** **→ o.10: la salida no se manda nunca (ni en v0 ni en la etapa 1): solo la pausa.**
    - **Es lo decidido:** con los datos que hay no se distinguen de un cierre total de pnl 0 cuyo INSERT falló. La pausa (`:1104`) y el cierre total (`:67`) mandan exactamente el mismo cuerpo: `{balance, last_timestamp}`.
    - **Ruido esperado:** una fila por pausa o salida de pestaña antigua, solo hasta la puerta (≤ 7 días, m.3). Con 5 alumnos y la resolución por sesión es manejable. Se mide en la etapa 1, con s10.
    - **Si la pausa consume el trade de pnl 0 de un cierre** (están a menos de 10 s), sobra el UPDATE del cierre, que menciona `balance` → dudoso. **Sea cual sea la pareja que se elija, sobra un dudoso.**
@@ -1766,7 +1766,7 @@ Después van las parejas, como en n.2. **Editar cualquier valor invalida la reso
 |---|---|
 | **No económicas** (las que nombra el CTO) | `notes`, `tags` |
 | **Económicas, nombradas por el CTO** | `pnl`; los precios (`entry_price`, `exit_price`, `sl_price`, `tp_price`); `lots`; `side`; `opened_at` y `closed_at`; `session_id` |
-| **Económicas por la regla de cierre** (no las nombra el CTO; **a confirmar**) | `id`, `user_id`, `pair`, `risk_percent`, `risk_amount`, `rr`, `result`, `session_type`, `created_at` y las 10 de sim-003 (`evento_id`, `motor_version`, `bruto_micro`, `neto_micro`, `comision_micro`, `spread_micro`, `swap_micro`, `conversion`, `ambigua`, `causa_ambiguedad`) |
+| **Económicas por la regla de cierre** (confirmado por el CTO, 13-oct: o.10) | `id`, `user_id`, `pair`, `risk_percent`, `risk_amount`, `rr`, `result`, `session_type`, `created_at` y las 10 de sim-003 (`evento_id`, `motor_version`, `bruto_micro`, `neto_micro`, `comision_micro`, `spread_micro`, `swap_micro`, `conversion`, `ambigua`, `causa_ambiguedad`) |
 
 - **La regla de cierre:** la lista de no económicas es **cerrada** (`notes`, `tags`). Cualquier otra columna, incluida una que se añada mañana, cuenta como económica.
 - **Es el lado seguro:** un error de clasificación da una incidencia de más, que resuelve el CTO, y nunca una de menos.
@@ -1875,3 +1875,31 @@ Entra completo lo que dice § f: **d1, d2 y d3 para legado, d6 parcial y `/api/s
 - no se ha hecho ninguna petición real con la cabecera.
 
 Va al **runbook de la etapa 1, antes de abrir la versión a los alumnos:** un login real con la cuenta de prueba, con el sí de Ramón, como k.4 e.
+
+### o.10 Segunda tanda de decisiones del CTO (13-oct)
+
+**1. La escritura al salir de la sesión (`_SessionInner.js:1363`) nunca se ha mandado.**
+- El builder de postgrest-js 2.102.1 solo hace el `fetch` dentro de `then()`. Esa línea no tiene `await` ni `.then` desde `b3a1a52` (12-abr-2026).
+- **El cliente de la etapa 1 BORRA la línea muerta,** con un comentario que dice por qué. No cambia el comportamiento, porque ya no escribía. **No se activa nada que hoy no se mande.**
+- **Una prueba** comprueba que al desmontar la sesión no sale ninguna escritura a `sim_sessions`.
+- **Consecuencias en el diseño:**
+  - a.1 #8 no existe en la práctica;
+  - i.1 b: el desmontaje no tiene escritura que bloquear;
+  - **m.1: los dudosos de «salida» no pueden darse, ni desde v0 ni desde la etapa 1. Solo quedan los de pausa.**
+- El autoguardado cada 5 s (`usePairData.js:25`) ya guarda `last_timestamp` y `timeframe`, y el saldo lo guardan los cierres. Al salir se pierden como mucho los últimos 5 s de avance, igual que hoy.
+
+**2. o.3, confirmado:** en `sim_trades`, todo es económico salvo `notes` y `tags`, y esa lista es cerrada.
+
+**3. s10: el mutante de float tiene que caer siempre, no por suerte.**
+- En doble precisión, el error solo cambia la decisión **en la frontera de 0,01**. Por ejemplo, `0,1 + 0,2 − 0,3` da `5,55·10⁻¹⁷`, que es ≤ 0,01 y no caza nada.
+- **Casos deterministas,** comprobados en IEEE-754 (Python y PostgreSQL `float8` dan lo mismo). Todos están a 0,01 exacto en `numeric`, así que casan; y en `float8` dan más de 0,01, así que no casan:
+
+| pnl | delta | `float8(delta) − float8(pnl)` |
+|---|---|---|
+| 0,30 | 0,31 | 0,010000000000000009 |
+| 1,10 | 1,11 | 0,010000000000000009 |
+| 0,29 | 0,30 | 0,010000000000000009 |
+| 100,00 | 100,01 | 0,010000000000005116 |
+
+- **Contraejemplos que NO sirven** (el float acierta por suerte): 12,34/12,35, 1000,00/1000,01 y −5,05/−5,04, todos con 0,00999…
+- **El ensayo exige que el mutante float dé rojo en los cuatro casos.**
