@@ -474,6 +474,26 @@ async function faseConOtraPestana(sid, pnlOtra, veces = 1, antes = null) {
     hecho && st.join(',') === '409' && ev === 'failed_dd_daily' && madre(sid).status === 'active' && hijas(sid).length === 0 && Number(madre(sid).balance) === 111000,
     `${foto(sid)} · reevaluado ${ev}`)
   b.caja.raiz.desmonta() }
+{ // ronda 3 bis: el cliente viejo deja un cierre partido (trade −7.000 sin saldo) mientras advance espera su
+  // UPDATE: el contador sube (el disparador de sim_trades), 409, y el cliente reevalua (4.000 < objetivo): no pasa
+  const sid = 'e107-partido'; const b = await reto(sid)
+  await cierreReto(sid, 11000, 1); await asienta(20)
+  // el INSERT del cliente viejo va por el cliente de Supabase (el doble emula el disparador de sim_trades): la
+  // prueba no sube el contador a mano
+  const { supabase } = await importa('lib/supabase.js')
+  let hecho = false
+  db.pausa = c => {
+    if (!(c.tabla === 'sim_sessions' && c.op === 'update' && c.payload?.status && !hecho)) return null
+    hecho = true
+    return supabase.from('sim_trades').insert({ ...tradeReto(-7000, 0), closed_at: '2025-03-04T12:00:00Z', session_id: sid }).then(() => null)
+  }
+  await b.caja.valor.reto.handleChallengePass(); await asienta(40); db.pausa = null
+  const st = advances().map(l => l.estado)
+  const ev = b.caja.valor.reto.challengeStatus?.evaluation
+  oraculo('CAS-cliente-partido', 'cierre partido del cliente viejo en la ventana de advance (saldo igual, contador +1): 409, el cliente reevalua con el trade (pnl 4.000, y el −7.000 rompe el DD diario) y no reintenta: sin fase ni hija',
+    hecho && st.join(',') === '409' && ev?.pnlTotal === 4000 && ev?.status !== 'target_reached' && madre(sid).status === 'active' && hijas(sid).length === 0 && Number(madre(sid).balance) === 111000,
+    `${foto(sid)} · reevaluado ${ev?.status} pnl ${ev?.pnlTotal}`)
+  b.caja.raiz.desmonta() }
 { // respuesta perdida: el primer advance SE CONFIRMA y la respuesta no llega; el alumno vuelve a pulsar
   const sid = 'e105-perdida'; const b = await reto(sid)
   await cierreReto(sid, 11000, 1); await asienta(20)

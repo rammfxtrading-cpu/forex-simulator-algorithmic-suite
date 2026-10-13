@@ -100,7 +100,8 @@ $c$;
     'public.sim_sessions|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
     'public.sim_sessions|sim_escrituras_v0_b_balance|CREATE TRIGGER sim_escrituras_v0_b_balance AFTER UPDATE OF balance ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_marca_balance()|17|O',
     'public.sim_sessions|sim_sessions_rev_saldo|CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_rev_saldo()|23|O',
-    'public.sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O');
+    'public.sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
+    'public.sim_trades|sim_trades_rev_saldo|CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_trades_rev_saldo()|29|O');
   v_lapuerta text := concat_ws(E'\n',
     'public.sim_sessions|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O',
     'public.sim_trades|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O');

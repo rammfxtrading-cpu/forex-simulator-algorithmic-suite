@@ -34,6 +34,16 @@
 --       fijar ni restaurar. /api/challenge/advance la lee con la sesion y
 --       condiciona su escritura a ella (CAS): dos cierres que se compensan
 --       dejan el saldo igual pero el contador no.
+--       Y (ronda 3, CTO 13-oct) cualquier escritura en sim_trades (INSERT,
+--       UPDATE, DELETE) sube en 1 el contador de su sesion (en un UPDATE que
+--       cambia session_id, el de las dos): disparador sim_trades_rev_saldo
+--       AFTER … FOR EACH ROW, funcion SECURITY DEFINER, search_path vacio,
+--       sin SQL dinamico. El disparador de sim_sessions solo acepta ese +1
+--       dentro de un disparador (pg_trigger_depth() > 1) Y con la marca de
+--       transaccion sim.rev_saldo_trades = la sesion, que pone esa funcion
+--       justo antes y borra justo despues (diseño o.16.5). Un cierre por
+--       sim_cierre_v0 sube el contador 2 (trade + saldo): es monotonico; nadie
+--       debe contar unidades, solo compararlo.
 --   sim_servicio              una fila: mantenimiento y version minima del
 --       cliente (o.5). La leen authenticated (el cliente) y service_role (los
 --       endpoints que escriben economia en el servidor, o.12); la escribe solo
@@ -153,6 +163,11 @@ BEGIN
   ELSE
     SELECT array_agg(k ORDER BY k) INTO v_cols FROM jsonb_object_keys(v_fila) k;
   END IF;
+  -- el +1 que sim_trades_rev_saldo hace en la sesion (solo rev_saldo, dentro de otro disparador) no es
+  -- una escritura de cliente: la de sim_trades ya queda registrada. No se registra (o.16.5)
+  IF TG_TABLE_NAME = 'sim_sessions' AND TG_OP = 'UPDATE' AND v_cols = ARRAY['rev_saldo'] AND pg_trigger_depth() > 1 THEN
+    RETURN NULL;
+  END IF;
   IF TG_TABLE_NAME = 'sim_sessions' THEN
     v_ses := (v_fila ->> 'id')::uuid;
     IF TG_OP = 'UPDATE' THEN
@@ -203,10 +218,35 @@ BEGIN
     NEW.rev_saldo := 0;
   ELSIF NEW.balance IS DISTINCT FROM OLD.balance THEN
     NEW.rev_saldo := OLD.rev_saldo + 1;
+  ELSIF pg_trigger_depth() > 1
+        AND current_setting('sim.rev_saldo_trades', true) IS NOT DISTINCT FROM OLD.id::text
+        AND NEW.rev_saldo IS NOT DISTINCT FROM OLD.rev_saldo + 1 THEN
+    -- el +1 de sim_trades_rev_saldo: dentro de un disparador y con su marca para ESTA sesion
+    NEW.rev_saldo := OLD.rev_saldo + 1;
   ELSE
     NEW.rev_saldo := OLD.rev_saldo;
   END IF;
   RETURN NEW;
+END
+$c$;
+
+  -- cualquier escritura de sim_trades sube 1 el contador de su sesion (ronda 3, o.16.5); en orden
+  -- de id para que dos movimientos de trades entre las mismas sesiones bloqueen en el mismo orden
+  v_rev_trades text := $c$
+DECLARE
+  v_ids uuid[];
+  v_id  uuid;
+BEGIN
+  IF TG_OP = 'INSERT' THEN v_ids := ARRAY[NEW.session_id];
+  ELSIF TG_OP = 'DELETE' THEN v_ids := ARRAY[OLD.session_id];
+  ELSE v_ids := ARRAY[OLD.session_id, NEW.session_id];
+  END IF;
+  FOR v_id IN SELECT DISTINCT x FROM unnest(v_ids) x WHERE x IS NOT NULL ORDER BY x LOOP
+    PERFORM set_config('sim.rev_saldo_trades', v_id::text, true);
+    UPDATE public.sim_sessions SET rev_saldo = rev_saldo + 1 WHERE id = v_id;
+    PERFORM set_config('sim.rev_saldo_trades', '', true);
+  END LOOP;
+  RETURN NULL;
 END
 $c$;
 
@@ -303,7 +343,8 @@ $c$;
     ARRAY['sim_escrituras_v0_solo_disparador()', 'solo', 'f', 'v', 'trigger', ''],
     ARRAY['sim_escrituras_v0_parejas(uuid)', 'parejas', 'f', 's', 'record', ''],
     ARRAY['sim_escrituras_v0_canonico(uuid)', 'canonico', 'f', 's', 'record', ''],
-    ARRAY['sim_sessions_rev_saldo()', 'rev', 'f', 'v', 'trigger', '']];
+    ARRAY['sim_sessions_rev_saldo()', 'rev', 'f', 'v', 'trigger', ''],
+    ARRAY['sim_trades_rev_saldo()', 'rev_trades', 't', 'v', 'trigger', '']];
   v_tablas    text[] := ARRAY['sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio'];
   v_secuencias text[] := ARRAY['sim_escrituras_v0_id_seq', 'sim_escrituras_v0_marcas_id_seq'];
   v_nombres   text[] := ARRAY['sim_escrituras_v0', 'sim_escrituras_v0_pkey', 'sim_escrituras_v0_id_seq',
@@ -313,9 +354,10 @@ $c$;
   v_nom_fun   text[] := ARRAY['sim_cierre_v0', 'sim_escrituras_v0_registra', 'sim_escrituras_v0_marca_balance',
                               'sim_escrituras_v0_inmutable', 'sim_escrituras_v0_solo_disparador',
                               'sim_escrituras_v0_parejas', 'sim_escrituras_v0_canonico', 'sim_escrituras_v0_puerta',
-                              'sim_sessions_rev_saldo'];
+                              'sim_sessions_rev_saldo', 'sim_trades_rev_saldo'];
   v_disp      text[] := ARRAY['sim_escrituras_v0_a', 'sim_escrituras_v0_b_balance', 'sim_escrituras_v0_inmutable_fila',
-                              'sim_escrituras_v0_inmutable_truncate', 'sim_escrituras_v0_solo_disparador', 'sim_sessions_rev_saldo'];
+                              'sim_escrituras_v0_inmutable_truncate', 'sim_escrituras_v0_solo_disparador', 'sim_sessions_rev_saldo',
+                              'sim_trades_rev_saldo'];
   v_total     integer;
 
   -- los 22 + 6 disparadores de hoy (s04 + sim-003): estado 0 (o.0, S4R6-02)
@@ -358,7 +400,8 @@ $c$;
     'public.sim_sessions|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
     'public.sim_sessions|sim_escrituras_v0_b_balance|CREATE TRIGGER sim_escrituras_v0_b_balance AFTER UPDATE OF balance ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_marca_balance()|17|O',
     'public.sim_sessions|sim_sessions_rev_saldo|CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_rev_saldo()|23|O',
-    'public.sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O');
+    'public.sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
+    'public.sim_trades|sim_trades_rev_saldo|CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_trades_rev_saldo()|29|O');
   -- lo que añade sql/sim-004a-puerta.sql: estado 2
   v_lapuerta text := concat_ws(E'\n',
     'public.sim_sessions|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O',
@@ -418,7 +461,7 @@ BEGIN
   -- la columna rev_saldo (E1R2-01) tambien es una pieza: en el estado 0 su nombre tiene que estar libre
   SELECT count(*) INTO v_n FROM pg_attribute WHERE attrelid = 'public.sim_sessions'::regclass AND attname = 'rev_saldo' AND NOT attisdropped;
   v_hay := v_hay + v_n;
-  v_total := cardinality(v_tablas) + array_length(v_funciones, 1) + 10 + 1;
+  v_total := cardinality(v_tablas) + array_length(v_funciones, 1) + 11 + 1;
   SELECT (to_regprocedure('public.sim_escrituras_v0_puerta()') IS NOT NULL)::integer
        + (SELECT count(*) FROM pg_trigger WHERE tgname = 'sim_escrituras_v0_puerta'
            AND tgrelid IN ('public.sim_sessions'::regclass, 'public.sim_trades'::regclass))::integer
@@ -530,6 +573,8 @@ BEGIN
                    'LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = '''' AS %L', v_canonico);
     EXECUTE format('CREATE FUNCTION public.sim_sessions_rev_saldo() '
                    'RETURNS trigger LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path = '''' AS %L', v_rev);
+    EXECUTE format('CREATE FUNCTION public.sim_trades_rev_saldo() '
+                   'RETURNS trigger LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = '''' AS %L', v_rev_trades);
 
     -- ── 4 · permisos: las revocaciones, antes de cualquier actividad (m.4) ─
     ALTER TABLE public.sim_escrituras_v0        ENABLE ROW LEVEL SECURITY;
@@ -568,6 +613,9 @@ BEGIN
     -- el contador (E1R2-01): BEFORE, y por el nombre DESPUES de la puerta (los BEFORE van por orden de nombre)
     CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON public.sim_sessions
       FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_rev_saldo();
+    -- toda escritura de sim_trades sube el de su sesion (AFTER: la fila ya paso la puerta, el cupo y las FK)
+    CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR UPDATE OR DELETE ON public.sim_trades
+      FOR EACH ROW EXECUTE FUNCTION public.sim_trades_rev_saldo();
     v_estado := 1;
   END IF;
 
@@ -599,7 +647,7 @@ BEGIN
                     WHERE p.oid = to_regprocedure('public.' || f) AND l.lanname = 'plpgsql'
                       AND p.prosrc = CASE v_funciones[v_n][2] WHEN 'cierre' THEN v_cierre WHEN 'registra' THEN v_registra
                                        WHEN 'marca' THEN v_marca WHEN 'inmutable' THEN v_inmutable WHEN 'solo' THEN v_solo
-                                       WHEN 'parejas' THEN v_parejas WHEN 'canonico' THEN v_canonico WHEN 'rev' THEN v_rev END
+                                       WHEN 'parejas' THEN v_parejas WHEN 'canonico' THEN v_canonico WHEN 'rev' THEN v_rev WHEN 'rev_trades' THEN v_rev_trades END
                       AND p.prosecdef = (v_funciones[v_n][3] = 't') AND p.provolatile::text = v_funciones[v_n][4]
                       AND p.prorettype::regtype::text = v_funciones[v_n][5]
                       AND p.proconfig = ARRAY['search_path=""']) THEN
@@ -763,7 +811,7 @@ select seccion, detalle from (
          || ' service_role=' || has_function_privilege('service_role', p.oid, 'EXECUTE')
          || ' · sha256 ' || left(encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex'), 16)
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and (p.proname like 'sim\_escrituras\_v0\_%' or p.proname in ('sim_cierre_v0', 'sim_sessions_rev_saldo'))
+   where n.nspname = 'public' and (p.proname like 'sim\_escrituras\_v0\_%' or p.proname in ('sim_cierre_v0', 'sim_sessions_rev_saldo', 'sim_trades_rev_saldo'))
   union all
   select 3, 'columna', 'sim_sessions.rev_saldo ' || format_type(a.atttypid, a.atttypmod) || ' · not null=' || a.attnotnull
          || ' · default ' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-') || ' · acl de columna=' || coalesce(cardinality(a.attacl), 0)

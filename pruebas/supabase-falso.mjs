@@ -59,6 +59,14 @@ function contadorSaldo(fila, antes) {
   const previo = antes.rev_saldo ?? 0
   fila.rev_saldo = igual(antes.balance, fila.balance) ? previo : previo + 1
 }
+// y el disparador sim_trades_rev_saldo (ronda 3 bis): toda escritura de sim_trades sube 1 el contador de su
+// sesion (en un UPDATE que cambia session_id, el de las dos). El SQL: pruebas/sim-004a.mjs, seccion 12
+function contadorTrades(...ids) {
+  for (const sid of new Set(ids.filter(x => x != null))) {
+    const ses = (db.tablas.sim_sessions || []).find(x => x.id === sid)
+    if (ses) ses.rev_saldo = (ses.rev_saldo ?? 0) + 1
+  }
+}
 // columnas de select: '*', 'col', y 'alias:col::text' (el cast de PostgREST; un numero sale como su texto)
 const proyecta = (f, cols) => {
   if (!cols || cols.trim() === '*') return f
@@ -152,16 +160,20 @@ class Q {
       if (res.some(n => filas.some(f => f.id === n.id))) return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint "${this.tabla}_pkey"` }, count: null }
       if (this.tabla === 'sim_sessions') for (const n of res) contadorSaldo(n, null)
       filas.push(...res)
+      if (this.tabla === 'sim_trades') for (const n of res) contadorTrades(n.session_id)
       res = res.map(copia)
     } else {
       let sel = filas.filter(f => this.filtros.every(g => g(f)))
       if (this.op === 'update') for (const f of sel) {
         const antes = this.tabla === 'sim_sessions' ? { balance: f.balance, rev_saldo: f.rev_saldo } : null
+        const sesionAntes = f.session_id
         Object.assign(f, copia(this.payload))
         if (antes) contadorSaldo(f, antes)
+        if (this.tabla === 'sim_trades') contadorTrades(sesionAntes, f.session_id)
       }
       else if (this.op === 'delete') {
         db.tablas[this.tabla] = filas.filter(f => !sel.includes(f))
+        if (this.tabla === 'sim_trades') for (const f of sel) contadorTrades(f.session_id)
         // db.cascadas (OPCIONAL, lo declara la prueba): { padre: [[hija, columna], ...] }
         // emula ON DELETE CASCADE de FKs que constan en produccion. Sin declararlas,
         // el doble NO tiene cascadas (pruebas/LEEME.md, H07).
@@ -342,6 +354,7 @@ const RPCS = {
     // ronda 2 (E1-04): solo sobre una sesion activa (status NULL = activa); el SQL lo prueba pruebas/sim-004a.mjs (E7-sesion-cerrada, E7-carrera-fase)
     if ((ses.status ?? 'active') !== 'active') return { error: { code: 'P0001', message: `sim_cierre_v0: sesion cerrada: la sesion ${a.p_session_id} ya no esta activa (${ses.status})` } }
     ;(db.tablas.sim_trades ??= []).push({ created_at: new Date().toISOString(), ...copia(a.p_trade), session_id: a.p_session_id })
+    contadorTrades(a.p_session_id)   // el trade (+1); el saldo, abajo (+1 si cambia)
     const antes = { balance: ses.balance, rev_saldo: ses.rev_saldo }
     ses.balance = a.p_balance
     contadorSaldo(ses, antes)

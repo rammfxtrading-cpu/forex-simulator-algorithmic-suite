@@ -181,9 +181,9 @@ async function aba(h, c, orden, { status } = {}) {
 }
 for (const [k, c] of Object.entries(RONDA3)) for (const orden of ['-+', '+-']) {
   const x = await aba(adv, c, orden)
-  oraculo(`R3-ABA-${k}-${orden}`, `${k}, ${orden === '-+' ? '−7.000 y +7.000' : '+7.000 y −7.000'} guardados mientras advance espera (saldo final identico): 409, sin fase ni hija; el contador subio 2`,
+  oraculo(`R3-ABA-${k}-${orden}`, `${k}, ${orden === '-+' ? '−7.000 y +7.000' : '+7.000 y −7.000'} guardados mientras advance espera (saldo final identico): 409, sin fase ni hija; el contador subio 4 (2 por cierre: trade y saldo)`,
     x.retenido && x.cierres === 'guardado,guardado' && x.trades === 3 && Number(x.balance) === Number(c.ses.balance) && x.estado === 409 && x.code === 'saldo_cambiado'
-    && x.status === 'active' && x.hijas === 0 && x.rev === '0→2', JSON.stringify(x))
+    && x.status === 'active' && x.hijas === 0 && x.rev === '0→4', JSON.stringify(x))
 }
 { // mutante: advance sin el filtro rev_saldo → el ABA concede
   const p = RUTAS.advance, txt = readFileSync(path.join(REPO, p), 'utf8')
@@ -231,5 +231,32 @@ for (const [k, c] of Object.entries(RONDA3)) {
   const otras = db.log.filter((x, j) => j > iSes && j < iUpd && x.tabla === 'sim_sessions' && x.op === 'select').length
   oraculo('R3-orden', 'advance: lectura de la sesion (balance::text, rev_saldo, status) → lectura del historial → UPDATE con CAS, en ese orden y sin otra lectura de la sesion en medio',
     res.estado === 200 && iSes > -1 && iHist > iSes && iUpd > iHist && otras === 0, db.log.map(x => x.tabla + ':' + x.op).join(' → '))
+}
+
+titulo('5 · ronda 3 bis: toda escritura de sim_trades sube el contador (CTO 13-oct)')
+{ // el cliente viejo, cierre partido (el trade llega, el saldo no) en la ventana de advance: 409
+  const { supabase } = await importa('lib/supabase.js')
+  for (const [k, c] of Object.entries(RONDA3)) {
+    montaReto(c)
+    const g = puerta(); let retenido = false
+    db.pausa = ctx => ctx.tabla === 'sim_sessions' && ctx.op === 'update' && !retenido ? (retenido = true, g.p) : null
+    const r = pideAdvance(adv, c); await asienta(40)
+    const rev0 = madreCas().rev_saldo, saldo0 = madreCas().balance
+    const ins = await supabase.from('sim_trades').insert({ id: idR3(), session_id: 'cas', user_id: A, pair: 'EUR/USD', side: 'BUY', lots: 1, pnl: -7000, result: 'LOSS', closed_at: '2025-03-05T12:00:00Z' })
+    g.abrir(); const res = await r; db.pausa = null
+    oraculo(`R3b-partido-${k}`, `${k}: el cliente viejo deja un cierre partido (trade −7.000 sin saldo) mientras advance espera: el contador sube y advance responde 409 sin fase ni hija`,
+      retenido && !ins.error && madreCas().balance === saldo0 && madreCas().rev_saldo === rev0 + 1 && res.estado === 409 && madreCas().status === 'active' && hijasCas() === 0,
+      JSON.stringify({ estado: res.estado, rev: `${rev0}→${madreCas().rev_saldo}`, saldo: madreCas().balance, status: madreCas().status }))
+  }
+}
+{ // UPDATE y DELETE de un trade tambien (el doble emula el disparador; el SQL, sim-004a §12)
+  const c = RONDA3.pass; montaReto(c)
+  const { supabase } = await importa('lib/supabase.js')
+  const t = db.tablas.sim_trades.find(x => x.session_id === 'cas')
+  const r0 = madreCas().rev_saldo
+  await supabase.from('sim_trades').update({ pnl: 11001 }).eq('id', t.id)
+  const r1 = madreCas().rev_saldo
+  await supabase.from('sim_trades').delete().eq('id', t.id)
+  oraculo('R3b-update-delete', 'UPDATE y DELETE de un trade suben el contador de su sesion 1 cada uno', r1 === r0 + 1 && madreCas().rev_saldo === r0 + 2, `${r0} → ${r1} → ${madreCas().rev_saldo}`)
 }
 fin()

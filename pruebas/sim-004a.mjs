@@ -147,9 +147,9 @@ try {
   const ap1 = pgx(PREP)
   oraculo('E1-aplica', 'la preparatoria se aplica entera como pgx y acaba en FIN | sim-004a-preparatoria aplicada',
     ap1.ok && fin1(ap1) === 'FIN|sim-004a-preparatoria aplicada', err1(ap1) || fin1(ap1))
-  oraculo('E1-informe', 'informe: estado «registro instalado», 3 tablas con RLS, 8 funciones (con la del contador), la columna rev_saldo bigint not null default 0 sin ACL, sim_servicio sin mantenimiento y version 1',
+  oraculo('E1-informe', 'informe: estado «registro instalado», 3 tablas con RLS, 9 funciones (con las dos del contador), la columna rev_saldo bigint not null default 0 sin ACL, sim_servicio sin mantenimiento y version 1',
     /^estado\|registro instalado$/m.test(ap1.out) && (ap1.out.match(/^tabla\|.* rls=true/gm) || []).length === 3
-    && (ap1.out.match(/^funcion\|/gm) || []).length === 8 && /^columna\|sim_sessions\.rev_saldo bigint · not null=true · default 0 · acl de columna=0$/m.test(ap1.out) && /^sim_servicio\|mantenimiento=false · version_minima=1$/m.test(ap1.out), ap1.out.split('\n').length + ' lineas')
+    && (ap1.out.match(/^funcion\|/gm) || []).length === 9 && /^columna\|sim_sessions\.rev_saldo bigint · not null=true · default 0 · acl de columna=0$/m.test(ap1.out) && /^sim_servicio\|mantenimiento=false · version_minima=1$/m.test(ap1.out), ap1.out.split('\n').length + ' lineas')
   const foto1 = foto()
   oraculo('E1-rev-sin-reescritura', 'la columna rev_saldo se añade SIN reescribir sim_sessions (mismo relfilenode) y las filas de antes valen 0',
     uno(`select relfilenode from pg_class where oid = 'public.sim_sessions'::regclass`) === nodo0 && uno(`select count(*) filter (where rev_saldo <> 0)||'/'||count(*) from public.sim_sessions`) === '0/5',
@@ -300,10 +300,11 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
       unnest(array['sim_escrituras_v0_id_seq','sim_escrituras_v0_marcas_id_seq']) s, unnest(array['USAGE','SELECT','UPDATE']) p
     union all select r||':'||f||':EXECUTE='||has_function_privilege(r, ('public.'||f)::regprocedure, 'EXECUTE') from unnest(array[${ROLES.map(L)}]) r,
       unnest(array['sim_cierre_v0(uuid,numeric,bigint,jsonb)','sim_escrituras_v0_registra()','sim_escrituras_v0_marca_balance()','sim_escrituras_v0_inmutable()',
-                   'sim_escrituras_v0_solo_disparador()','sim_escrituras_v0_parejas(uuid)','sim_escrituras_v0_canonico(uuid)']) f) m`).split(' ')
+                   'sim_escrituras_v0_solo_disparador()','sim_escrituras_v0_parejas(uuid)','sim_escrituras_v0_canonico(uuid)',
+                   'sim_sessions_rev_saldo()','sim_trades_rev_saldo()']) f) m`).split(' ')
   const verdaderos = matriz.filter(x => x.endsWith('=true'))
-  oraculo('E5-matriz', 'de 4 roles × (3 tablas × 7 + 2 secuencias × 3 + 7 funciones): solo SELECT de sim_servicio (authenticated y service_role, o.12) y EXECUTE de sim_cierre_v0 (authenticated)',
-    matriz.length === 4 * (21 + 6 + 7) && verdaderos.join(' ') === 'authenticated:sim_cierre_v0(uuid,numeric,bigint,jsonb):EXECUTE=true authenticated:sim_servicio:SELECT=true service_role:sim_servicio:SELECT=true',
+  oraculo('E5-matriz', 'de 4 roles × (3 tablas × 7 + 2 secuencias × 3 + 9 funciones, las dos del contador incluidas): solo SELECT de sim_servicio (authenticated y service_role, o.12) y EXECUTE de sim_cierre_v0 (authenticated)',
+    matriz.length === 4 * (21 + 6 + 9) && verdaderos.join(' ') === 'authenticated:sim_cierre_v0(uuid,numeric,bigint,jsonb):EXECUTE=true authenticated:sim_servicio:SELECT=true service_role:sim_servicio:SELECT=true',
     `${matriz.length} casillas · verdaderas: ${verdaderos.join(' ')}`)
   const acl = uno(`select count(*) from (
     select a.grantee from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
@@ -481,6 +482,21 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
   oraculo('E8-sin-marca', 'quitar la marca de balance cambia el hash', sinMarca && sinMarca !== h0)
 
   // ═══════════════════════════════════════════════════════════════════════
+  // el contador de sesiones con la condicion del +1 de sim_trades relajada: acepta cualquier subida
+  const MUT_ACEPTA = `create or replace function public.sim_sessions_rev_saldo() returns trigger language plpgsql security invoker set search_path = '' as $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.rev_saldo := 0;
+  ELSIF NEW.balance IS DISTINCT FROM OLD.balance THEN
+    NEW.rev_saldo := OLD.rev_saldo + 1;
+  ELSIF NEW.rev_saldo > OLD.rev_saldo THEN
+    NULL;
+  ELSE
+    NEW.rev_saldo := OLD.rev_saldo;
+  END IF;
+  RETURN NEW;
+END
+$$;`
   titulo('9 · la guarda final del catalogo (m.5.5, S4R5-02, S4R6-02) y el control funcional aparte')
   const MUTANTES = [
     ['B renombrado para ordenar ANTES de A', `alter trigger sim_escrituras_v0_b_balance on public.sim_sessions rename to sim_escrituras_v0_0_balance;`],
@@ -527,7 +543,10 @@ $$;`],
     ['rev_saldo sin NOT NULL', `alter table public.sim_sessions alter column rev_saldo drop not null;`],
     ['rev_saldo sin DEFAULT', `alter table public.sim_sessions alter column rev_saldo drop default;`],
     ['rev_saldo de otro tipo', `alter table public.sim_sessions alter column rev_saldo type integer;`],
-    ['UPDATE de columna de rev_saldo a authenticated', `grant update (rev_saldo) on public.sim_sessions to authenticated;`]]
+    ['UPDATE de columna de rev_saldo a authenticated', `grant update (rev_saldo) on public.sim_sessions to authenticated;`],
+    // ronda 3 bis (CTO 13-oct): las escrituras de sim_trades tambien suben el contador
+    ['sin el disparador de sim_trades', `drop trigger sim_trades_rev_saldo on public.sim_trades;`],
+    ['el contador de sesiones acepta cualquier incremento', MUT_ACEPTA]]
   monta('g')
   pgx(PREP, 'g')
   for (const [desc, q] of MUTANTES) {
@@ -622,14 +641,131 @@ rollback;`, 'g')
     f1.ok && f2.ok && f3.ok && rev() === '3', `${rev()} ${err1(f1)}${err1(f2)}${err1(f3)}`)
   const T = (id, pnl) => JSON.stringify({ id, user_id: A, pair: 'EURUSD', side: 'BUY', lots: '1.00', entry_price: '1.10000', exit_price: '1.10100', pnl, result: 'WIN', opened_at: '2026-01-05T10:00:00Z', closed_at: '2026-01-05T11:00:00Z' })
   const c1 = nuevo(`select public.sim_cierre_v0('${SA}', 10031, 1767700000, ${L(T(u(950), '30.00'))});`, A, 'rv')
-  oraculo('E11-cierre-sube', 'un cierre por sim_cierre_v0 sube el contador 1', c1.ok && rev() === '4', err1(c1) || rev())
+  oraculo('E11-cierre-sube', 'un cierre por sim_cierre_v0 sube el contador 2 (el trade y el saldo; ronda 3: monotonico, no se cuentan unidades)', c1.ok && rev() === '5', err1(c1) || rev())
   const pz = pgx(PUERTA, 'rv')
   const vp = viejo(`update public.sim_sessions set balance = 1 where id = '${SA}';`, A, 'rv')
   const np = nuevo(`update public.sim_sessions set balance = 10032 where id = '${SA}';`, A, 'rv')
   oraculo('E11-puerta', 'con la puerta: el cliente viejo se rechaza y el contador no se mueve; el firmado pasa y sube 1 (la puerta va antes por el nombre)',
-    pz.ok && !vp.ok && /sim_escrituras_v0_puerta/.test(err1(vp)) && np.ok && rev() === '5', `${err1(pz)} · ${err1(vp)} · ${rev()}`)
+    pz.ok && !vp.ok && /sim_escrituras_v0_puerta/.test(err1(vp)) && np.ok && rev() === '6', `${err1(pz)} · ${err1(vp)} · ${rev()}`)
   const reP = pgx(PREP, 'rv')
-  oraculo('E11-reejecuta', 'preparatoria y puerta otra vez en el estado 2 con el contador en uso: FIN y nada cambia', reP.ok && pgx(PUERTA, 'rv').ok && rev() === '5', err1(reP))
+  oraculo('E11-reejecuta', 'preparatoria y puerta otra vez en el estado 2 con el contador en uso: FIN y nada cambia', reP.ok && pgx(PUERTA, 'rv').ok && rev() === '6', err1(reP))
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  titulo('12 · toda escritura de sim_trades sube el contador (ronda 3 bis, CTO 13-oct; o.16.5)')
+  {
+  const { spawn } = await import('node:child_process')
+  const prepara = db => { monta(db); const a = pgx(PREP, db); if (!a.ok) throw new Error('prep ' + db + ': ' + err1(a)) }
+  prepara('tr')
+  const rev = (sid, db = 'tr') => uno(`select rev_saldo from public.sim_sessions where id = '${sid}'`, db)
+  const saldo = (sid, db = 'tr') => uno(`select balance::text from public.sim_sessions where id = '${sid}'`, db)
+  let nT = 0
+  const tid = () => u(1200 + (++nT))
+  const insTrade = (sid, pnl, id = tid()) => `insert into public.sim_trades (id, session_id, user_id, pair, side, entry_price, lots, pnl, opened_at, closed_at)
+    values ('${id}', '${sid}', '${A}', 'EURUSD', 'BUY', 1.1, 1, ${pnl}, '2026-01-05T10:00:00Z', '2026-01-05T11:00:00Z');`
+  // el cliente viejo, cierre partido: el trade llega y el UPDATE del saldo no
+  const r0 = rev(SA), s0 = saldo(SA)
+  const T1 = tid(); const p1 = viejo(insTrade(SA, -700, T1), A, 'tr')
+  oraculo('E12-insert', 'INSERT de un trade (cliente viejo, cierre partido: sin saldo): el contador de su sesion sube 1 y el saldo no cambia', p1.ok && rev(SA) === String(Number(r0) + 1) && saldo(SA) === s0, `${r0} → ${rev(SA)} ${err1(p1)}`)
+  const r1 = rev(SA)
+  const p2 = viejo(`update public.sim_trades set pnl = -800 where id = '${T1}';`, A, 'tr')
+  oraculo('E12-update', 'UPDATE de un trade: +1', p2.ok && rev(SA) === String(Number(r1) + 1), `${r1} → ${rev(SA)} ${err1(p2)}`)
+  const r2a = rev(SA), r2b = rev(SA2)
+  const p3 = viejo(`update public.sim_trades set session_id = '${SA2}' where id = '${T1}';`, A, 'tr')
+  oraculo('E12-update-sesion', 'UPDATE que cambia session_id: +1 en las DOS sesiones', p3.ok && rev(SA) === String(Number(r2a) + 1) && rev(SA2) === String(Number(r2b) + 1), `${r2a}→${rev(SA)} · ${r2b}→${rev(SA2)} ${err1(p3)}`)
+  const r3 = rev(SA2)
+  const p4 = viejo(`delete from public.sim_trades where id = '${T1}';`, A, 'tr')
+  oraculo('E12-delete', 'DELETE de un trade: +1 en su sesion', p4.ok && rev(SA2) === String(Number(r3) + 1), `${r3} → ${rev(SA2)} ${err1(p4)}`)
+  const r4 = rev(SA)
+  const p5 = escribe({ rol: 'service_role' }, insTrade(SA, 5), 'tr')
+  oraculo('E12-service-role', 'INSERT de service_role: +1 tambien', p5.ok && rev(SA) === String(Number(r4) + 1), `${r4} → ${rev(SA)} ${err1(p5)}`)
+  // el +1 no se imita: ni con la marca de transaccion puesta a mano (fuera de un disparador)
+  const r5 = rev(SA)
+  const imitas = [
+    nuevo(`update public.sim_sessions set rev_saldo = rev_saldo + 1 where id = '${SA}';`, A, 'tr'),
+    nuevo(`select set_config('sim.rev_saldo_trades', '${SA}', true) \\g /dev/null
+update public.sim_sessions set rev_saldo = rev_saldo + 1 where id = '${SA}';`, A, 'tr'),
+    escribe({ rol: 'service_role' }, `select set_config('sim.rev_saldo_trades', '${SA}', true) \\g /dev/null
+update public.sim_sessions set rev_saldo = rev_saldo + 1 where id = '${SA}';`, 'tr'),
+    escribe({ rol: 'service_role' }, `update public.sim_sessions set rev_saldo = 0 where id = '${SA}';`, 'tr')]
+  oraculo('E12-no-se-imita', 'authenticated y service_role intentan el +1 (con y sin la marca sim.rev_saldo_trades puesta a mano) o restaurarlo a 0: sin efecto',
+    imitas.every(x => x.ok) && rev(SA) === r5, `${r5} → ${rev(SA)} · ${imitas.map(err1).filter(Boolean).join(' | ')}`)
+  // el registro: el +1 anidado no es una escritura de cliente (no se registra); el trade si
+  const k0 = ultimo('tr')
+  const p6 = viejo(insTrade(SA, 7), A, 'tr')
+  const fil = desde(k0, 'tr')
+  oraculo('E12-registro', 'el registro: el INSERT del trade queda; el UPDATE anidado de la sesion (solo rev_saldo) no se registra y no hay marca',
+    p6.ok && fil.length === 1 && /^sim_trades INSERT /.test(fil[0]), fil.join(' / ') || err1(p6))
+  // el ABA del cliente viejo: advance lee, llega un cierre partido, el CAS no pasa
+  const casSQL = (sid, l, db = 'tr') => escribe({ rol: 'service_role' }, `update public.sim_sessions set status = 'passed_phase' where id = '${sid}' and rev_saldo = ${l.rev} and balance = '${l.balance}' and (status is null or status = 'active') returning status;`, db)
+  const lee = (sid, db = 'tr') => { const [b, r] = uno(`select balance::text||'|'||rev_saldo from public.sim_sessions where id = '${sid}'`, db).split('|'); return { balance: b, rev: r } }
+  const l0 = lee(SA2)
+  const p7 = viejo(insTrade(SA2, -7000), A, 'tr')
+  const c7 = casSQL(SA2, l0)
+  oraculo('E12-partido-cas', 'cierre partido del cliente viejo entre la lectura de advance y su UPDATE (saldo igual): el CAS no afecta a ninguna fila',
+    p7.ok && c7.ok && !c7.out.includes('passed_phase') && saldo(SA2) === l0.balance, `${JSON.stringify(l0)} → ${JSON.stringify(lee(SA2))} · ${c7.out}${err1(c7)}`)
+  // mutantes funcionales (cada uno en su base): sin ellos, el oraculo de arriba lo ve
+  prepara('trm1'); pg.psql('drop trigger sim_trades_rev_saldo on public.sim_trades;', 'trm1')
+  const lm = lee(SA, 'trm1'); viejo(insTrade(SA, -7000), A, 'trm1'); const cm = casSQL(SA, lm, 'trm1')
+  oraculo('E12-MUT-sin-disparador', 'mutante sin el disparador de sim_trades: el cierre partido pasa el CAS (passed_phase) → E12-partido-cas lo ve', cm.out.includes('passed_phase'), cm.out + err1(cm))
+  prepara('trm2'); const mm = pg.psql(MUT_ACEPTA, 'trm2')
+  const rm0 = rev(SA, 'trm2'); nuevo(`update public.sim_sessions set rev_saldo = rev_saldo + 5 where id = '${SA}';`, A, 'trm2')
+  oraculo('E12-MUT-acepta', 'mutante: el disparador de sesiones acepta cualquier incremento → un cliente fija el contador (+5) → E12-no-se-imita lo ve', mm.ok && rev(SA, 'trm2') === String(Number(rm0) + 5), `${rm0} → ${rev(SA, 'trm2')} ${err1(mm)}`)
+
+  // bloqueos con DOS conexiones (o.16.5): ningun interbloqueo nuevo
+  titulo('12b · bloqueos: dos conexiones en PostgreSQL')
+  const txt = ({ rol = 'authenticated', sub = A, cliente = FIRMADO } = {}, q) => `begin; set local role ${rol}; select set_config('request.jwt.claims', ${L(JSON.stringify({ role: rol, sub }))}, true), set_config('request.jwt.claim.sub', ${L(sub)}, true), set_config('request.headers', ${L(JSON.stringify(cliente ? { 'x-sim-cliente': cliente } : { 'user-agent': 'x' }))}, true) \\g /dev/null
+${q}
+commit;`
+  let nf = 0
+  const async = (sql, db = 'tr') => new Promise(res => {
+    const f = path.join(pg.dir, `par${++nf}.sql`); writeFileSync(f, sql)
+    const h = spawn(path.join(BIN, 'psql'), ['-h', pg.dir, '-p', pg.puerto, '-U', 'postgres', '-X', '-q', '-tA', '-v', 'ON_ERROR_STOP=1', '-d', db, '-f', f], { env: { PATH: process.env.PATH, LC_ALL: 'en_US.UTF-8', LANG: 'en_US.UTF-8' } })
+    let out = '', err = ''; h.stdout.on('data', d => { out += d }); h.stderr.on('data', d => { err += d })
+    h.on('exit', c => res({ ok: c === 0, out: out.trim(), err: err.trim() }))
+  })
+  const par = async (sqlA, sqlB, db = 'tr') => {
+    const a = async(sqlA, db); await new Promise(r => setTimeout(r, 400))
+    const t0 = Date.now(); const b = await async(sqlB, db); const espera = Date.now() - t0
+    return { a: await a, b, espera }
+  }
+  const cierreSQL = (sid, saldoN, id, pnl) => `select public.sim_cierre_v0('${sid}', ${saldoN}, 1767700000, ${L(JSON.stringify({ id, user_id: A, pair: 'EURUSD', side: 'BUY', lots: '1.00', entry_price: '1.10000', exit_price: '1.10100', pnl, result: 'WIN', opened_at: '2026-01-05T10:00:00Z', closed_at: '2026-01-05T11:00:00Z' }))}::jsonb) \\g /dev/null`
+  const interbloqueo = x => /deadlock detected/.test(x.a.err + x.b.err)
+  {
+    const s0 = Number(saldo(SA)), q0 = Number(rev(SA))
+    const x = await par(txt({}, `${cierreSQL(SA, s0 + 10, u(1301), '10.00')}\nselect pg_sleep(1.2) \\g /dev/null`), txt({}, cierreSQL(SA, s0 + 30, u(1302), '20.00')))
+    oraculo('E12b-dos-cierres', 'dos sim_cierre_v0 a la vez en la misma sesion: el segundo espera al primero (≥ 0,8 s), los dos se guardan, sin interbloqueo; contador +4',
+      x.a.ok && x.b.ok && !interbloqueo(x) && x.espera >= 800 && Number(rev(SA)) === q0 + 4, `espera ${x.espera} ms · rev ${q0}→${rev(SA)} · ${x.a.err}${x.b.err}`)
+  }
+  {
+    const s0 = Number(saldo(SA)), q0 = Number(rev(SA))
+    const x = await par(txt({ cliente: null }, `${insTrade(SA, 3, u(1303))}\nselect pg_sleep(1.2) \\g /dev/null`), txt({}, cierreSQL(SA, s0 + 4, u(1304), '4.00')))
+    oraculo('E12b-viejo-y-cierre', 'el INSERT del cliente viejo (que ahora bloquea la sesion) y un sim_cierre_v0 a la vez: el cierre espera, los dos se guardan, sin interbloqueo; contador +3',
+      x.a.ok && x.b.ok && !interbloqueo(x) && x.espera >= 800 && Number(rev(SA)) === q0 + 3, `espera ${x.espera} ms · rev ${q0}→${rev(SA)} · ${x.a.err}${x.b.err}`)
+  }
+  {
+    const l = lee(SA)
+    const x = await par(txt({}, `${cierreSQL(SA, Number(l.balance) + 1, u(1305), '1.00')}\nselect pg_sleep(1.2) \\g /dev/null`),
+      txt({ rol: 'service_role', cliente: null }, `update public.sim_sessions set status = 'passed_phase' where id = '${SA}' and rev_saldo = ${l.rev} and balance = '${l.balance}' and (status is null or status = 'active') returning status;`))
+    oraculo('E12b-cierre-y-advance', 'el CAS de advance mientras un cierre tiene la fila: espera, vuelve a mirar el contador y no actualiza nada; sin interbloqueo',
+      x.a.ok && x.b.ok && !interbloqueo(x) && x.espera >= 800 && !x.b.out.includes('passed_phase') && uno(`select status from public.sim_sessions where id = '${SA}'`, 'tr') === 'active', `espera ${x.espera} · ${x.b.out}${x.b.err}`)
+  }
+  {
+    const TA = u(1306), TB = u(1307)
+    escribe({ rol: 'service_role' }, insTrade(SA, 1, TA) + insTrade(SA2, 1, TB), 'tr')
+    const q0 = [Number(rev(SA)), Number(rev(SA2))]
+    const x = await par(txt({ rol: 'service_role', cliente: null }, `update public.sim_trades set session_id = '${SA2}' where id = '${TA}';\nselect pg_sleep(1.2) \\g /dev/null`),
+      txt({ rol: 'service_role', cliente: null }, `update public.sim_trades set session_id = '${SA}' where id = '${TB}';`))
+    oraculo('E12b-cruzados', 'dos trades movidos entre las mismas dos sesiones en sentidos opuestos a la vez: sin interbloqueo (las sesiones se bloquean en orden de id); +2 en cada una',
+      x.a.ok && x.b.ok && !interbloqueo(x) && Number(rev(SA)) === q0[0] + 2 && Number(rev(SA2)) === q0[1] + 2, `espera ${x.espera} · ${q0} → ${rev(SA)},${rev(SA2)} · ${x.a.err}${x.b.err}`)
+  }
+  {
+    const l = lee(SA)
+    const x = await par(txt({ rol: 'service_role', cliente: null }, `delete from public.sim_sessions where user_id = '${A}';\nselect pg_sleep(1.2) \\g /dev/null`),
+      txt({}, cierreSQL(SA, Number(l.balance) + 1, u(1308), '1.00')))
+    oraculo('E12b-borrado-y-cierre', 'el borrado de las sesiones del alumno (como el hub, en cascada a sus trades) y un cierre a la vez: el cierre espera y falla limpio (la sesion ya no esta), sin interbloqueo',
+      x.a.ok && !x.b.ok && !interbloqueo(x) && /no existe o no es tuya|violates foreign key/.test(x.b.err), `espera ${x.espera} · ${x.a.err} · ${x.b.err.split('\n').find(l => /ERROR/.test(l)) ?? x.b.err}`)
+  }
   }
 } finally {
   pg.cierra()
