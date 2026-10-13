@@ -1659,3 +1659,219 @@ Después van las parejas, como en n.2. **Editar cualquier valor invalida la reso
 - una marca en una transacción ajena (insertada con la guarda retirada) → anomalía → **aborto**;
 - el borrado en cascada → pasa con 2;
 - el disparador del dueño en otra tabla → **documentado como hueco** (punto 3) hasta que el CTO decida la propuesta.
+
+## o · decisiones para la etapa 1 (CTO, 13-oct)
+
+**Origen:**
+- `revisiones-suite/2026-10-12-astra-sim-004-diseno-6.md`: «diseño apto para empezar la etapa 1», con dos precisiones medias, S4R6-01 y S4R6-02;
+- las respuestas del CTO (13-oct) a las 8 preguntas que hice al empezar la etapa 1.
+
+**Esta sección prevalece sobre todo lo anterior.** El cuerpo no se reescribe.
+
+### o.0 Las dos precisiones de Astra (ronda 6)
+
+**S4R6-01 · El texto canónico con todos los campos y un encoding inequívoco** (amplía n.7.1; se ensaya en la etapa 4).
+
+**Campos, en este orden fijo, por cada fila «sin firma de alumno» de la sesión.** Son todas las columnas de `sim_escrituras_v0`, más las de su marca:
+
+| # | Campo | Origen |
+|---|---|---|
+| 1 | `id` | registro |
+| 2 | `session_id` | registro |
+| 3 | **`user_id`** (faltaba en n.7.1) | registro |
+| 4 | `tabla` | registro |
+| 5 | `operacion` | registro |
+| 6 | `xact` | registro |
+| 7 | `cliente` | registro |
+| 8 | `rol_jwt` | registro |
+| 9 | `rol_guc` | registro |
+| 10 | `columnas` | registro |
+| 11 | `delta` | registro |
+| 12 | `trade_id` | registro |
+| 13 | `pnl` | registro |
+| 14 | `en` | registro |
+| 15 | id de la marca de `balance` | marcas (NULL si no hay) |
+| 16 | `xact` de la marca | marcas (NULL si no hay) |
+
+- **Que no quede ningún campo fuera:** la guarda final de la preparatoria compara la lista **exacta** de columnas del registro y de las marcas (nombre, tipo, NOT NULL y orden). Una columna nueva aborta la migración hasta que la función canónica la incluya, con una versión nueva.
+- **Encoding: JSON, construido a mano y en orden fijo, nunca a partir de un `jsonb`** (que reordena las claves):
+  - cada fila es un array JSON de 16 elementos en el orden de la tabla;
+  - cada valor escalar es una **cadena JSON** (`to_json(texto)`) o el literal **`null`**, así que NULL y la cadena vacía no se confunden;
+  - **`numeric`:** el texto de `trim_scale(valor)`. Dos valores iguales dan el mismo texto, y uno distinto da otro;
+  - **hora:** `to_char(en AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, UTC con microsegundos;
+  - **lista de columnas:** array JSON de cadenas, ordenado por nombre (`[]` si está vacía);
+  - **el texto entero:** `{"version":"…","sesion":"…","filas":[…],"parejas":[[u,i],…]}`, con las filas por id ascendente y las parejas en el orden en que se forman (o.4);
+  - **la versión** va dentro del texto: `sim-escrituras-canonico@1`.
+- **Hash:** `encode(sha256(convert_to(texto, 'UTF8')), 'hex')`.
+- **Ensayo en la etapa 1** (adelantado): cambiar **cada uno de los 16 campos por separado** cambia el hash. Un NULL frente a una cadena vacía, también. Reordenar la entrada sin cambiar filas, no.
+
+**S4R6-02 · Listas exactas de disparadores por estado.**
+
+- **Se compara el multiconjunto completo de disparadores de cada tabla:**
+  - los internos de una FK se identifican por **(restricción, función, `tgtype`)**, porque su nombre lleva un OID;
+  - los demás, por **(nombre, función, `tgtype`)**;
+  - **todos con `tgenabled = 'O'`**.
+
+  No se admite ningún disparador de más ni de menos.
+- **Lo que tiene que haber hoy** (s04 + sim-003, sacado del montaje literal):
+  - **`sim_sessions`:** el cupo, `trg_enforce_sim_session_limit` (`enforce_sim_session_limit`, `tgtype` 7, BEFORE INSERT ROW). Además, los internos:
+    - de su propio lado: `sim_sessions_user_id_fkey`, `sim_sessions_user_id_perfil_fkey` y `sim_sessions_challenge_parent_id_fkey`, con `check_ins` 5 y `check_upd` 17;
+    - como tabla referenciada: `sim_sessions_challenge_parent_id_fkey` (`setnull_del` 9), y `sim_trades_session_id_fkey`, `session_drawings_session_id_fkey`, `session_chart_config_session_id_fkey`, `sim_recibos_session_id_fkey`, `sim_eventos_session_id_fkey` y `sim_arrendamientos_session_id_fkey` (`cascade_del` 9);
+    - y en todas ellas, `noaction_upd` 17.
+
+    En total, **22**.
+  - **`sim_trades`:** los internos de `sim_trades_session_id_fkey`, `sim_trades_user_id_fkey` y `sim_trades_evento_id_fkey` (`check_ins` 5 y `check_upd` 17). En total, **6**.
+- **Los estados, con su lista:**
+
+| Estado | `sim_sessions` | `sim_trades` | `sim_escrituras_v0` | `sim_escrituras_v0_marcas` |
+|---|---|---|---|---|
+| **0 · antes de la preparatoria** | los 22 de hoy | los 6 de hoy | no existe | no existe |
+| **1 · registro instalado** | los 22 + `sim_escrituras_v0_a` (AFTER INSERT OR UPDATE OR DELETE ROW, 29) + `sim_escrituras_v0_b_balance` (AFTER UPDATE OF balance ROW, 17) | los 6 + `sim_escrituras_v0_a` (29) | `sim_escrituras_v0_inmutable_fila` (BEFORE UPDATE OR DELETE ROW, 27), `sim_escrituras_v0_inmutable_truncate` (BEFORE TRUNCATE STATEMENT, 34), `sim_escrituras_v0_solo_disparador` (BEFORE INSERT ROW, 7) | las mismas tres |
+| **2 · registro + puerta** | las del estado 1 + `sim_escrituras_v0_puerta` (BEFORE INSERT OR UPDATE OR DELETE ROW, 31) | las del estado 1 + `sim_escrituras_v0_puerta` (31) | igual que en 1 | igual que en 1 |
+| **3 · corte, guarda de entrada** | exactamente el estado 2 | exactamente el estado 2 | igual que en 1 | igual que en 1 |
+| **3′ · corte, antes de retirar el registro** | el estado 2 − el cupo (h.6) + la guarda de h.7, con el nombre que fije sim-004 | el estado 2 + la guarda de h.7 | igual que en 1 | igual que en 1 |
+| **4 · final del corte** | la guarda de h.7 + los internos, con `sim_sessions_challenge_parent_id_fkey` ya en CASCADE (`cascade_del` en lugar de `setnull_del`, c.5) | la guarda de h.7 + los 6 internos | no existe | no existe |
+
+  - **Los estados 0, 1 y 2 son de la etapa 1** y los comprueban la preparatoria y la puerta.
+  - **Los estados 3, 3′ y 4 son de la etapa 4.** Allí se fijan, en sim-004, el nombre de la guarda de h.7 y su `tgtype`.
+  - **Propuesta, no decidida (no afecta a la etapa 1):** el corte retira la puerta junto con A y B. La razón es que tras el corte la guarda de h.7 rechaza toda escritura de `authenticated`, que es más de lo que hace la puerta.
+- **La reejecución se ensaya en los dos estados preparatorios:**
+  - en el 1, la preparatoria comprueba y no cambia nada;
+  - en el 2, la preparatoria y la puerta reconocen el estado 2, no lo tocan, comprueban su lista exacta, y la puerta sigue cerrada.
+- **Un catálogo que no sea exactamente 0, 1 o 2 aborta,** con la diferencia en el mensaje.
+
+### o.1 sim-003 después de la preparatoria (corrige la orden de la etapa 1; k.1 c queda tal cual)
+
+- Tras la preparatoria, **sim-003 termina SIN error**, con el mismo informe que acaba en `FIN | sim-003 aplicada` y **el catálogo idéntico antes y después**.
+- **Mutante:** una preparatoria que cambie un objeto de sim-003 → sim-003 aborta, o el catálogo cambia → **rojo**.
+- **Lo que tiene que abortar es sim-003 después de sim-004b** (k.1 c y j.9). Es de la etapa 4.
+
+### o.2 Delta en el INSERT de sesión
+
+- En un INSERT de `sim_sessions`, el registro guarda **`delta = NEW.balance − NEW.capital`**. Esto completa l.1 a.
+- **Delta ≠ 0 → incidencia.** Delta = 0 → nada (l.2).
+
+### o.3 Qué es incidencia en un UPDATE
+
+**`sim_sessions`: manda m.1.** Un UPDATE «sin firma de alumno» que **no menciona `balance`** (sin marca) **no es incidencia, aunque no cambie nada.** La fila 2 de la tabla de l.2 queda sustituida por m.1.
+
+**`sim_trades`:**
+- Un UPDATE «sin firma de alumno» que cambia **alguna columna económica** es **incidencia**.
+- Si solo cambia columnas **no económicas**, no lo es.
+- **El cliente v0 no hace UPDATE de `sim_trades`** (a.1). Es un caso de defensa.
+
+**Columnas, leídas del esquema de s04 y sim-003:**
+
+| Grupo | Columnas |
+|---|---|
+| **No económicas** (las que nombra el CTO) | `notes`, `tags` |
+| **Económicas, nombradas por el CTO** | `pnl`; los precios (`entry_price`, `exit_price`, `sl_price`, `tp_price`); `lots`; `side`; `opened_at` y `closed_at`; `session_id` |
+| **Económicas por la regla de cierre** (no las nombra el CTO; **a confirmar**) | `id`, `user_id`, `pair`, `risk_percent`, `risk_amount`, `rr`, `result`, `session_type`, `created_at` y las 10 de sim-003 (`evento_id`, `motor_version`, `bruto_micro`, `neto_micro`, `comision_micro`, `spread_micro`, `swap_micro`, `conversion`, `ambigua`, `causa_ambiguedad`) |
+
+- **La regla de cierre:** la lista de no económicas es **cerrada** (`notes`, `tags`). Cualquier otra columna, incluida una que se añada mañana, cuenta como económica.
+- **Es el lado seguro:** un error de clasificación da una incidencia de más, que resuelve el CTO, y nunca una de menos.
+- **Un UPDATE sin ninguna columna cambiada no es incidencia.** No tiene efecto. Para `sim_trades` no hay marca de «menciona».
+
+### o.4 La función canónica y el emparejamiento
+
+- **La preparatoria instala `public.sim_escrituras_v0_canonico(session_id uuid)`:**
+  - versionada (`sim-escrituras-canonico@1`), STABLE, de solo lectura;
+  - **EXECUTE solo para el dueño**, con las revocaciones explícitas de l.4;
+  - devuelve `(texto, sha256)`.
+
+  s10 y el DO del corte la llaman.
+- **Las parejas las calcula `public.sim_escrituras_v0_parejas(session_id uuid)`,** en la misma preparatoria, STABLE y solo del dueño.
+  - La usan la canónica y la clasificación de s10. Así no hay dos implementaciones que puedan divergir.
+  - Un cambio en cualquiera de las dos es una versión nueva de la canónica.
+- **El emparejamiento (determinista, entra en el hash):**
+  1. Se recorren los UPDATE «sin firma de alumno» de `sim_sessions` de la sesión por `(en, id)`. Son **todos**, mencionen `balance` o no (l.2).
+  2. Cada uno toma **el primer INSERT libre compatible** de `sim_trades` «sin firma de alumno» de la misma sesión, por `(en, id)`.
+  3. **Compatible:** `abs(delta − pnl) ≤ 0.01` en `numeric` (sin float, sin redondeo) **y** `abs(u.en − i.en) ≤ 10 s`.
+  4. Una fila se usa una sola vez.
+
+### o.5 El estado del servicio vive en Supabase: `sim_servicio`
+
+Sustituye al «endpoint de estado del servicio» de i.1 b y al «modo mantenimiento por variable de entorno» del cliente (c.7, paso 2).
+
+- **La tabla, de una sola fila:** `public.sim_servicio`:
+  - `id boolean PRIMARY KEY DEFAULT true CHECK (id)`;
+  - `mantenimiento boolean NOT NULL`;
+  - `version_minima text NOT NULL CHECK (version_minima ~ '^[1-9][0-9]{0,8}$')`, un entero decimal en texto;
+  - `cambiado_en timestamptz NOT NULL`.
+- **Permisos:**
+  - RLS con **una** política: `sim_servicio_lectura`, `FOR SELECT TO authenticated USING (true)`;
+  - **SELECT solo para `authenticated`**;
+  - revocación explícita de todo a `PUBLIC`, `anon`, `authenticated` (salvo ese SELECT) y `service_role`.
+- **Quién la escribe:** solo el dueño, por SQL anotado en `sql/APLICADOS.md`.
+- **Instalación:** la preparatoria la crea con `mantenimiento = false` y `version_minima = '1'`.
+  - Reejecutar **no toca la fila**: el dueño puede haber activado el mantenimiento.
+- **La versión del cliente:** un entero, `VERSION_CLIENTE` en `lib/sim/version.js`.
+  - La cabecera es `x-sim-cliente: etapa1-<VERSION_CLIENTE>`.
+  - El cliente compara su versión con `version_minima` como enteros.
+- **El cliente la lee antes de cada escritura económica y cada 30 s:**
+  - las escrituras económicas son las # 1–9 de a.1, salvo `timeframe` (b.3);
+  - **con mantenimiento:** bloquea las escrituras económicas y muestra la pantalla de mantenimiento;
+  - **si la lectura falla:** bloquea la escritura económica y avisa. No es un punto de fallo nuevo, porque la escritura iría al mismo Supabase;
+  - **si su versión es menor que `version_minima`:** o.6.
+- **El DELETE y el INSERT de sesión del dashboard (# 1–2) también la leen antes.**
+
+### o.6 Versión superada: recarga
+
+- **Sin posiciones abiertas ni órdenes pendientes:** recarga automática.
+- **Con alguna:**
+  - un **aviso fijo** que pide cerrarlas y recargar, con un botón para recargar ya;
+  - mientras tanto, **las escrituras económicas quedan bloqueadas** por la versión.
+- **El v0 no guarda las posiciones abiertas ni las órdenes pendientes:** viven en memoria. Una recarga las pierde, y por eso no es automática con alguna abierta.
+
+### o.7 `{error}` en cada escritura
+
+- **Cierre total y parcial** (`sim_cierre_v0`):
+  - **`{error}` de Supabase:** la función es una transacción y no ha quedado nada. Se **revierte la pantalla**: la posición vuelve a estar abierta y el saldo, como antes. Se avisa.
+  - **Resultado incierto** (excepción de transporte, respuesta perdida): **se vuelve a leer** la sesión y el trade por su id, que genera el cliente:
+    - si el trade está, la pantalla muestra lo guardado;
+    - si no está, se revierte;
+    - si la relectura también falla, la pantalla queda **bloqueada para escrituras económicas** con un aviso de «no se sabe si se guardó; recarga», hasta que una relectura responda.
+- **Crear y borrar sesión:** comprueban el error, como hoy en `dashboard.js`.
+- **El resto** (pausa, salida, guardado, TF, dibujos, plantillas y configuraciones): **solo avisa**, sin revertir.
+
+### o.8 Alcance de la etapa 1
+
+Entra completo lo que dice § f: **d1, d2 y d3 para legado, d6 parcial y `/api/sim/*` desplegados apagados (503)**. Nada a medias. Todo va en el encargo de Astra.
+
+- **d1:** excluir `terminal = 'borrada'` en `dashboard.js:110`, `analytics.js:76`, `list-alumnos-sim.js:46` y `alumno-sim/[id].js:42`.
+  - Es `terminal IS DISTINCT FROM 'borrada'`: `revocada` y, después, `superado` siguen visibles.
+  - Hoy no hay lápidas.
+- **d2:** una sesión `legado = true`:
+  - se abre en **solo lectura** (h.9): ninguna escritura económica (# 3–9) y sin abrir operaciones;
+  - en el dashboard lleva la etiqueta **«Simulador anterior»** y botón de borrar.
+
+  Hoy no hay legado.
+- **d3:** una sesión `legado` se borra por **`POST /api/sim/borrar`**. Una v0 sin legado se sigue borrando como hoy (# 2).
+- **d6, la parte de la etapa 1:** la respuesta del endpoint de borrar:
+  - `200` → borrada;
+  - `410` → «ya estaba borrada»: desaparece de la lista;
+  - `403` → aviso y solo lectura;
+  - `426` → «actualiza la página»;
+  - `503` → mantenimiento;
+  - cualquier otra → aviso genérico.
+- **`/api/sim/*`:** `crear`, `tomar`, `comando`, `avanzar-fase` y `borrar`.
+  - Responden **`503 { ok: false, http: 503, motivo: 'mantenimiento' }`** a todo, sin autenticar, sin leer el cuerpo y sin llamar a ninguna RPC.
+  - El interruptor por variable de entorno (b.1) llega con la implementación (etapa 3).
+
+### o.9 La cabecera en `/auth/v1` y `/storage/v1`, medida (13-oct)
+
+**Medido en** `revisiones-suite/2026-10-13-cabecera-sim-cliente-auth-storage/` (LEEME, SHA256SUMS y las respuestas tal cual).
+- **Cómo:** preflight `OPTIONS` sin clave, sin cuerpo y sin efectos, desde el origen `https://simulator.algorithmicsuite.com`, igual que el del 12-oct.
+- **Rutas:** `/auth/v1/token` (POST), `/auth/v1/user` (GET), `/auth/v1/logout` (POST) y `/storage/v1/object/…` (POST y GET).
+- **Cabeceras pedidas:** las del 12-oct, y la lista completa que manda supabase-js.
+- **Controles:** el mismo preflight sin la cabecera, y la repetición del de `/rest/v1`.
+
+**Resultado:** **las 10 respuestas son HTTP 200**, con `access-control-allow-origin: *` y `access-control-allow-headers` igual a la lista pedida, `x-sim-cliente` incluida.
+
+**Decisión que resulta (la del CTO para este caso):** la cabecera va en **`global.headers`** del `createClient` de `lib/supabase.js` (k.1 b).
+
+**Límite del instrumento, escrito en el LEEME:**
+- la pasarela **devuelve la lista que se le pide**: ninguna medida da un rechazo;
+- no se ha hecho ninguna petición real con la cabecera.
+
+Va al **runbook de la etapa 1, antes de abrir la versión a los alumnos:** un login real con la cuenta de prueba, con el sí de Ramón, como k.4 e.
