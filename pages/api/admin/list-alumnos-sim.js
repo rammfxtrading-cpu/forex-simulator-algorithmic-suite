@@ -2,6 +2,7 @@ import { metricas, ultimaActividad, activoEnLosUltimos } from '../../../lib/metr
 import { requireAdmin } from '../../../lib/authApi'
 import { leerTodo, porColumnas } from '../../../lib/paginado'
 import { tradesDeUsuario } from '../../../lib/tradesEstables'
+import { sinLapidas } from '../../../lib/sim/legado'
 // CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
 import { registra } from '../../../lib/mercado/errores.mjs'
 
@@ -43,7 +44,7 @@ export default async function handler(req, res) {
   if (activeIds.length > 0) {
     // bloque E, punto 3: los trades de cada alumno en UNA sentencia (sql/sim-002)
     const [{ data: sessions, error: sErr }, porAlumno] = await Promise.all([
-      leerTodo(() => supabaseAdmin.from('sim_sessions').select('id, user_id, capital, created_at', { count: 'exact' })
+      leerTodo(() => supabaseAdmin.from('sim_sessions').select('id, user_id, capital, created_at, terminal', { count: 'exact' })
         .in('user_id', activeIds), { ordena: porColumnas([['id', 'asc']]) }),
       Promise.all(activeIds.map(uid => tradesDeUsuario(supabaseAdmin, uid, { ordena: porColumnas([['id', 'asc']]) }))),
     ])
@@ -53,7 +54,8 @@ export default async function handler(req, res) {
       return (registra('admin/list-alumnos-sim', (sErr || tErr)), res.status(503).json({ error: 'No se han podido leer las sesiones u operaciones. Prueba de nuevo.' }))
     }
 
-    for (const s of sessions || []) {
+    // d1 (etapa 1): las lapidas (terminal = 'borrada') no cuentan
+    for (const s of sinLapidas(sessions)) {
       if (!sessionsByUser[s.user_id]) sessionsByUser[s.user_id] = []
       sessionsByUser[s.user_id].push(s)
     }

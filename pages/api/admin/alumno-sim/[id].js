@@ -1,5 +1,6 @@
 import { leerTodo, porColumnas } from '../../../../lib/paginado'
 import { tradesDeUsuario } from '../../../../lib/tradesEstables'
+import { sinLapidas } from '../../../../lib/sim/legado'
 import { requireAdmin } from '../../../../lib/authApi'
 // CTO 6-oct: al cliente un mensaje fijo; en el log, solo clase y codigo
 import { registra } from '../../../../lib/mercado/errores.mjs'
@@ -58,7 +59,8 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     profile,
-    sessions: sessions || [],
+    // d1 (etapa 1): las lapidas (terminal = 'borrada') no se ensenan
+    sessions: sinLapidas(sessions),
     trades: trades || []
   })
 }

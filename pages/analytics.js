@@ -7,6 +7,7 @@ import NoAccess from '../components/NoAccess'
 import ErrorCarga from '../components/ErrorCarga'
 import { leerTodo, porColumnas } from '../lib/paginado'
 import { tradesDeUsuario } from '../lib/tradesEstables'
+import { sinLapidas } from '../lib/sim/legado'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 import Estrellas from '../components/Estrellas'
@@ -81,7 +82,8 @@ export default function Analytics() {
     if (rs.error || rt.error) {
       setErrorDatos('No se han podido cargar tus sesiones u operaciones. Comprueba tu conexión y vuelve a intentarlo.')
     } else {
-      setSessions(rs.data)
+      // d1 (etapa 1): las lapidas no cuentan (sus trades ya los borra la RPC)
+      setSessions(sinLapidas(rs.data))
       setTrades(rt.data)
     }
     setLoading(false)
