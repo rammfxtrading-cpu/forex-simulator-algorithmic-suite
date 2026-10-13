@@ -2118,24 +2118,23 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 - **Ahora:** `advance` lee `balance_texto:balance::text` en la misma lectura de la sesión y el WHERE usa ese texto. Por texto casan los 9.
 - **El doble** compara un `numeric` por sus decimales, sin float.
 
-**2. ABA: puede dar un resultado incorrecto; queda como riesgo residual documentado.**
+**2. ABA: podía dar un resultado incorrecto. CERRADO en la etapa 1 (ronda 3, o.16: contador `rev_saldo`).** Astra lo reprodujo en su ronda 2 (E1R2-01) y el CTO decidió cerrarlo; lo que sigue es el análisis de entonces.
 - **El caso:** entre la lectura de `advance` y su UPDATE, otra pestaña guarda un cierre −x y otro +x. El saldo vuelve al leído y el CAS pasa.
 - **El efecto:** el evaluador v0 (`lib/challengeEngine.js`) solo mira pnl y DD; no hay días mínimos ni número de trades.
   - **Puede conceder una fase incorrectamente:** si el −x hunde el DD diario por debajo del suelo antes del +x, con el historial completo el reto estaría quemado, y `advance` concede la fase con lo que leyó. Los dos cierres quedan como trades de la madre.
   - **Un `fail` no se deshace:** el peor DD solo crece.
   - **Un cierre de pnl 0** no cambia el saldo, ni el pnl, ni el DD, así que no altera el veredicto.
 - **La columna `version` de `sim_sessions` no sirve:** solo la mantienen las RPC v1 de sim-003 (`sim-003-persistencia-aditiva.sql:664`). En motor 0 ningún UPDATE la sube y ningún disparador la mantiene. Usarla sería un CAS que nunca ve nada.
-- **Riesgo residual (no se arregla en la etapa 1).** Hacen falta a la vez:
-  - el mismo alumno en dos pestañas sobre la misma sesión de reto;
-  - dos cierres que se compensan al céntimo, guardados en los milisegundos entre la lectura y el UPDATE de `advance`;
-  - y que el primero rompa el DD.
+- **Ya no es residual (o.16).** El mecanismo:
+  - `sim_sessions.rev_saldo`, un contador que solo mueve un disparador y que sube en cada cambio de saldo;
+  - `advance` lo lee con la sesión, antes del historial, y su UPDATE exige el mismo valor.
 
-  Desde la misma pestaña es imposible: la barrera de E1-04. **Lo cierra la transición del v1** (d7: `avanzar-fase` en SQL con la fila bloqueada y el `version` del motor 1).
+  −x y +x dejan el saldo igual, pero suben el contador 2: 409 y el cliente reevalúa con el historial completo. Lo que el contador no ve está en o.16.4.
 
 **3. Respuesta perdida: idempotente, sin cambio de código.**
 - Si el primer `advance` se confirma y la respuesta no llega:
   - el cliente no reintenta solo, porque solo reintenta ante un 409 `saldo_cambiado`;
-  - si el alumno vuelve a pulsar, la barrera relee el reto y el servidor responde **409 «La sesión ya está cerrada»** (paso 4, `status ≠ 'active'`; además, el CAS exige `status = 'active'`).
+  - si el alumno vuelve a pulsar, la barrera relee el reto y el servidor responde **409 «La sesión ya está cerrada»** (paso 4: un status decidido; además, el CAS exige NULL o `'active'`, o.16).
 - No hay segunda fase ni segunda hija.
 - **Ensayado:** CAS-respuesta-perdida, verde también en `a5ce6f9`.
 - **Límite de UX:** el alumno se queda en la sesión ya superada, sin ir a la hija, hasta volver al dashboard.
@@ -2153,3 +2152,80 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
   - un SELECT de columna a PUBLIC sale «DIFIERE» en PUBLIC y en los tres roles;
   - un UPDATE de columna a un rol del que `anon` es miembro sale «DIFIERE» para `anon` y no para `authenticated`.
 - La guarda de la preparatoria ya incluía PUBLIC (E1-05).
+
+### o.16 Ronda 3 de código: E1R2-01 y E1R2-02 (decisiones del CTO, 13-oct)
+
+**Origen:** la ronda 2 de Astra (`revisiones-suite/2026-10-13-astra-sim-etapa1-2.md`) dio **no** a `c6d8c22`:
+- **E1R2-01 (alto):** el ABA (−7.000 y +7.000 de otra pestaña, saldo final idéntico) concede una fase que el historial completo da por quemada;
+- **E1R2-02 (medio):** `advance` no trata status NULL como activa.
+
+**El CTO: el ABA deja de ser residual y se cierra en la etapa 1.**
+
+#### o.16.1 El contador de revisión del saldo (`0672f55`)
+
+`sql/sim-004a-preparatoria.sql`, aún sin aplicar:
+- **La columna:** `sim_sessions.rev_saldo bigint NOT NULL DEFAULT 0`.
+  - `ADD COLUMN` con un DEFAULT constante: no reescribe la tabla (mismo `relfilenode`, ensayado).
+  - Sin grants de columna. No reutiliza `version`.
+  - Su nombre es una pieza más del estado: en el estado 0 tiene que estar libre. Si existe sin el resto → «A MEDIAS».
+  - Ningún otro repositorio del escritorio usa `rev_saldo`.
+- **El disparador y su función:** `sim_sessions_rev_saldo`, BEFORE INSERT OR UPDATE. La función `public.sim_sessions_rev_saldo()` es INVOKER, con `search_path` vacío y sin SQL dinámico.
+  - **INSERT** → 0.
+  - **UPDATE** → +1 si `balance IS DISTINCT FROM`; si no, el de antes.
+  - Lo que mande cualquier cliente en `rev_saldo` no cuenta: nadie lo fija ni lo restaura, tampoco `service_role`. Vale para cualquier camino: `sim_cierre_v0`, el cliente viejo antes de la puerta, el servidor o el dueño.
+- **Interacción con lo que ya había:**
+  - **Los BEFORE van por orden de nombre:** `sim_escrituras_v0_puerta` (estado 2) se ejecuta antes; si rechaza, el contador no se mueve (E11-puerta). El cupo `trg_enforce_sim_session_limit` (BEFORE INSERT) va después y no toca `rev_saldo`.
+  - **A** (AFTER, el registro) compara OLD y NEW. Ahora `rev_saldo` aparece en `columnas` cuando el saldo cambia, y en las de INSERT/DELETE (la fila entera). **s10 no clasifica las sesiones por `columnas`** (delta y marca, m.1), así que no cambia nada. La canónica las incluye como antes.
+  - **B** (`AFTER UPDATE OF balance`) no cambia.
+  - **`pg_trigger_depth`:** el contador no hace DML, así que no añade profundidad a A ni a las marcas.
+  - **Inmutabilidad:** solo afecta a las tablas del registro.
+  - **La puerta:** su copia del catálogo del estado 1 incluye el disparador nuevo (E10-listas: el mismo texto en los dos ficheros); el cuerpo de la puerta no cambia (mismo sha256).
+- **La guarda final** comprueba:
+  - el catálogo exacto con el disparador (tgtype 23);
+  - el cuerpo literal de la función;
+  - la columna: bigint, NOT NULL, DEFAULT 0, sin identidad ni generada.
+
+  Sus ACL de columna las vigila E1-05: ninguna en `sim_sessions`. **s11 la lista** con las demás columnas de `sim_sessions`. El informe muestra «columna | sim_sessions.rev_saldo bigint · not null=true · default 0 · acl de columna=0».
+- **Ensayo** (`pruebas/sim-004a.mjs`):
+  - E1-rev-sin-reescritura;
+  - la sección 11: inserción a 0; el cliente viejo sube el contador en cada escritura de saldo; el mismo saldo no lo sube; nadie lo fija; la RPC sube 1; la puerta; la reejecución en el estado 2;
+  - siete mutantes E9 que abortan la reejecución: sin el disparador, condición invertida, deshabilitado, sin NOT NULL, sin DEFAULT, otro tipo y UPDATE de columna a `authenticated`.
+- **El script SQL de Astra** (`pruebas/astra-r2-cas-pg.mjs`, con el predicado de hoy): los dos órdenes, NULL, NULL→decidido, y un control: sin el disparador, el ABA pasaría. Sus oráculos de ABA exigen que el UPDATE se haya ejecutado. Contra `c6d8c22` habrían salido verdes en vacío por un error de SQL: corregido antes del commit.
+
+#### o.16.2 `advance` (`cdfd47b`)
+
+- **El paso 1** lee en la misma fila `balance::text`, `rev_saldo` y `status`. Después lee el historial (paso 5) y evalúa.
+  - El orden está medido (R3-orden): sesión → historial → UPDATE, sin otra lectura de la sesión en medio.
+- **El CAS** de las tres escrituras exige `rev_saldo = leído AND balance = leído AND (status IS NULL OR status = 'active')`. Si no casa → 409 `saldo_cambiado` y el cliente reevalúa: los 3 intentos con espera ya existentes.
+- **E1R2-02:** el guard del paso 4 acepta NULL o `'active'`. Un estado decidido sigue rechazado. La reversión por fallo de la hija devuelve el status leído.
+- **Falla cerrado:** sin `rev_saldo` en la lectura (preparatoria sin aplicar) → 503, sin escribir.
+- **Ensayo:**
+  - `etapa1-servidor` §4: el ABA en los dos órdenes con pass y con fail → 409 sin fase ni hija; mutante sin `rev_saldo` → concede → visto; NULL con pass y fail → 200; NULL decidido en concurrencia → 409; sin contador → 503;
+  - `etapa1-cola`: CAS-cliente-aba, que reevalúa con el historial completo (`failed_dd_daily`) y no reintenta;
+  - `pruebas/astra-r2-cas.mjs`: el script de Astra, sin cambios, en verde.
+  - **Contra `c6d8c22` / `0672f55`:** rojo, en `revisiones-suite/2026-10-13-sim-etapa1-ronda3/`.
+
+#### o.16.3 Runbook
+
+1. **Antes de la preparatoria, s11** (o.14.4). No cambia: s11 se ejecuta antes de que exista `rev_saldo`.
+2. **La preparatoria añade una columna a `sim_sessions`:**
+   - **es un cambio de esquema de `sim_sessions`:** CLAUDE.md exige la **aprobación explícita de Ramón y avisar al hub**. El hub lee `sim_sessions`; una columna más no rompe un `select *`, pero se le avisa;
+   - `ADD COLUMN` toma un cerrojo ACCESS EXCLUSIVE muy breve, sin reescritura, dentro de la ventana de mantenimiento.
+3. **El orden sigue siendo** preparatoria → cliente → puerta. El `advance` nuevo responde 503 si la columna no está: **la preparatoria va antes del despliegue**.
+4. **En el informe de la preparatoria se comprueba** la línea «columna | sim_sessions.rev_saldo … acl de columna=0».
+
+#### o.16.4 Autorrevisión: lo que el contador no ve
+
+1. **Cambios del historial evaluado sin cambio de saldo:**
+   - **un cierre de pnl 0** (aceptado en o.14): no altera el veredicto, porque el evaluador v0 solo mira pnl y DD;
+   - **un cierre partido del cliente viejo antes de la puerta** (el INSERT del trade llega y el UPDATE del saldo no): añade un trade con pnl ≠ 0 sin subir el contador. **Puede alterar el veredicto.** Hace falta a la vez una pestaña vieja (anterior al despliegue) con un cierre partido justo en la ventana de `advance` de una pestaña nueva, en la misma sesión. Desaparece al activar la puerta. **Para el CTO:** ¿se acepta hasta la puerta, o también se cuenta en el contador cualquier escritura de `sim_trades` (un disparador en `sim_trades` que suba el de su sesión)?
+   - **UPDATE o DELETE directo de `sim_trades` por el alumno** (PostgREST con su JWT): ningún cliente lo hace, pero la RLS de hoy lo permite sobre sus filas. Con el mismo acceso el alumno ya puede escribir su saldo directamente: es el límite del v0 frente al dueño de la fila, que el v1 resuelve;
+   - **cambios de `capital`, `challenge_type` o `challenge_phase`** entre la lectura y el UPDATE: ningún escritor legítimo los toca en una sesión activa;
+   - **`sim_borrar_legacy` (sim-003)** borra los trades y pone `balance = capital`. Si el saldo ya era el capital, el contador no sube y el status no cambia. Solo se llega por `/api/sim/borrar`, que en la etapa 1 responde 503.
+2. **Escritores de `sim_trades` sin escritura de saldo:**
+   - `sim_cierre_v0` siempre escribe el saldo;
+   - el cliente viejo, en dos sentencias (lo de arriba);
+   - las RPC de sim-003: `sim_comando` (solo motor 1), y `sim_borrar_legacy` / `sim_borrar_sesion` / `sim_borrar_alumno` (borran);
+   - las cascadas de borrado (la sesión desaparece y el CAS no encuentra fila);
+   - el hub solo borra.
+3. **El orden lectura de sesión → historial es estricto:** dos `await` seguidos en el handler, medido en R3-orden.

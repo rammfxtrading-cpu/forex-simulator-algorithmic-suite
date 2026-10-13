@@ -220,4 +220,16 @@ for (const [k, c] of Object.entries(RONDA3)) {
     res.estado === 503 && escrituras() === 0 && madreCas().status === 'active' && hijasCas() === 0, JSON.stringify({ estado: res.estado, escrituras: escrituras() }))
 }
 
+{ // el orden en el codigo, medido: la sesion (con lo que compara el CAS) se lee ANTES que el historial, y entre
+  // las dos lecturas y el UPDATE no hay otra lectura de la sesion que pudiera mezclar momentos
+  const c = RONDA3.pass; montaReto(c); db.log.length = 0
+  const res = await pideAdvance(adv, c)
+  const i = (pred, desde = 0) => db.log.findIndex((x, j) => j >= desde && pred(x))
+  const iSes = i(x => x.tabla === 'sim_sessions' && x.op === 'select')
+  const iHist = i(x => x.tabla === 'rpc:sim_trades_de_sesion' || (x.tabla === 'sim_trades' && x.op === 'select'))
+  const iUpd = i(x => x.tabla === 'sim_sessions' && x.op === 'update')
+  const otras = db.log.filter((x, j) => j > iSes && j < iUpd && x.tabla === 'sim_sessions' && x.op === 'select').length
+  oraculo('R3-orden', 'advance: lectura de la sesion (balance::text, rev_saldo, status) → lectura del historial → UPDATE con CAS, en ese orden y sin otra lectura de la sesion en medio',
+    res.estado === 200 && iSes > -1 && iHist > iSes && iUpd > iHist && otras === 0, db.log.map(x => x.tabla + ':' + x.op).join(' → '))
+}
 fin()
