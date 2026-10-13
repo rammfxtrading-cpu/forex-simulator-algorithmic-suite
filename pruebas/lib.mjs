@@ -100,7 +100,8 @@ export function escenario({ perfiles = [perfil(A), perfil(B), perfil(ADM, { rol_
   const co = globalThis.__simCola; if (co) co.s = {}   // ronda 2: la cola de cada sesion (lib/sim/cola.js)
   const av = globalThis.__simAvisos; if (av) av.lista = []
   db.tablas.profiles = perfiles.map(p => ({ ...p }))
-  db.tablas.sim_sessions = sim_sessions.map(s => ({ ...s }))
+  // rev_saldo: lo que deja la preparatoria en las filas de antes (0), salvo que la prueba diga otra cosa
+  db.tablas.sim_sessions = sim_sessions.map(s => ({ rev_saldo: 0, ...s }))
   db.tablas.sim_trades = sim_trades.map(t => ({ ...t }))
   for (const [t, filas] of Object.entries(otras)) db.tablas[t] = filas.map(f => ({ ...f }))
   db.storage = structuredClone(storage)

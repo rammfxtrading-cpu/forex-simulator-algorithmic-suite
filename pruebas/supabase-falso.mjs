@@ -51,6 +51,14 @@ const igual = (a, b) => {
   }
   return false
 }
+// el disparador sim_sessions_rev_saldo de sql/sim-004a-preparatoria.sql (ronda 3, E1R2-01; el SQL
+// lo prueba pruebas/sim-004a.mjs, seccion 11): INSERT → 0; UPDATE → +1 si balance cambia, si no el
+// de antes. Lo que mande el cliente en rev_saldo no cuenta. Una fila sin contador vale 0.
+function contadorSaldo(fila, antes) {
+  if (!antes) { fila.rev_saldo = 0; return }
+  const previo = antes.rev_saldo ?? 0
+  fila.rev_saldo = igual(antes.balance, fila.balance) ? previo : previo + 1
+}
 // columnas de select: '*', 'col', y 'alias:col::text' (el cast de PostgREST; un numero sale como su texto)
 const proyecta = (f, cols) => {
   if (!cols || cols.trim() === '*') return f
@@ -88,6 +96,9 @@ function arbolLogico(tipo, expr) {
     const col = t.slice(0, i), op = t.slice(i + 1, j)
     let val = t.slice(j + 1)
     if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1)
+    // col.is.null (PostgREST): NULL casa; cualquier otro valor de is, no soportado
+    if (op === 'is') { if (val !== 'null') throw new Error(`supabase-falso: is.${val} no soportado en or()`); return f => f[col] == null }
+    if (op === 'eq') return f => f[col] != null && igual(f[col], val)
     if (!OPS[op]) throw new Error(`supabase-falso: operador no soportado en or(): ${op}`)
     return f => f[col] != null && OPS[op](cmpTexto(f[col], val))
   })
@@ -139,11 +150,16 @@ class Q {
       res = (Array.isArray(this.payload) ? this.payload : [this.payload]).map(p => ({ id: randomUUID(), created_at: new Date().toISOString(), ...copia(p) }))
       // la clave primaria, como en Postgres: un id que ya esta no entra
       if (res.some(n => filas.some(f => f.id === n.id))) return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint "${this.tabla}_pkey"` }, count: null }
+      if (this.tabla === 'sim_sessions') for (const n of res) contadorSaldo(n, null)
       filas.push(...res)
       res = res.map(copia)
     } else {
       let sel = filas.filter(f => this.filtros.every(g => g(f)))
-      if (this.op === 'update') for (const f of sel) Object.assign(f, copia(this.payload))
+      if (this.op === 'update') for (const f of sel) {
+        const antes = this.tabla === 'sim_sessions' ? { balance: f.balance, rev_saldo: f.rev_saldo } : null
+        Object.assign(f, copia(this.payload))
+        if (antes) contadorSaldo(f, antes)
+      }
       else if (this.op === 'delete') {
         db.tablas[this.tabla] = filas.filter(f => !sel.includes(f))
         // db.cascadas (OPCIONAL, lo declara la prueba): { padre: [[hija, columna], ...] }
@@ -326,7 +342,9 @@ const RPCS = {
     // ronda 2 (E1-04): solo sobre una sesion activa (status NULL = activa); el SQL lo prueba pruebas/sim-004a.mjs (E7-sesion-cerrada, E7-carrera-fase)
     if ((ses.status ?? 'active') !== 'active') return { error: { code: 'P0001', message: `sim_cierre_v0: sesion cerrada: la sesion ${a.p_session_id} ya no esta activa (${ses.status})` } }
     ;(db.tablas.sim_trades ??= []).push({ created_at: new Date().toISOString(), ...copia(a.p_trade), session_id: a.p_session_id })
+    const antes = { balance: ses.balance, rev_saldo: ses.rev_saldo }
     ses.balance = a.p_balance
+    contadorSaldo(ses, antes)
     if (a.p_last_timestamp != null) ses.last_timestamp = a.p_last_timestamp
     return { valor: a.p_trade.id }
   },

@@ -92,6 +92,9 @@ export default async function handler(req, res) {
   // ── 1. Cargar la sesión. balance_texto: el saldo como TEXTO de la base (numeric
   //      exacto), para el CAS del paso 7: el balance de '*' llega como numero JSON y
   //      supabase-js lo pasa a float, que pierde cifras en un numeric largo (409 eterno).
+  //      Con '*' vienen tambien rev_saldo (el contador de revision del saldo, que solo
+  //      mueve el disparador de sim-004a-preparatoria) y status: TODO lo que el CAS
+  //      compara sale de ESTA lectura, que va ANTES de leer el historial (paso 5).
   const { data: session, error: sErr } = await supabaseAdmin
     .from('sim_sessions')
     .select('*, balance_texto:balance::text')
@@ -113,8 +116,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'La sesión no es un challenge' })
   }
 
-  // ── 4. Idempotencia: si ya está cerrada, no hacer nada.
-  if (session.status !== 'active') {
+  // ── 4. Idempotencia: si ya está cerrada, no hacer nada. Status NULL = activa, como
+  //      en sim_cierre_v0 y en el cliente (o.14.2; Astra E1R2-02).
+  if (session.status != null && session.status !== 'active') {
     return res.status(409).json({
       error: 'La sesión ya está cerrada',
       currentStatus: session.status
@@ -170,17 +174,24 @@ export default async function handler(req, res) {
   // Etapa 1 (o.12): con el simulador en mantenimiento, o sin poder saberlo, no se escribe
   if (!(await servicioPermite(supabaseAdmin, res, 'challenge/advance'))) return
 
-  // CAS (CTO 13-oct, sobre o.13.4): la sesion solo se cierra si su saldo sigue
-  // siendo el leido en el paso 1 (como texto, exacto) y sigue activa. Si otra pestaña guardo un
-  // cierre entre la lectura y aqui, el UPDATE no afecta a 1 fila → 409 y nada
-  // escrito (balanceNow no incluiria ese cierre).
+  // CAS (CTO 13-oct, sobre o.13.4 y Astra E1R2-01): la sesion solo se cierra si su
+  // contador de revision del saldo sigue siendo el leido en el paso 1 (y su saldo, como
+  // texto, y sigue activa: NULL o 'active'). Si otra pestaña guardo un cierre entre la
+  // lectura y aqui, el contador ya no casa, AUNQUE el saldo haya vuelto al mismo numero
+  // (−x y +x): el UPDATE no afecta a 1 fila → 409 y nada escrito; el cliente reevalua.
+  // Sin el contador en la lectura (la preparatoria no esta aplicada) no se escribe: 503.
+  if (session.rev_saldo == null) {
+    registra('challenge/advance', new Error('sim_sessions.rev_saldo no esta: falta sim-004a-preparatoria'))
+    return res.status(503).json({ error: 'No se puede comprobar el saldo de la sesión. Prueba de nuevo más tarde.' })
+  }
   const cierraConCAS = async (cambios) => {
     const { data, error } = await supabaseAdmin
       .from('sim_sessions')
       .update(cambios)
       .eq('id', session_id)
+      .eq('rev_saldo', session.rev_saldo)
       .eq('balance', session.balance_texto)
-      .eq('status', 'active')
+      .or('status.is.null,status.eq.active')
       .select('*')
     if (error) return { error }
     if (!Array.isArray(data) || data.length !== 1) return { cambiado: true }
@@ -294,10 +305,10 @@ export default async function handler(req, res) {
 
   if (iErr) {
     registra('challenge/advance', iErr)
-    // Revertir: volver a active la fase que acabamos de cerrar.
+    // Revertir: volver al status que tenia la fase que acabamos de cerrar (active o NULL).
     await supabaseAdmin
       .from('sim_sessions')
-      .update({ status: 'active' })
+      .update({ status: session.status ?? null })
       .eq('id', session_id)
 
     return res.status(500).json({

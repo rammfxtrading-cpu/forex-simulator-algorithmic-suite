@@ -13,8 +13,16 @@
  * 3 · CAS de /api/challenge/advance (CTO 13-oct, sobre o.13.4): sus tres escrituras de
  *   balance (fail, passed_all, passed_phase) solo si el saldo sigue siendo el leido y la
  *   sesion activa. Otra pestaña guarda un cierre entre la lectura y el UPDATE → 409
- *   «saldo_cambiado» y nada escrito; sin carrera → igual que hoy. Mutante sin el WHERE de
- *   balance → escribe con la carrera → rojo.
+ *   «saldo_cambiado» y nada escrito; sin carrera → igual que hoy. Mutante sin el CAS de
+ *   saldo → escribe con la carrera → rojo.
+ *
+ * 4 · ronda 3 (CTO 13-oct; Astra E1R2-01 y E1R2-02):
+ *   - el ABA de Astra (−7.000/+7.000, saldo final identico) y su orden inverso, con desenlace pass
+ *     y fail: los dos cierres van por la cola y la RPC reales mientras advance espera su UPDATE →
+ *     409, sin fase ni hija; mutante de advance sin el filtro rev_saldo → concede → rojo
+ *   - status NULL = activa: pass y fail con NULL → 200; NULL que otro decide entre la lectura y el
+ *     UPDATE → 409 y nada escrito
+ *   - sin rev_saldo en la lectura (preparatoria sin aplicar) → 503 y nada escrito (falla cerrado)
  */
 import { mkdirSync, cpSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import path from 'node:path'
@@ -115,6 +123,7 @@ async function conCarrera(h, c) {
   const r = pideAdvance(h, c); await asienta(40)
   db.tablas.sim_trades.push(tradeSim({ session_id: 'cas', pnl: 1, result: 'WIN', closed_at: '2025-03-04T18:00:00Z' }))
   madreCas().balance = Number(madreCas().balance) + 1
+  madreCas().rev_saldo = (madreCas().rev_saldo ?? 0) + 1   // como el disparador sim_sessions_rev_saldo
   g.abrir(); const res = await r; db.pausa = null
   return { estado: res.estado, code: res.cuerpo?.code, error: res.cuerpo?.error, status: madreCas().status, balance: madreCas().balance, hijas: hijasCas(), retenido, saldoBase: Number(c.ses.balance) + 1 }
 }
@@ -130,15 +139,85 @@ for (const [k, c] of Object.entries(RETOS)) {
 }
 { // el mutante: advance sin el WHERE de balance
   const p = RUTAS.advance, txt = readFileSync(path.join(REPO, p), 'utf8')
+  // ronda 3: el saldo lo vigilan dos filtros (rev_saldo y balance); el mutante quita los dos
   const linea = /\n[^\n]*\.eq\('balance', session\.balance(?:_texto)?\)[^\n]*\n/
-  oraculo('CAS-MUT-existe', 'el WHERE de balance esta en advance (si no, no hay nada que mutar)', linea.test(txt))
+  const lineaRev = /\n[^\n]*\.eq\('rev_saldo', session\.rev_saldo\)[^\n]*\n/
+  oraculo('CAS-MUT-existe', 'los WHERE de balance y de rev_saldo estan en advance (si no, no hay nada que mutar)', linea.test(txt) && lineaRev.test(txt))
   const d = path.join(REPO, '.pruebas', 'mutantes', 'servidor-cas')
   rmSync(d, { recursive: true, force: true }); cpSync(path.join(REPO, 'lib'), path.join(d, 'lib'), { recursive: true })
-  mkdirSync(path.dirname(path.join(d, p)), { recursive: true }); writeFileSync(path.join(d, p), txt.replace(linea, '\n'))
+  mkdirSync(path.dirname(path.join(d, p)), { recursive: true }); writeFileSync(path.join(d, p), txt.replace(linea, '\n').replace(lineaRev, '\n'))
   const mut = (await import(pathToFileURL(path.join(d, p)).href)).default
   const vistos = []
   for (const [k, c] of Object.entries(RETOS)) { const x = await conCarrera(mut, c); vistos.push(k + ':' + x.estado + ':' + x.status) }
-  oraculo('CAS-MUT-sin-where', 'sin el WHERE de balance, con la carrera los tres escriben (y el oraculo de carrera lo ve)', vistos.every(v => !/:409:active$/.test(v)), vistos.join(' · '))
+  oraculo('CAS-MUT-sin-where', 'sin los WHERE de balance y rev_saldo, con la carrera los tres escriben (y el oraculo de carrera lo ve)', vistos.every(v => !/:409:active$/.test(v)), vistos.join(' · '))
+}
+
+titulo('4 · ronda 3: el contador rev_saldo (E1R2-01) y status NULL (E1R2-02)')
+const CI = await importa('lib/sim/cierre.js')
+const SV = await importa('lib/sim/servicio.js')
+// la sesion de Astra: un +11.000 (pass) o un −6.000 (fail) ya guardado
+const RONDA3 = {
+  pass: { ses: { challenge_phase: 1, balance: 111000 }, trades: [{ pnl: 11000, result: 'WIN', closed_at: '2025-03-04T12:00:00Z' }], outcome: 'pass' },
+  fail: { ses: { challenge_phase: 1, balance: 94000 }, trades: [{ pnl: -6000, result: 'LOSS', closed_at: '2025-03-04T12:00:00Z' }], outcome: 'fail' },
+}
+let nId = 0
+const idR3 = () => `30000000-0000-4000-8000-${String(++nId).padStart(12, '0')}`
+// advance retenido antes de su UPDATE; mientras, dos cierres compensados por la cola y la RPC reales
+async function aba(h, c, orden, { status } = {}) {
+  montaReto(c)
+  if (status !== undefined) madreCas().status = status
+  CI.fijaSaldoConfirmado('cas', Number(c.ses.balance)); await SV.leeServicio()
+  const g = puerta(); let retenido = false
+  db.pausa = ctx => ctx.tabla === 'sim_sessions' && ctx.op === 'update' && !retenido ? (retenido = true, g.p) : null
+  const r = pideAdvance(h, c); await asienta(40)
+  const rev0 = madreCas().rev_saldo
+  const cierres = []
+  for (const [pnl, hora] of orden === '-+' ? [[-7000, '2025-03-05T12:00:00Z'], [7000, '2025-03-05T13:00:00Z']] : [[7000, '2025-03-05T12:00:00Z'], [-7000, '2025-03-05T13:00:00Z']])
+    cierres.push(await CI.persisteCierre({ sessionId: 'cas', delta: pnl, lastTimestamp: Date.parse(hora) / 1000,
+      trade: { id: idR3(), user_id: A, pair: 'EUR/USD', side: 'BUY', lots: 1, pnl, result: pnl < 0 ? 'LOSS' : 'WIN', opened_at: '2025-03-05T10:00:00Z', closed_at: hora } }))
+  g.abrir(); const res = await r; db.pausa = null
+  return { estado: res.estado, code: res.cuerpo?.code, status: madreCas().status, balance: madreCas().balance, hijas: hijasCas(), retenido,
+    cierres: cierres.map(x => x.estado).join(','), rev: `${rev0}→${madreCas().rev_saldo}`, trades: db.tablas.sim_trades.filter(t => t.session_id === 'cas').length }
+}
+for (const [k, c] of Object.entries(RONDA3)) for (const orden of ['-+', '+-']) {
+  const x = await aba(adv, c, orden)
+  oraculo(`R3-ABA-${k}-${orden}`, `${k}, ${orden === '-+' ? '−7.000 y +7.000' : '+7.000 y −7.000'} guardados mientras advance espera (saldo final identico): 409, sin fase ni hija; el contador subio 2`,
+    x.retenido && x.cierres === 'guardado,guardado' && x.trades === 3 && Number(x.balance) === Number(c.ses.balance) && x.estado === 409 && x.code === 'saldo_cambiado'
+    && x.status === 'active' && x.hijas === 0 && x.rev === '0→2', JSON.stringify(x))
+}
+{ // mutante: advance sin el filtro rev_saldo → el ABA concede
+  const p = RUTAS.advance, txt = readFileSync(path.join(REPO, p), 'utf8')
+  const lineaRev = /\n[^\n]*\.eq\('rev_saldo', session\.rev_saldo\)[^\n]*\n/
+  const d = path.join(REPO, '.pruebas', 'mutantes', 'servidor-rev')
+  rmSync(d, { recursive: true, force: true }); cpSync(path.join(REPO, 'lib'), path.join(d, 'lib'), { recursive: true })
+  mkdirSync(path.dirname(path.join(d, p)), { recursive: true }); writeFileSync(path.join(d, p), txt.replace(lineaRev, '\n'))
+  const mut = lineaRev.test(txt) ? (await import(pathToFileURL(path.join(d, p)).href)).default : null
+  const x = mut ? await aba(mut, RONDA3.pass, '-+') : null
+  oraculo('R3-MUT-sin-rev', 'mutante de advance sin el filtro rev_saldo: el ABA vuelve a conceder la fase (200 y una hija) → el oraculo R3-ABA lo ve',
+    !!x && x.estado === 200 && x.status === 'passed_phase' && x.hijas === 1, JSON.stringify(x))
+}
+// status NULL = activa (o.14.2)
+for (const [k, c] of Object.entries(RONDA3)) {
+  montaReto(c); madreCas().status = null
+  const res = await pideAdvance(adv, c)
+  oraculo(`R3-NULL-${k}`, `${k} con status NULL: se trata como activa → 200 (${k === 'pass' ? 'passed_phase y una hija' : 'failed_dd_daily'})`,
+    res.estado === 200 && madreCas().status === (k === 'pass' ? 'passed_phase' : 'failed_dd_daily') && hijasCas() === (k === 'pass' ? 1 : 0), JSON.stringify({ estado: res.estado, cuerpo: res.cuerpo?.error, status: madreCas().status }))
+}
+{ // NULL que otro decide entre la lectura y el UPDATE
+  const c = RONDA3.pass; montaReto(c); madreCas().status = null
+  const g = puerta(); let retenido = false
+  db.pausa = ctx => ctx.tabla === 'sim_sessions' && ctx.op === 'update' && !retenido ? (retenido = true, g.p) : null
+  const r = pideAdvance(adv, c); await asienta(40)
+  madreCas().status = 'failed_dd_daily'
+  g.abrir(); const res = await r; db.pausa = null
+  oraculo('R3-NULL-decidido', 'status NULL que otro pone en failed_dd_daily entre la lectura y el UPDATE: 409 y nada escrito (sigue failed_dd_daily, sin hija)',
+    retenido && res.estado === 409 && madreCas().status === 'failed_dd_daily' && hijasCas() === 0, JSON.stringify({ estado: res.estado, status: madreCas().status }))
+}
+{ // sin el contador en la lectura (la preparatoria no esta aplicada): falla cerrado
+  const c = RONDA3.pass; montaReto(c); delete madreCas().rev_saldo; db.log.length = 0
+  const res = await pideAdvance(adv, c)
+  oraculo('R3-sin-contador', 'sin rev_saldo en la sesion (preparatoria sin aplicar): 503 y ninguna escritura',
+    res.estado === 503 && escrituras() === 0 && madreCas().status === 'active' && hijasCas() === 0, JSON.stringify({ estado: res.estado, escrituras: escrituras() }))
 }
 
 fin()

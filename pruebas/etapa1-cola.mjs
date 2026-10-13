@@ -421,6 +421,7 @@ async function faseConOtraPestana(sid, pnlOtra, veces = 1, antes = null) {
     n++
     db.tablas.sim_trades.push({ ...tradeReto(pnlOtra, 30 + n), session_id: sid })
     madre(sid).balance = Number(madre(sid).balance) + pnlOtra
+    madre(sid).rev_saldo = (madre(sid).rev_saldo ?? 0) + 1   // como el disparador sim_sessions_rev_saldo
     return null
   }
   await b.caja.valor.reto.handleChallengePass(); await asienta(40); db.pausa = null
@@ -450,6 +451,28 @@ async function faseConOtraPestana(sid, pnlOtra, veces = 1, antes = null) {
   oraculo('CAS-cliente-espera', `entre intentos, una espera corta y creciente (≥ ${CF.ESPERA_FASE_MS} y ≥ ${2 * CF.ESPERA_FASE_MS} ms) y antes de cada reintento se relee el reto (challenge/status)`,
     CF.ESPERA_FASE_MS > 0 && huecos.length === 2 && huecos[0] >= CF.ESPERA_FASE_MS && huecos[1] >= 2 * CF.ESPERA_FASE_MS && huecos[1] > huecos[0] && relee,
     `huecos ${huecos.join(', ')} ms · relee ${relee}`)
+  b.caja.raiz.desmonta() }
+{ // ronda 3 (E1R2-01): el ABA de Astra desde otra pestaña mientras advance espera su UPDATE; el
+  // cliente recibe 409, vuelve a pasar por la barrera y REEVALUA con el historial completo (quemado)
+  const sid = 'e106-aba'; const b = await reto(sid)
+  await cierreReto(sid, 11000, 1); await asienta(20)
+  let hecho = false
+  db.pausa = c => {
+    if (!(c.tabla === 'sim_sessions' && c.op === 'update' && c.payload?.status && !hecho)) return null
+    hecho = true
+    for (const [pnl, hora] of [[-7000, '2025-03-04T12:00:00Z'], [7000, '2025-03-04T13:00:00Z']]) {
+      db.tablas.sim_trades.push({ ...tradeReto(pnl, 0), closed_at: hora, session_id: sid })
+      madre(sid).balance = Number(madre(sid).balance) + pnl
+      madre(sid).rev_saldo = (madre(sid).rev_saldo ?? 0) + 1   // como el disparador
+    }
+    return null
+  }
+  await b.caja.valor.reto.handleChallengePass(); await asienta(40); db.pausa = null
+  const st = advances().map(l => l.estado)
+  const ev = b.caja.valor.reto.challengeStatus?.evaluation?.status
+  oraculo('CAS-cliente-aba', 'el ABA (−7.000/+7.000, saldo final identico) de otra pestaña: 409, el cliente reevalua con el historial completo (failed_dd_daily) y no reintenta: sin fase ni hija',
+    hecho && st.join(',') === '409' && ev === 'failed_dd_daily' && madre(sid).status === 'active' && hijas(sid).length === 0 && Number(madre(sid).balance) === 111000,
+    `${foto(sid)} · reevaluado ${ev}`)
   b.caja.raiz.desmonta() }
 { // respuesta perdida: el primer advance SE CONFIRMA y la respuesta no llega; el alumno vuelve a pulsar
   const sid = 'e105-perdida'; const b = await reto(sid)
