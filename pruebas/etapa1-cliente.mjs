@@ -16,7 +16,7 @@
  *   8 mantenimiento con una pestaña ya cargada: sondeo de 30 s, pantalla, nada se manda
  *   9 version superada: recarga sin posiciones; con una abierta, aviso fijo y boton (o.6)
  *  10 servicio ilegible: lo economico, bloqueado (o.5)
- *  11 la salida no escribe (o.10); la pausa manda el saldo confirmado y avisa del {error}
+ *  11 la salida no escribe (o.10); la pausa solo guarda last_timestamp y timeframe (E1-01) y avisa del {error}
  *  12 legado (d2) y lapidas (d1): sesion, dashboard, Analytics y las dos APIs de admin
  *  13 borrar legado por /api/sim/borrar → 503 (d3, d6); /api/sim/* apagados
  *  14 el v0 sigue igual: crear y borrar desde el dashboard
@@ -266,15 +266,18 @@ try {
   ver('control: el instrumento ve escrituras de la sesion (el paso guarda el avance)', escriturasSesion().some(c => c.op === 'update' && c.payload?.last_timestamp))
   const tecla = code => { for (const f of [...(nav.oyentes.keydown || [])]) f({ code, key: code, target: { tagName: 'DIV' }, preventDefault() {} }) }
   db.log.length = 0
-  fijaConfirmado('ses-s', 9999.5)   // lo confirmado distinto de la pantalla (10000): se ve cual se manda
+  fijaConfirmado('ses-s', 9999.5)   // lo confirmado distinto de la pantalla (10000): ninguno de los dos debe salir
   tecla('Space'); await p.asienta(20); tecla('Space'); await p.asienta(60)
-  const pausa = escriturasSesion().find(c => c.op === 'update' && 'balance' in (c.payload || {}))
-  oraculo('X-pausa', 'la pausa: el servicio antes y el saldo CONFIRMADO de la base (9999,5), no el de la pantalla (10000)', !!pausa && pausa.payload.balance === 9999.5
-    && db.log.findIndex(c => c.tabla === 'sim_servicio') > -1 && db.log.findIndex(c => c.tabla === 'sim_servicio') < db.log.indexOf(pausa), JSON.stringify(pausa?.payload ?? null))
-  db.falla = c => c.tabla === 'sim_sessions' && c.op === 'update' && 'balance' in (c.payload || {}) ? { code: '42501', message: 'x' } : null
+  // E1-01 (CTO 13-oct): la pausa solo guarda last_timestamp y timeframe; el saldo lo persiste el cierre atomico
+  const pausas = escriturasSesion().filter(c => c.op === 'update')
+  const pausa = pausas.find(c => c.payload?.last_timestamp != null)
+  oraculo('X-pausa', 'la pausa: el servicio antes y SOLO last_timestamp y timeframe (ningun saldo, ni el confirmado ni el de la pantalla)',
+    !!pausa && pausas.every(c => !('balance' in (c.payload || {}))) && Object.keys(pausa.payload).sort().join(',') === 'last_timestamp,timeframe'
+    && db.log.findIndex(c => c.tabla === 'sim_servicio') > -1 && db.log.findIndex(c => c.tabla === 'sim_servicio') < db.log.indexOf(pausa), JSON.stringify(pausas.map(c => c.payload)))
+  db.falla = c => c.tabla === 'sim_sessions' && c.op === 'update' ? { code: '42501', message: 'x' } : null
   tecla('Space'); await p.asienta(20); tecla('Space'); await p.asienta(60)
   db.falla = null
-  oraculo('X-pausa-error', 'la pausa con {error}: solo avisa', avisos().some(a => /la pausa/.test(a.texto)))
+  oraculo('X-pausa-error', 'la pausa con {error}: solo avisa', avisos().some(a => /el avance de la sesión/.test(a.texto)))
   const n0 = db.log.length
   p.desmonta(); await asienta(60)
   // (garantia de NO REGRESION: tambien es verde en el codigo anterior, que ya no escribia; su

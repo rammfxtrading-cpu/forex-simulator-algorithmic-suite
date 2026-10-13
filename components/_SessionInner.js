@@ -38,8 +38,8 @@ import { s, css } from './sessionStyles'
 import Spin from './Spin'
 import AntimatterLoader from './AntimatterLoader'
 import AvisoServicio from './AvisoServicio'
-import { useServicio, puedeEscribir } from '../lib/sim/servicio'
-import { fijaSaldoConfirmado, saldoConfirmado } from '../lib/sim/cierre'
+import { useServicio } from '../lib/sim/servicio'
+import { fijaSaldoConfirmado } from '../lib/sim/cierre'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import CloseModal from './CloseModal'
@@ -1111,16 +1111,11 @@ export default function SessionPage(){
     const e=eng();if(!e)return
     if(e.isPlaying){
       e.pause();setIsPlaying(false)
+      // Etapa 1 (CTO 13-oct, Astra E1-01): la pausa solo guarda last_timestamp y
+      // timeframe (saveProgress). NO escribe el saldo: lo persiste el cierre
+      // atomico (lib/sim/cierre.js), y un saldo capturado aqui podia llegar a la
+      // base DESPUES de un cierre confirmado y deshacerlo.
       saveProgress(e.currentTime)
-      // Also save balance on pause. Etapa 1 (o.5, o.7): escritura economica →
-      // antes, el estado del servicio; despues, el {error} (solo avisa). El
-      // saldo es el CONFIRMADO por la base (lib/sim/cierre.js): con un cierre en
-      // vuelo, el de la pantalla aun no esta guardado.
-      const t=e.currentTime, sc=saldoConfirmado(id)
-      if(userIdRef.current && !soloLecturaRef.current && sc!=null) puedeEscribir().then(p=>{
-        if(!p.permitido) return
-        return supabase.from('sim_sessions').update({balance:sc,last_timestamp:t}).eq('id',id).then(avisaSiError('la pausa'))
-      }).catch(()=>avisa('No se ha podido guardar la pausa. Comprueba tu conexión.'))
     }else{
       // Al pulsar PLAY: deseleccionar cualquier drawing activo. Si un
       // LongShortPosition queda seleccionado durante el replay, sus puntos
