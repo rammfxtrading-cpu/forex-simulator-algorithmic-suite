@@ -10,6 +10,10 @@ import NoAccess from '../components/NoAccess'
 import ErrorCarga from '../components/ErrorCarga'
 import { leerTodo, porColumnas } from '../lib/paginado'
 import { tradesDeUsuario } from '../lib/tradesEstables'
+import AvisoServicio from '../components/AvisoServicio'
+import { useServicio, puedeEscribir, TEXTO_BLOQUEO } from '../lib/sim/servicio'
+import { sinLapidas, esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
+import { interpretaBorrado } from '../lib/sim/respuestas'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -76,6 +80,8 @@ export default function Dashboard() {
   const [borrando, setBorrando] = useState(null)        // id de la sesion que se esta borrando
   const [errorBorrado, setErrorBorrado] = useState('')
   const [showChallenge, setShowChallenge] = useState(false)
+  // Etapa 1 (diseño sim-004, o.5): el estado del servicio, al montar y cada 30 s
+  const servicio = useServicio()
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -109,7 +115,8 @@ export default function Dashboard() {
     // bloque D, punto 5: por clave (created_at, id); el orden de siempre, despues
     const r = await leerTodo(() => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId),
       { ordena: porColumnas([['created_at', 'desc'], ['id', 'asc']]) })
-    if (!r.error) setSessions(r.data)
+    // d1 (etapa 1): las lapidas (terminal = 'borrada') no se ven ni cuentan
+    if (!r.error) setSessions(sinLapidas(r.data))
     return r
   }
 
@@ -132,6 +139,31 @@ export default function Dashboard() {
     if (!confirm('¿Eliminar sesión y todos sus datos?')) return
     const sid = session.id
     setBorrando(sid); setErrorBorrado('')
+    // d3 (etapa 1): una sesion del Simulador anterior se borra por el servidor
+    // (POST /api/sim/borrar → sim_borrar_legacy). En la etapa 1 el endpoint esta
+    // apagado (503) y lo dice; d6: cada respuesta, su pantalla.
+    if (esLegado(session)) {
+      let estado = 0, cuerpo = null
+      try {
+        const { data: { session: auth } } = await supabase.auth.getSession()
+        const r = await fetch('/api/sim/borrar', { method: 'POST', headers: { 'content-type': 'application/json', ...(auth?.access_token ? { authorization: `Bearer ${auth.access_token}` } : {}) },
+          body: JSON.stringify({ session_id: sid }) })
+        estado = r.status
+        try { cuerpo = await r.json() } catch { cuerpo = null }
+      } catch { estado = 0 }
+      const d = interpretaBorrado(estado, cuerpo)
+      if (d.accion === 'quitar') quitaDeLaPantalla(sid)
+      if (d.texto) setErrorBorrado(d.texto)
+      setBorrando(null)
+      return
+    }
+    // Escritura economica (o.5): antes, el estado del servicio
+    const permiso = await puedeEscribir()
+    if (!permiso.permitido) {
+      setErrorBorrado(`No se ha borrado «${session.name}»: ${TEXTO_BLOQUEO[permiso.motivo]}`)
+      setBorrando(null)
+      return
+    }
     const { error, count } = await supabase.from('sim_sessions').delete({ count: 'exact' }).eq('id', sid)
     if (error || count !== 1) {
       // Bloque E, punto 4 (Astra BD-05): un error puede ser la RESPUESTA perdida
@@ -180,6 +212,9 @@ export default function Dashboard() {
       return
     }
     setCreating(true)
+    // Escritura economica (o.5): antes, el estado del servicio
+    const permiso = await puedeEscribir()
+    if (!permiso.permitido) { setCreating(false); setNewErr(`No se ha creado la sesión: ${TEXTO_BLOQUEO[permiso.motivo]}`); return }
     const { data, error } = await supabase.from('sim_sessions').insert({
       user_id: user.id, name: form.name, pair: form.pair,
       timeframe: 'H1', date_from: form.dateFrom, date_to: form.dateTo,
@@ -257,6 +292,8 @@ export default function Dashboard() {
 
   return (
     <div style={s.root}>
+      {/* Etapa 1 (o.5–o.7): mantenimiento, version y avisos */}
+      <AvisoServicio estado={servicio} />
       <NetworkBg />
           {/* Las estrellas del hub, justo despues del cielo */}
           <Estrellas />
@@ -354,7 +391,7 @@ export default function Dashboard() {
                 return (
                 <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:`1px solid ${vs.borderColor}`,borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                    <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}{esLegado(session) && <span data-etiqueta="legado" style={{marginLeft:8,fontSize:10,fontWeight:700,color:'#9fb4e8',border:'1px solid #34446e',borderRadius:4,padding:'1px 6px'}}>{ETIQUETA_LEGADO}</span>}</div>
                     <button onClick={()=>borrarSesion(session)} disabled={borrando===session.id} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
@@ -414,7 +451,7 @@ export default function Dashboard() {
                 return (
                 <div key={session.id} style={{background:'rgba(4,10,24,0.7)',border:`1px solid ${vs.borderColor}`,borderRadius:12,padding:20,display:'flex',flexDirection:'column',gap:10}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                    <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:'#ffffff'}}>{session.name}{esLegado(session) && <span data-etiqueta="legado" style={{marginLeft:8,fontSize:10,fontWeight:700,color:'#9fb4e8',border:'1px solid #34446e',borderRadius:4,padding:'1px 6px'}}>{ETIQUETA_LEGADO}</span>}</div>
                     <button onClick={()=>borrarSesion(session)} disabled={borrando===session.id} style={{background:'none',border:'none',color:'#3a5070',cursor:'pointer',fontSize:14}}>✕</button>
                   </div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>

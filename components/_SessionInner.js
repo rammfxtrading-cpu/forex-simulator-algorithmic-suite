@@ -12,8 +12,7 @@ import { supabase } from '../lib/supabase'
 import { clearCurrentTime, getSeriesData, getRealLen } from '../lib/sessionData'
 import { initVisibleRange, scrollToTail, markUserScrollIfReal } from '../lib/chartViewport'
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
-import { realizePnl } from '../lib/trading/orders'
-import { nextSessionOpen, sessionKeyAt } from '../lib/killzonesDomain'
+import { nextSessionOpen } from '../lib/killzonesDomain'
 import DrawingToolbarV2, { DrawingConfigPill, DrawingContextMenu, GroupActionBar } from './DrawingToolbarV2'
 import LongShortModal from './LongShortModal'
 import { useDrawingTools } from './useDrawingTools'
@@ -38,6 +37,11 @@ import TfInputModal from './TfInputModal'
 import { s, css } from './sessionStyles'
 import Spin from './Spin'
 import AntimatterLoader from './AntimatterLoader'
+import AvisoServicio from './AvisoServicio'
+import { useServicio, puedeEscribir } from '../lib/sim/servicio'
+import { fijaSaldoConfirmado, saldoConfirmado } from '../lib/sim/cierre'
+import { avisa, avisaSiError } from '../lib/sim/avisos'
+import { esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import CloseModal from './CloseModal'
 import PositionOverlay from './PositionOverlay'
 import SessionTopBar from './SessionTopBar'
@@ -110,6 +114,10 @@ export default function SessionPage(){
   const checkLimitOrdersRef = useRef(null)
   const checkChallengeBreachRef = useRef(null)
   const balanceRef          = useRef(10000)
+  // Etapa 1 (diseño sim-004, d2, o.5–o.7): sesion legado = solo lectura; estado
+  // del servicio leido al montar y cada 30 s
+  const soloLecturaRef      = useRef(false)
+  const servicio            = useServicio()
   // Order modal
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
   const [activeTool,    setActiveTool]    = useState('cursor')
@@ -409,13 +417,14 @@ export default function SessionPage(){
         .eq('session_id', sid)
         .eq('pair', pair)
         .select('session_id')
+      if (upErr) avisa('No se han podido guardar los dibujos. Comprueba tu conexión.')
       if (!upErr && (!updated || updated.length === 0)) {
         // No existía: insert. Si ahora otro tab se nos adelantó y ya creó la
         // fila entre el UPDATE y el INSERT (carrera muy rara), el catch lo
         // absorbe — el dato más reciente ya está en BD igualmente.
         await supabase.from('session_drawings').insert(
           { session_id: sid, user_id: uid, pair, data: combined, updated_at: new Date().toISOString() }
-        ).then(()=>{}).catch(()=>{})
+        ).then(r=>{ if(r?.error && r.error.code!=='23505') avisa('No se han podido guardar los dibujos. Comprueba tu conexión.') }).catch(()=>avisa('No se han podido guardar los dibujos. Comprueba tu conexión.'))
       }
     } catch(e) {}
   }, [exportTools, customDrawingsToJSON])
@@ -681,7 +690,7 @@ export default function SessionPage(){
           if(tf&&activePairRef.current){
             const n={...pairTfRef.current,[activePairRef.current]:tf}
             pairTfRef.current=n;setPairTf(n)
-            if(id) supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(()=>{}).catch(()=>{})
+            if(id && !soloLecturaRef.current) supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(avisaSiError('el marco temporal')).catch(()=>avisa('No se ha podido guardar el marco temporal. Comprueba tu conexión.'))
           }
           return ''
         })
@@ -710,6 +719,9 @@ export default function SessionPage(){
       if(!data){setErrorSesion('Esta sesión no existe o no es tuya.');setLoading(false);return}
       sessionRef.current=data
       setSession(data)
+      soloLecturaRef.current = esLegado(data)
+      // el saldo que la base tiene: base de lo que mandan los cierres (lib/sim/cierre.js)
+      if(Number.isFinite(Number(data.balance))) fijaSaldoConfirmado(id, Number(data.balance))
       // Use persisted balance (updated after each trade); fallback to capital or default
       const savedBalance = parseFloat(data.balance) || parseFloat(data.capital) || 10000
       setBalance(savedBalance)
@@ -1100,8 +1112,15 @@ export default function SessionPage(){
     if(e.isPlaying){
       e.pause();setIsPlaying(false)
       saveProgress(e.currentTime)
-      // Also save balance on pause
-      if(userIdRef.current) supabase.from('sim_sessions').update({balance:balanceRef.current,last_timestamp:e.currentTime}).eq('id',id).then(()=>{}).catch(()=>{})
+      // Also save balance on pause. Etapa 1 (o.5, o.7): escritura economica →
+      // antes, el estado del servicio; despues, el {error} (solo avisa). El
+      // saldo es el CONFIRMADO por la base (lib/sim/cierre.js): con un cierre en
+      // vuelo, el de la pantalla aun no esta guardado.
+      const t=e.currentTime, sc=saldoConfirmado(id)
+      if(userIdRef.current && !soloLecturaRef.current && sc!=null) puedeEscribir().then(p=>{
+        if(!p.permitido) return
+        return supabase.from('sim_sessions').update({balance:sc,last_timestamp:t}).eq('id',id).then(avisaSiError('la pausa'))
+      }).catch(()=>avisa('No se ha podido guardar la pausa. Comprueba tu conexión.'))
     }else{
       // Al pulsar PLAY: deseleccionar cualquier drawing activo. Si un
       // LongShortPosition queda seleccionado durante el replay, sus puntos
@@ -1131,13 +1150,22 @@ export default function SessionPage(){
     saveProgress(e.currentTime)
   },[activePair,updateChart,saveProgress])
 
+  // Etapa 1 (o.5–o.7): con lo economico bloqueado el replay se para; si no, el
+  // motor volveria a cerrar en la vela siguiente lo que se acaba de revertir.
+  const pausaPorBloqueo=useCallback(()=>{
+    Object.values(pairState.current).forEach(ps=>{try{ps?.engine?.pause()}catch{}})
+    setIsPlaying(false)
+  },[])
+  useEffect(()=>{ if(servicio.motivo && servicio.motivo!=='sin_estado') pausaPorBloqueo() },[servicio.motivo])
+  const hayAbiertas=()=>Object.values(pairState.current).some(ps=>(ps?.positions?.length||0)+(ps?.orders?.length||0)>0)
+
   // ── Trading ───────────────────────────────────────────────────────────────────────────────
   // Acciones de trading (closePosition, preview y órdenes límite, drag SL/TP,
   // checkSLTP/checkLimitOrders) viven en useTradingActions (Fase 7, Corte F).
   // API con los mismos nombres: ningún call-site cambia. openPosition y tpPips
   // eran código muerto (cero call-sites) y se eliminan en este corte.
   const {
-    closePosition, createPositionLines,
+    closePosition, closePartial, createPositionLines,
     previewOrder, confirmLimitOrder, cancelPreview, handlePositionDragEnd,
     cancelLimitOrder, updatePreviewSl, updatePreviewTp,
     checkSLTP, checkLimitOrders,
@@ -1145,6 +1173,7 @@ export default function SessionPage(){
     id, activePair, currentPrice, currentTime, lots, preview,
     pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef,
     setBalance, setTick, setPreview, setCtxMenu, refreshChallengeStatus,
+    soloLecturaRef, alBloqueo: pausaPorBloqueo,
   })
 
   // Keep refs always pointing to latest values/functions
@@ -1357,11 +1386,12 @@ export default function SessionPage(){
   useEffect(()=>()=>{
     // Save drawings before unmount
     if(saveDrawingsRef.current) saveDrawingsRef.current()
-    // Save progress before unmount
-    const e = pairState.current[activePairRef.current]?.engine
-    if(e?.currentTime && id){
-      try{supabase.from('sim_sessions').update({last_timestamp:e.currentTime,balance:balanceRef.current,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)}catch(err){}
-    }
+    // Etapa 1 (diseño sim-004, o.10): aqui habia un UPDATE de sim_sessions
+    // (last_timestamp, balance, timeframe) SIN await ni .then desde b3a1a52
+    // (12-abr-2026). El builder de supabase-js solo manda la peticion al hacer
+    // then(): esa escritura NUNCA salia. Se borra: la salida no escribe, como de
+    // hecho no escribia. El avance lo guarda el autoguardado cada 5 s
+    // (usePairData) y el saldo, cada cierre.
     Object.values(pairState.current).forEach(ps=>ps?.engine?.pause())
     Object.values(chartMap.current).forEach(cr=>{try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{}})
   },[])
@@ -1393,6 +1423,14 @@ export default function SessionPage(){
       <canvas ref={bgCanvasRef} style={s.bgCanvas}/>
       {/* Las estrellas del hub, justo despues del cielo de esta pagina */}
       <Estrellas />
+
+      {/* Etapa 1 (o.5–o.7): mantenimiento, version, estado y avisos */}
+      <AvisoServicio estado={servicio} hayAbiertas={hayAbiertas}/>
+      {session?.legado===true&&(
+        <div data-aviso="legado" style={{position:'fixed',top:12,right:16,zIndex:9999,padding:'6px 12px',borderRadius:6,background:'#1b2440',color:'#9fb4e8',border:'1px solid #34446e',fontSize:12}}>
+          {ETIQUETA_LEGADO} · solo lectura
+        </div>
+      )}
 
       {/* Bloque D, punto 4: el aviso de cobertura del par activo, 10 s al cargar */}
       <AvisoCobertura estadoPar={pairState.current[activePair]}/>
@@ -1524,7 +1562,8 @@ export default function SessionPage(){
         templates={templates}
         onSaveTemplate={async(name)=>{
           const json=exportTools();if(!json||!userIdRef.current)return
-          const{data}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,data:json}).select().single()
+          const{data,error}=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,data:json}).select().single()
+          if(error) avisa('No se ha podido guardar la plantilla. Comprueba tu conexión.')
           if(data)setTemplates(prev=>[...prev,data])
         }}
         onLoadTemplate={(t)=>{if(!t?.data)return;removeAll();importTools(t.data)}}
@@ -1643,10 +1682,12 @@ export default function SessionPage(){
           const cfgWithTf={...cfg,label:ownLabel,...(tfsToSave?{visibleTf:tfsToSave}:{})}
           if(!userIdRef.current) return
           const insRes=await supabase.from('sim_drawing_templates').insert({user_id:userIdRef.current,name,tool_key:activeToolKey,config:JSON.stringify(cfgWithTf),data:'{}'}).select().single()
+          if(insRes.error) avisa('No se ha podido guardar la plantilla. Comprueba tu conexión.')
           if(insRes.data)setTemplates(prev=>[...prev,insRes.data])
         }}
         onDeleteTemplate={async(id)=>{
-          await supabase.from('sim_drawing_templates').delete().eq('id',id)
+          const{error}=await supabase.from('sim_drawing_templates').delete().eq('id',id)
+          if(error){ avisa('No se ha podido borrar la plantilla. Comprueba tu conexión.'); return }
           setTemplates(prev=>prev.filter(t=>t.id!==id))
         }}
         onLoadTemplate={(t)=>{
@@ -1748,7 +1789,7 @@ export default function SessionPage(){
       <div className="vidrio" style={s.tfBar}>
         {TF_LIST.map(tf=>(
           <button key={tf} style={{...s.tfBtn,...(activeTf===tf?s.tfActive:{})}}
-            onClick={()=>{const n={...pairTfRef.current,[activePair]:tf};pairTfRef.current=n;setPairTf(n);if(id)supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(()=>{}).catch(()=>{})}}
+            onClick={()=>{const n={...pairTfRef.current,[activePair]:tf};pairTfRef.current=n;setPairTf(n);if(id&&!soloLecturaRef.current)supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(avisaSiError('el marco temporal')).catch(()=>avisa('No se ha podido guardar el marco temporal. Comprueba tu conexión.'))}}
           >{tf}</button>
         ))}
         <div style={{flex:1}}/>
@@ -1904,6 +1945,8 @@ export default function SessionPage(){
           currentPrice={currentPrice}
           onClose={()=>setOrderModal(null)}
           onConfirm={(posData)=>{
+            if(soloLecturaRef.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); setOrderModal(null); return }
+            if(servicio.motivo && (servicio.motivo!=='sin_estado' || servicio.falloLectura)){ avisa('Las operaciones están en pausa: el simulador no acepta operaciones ahora.'); setOrderModal(null); return }
             if(orderModal.isLimit){
               const ps=pairState.current[orderModal.pair]||{engine:null,ready:false,positions:[],trades:[],orders:[]}
               pairState.current[orderModal.pair]=ps
@@ -1931,39 +1974,11 @@ export default function SessionPage(){
             const ps=pairState.current[closeModal.pair]
             const pos=ps?.positions?.find(p=>p.id===closeModal.posId)
             if(!pos||!currentPrice) return
-            const { pnl, rrReal, result } = realizePnl({ side: pos.side, entry: pos.entry, exit: currentPrice, lots: lotsToClose, pair: closeModal.pair, initialSlPips: pos.initialSlPips, slPips: pos.slPips })
-            // Convert ordinal→real for DB timestamps
-            // toReal2 removed — using real timestamps directly
             if(lotsToClose>=pos.lots){
               closePosition(pos.id,'MANUAL',closeModal.pair,currentPrice,note)
             } else {
-              const remaining=parseFloat((pos.lots-lotsToClose).toFixed(2))
-              ps.trades=[...ps.trades,{...pos,lots:lotsToClose,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL',note}]
-              pos.lots=remaining
-              ps.positions=[...ps.positions]
-              const newBal=parseFloat((balanceRef.current+pnl).toFixed(2))
-              setBalance(newBal);setTick(t=>t+1)
-              if(userIdRef.current){
-                const realOpen=pos.openTime??null
-                const realClose=currentTime>1000000000?currentTime:null
-                supabase.from('sim_sessions').update({balance:newBal}).eq('id',id).then(()=>{}).catch(()=>{})
-                supabase.from('sim_trades').insert({
-                  user_id:userIdRef.current, session_id:id,
-                  pair:pos.pair, side:pos.side,
-                  lots:parseFloat(lotsToClose)||0.01,
-                  entry_price:parseFloat(pos.entry)||0,
-                  exit_price:parseFloat(currentPrice)||0,
-                  sl_price:parseFloat(pos.sl)||0,
-                  tp_price:parseFloat(pos.tp)||0,
-                  rr:parseFloat(rrReal.toFixed(2)),
-                  pnl:parseFloat(pnl.toFixed(2)),
-                  result,
-                  notes: note||null,
-                  session_type:(realOpen&&realOpen>1000000000)?sessionKeyAt(realOpen):null,
-                  opened_at:realOpen?new Date(realOpen*1000).toISOString():new Date().toISOString(),
-                  closed_at:realClose?new Date(realClose*1000).toISOString():new Date().toISOString(),
-                }).then(()=>{}).catch(()=>{})
-              }
+              // el parcial vive en useTradingActions (closePartial, etapa 1)
+              closePartial(pos.id,closeModal.pair,lotsToClose,note)
             }
             // Si es un challenge, refrescar HUD tras cerrar (parcial o total)
             if(sessionRef.current?.challenge_type) refreshChallengeStatus()

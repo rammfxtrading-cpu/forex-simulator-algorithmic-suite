@@ -13,6 +13,8 @@
 import { useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
+import { puedeEscribir } from '../lib/sim/servicio'
+import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { fetchSessionCandles, setSeriesData, setMasterTime, getMasterTime } from '../lib/sessionData'
 import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar } from '../lib/chartViewport'
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
@@ -22,7 +24,16 @@ import { fechaCorta, listaDiasCortos } from '../lib/mercado/calidad.mjs'
 export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools }){
   const saveProgress=useCallback(async(ts)=>{
     if(!id||!ts) return
-    try{ await supabase.from('sim_sessions').update({last_timestamp:ts,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id) }catch(e){}
+    // Etapa 1 (diseño sim-004, d2, o.5, o.7): una sesion legado no escribe; el
+    // guardado es una escritura economica (last_timestamp): antes, el estado del
+    // servicio; despues, el {error}, que solo avisa
+    if(sessionRef.current?.legado===true) return
+    try{
+      const p=await puedeEscribir()
+      if(!p.permitido) return
+      const r=await supabase.from('sim_sessions').update({last_timestamp:ts,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)
+      avisaSiError('el avance de la sesión')(r)
+    }catch(e){ avisa('No se ha podido guardar el avance de la sesión. Comprueba tu conexión.') }
   },[id])
 
   // Bloque D, punto 5 (CTO, 5-oct; Astra, regresion de C04): el fallo de un par

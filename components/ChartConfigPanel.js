@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { avisa, avisaSiError } from '../lib/sim/avisos'
 
 const DEFAULT_CONFIG = {
   bullCandleBody:   '#26a69a',
@@ -53,11 +54,11 @@ export function useChartConfig({ sessionId, userId }) {
     supabase.from('session_chart_config').upsert(
       { session_id: sessionId, user_id: userId, config: newConfig, updated_at: new Date().toISOString() },
       { onConflict: 'session_id' }
-    ).then(()=>{}).catch(()=>{})
+    ).then(avisaSiError('la configuración del gráfico')).catch(()=>avisa('No se ha podido guardar la configuración del gráfico. Comprueba tu conexión.'))
     supabase.from('user_chart_config').upsert(
       { user_id: userId, config: newConfig, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' }
-    ).then(()=>{}).catch(()=>{})
+    ).then(avisaSiError('la configuración del gráfico')).catch(()=>avisa('No se ha podido guardar la configuración del gráfico. Comprueba tu conexión.'))
   }
 
   return { config, saveConfig, loaded }

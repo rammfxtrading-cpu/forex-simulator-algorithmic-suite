@@ -3,6 +3,7 @@
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { avisa, avisaSiError } from '../lib/sim/avisos'
 
 const DEFAULT_CFG = {
   TrendLine:         { color: '#ffffff', width: 1, style: 0, label: '', textColor: '#ffffff', fontSize: 12, textV: 'middle', textH: 'center' },
@@ -252,7 +253,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
           supabase.from('user_tool_config').upsert(
             { user_id: userId, config: cfgRef.current, updated_at: new Date().toISOString() },
             { onConflict: 'user_id' }
-          ).then(() => {}).catch(() => {})
+          ).then(avisaSiError('la configuración de las herramientas')).catch(() => avisa('No se ha podido guardar la configuración de las herramientas. Comprueba tu conexión.'))
         }, 600)
       }
       return next
