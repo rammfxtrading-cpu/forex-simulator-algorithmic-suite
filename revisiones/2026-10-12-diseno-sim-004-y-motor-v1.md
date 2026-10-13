@@ -2541,3 +2541,23 @@ Antes de publicar, una aceptación se corrige con otra línea (la última del mi
 ### p.10 Lo que no cambia
 
 El diario (`forex-data`, `/api/candles`, `actualizar-diario`) no se toca. Nada en uso importa el motor ni el mercado v1 hasta la etapa 3.
+
+### p.11 Autorrevisión adversaria de la etapa 2 (`9709d3d..ff461d3`)
+
+**Corregido durante la revisión:**
+- **El cerrojo subido sin respuesta** (BF-03 del diario): ahora se mira y solo se sigue si es el nuestro (`aacf6ab`).
+- **La inmutabilidad en el repositorio depende de anotar la publicación** (`--anota` y commit): sin el registro `publicacion`, la prueba permanente no ve si se edita una aceptación publicada (solo lo ve el ancla de Storage). El verificador lo señala como problema hasta que se anota (`ff461d3`).
+
+**Lo que queda, con su consecuencia:**
+1. **El hueco final es definitivo si el día de la vela siguiente no gana velas al principio.** El actualizador solo repide días pendientes (y domingos), así que no debería pasar; si pasa, no es silencioso: el publicador regenera ese trozo con otro sha (incidente) y la fuente detiene (el hueco ya no coincide).
+2. **El ancla cubre el fichero entero:** también fija los bytes de aceptaciones aún no publicadas (de otros pares o días). Corregirlas antes de publicar se hace **añadiendo** una línea (la última manda), nunca editando.
+3. **Un hueco con minuto + minutos > 2.879** sale como «no_codificable» y no como «hueco_fuera_de_formato» (el mensaje es menos claro; el día se retiene igual). Medido: ninguno pasa de 1.445 minutos.
+4. **La primera publicación** sube unos 2.200 trozos uno a uno, con subida y relectura: no he medido cuánto tarda. Es manual; el workflow viene después.
+5. **El cerrojo de `mercado` no caduca** (como el de `forex-data`) y no hay todavía un `liberar-cerrojo` para él: si un publicador muere, hoy se libera desde el panel. Pendiente si el CTO lo quiere.
+6. **No comprobado:** que el editor de Supabase deje a `postgres` insertar en `storage.buckets` (p.8).
+7. **La guarda de políticas es conservadora y textual** (literal `bucket_id = '<x>'`, sin `OR`, `<>`, `!=`, `NOT` ni `ANY`): una política correcta escrita de otra forma aborta y la decide el CTO; no he encontrado una abierta que pase.
+8. **Etapas siguientes:** la RPC y sim-004b tienen que admitir `versiones.mercado_efectivo` en el estado (etapa 3–4); y los endpoints leerán `mercado` con `service_role` (etapa 3).
+
+**Para el CTO:**
+- **Los festivos en `cortos_aceptados`** (p.2): entran solos por la regla del 6-oct. Si no los quiere así, se quitan y quedan retenidos como cualquier día corto.
+- **La lista real de huecos** (spec § 14: «sobre los datos actuales»): el informe de `revisiones-suite/2026-10-14-mercado-v1-informe-huecos.md` es **indicativo** (2024–2025 de la copia del 5-oct y 2026 del arranque del 10-oct): **130 huecos de más de 15 minutos**, todos pendientes; los 9 pares se retienen el 9-oct-2024 por el mismo hueco de 66 minutos a las 23:05 UTC. La definitiva necesita datos actuales: o `--descarga-autorizada` (los 27 anuales de `forex-data`, unos 117 MB; regla del 5-oct: con su sí) o una copia local nueva.
