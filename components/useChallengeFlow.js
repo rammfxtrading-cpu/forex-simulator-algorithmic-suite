@@ -16,8 +16,10 @@ import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera } fr
 import { inciertosDe } from '../lib/sim/servicio'
 import { avisa } from '../lib/sim/avisos'
 
-// CAS de challenge/advance: cuantas veces se vuelve a pasar por la barrera tras un 409
+// CAS de challenge/advance: cuantas veces se vuelve a pasar por la barrera tras un 409, y
+// la espera antes de cada reintento: corta y creciente (ESPERA_FASE_MS, luego el doble)
 export const INTENTOS_FASE = 3
+export const ESPERA_FASE_MS = 250
 
 export default function useChallengeFlow({ id, router, session, setSession, sessionRef, currentTime, pairState, balanceRef, closePositionRef, setIsPlaying }){
   const currentTimeRef = useRef(null) // timestamp de la vela actual del simulador (unix segundos). Se usa en refreshChallengeStatus.
@@ -274,14 +276,16 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   // REEVALUADO con todos los cierres guardados. Si ya no esta en ese punto, no se
   // manda, se cierra el modal y se avisa.
   // Si el servidor responde 409 «saldo_cambiado» (CAS: otra pestaña guardo un
-  // cierre entre su lectura y su escritura), se vuelve a pasar por la barrera
-  // (vaciar la cola + reevaluar) antes de reintentar; como mucho INTENTOS_FASE
-  // veces, y despues se avisa (el alumno puede volver a pulsar).
+  // cierre entre su lectura y su escritura), se espera un poco (creciente) y se
+  // vuelve a pasar por la barrera: vaciar la cola y RELEER el reto (y su saldo)
+  // con challenge/status antes de reintentar; el servidor relee la sesion en cada
+  // llamada. Como mucho INTENTOS_FASE veces, y despues se avisa (CTO 13-oct).
   const decideFase = useCallback(async (outcome) => {
     if (!id) return null
     setChallengeAdvancing(true)
     try {
       for (let intento = 0; intento < INTENTOS_FASE; intento++) {
+        if (intento > 0) await new Promise(r => setTimeout(r, ESPERA_FASE_MS * 2 ** (intento - 1)))
         const r = await confirmaReto(async (st) => {
           const ev = st?.evaluation?.status
           const vale = outcome === 'pass' ? ev === 'target_reached' : (ev === 'failed_dd_daily' || ev === 'failed_dd_total')

@@ -29,6 +29,7 @@
  * inventados; el orden de entrega lo deciden las puertas del doble (db.pausa). Sin red.
  */
 import { titulo, ver, oraculo, fin, escenario, sesionSim, importa, monta, router, vela, nav, db, api, A, tok, asienta, puerta } from './lib.mjs'
+import { retenApi } from './entorno.mjs'
 import { llama } from './supabase-falso.mjs'
 import { velasEnStorage, banco } from './banco-motor.mjs'
 
@@ -410,8 +411,9 @@ async function pideFase(b, sid, { primero, pendiente, falla, pierde, incierto })
 // ═══════════════════════════════════════════════════════════════════════
 titulo('5 · CAS de advance: el 409 vuelve a pasar por la barrera')
 // la otra pestaña guarda un cierre (trade + saldo) mientras advance espera su UPDATE (veces = cuantas veces)
-async function faseConOtraPestana(sid, pnlOtra, veces = 1) {
+async function faseConOtraPestana(sid, pnlOtra, veces = 1, antes = null) {
   const b = await reto(sid)
+  retenApi.antes = antes   // despues de reto(): escenario() lo pone a null
   await cierreReto(sid, 11000, 1); await asienta(20)
   let n = 0
   db.pausa = c => {
@@ -435,10 +437,33 @@ async function faseConOtraPestana(sid, pnlOtra, veces = 1) {
     st.join(',') === '409' && madre(sid).status === 'active' && Number(madre(sid).balance) === 108000 && hijas(sid).length === 0 && AV.avisos().some(a => /ya no está en ese punto/.test(a.texto)), foto(sid))
   b.caja.raiz.desmonta() }
 { const sid = 'e105-cas-siempre'; const CF = await importa('components/useChallengeFlow.js')
-  const b = await faseConOtraPestana(sid, 1, 99)
+  // cuando sale cada llamada (advance y status), para ver la espera y la relectura entre intentos
+  const marcas = []
+  const b = await faseConOtraPestana(sid, 1, 99, u => { marcas.push({ ruta: String(u).split('?')[0], t: Date.now() }) })
+  retenApi.antes = null
   const st = advances().map(l => l.estado)
   oraculo('CAS-cliente-tope', `si el saldo cambia en cada intento: ${CF.INTENTOS_FASE} intentos (409 todos), sin bucle, nada escrito y se avisa`,
     st.length === CF.INTENTOS_FASE && st.every(x => x === 409) && madre(sid).status === 'active' && hijas(sid).length === 0 && AV.avisos().some(a => /ha cambiado mientras se decidía/.test(a.texto)), foto(sid))
+  const adv = marcas.filter(m => m.ruta === '/api/challenge/advance')
+  const huecos = adv.slice(1).map((m, i) => m.t - adv[i].t)
+  const relee = adv.slice(1).every((m, i) => marcas.some(x => x.ruta === '/api/challenge/status' && x.t >= adv[i].t && x.t <= m.t))
+  oraculo('CAS-cliente-espera', `entre intentos, una espera corta y creciente (≥ ${CF.ESPERA_FASE_MS} y ≥ ${2 * CF.ESPERA_FASE_MS} ms) y antes de cada reintento se relee el reto (challenge/status)`,
+    CF.ESPERA_FASE_MS > 0 && huecos.length === 2 && huecos[0] >= CF.ESPERA_FASE_MS && huecos[1] >= 2 * CF.ESPERA_FASE_MS && huecos[1] > huecos[0] && relee,
+    `huecos ${huecos.join(', ')} ms · relee ${relee}`)
+  b.caja.raiz.desmonta() }
+{ // respuesta perdida: el primer advance SE CONFIRMA y la respuesta no llega; el alumno vuelve a pulsar
+  const sid = 'e105-perdida'; const b = await reto(sid)
+  await cierreReto(sid, 11000, 1); await asienta(20)
+  let perdidas = 0
+  retenApi.pierde = u => String(u).startsWith('/api/challenge/advance') && perdidas++ === 0
+  const r1 = await b.caja.valor.reto.handleChallengePass(); await asienta(30)
+  const trasPrimero = { status: madre(sid).status, hijas: hijas(sid).length, advance: advances().length }
+  await b.caja.valor.reto.handleChallengePass(); await asienta(30)
+  retenApi.pierde = null
+  const st = advances().map(l => l.estado)
+  oraculo('CAS-respuesta-perdida', 'el primer advance se confirma y su respuesta se pierde: no se reintenta solo; al volver a pulsar, el segundo sale con 409 limpio (sesion ya cerrada) y no hay segunda fase ni segunda hija',
+    trasPrimero.status === 'passed_phase' && trasPrimero.hijas === 1 && trasPrimero.advance === 1 && st.join(',') === '200,409' && madre(sid).status === 'passed_phase' && hijas(sid).length === 1
+    && Number(madre(sid).balance) === 111000, `tras el primero ${JSON.stringify(trasPrimero)} · ${foto(sid)}`)
   b.caja.raiz.desmonta() }
 
 fin()
