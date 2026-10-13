@@ -1903,3 +1903,56 @@ Va al **runbook de la etapa 1, antes de abrir la versión a los alumnos:** un lo
 
 - **Contraejemplos que NO sirven** (el float acierta por suerte): 12,34/12,35, 1000,00/1000,01 y −5,05/−5,04, todos con 0,00999…
 - **El ensayo exige que el mutante float dé rojo en los cuatro casos.**
+
+### o.11 Autorrevisión adversaria del código de la etapa 1 (13-oct)
+
+**Código revisado:**
+- `sql/sim-004a-preparatoria.sql` y `sql/sim-004a-puerta.sql` (`0d27d2c`);
+- `sql/consultas/s10-conciliacion.sql` (`a2fcea0`, `d969b73`);
+- el cliente (`667d88d`, `324b429`, `692b37a`) y sus pruebas (`f005da7`).
+
+**Precisiones de implementación que no estaban en el diseño.** Todas son más estrictas que lo escrito, ninguna lo relaja. Las corregí en el código, y van a Astra:
+
+1. **El saldo que manda un cierre.** El v0 manda a la base un saldo absoluto, el de la pantalla.
+   - **El problema:** si un cierre falla y se revierte, el siguiente, ya calculado en pantalla, llevaría dentro el pnl del que falló. La base quedaría con un saldo que no cuadra con sus trades.
+   - **En la etapa 1:**
+     - los cierres van **en cola**, uno detrás de otro;
+     - cada uno manda **saldo confirmado por la base + su delta**, calculado al enviarlo;
+     - la pausa manda el saldo confirmado.
+   - **La pantalla no cambia:** aplica el cierre al momento, como hoy, porque el motor y el reto leen `balanceRef` en la misma vela.
+   - **Ensayado:** Q-cola, X-pausa y su mutante.
+2. **«Resultado incierto → releer → si no está, revertir» (o.7) tenía un hueco.**
+   - **El problema:** si la respuesta se pierde con la transacción aún en marcha en el servidor, la relectura inmediata no encuentra el trade. Revertir ahí y dejar que el alumno cierre otra vez duplicaría el cierre.
+   - **En la etapa 1:**
+     - encontrar el trade vale siempre;
+     - «no está» solo vale pasados **`ESPERA_INCIERTO_MS` = 20 s** desde la llamada;
+     - mientras tanto, el cierre queda incierto y lo económico, bloqueado.
+   - **20 s cubre 2 × `statement_timeout` si este es ≤ 10 s.** **Al runbook:** contrastarlo con la sección `timeout` de s10 antes de desplegar, y subir la constante si sale mayor.
+   - **Ensayado:** I-commit-tardio, I-plazo y el mutante «revertir sin esperar».
+3. **Qué `{error}` es «cierto»** (rollback garantizado):
+   - un SQLSTATE de 5 caracteres, salvo la clase 08 (conexión), o un `PGRSTnnn`, o un HTTP 4xx;
+   - **todo lo demás es incierto:** status 0 (fetch roto), 5xx sin código, una excepción o la clase 08.
+   - **Ensayado:** E-clase-08.
+4. **Al bloquearse lo económico, el replay se para.** Si no, el motor volvería a cerrar en la vela siguiente la posición que se acaba de revertir. Un cierre bloqueado (mantenimiento, versión, servicio ilegible o incierto) se revierte igual que un `{error}`, con su aviso.
+5. **El cierre parcial pasa de `_SessionInner` a `useTradingActions` (`closePartial`).** Es el mismo comportamiento en pantalla. Así lo prueba el banco del motor con los hooks reales.
+6. **Abrir posiciones también se bloquea** con mantenimiento, versión o incierto. No es una escritura, pero una posición que no se puede cerrar no sirve de nada. Con «servicio ilegible» solo se bloquea si la lectura ha fallado de verdad, no mientras se lee por primera vez.
+
+**Hallazgos que no decido yo (para el CTO):**
+
+7. **Los retos escriben economía por el servidor, y eso no pasa por `sim_servicio`.**
+   - Son `ChallengeSetupModal.js:47` (`/api/challenge/create`) y `useChallengeFlow.js:208` (`/api/challenge/advance`). Escriben con `service_role`.
+   - Con el mantenimiento activo, un alumno con la pestaña nueva podría crear un reto o pasar de fase.
+   - El diseño lo cubre en el corte (h.3, revocación a `service_role`; i.1 d, la guarda) y retira esos endpoints en la etapa 6, pero no dice nada para la etapa 1.
+   - **Opciones:**
+     - (a) que el cliente lea `sim_servicio` también antes de esas dos llamadas;
+     - (b) que los dos endpoints lean `sim_servicio` en el servidor y respondan 503;
+     - (c) dejarlo a la etapa 6.
+
+     Recomiendo (b): es el único sitio que no se salta con un cliente viejo.
+8. **El volumen de lecturas.** Cada guardado periódico (cada 5 s con el replay en marcha) lee antes `sim_servicio`. Eso duplica las peticiones de ese camino, y se suma al sondeo de 30 s. Con 5 alumnos es poco. Se mide en la etapa 1 junto con k.3.7.
+9. **El reto y la cola.** Al quemarse un reto, se cierran todas las posiciones y, 300 ms después, se pide el veredicto al servidor, hasta 3 veces (`useChallengeFlow.js:397`). Con la cola, los cierres llegan uno detrás de otro: con muchas posiciones, el veredicto puede leer antes de que estén todos. Ya pasaba sin la cola, y el reintento lo cubre en parte. Lo anoto para la etapa 3, que pasa el veredicto al servidor.
+
+**Lo que no prueba el ensayo:**
+- **El navegador real, PostgREST real y el editor de Supabase.** El cliente se prueba con dobles. La función atómica, la RLS y la puerta se prueban en PostgreSQL con PostgREST emulado (k.4 b midió que PostgREST 13.0.8 y 16.4 dan lo mismo).
+- **Un login real con la cabecera.** Va al runbook (o.9).
+- **Los 200.000 cierres de l.5 con el `realizePnl` real en PostgreSQL.** La tolerancia se ensaya con casos de frontera (o.10.3). La medida de los 200.000 es la de `revisiones-suite/2026-10-12-sim-004-l-emparejamiento/`.
