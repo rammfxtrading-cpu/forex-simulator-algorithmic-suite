@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { pipValue } from '../lib/trading/pricing'
 
 // ─── Position Overlay — HTML lines with reliable drag ────────────────────────
-export default function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd,chartTick}){
+export default function PositionOverlay({positions,pendingOrders,chartMap,activePair,dataReady,onClosePos,onCancelOrder,onDragEnd,chartTick,ocupadas}){
   const [lines,    setLines]    = useState([])
   const dragState = useRef(null) // {posId, type, active:bool}
   const chartElRef = useRef(null)
@@ -164,13 +164,17 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
                 onMouseDown={e=>onLineMouseDown(e,line)}
               >⠿</div>
             )}
-            {line.close&&(
+            {line.close&&(()=>{
+              // etapa 1, ronda 2 (E1-02): con un cierre en curso, deshabilitado
+              const ocupada=!!ocupadas?.has(line.posId)
+              return(
               <button
-                style={{background:'rgba(239,83,80,0.12)',border:'1px solid rgba(239,83,80,0.35)',borderRadius:3,color:'#ef5350',width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontSize:11,fontFamily:"'Montserrat',sans-serif"}}
+                disabled={ocupada} title={ocupada?'Cierre en curso':undefined}
+                style={{background:'rgba(239,83,80,0.12)',border:'1px solid rgba(239,83,80,0.35)',borderRadius:3,color:'#ef5350',width:18,height:18,cursor:ocupada?'not-allowed':'pointer',opacity:ocupada?0.4:1,display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontSize:11,fontFamily:"'Montserrat',sans-serif"}}
                 onMouseDown={e=>e.stopPropagation()}
-                onClick={e=>{e.stopPropagation();onClosePos(line.posId)}}
+                onClick={e=>{e.stopPropagation();if(!ocupada)onClosePos(line.posId)}}
               >✕</button>
-            )}
+            )})()}
             {line.cancel&&(
               <button
                 style={{background:'rgba(239,83,80,0.1)',border:'1px solid rgba(239,83,80,0.3)',borderRadius:3,color:'#ef5350',width:18,height:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,fontSize:11,fontFamily:"'Montserrat',sans-serif"}}

@@ -17,7 +17,8 @@ import { supabase } from '../lib/supabase'
 import { realizePnl, priceFromPips, isFilled, isLongSide } from '../lib/trading/orders'
 import { pipMult } from '../lib/trading/pricing'
 import { sessionKeyAt } from '../lib/killzonesDomain'
-import { persisteCierre, trasCierre, nuevoIdTrade } from '../lib/sim/cierre'
+import { cierraPosicion, saldoConfirmado, nuevoIdTrade } from '../lib/sim/cierre'
+import { encola, posicionOcupada, hayBarrera } from '../lib/sim/cola'
 import { avisa } from '../lib/sim/avisos'
 
 // La fila de sim_trades de un cierre (total o parcial), con su id generado aqui:
@@ -45,7 +46,7 @@ export function filaTrade({ userId, pos, lots, exit, rrReal, pnl, result, note, 
   }
 }
 
-export default function useTradingActions({ id, activePair, currentPrice, currentTime, lots, preview, pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef, setBalance, setTick, setPreview, setCtxMenu, refreshChallengeStatus, soloLecturaRef, alBloqueo }){
+export default function useTradingActions({ id, activePair, currentPrice, currentTime, lots, preview, pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef, checkSLTPRef, setBalance, setTick, setPreview, setCtxMenu, refreshChallengeStatus, soloLecturaRef, alBloqueo }){
   function createPositionLines(posId,pair,pos){
     // Lines are rendered by HTML overlay — no LWC price lines needed
   }
@@ -54,81 +55,96 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     // Lines are rendered by HTML overlay — nothing to remove from LWC
   }
 
+  // Etapa 1, ronda 2 (CTO 13-oct; Astra E1-02): el cierre va a la cola de la sesion
+  // (lib/sim/cierre.js, cierraPosicion) y la posicion queda OCUPADA hasta que se
+  // resuelve. Lo que cambia en la pantalla se calcula EN SU TURNO (prepara), con la
+  // posicion de ese momento, no al pulsar. Si no se guarda, la posicion vuelve a su
+  // ultimo estado CONFIRMADO (la copia de antes de aplicarlo), nunca sumando lotes, y el
+  // saldo de la pantalla al confirmado por la base.
+  const dos=x=>parseFloat(Number(x).toFixed(2))
+  const reponSaldo=(delta)=>{
+    const c=saldoConfirmado(id)
+    balanceRef.current = c!=null ? c : dos(balanceRef.current-delta)
+    setBalance(balanceRef.current);setTick(t=>t+1)
+  }
+  const restaura=(pair,confirmada,enMemoria)=>{
+    const ps3=pairState.current[pair]; if(!ps3) return
+    ps3.trades=ps3.trades.filter(t=>t!==enMemoria)
+    ps3.positions = ps3.positions.some(p=>p.id===confirmada.id)
+      ? ps3.positions.map(p=>p.id===confirmada.id?{...confirmada}:p)
+      : [...ps3.positions,{...confirmada}]
+  }
+  // SL/TP de las velas que pasaron con la posicion ocupada (o con la barrera del reto): al
+  // liberarse, se vuelven a mirar (checkSLTP las apunta en ps.sltpDesde)
+  const reevaluaSLTP=(pair)=>{
+    const ps=pairState.current[pair]
+    if(ps?.sltpDesde==null||!ps.engine) return
+    const desde=ps.sltpDesde; ps.sltpDesde=null
+    checkSLTPRef.current?.(pair,ps.engine,desde)
+  }
+
   // closePosition accepts optional pair+exitPrice for use from engine.onTick
   const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null)=>{
     const usePair=pairOverride||activePair
     const usePrice=exitPriceOverride||currentPrice
     const ps=pairState.current[usePair];if(!ps||!usePrice) return
-    const pos=ps.positions.find(p=>p.id===posId);if(!pos) return
+    if(!ps.positions.some(p=>p.id===posId)) return
     // d2: una sesion del simulador anterior es de solo lectura
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); return }
-    const { pnl, rrReal, result } = realizePnl({ side: pos.side, entry: pos.entry, exit: usePrice, lots: pos.lots, pair: usePair, initialSlPips: pos.initialSlPips, slPips: pos.slPips })
-    ps.positions=ps.positions.filter(p=>p.id!==posId)
-    const enMemoria={...pos,exit:usePrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}
-    ps.trades=[...ps.trades,enMemoria]
-    removePositionLines(posId,usePair)
-    const antes = balanceRef.current
-    const newBalance = parseFloat((balanceRef.current+pnl).toFixed(2))
-    const delta = newBalance - antes
-    balanceRef.current=newBalance // sync inmediato: si 2 posiciones cierran en la misma vela, la 2a debe leer el balance ya actualizado
-    setBalance(newBalance);setTick(t=>t+1)
-    if(userIdRef.current){
-      // Etapa 1 (diseño sim-004, i.1 S4-01a, o.7): UNA llamada atomica (trade +
-      // saldo) que comprueba el servicio antes y el {error} despues. Si no se
-      // guarda, la pantalla vuelve atras: la posicion, el trade y el saldo.
-      const trade = filaTrade({ userId:userIdRef.current, pos, lots:pos.lots, exit:usePrice, rrReal, pnl, result, note, currentTime })
-      const revierte = () => {
-        const ps3=pairState.current[usePair]
-        if(ps3){
-          ps3.trades=ps3.trades.filter(t=>t!==enMemoria)
-          if(!ps3.positions.some(p=>p.id===pos.id)) ps3.positions=[...ps3.positions,pos]
-        }
-        balanceRef.current=parseFloat((balanceRef.current-delta).toFixed(2))
-        setBalance(balanceRef.current);setTick(t=>t+1)
-      }
-      const r = await persisteCierre({ sessionId:id, delta, lastTimestamp:currentTime??null, trade })
-      trasCierre(r, { sessionId:id, revierte, alBloqueo })
+    const ct=currentTime
+    // en su turno: la posicion de ese momento; aplica el cierre a la pantalla
+    const prepara=()=>{
+      const ps2=pairState.current[usePair]
+      const pos=ps2?.positions?.find(p=>p.id===posId); if(!pos) return null
+      const confirmada={...pos}
+      const { pnl, rrReal, result } = realizePnl({ side: pos.side, entry: pos.entry, exit: usePrice, lots: pos.lots, pair: usePair, initialSlPips: pos.initialSlPips, slPips: pos.slPips })
+      const delta=dos(pnl)
+      ps2.positions=ps2.positions.filter(p=>p.id!==posId)
+      const enMemoria={...pos,exit:usePrice,closeTime:ct,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason}
+      ps2.trades=[...ps2.trades,enMemoria]
+      removePositionLines(posId,usePair)
+      balanceRef.current=dos(balanceRef.current+delta) // sync inmediato: el motor y el reto lo leen en la misma vela
+      setBalance(balanceRef.current);setTick(t=>t+1)
+      const trade=userIdRef.current ? filaTrade({ userId:userIdRef.current, pos, lots:pos.lots, exit:usePrice, rrReal, pnl, result, note, currentTime:ct }) : null
+      return { delta, trade, lastTimestamp:ct??null, revierte:()=>{ restaura(usePair,confirmada,enMemoria); reponSaldo(delta) } }
     }
-    // Si es un challenge, refrescar HUD con nuevo balance/DD/target
+    if(!userIdRef.current){
+      // sin usuario no se guarda nada (como antes); tambien en la cola
+      await encola(id,()=>{ prepara() },{ cierre:true })
+    } else {
+      const r=cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:()=>{ setTick(t=>t+1); reevaluaSLTP(usePair) } })
+      if(!r) return
+      await r
+    }
+    // Si es un challenge, refrescar HUD con nuevo balance/DD/target (en la cola, detras del cierre)
     if(sessionRef.current?.challenge_type) refreshChallengeStatus()
   },[activePair,currentPrice,currentTime,id,refreshChallengeStatus])
 
   // Cierre PARCIAL (antes en el onConfirm del CloseModal de _SessionInner). Etapa 1
-  // (diseño sim-004, i.1 S4-01a, o.7): en UNA llamada atomica (antes, UPDATE e
-  // INSERT sueltos sin mirar el {error}). Sin last_timestamp, como hoy. Si no se
-  // guarda, la posicion recupera sus lotes y el saldo vuelve atras.
+  // (diseño sim-004, i.1 S4-01a, o.7): en UNA llamada atomica. Sin last_timestamp, como
+  // hoy. Ronda 2 (E1-02): en la cola y con la posicion ocupada, como el total; si no se
+  // guarda, la posicion vuelve a sus lotes CONFIRMADOS.
   const closePartial=useCallback((posId,pair,lotsToClose,note=null)=>{
     const ps=pairState.current[pair]
-    const pos=ps?.positions?.find(p=>p.id===posId)
-    if(!pos||!currentPrice) return
+    if(!ps?.positions?.some(p=>p.id===posId)||!currentPrice) return
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); return }
-    const { pnl, rrReal, result } = realizePnl({ side: pos.side, entry: pos.entry, exit: currentPrice, lots: lotsToClose, pair, initialSlPips: pos.initialSlPips, slPips: pos.slPips })
-    const remaining=parseFloat((pos.lots-lotsToClose).toFixed(2))
-    const enMemoria={...pos,lots:lotsToClose,exit:currentPrice,closeTime:currentTime,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL',note}
-    ps.trades=[...ps.trades,enMemoria]
-    pos.lots=remaining
-    ps.positions=[...ps.positions]
-    const antes=balanceRef.current
-    const newBal=parseFloat((balanceRef.current+pnl).toFixed(2))
-    const delta=newBal-antes
-    balanceRef.current=newBal
-    setBalance(newBal);setTick(t=>t+1)
     if(!userIdRef.current) return
-    const trade=filaTrade({ userId:userIdRef.current, pos, lots:lotsToClose, exit:currentPrice, rrReal, pnl, result, note, currentTime })
-    const revierte=()=>{
-      const ps3=pairState.current[pair]
-      if(ps3){
-        ps3.trades=ps3.trades.filter(t=>t!==enMemoria)
-        const p3=ps3.positions.find(p=>p.id===pos.id)
-        if(p3){ p3.lots=parseFloat((p3.lots+lotsToClose).toFixed(2)); ps3.positions=[...ps3.positions] }
-        // (si el resto ya se cerro, vuelve solo la parte de este parcial)
-        else ps3.positions=[...ps3.positions,{...pos,lots:lotsToClose}]
-      }
-      balanceRef.current=parseFloat((balanceRef.current-delta).toFixed(2))
+    const precio=currentPrice, ct=currentTime
+    const prepara=()=>{
+      const ps2=pairState.current[pair]
+      const pos=ps2?.positions?.find(p=>p.id===posId); if(!pos) return null
+      const confirmada={...pos}
+      const { pnl, rrReal, result } = realizePnl({ side: pos.side, entry: pos.entry, exit: precio, lots: lotsToClose, pair, initialSlPips: pos.initialSlPips, slPips: pos.slPips })
+      const delta=dos(pnl)
+      const enMemoria={...pos,lots:lotsToClose,exit:precio,closeTime:ct,pnl,result,rrReal:parseFloat(rrReal.toFixed(2)),reason:'PARTIAL',note}
+      ps2.trades=[...ps2.trades,enMemoria]
+      ps2.positions=ps2.positions.map(p=>p.id===posId?{...p,lots:parseFloat((p.lots-lotsToClose).toFixed(2))}:p)
+      balanceRef.current=dos(balanceRef.current+delta)
       setBalance(balanceRef.current);setTick(t=>t+1)
+      const trade=filaTrade({ userId:userIdRef.current, pos, lots:lotsToClose, exit:precio, rrReal, pnl, result, note, currentTime:ct })
+      return { delta, trade, lastTimestamp:null, revierte:()=>{ restaura(pair,confirmada,enMemoria); reponSaldo(delta) } }
     }
-    return persisteCierre({ sessionId:id, delta, lastTimestamp:null, trade })
-      .then(r=>{ trasCierre(r, { sessionId:id, revierte, alBloqueo }); return r })
+    return cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:()=>{ setTick(t=>t+1); reevaluaSLTP(pair) } })
   },[currentPrice,currentTime,id])
 
   const previewOrder=useCallback((side, price, pair)=>{
@@ -232,13 +248,17 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     })
   },[])
 
-  const checkSLTP=useCallback((pair,engine)=>{
+  // desdeIdx (opcional): reevaluar desde esa vela (reevaluaSLTP, al liberarse una posicion)
+  const checkSLTP=useCallback((pair,engine,desdeIdx)=>{
     const ps=pairState.current[pair];if(!ps?.positions?.length) return
     const curIdx=engine.currentIndex
     // Determine range to check — from last checked index+1 to current
     // This ensures no M1 candle is skipped at any speed (1x, 5x, 15x, 60x, ∞)
-    const fromIdx = ps.lastSLTPIdx != null ? ps.lastSLTPIdx + 1 : curIdx
+    const fromIdx = desdeIdx != null ? desdeIdx : ps.lastSLTPIdx != null ? ps.lastSLTPIdx + 1 : curIdx
     ps.lastSLTPIdx = curIdx
+    // E1-02 / E1-04: una posicion ocupada (cierre pendiente o incierto) o la barrera del
+    // reto no aceptan cierres: esas velas se apuntan y se reevaluan al liberarse
+    const espera=pos=>hayBarrera(id)||posicionOcupada(id,pos.id)
 
     const toClose=[]
     for(let i=fromIdx; i<=curIdx; i++){
@@ -250,6 +270,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         // Without this guard, past candles could trigger SL/TP retroactively
         // (e.g. when a LIMIT activated incorrectly on a past candle).
         if(pos.openTime != null && candle.time < pos.openTime) return
+        if(espera(pos)){ ps.sltpDesde=Math.min(ps.sltpDesde??i,i); return }
         const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
         const hitSl=pos.side==='BUY'?low<=pos.sl:high>=pos.sl
         if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp})
@@ -257,7 +278,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
       })
     }
     toClose.forEach(({id,reason,price})=>closePositionRef.current(id,reason,pair,price))
-  },[])
+  },[id])
 
   const checkLimitOrders=useCallback((pair,engine)=>{
     const ps=pairState.current[pair]; if(!ps?.orders?.length) return

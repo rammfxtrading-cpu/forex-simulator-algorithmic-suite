@@ -40,6 +40,7 @@ import AntimatterLoader from './AntimatterLoader'
 import AvisoServicio from './AvisoServicio'
 import { useServicio } from '../lib/sim/servicio'
 import { fijaSaldoConfirmado } from '../lib/sim/cierre'
+import { useCola } from '../lib/sim/cola'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import CloseModal from './CloseModal'
@@ -118,6 +119,7 @@ export default function SessionPage(){
   // del servicio leido al montar y cada 30 s
   const soloLecturaRef      = useRef(false)
   const servicio            = useServicio()
+  const cola                = useCola(id)   // ronda 2 (E1-02): posiciones con un cierre en curso → su ✕, deshabilitado
   // Order modal
   const [orderModal,  setOrderModal]  = useState(null)  // {side,entry,pair,isLimit}
   const [activeTool,    setActiveTool]    = useState('cursor')
@@ -1166,7 +1168,7 @@ export default function SessionPage(){
     checkSLTP, checkLimitOrders,
   } = useTradingActions({
     id, activePair, currentPrice, currentTime, lots, preview,
-    pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef,
+    pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef, checkSLTPRef,
     setBalance, setTick, setPreview, setCtxMenu, refreshChallengeStatus,
     soloLecturaRef, alBloqueo: pausaPorBloqueo,
   })
@@ -1513,7 +1515,8 @@ export default function SessionPage(){
           activePair={activePair}
           dataReady={dataReady}
           chartTick={chartTick}
-          onClosePos={(posId)=>{ const p=openPositions.find(x=>x.id===posId); if(p) setCloseModal({posId,pair:activePair,pos:p}) }}
+          ocupadas={cola.ocupadas}
+          onClosePos={(posId)=>{ const p=openPositions.find(x=>x.id===posId); if(p&&!cola.ocupadas.has(posId)) setCloseModal({posId,pair:activePair,pos:p}) }}
           onCancelOrder={(ordId)=>cancelLimitOrder(ordId,activePair)}
           onDragEnd={handlePositionDragEnd}
         />
@@ -1828,7 +1831,7 @@ export default function SessionPage(){
       {/* PANELES POS/LIMIT/JOURNAL — extraídos a SessionPanels (Fase 7, Corte C) */}
       <SessionPanels
         showPos={showPos} setShowPos={setShowPos} openPositions={openPositions} closePosition={closePosition}
-        currentPrice={currentPrice} activePair={activePair} setCloseModal={setCloseModal}
+        currentPrice={currentPrice} activePair={activePair} setCloseModal={setCloseModal} ocupadas={cola.ocupadas}
         showOrders={showOrders} setShowOrders={setShowOrders} pendingOrders={pendingOrders} cancelLimitOrder={cancelLimitOrder}
         showTrades={showTrades} setShowTrades={setShowTrades} allTrades={allTrades}
       />

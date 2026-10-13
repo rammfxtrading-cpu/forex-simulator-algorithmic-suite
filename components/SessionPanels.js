@@ -7,7 +7,7 @@ import { s } from './sessionStyles'
 import { fmtPx, pnlColor, fmtPnl, fmtTs } from '../lib/sessionUi'
 import { calcPnl } from '../lib/trading/pricing'
 
-export default function SessionPanels({showPos,setShowPos,openPositions,closePosition,currentPrice,activePair,setCloseModal,showOrders,setShowOrders,pendingOrders,cancelLimitOrder,showTrades,setShowTrades,allTrades}){
+export default function SessionPanels({showPos,setShowPos,openPositions,closePosition,currentPrice,activePair,setCloseModal,showOrders,setShowOrders,pendingOrders,cancelLimitOrder,showTrades,setShowTrades,allTrades,ocupadas}){
   return(<>
       {/* POSITIONS PANEL */}
       {showPos&&openPositions.length>0&&(
@@ -15,7 +15,7 @@ export default function SessionPanels({showPos,setShowPos,openPositions,closePos
           <div style={s.panelHdr}>
             <span style={s.panelTitle}>POSICIONES ABIERTAS</span>
             <div style={{display:'flex',gap:8}}>
-              <button style={s.dangerBtn} onClick={()=>{openPositions.forEach(p=>closePosition(p.id));setShowPos(false)}}>Cerrar todas</button>
+              <button style={s.dangerBtn} onClick={()=>{openPositions.filter(p=>!ocupadas?.has(p.id)).forEach(p=>closePosition(p.id));setShowPos(false)}}>Cerrar todas</button>
               <button style={s.iconBtn} onClick={()=>setShowPos(false)}>✕</button>
             </div>
           </div>
@@ -35,7 +35,7 @@ export default function SessionPanels({showPos,setShowPos,openPositions,closePos
                       <td style={{...s.td,color:'rgba(30,144,255,0.7)'}}>{fmtPx(pos.tp,pos.pair)}</td>
                       <td style={s.td}>{pos.lots}</td>
                       <td style={{...s.td,color:pnlColor(pnl),fontWeight:700}}>{fmtPnl(pnl)}</td>
-                      <td style={s.td}><button style={s.closeBtn} onClick={()=>setCloseModal({posId:pos.id,pair:activePair,pos})}>✕</button></td>
+                      <td style={s.td}><button style={{...s.closeBtn,...(ocupadas?.has(pos.id)?{opacity:0.4,cursor:'not-allowed'}:{})}} disabled={!!ocupadas?.has(pos.id)} title={ocupadas?.has(pos.id)?'Cierre en curso':undefined} onClick={()=>{if(!ocupadas?.has(pos.id))setCloseModal({posId:pos.id,pair:activePair,pos})}}>✕</button></td>
                     </tr>
                   )
                 })}

@@ -96,7 +96,8 @@ export function escenario({ perfiles = [perfil(A), perfil(B), perfil(ADM, { rol_
   // del cliente (servicio, saldo confirmado, avisos) a cero en cada escenario
   db.tablas.sim_servicio = sim_servicio.map(f => ({ ...f }))
   const sv = globalThis.__simServicio; if (sv) Object.assign(sv, { leido: false, mantenimiento: false, versionMinima: null, falloLectura: false, inciertos: [] })
-  const ci = globalThis.__simCierre; if (ci) { ci.confirmado = {}; ci.cola = Promise.resolve() }
+  const ci = globalThis.__simCierre; if (ci) ci.confirmado = {}
+  const co = globalThis.__simCola; if (co) co.s = {}   // ronda 2: la cola de cada sesion (lib/sim/cola.js)
   const av = globalThis.__simAvisos; if (av) av.lista = []
   db.tablas.profiles = perfiles.map(p => ({ ...p }))
   db.tablas.sim_sessions = sim_sessions.map(s => ({ ...s }))
