@@ -110,6 +110,11 @@ insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, 
     && ![T1, SANA_D, SANA_C, SANA_H].some(id => c.filas.some(f => f.o === id)), c.filas.filter(f => f.s !== 'hora').map(f => `${f.s}|${f.o}|${f.d}`).join(' / '))
   oraculo('S12-nada-personal', 'nada personal en la salida: ni emails, ni nombres de sesion, ni importes, ni contenido de dibujos o config, ni el user_id',
     !/@ejemplo\.test|Alumno|123\.45|55\.5|-55|\b7\.00\b|secreto/.test(c.texto.replace(/^hora\|.*$/m, '')) && !c.texto.includes(A) && !c.texto.includes(B), c.texto.slice(0, 300))
+  const rl = r.filas.filter(f => f.s === 'rls')
+  oraculo('S12-rls', 'limpio: rls=true en las cuatro tablas (Astra E1R3-01)', rl.length === 4 && rl.every(f => f.d === 'rls=true'), rl.map(f => f.o + ' ' + f.d).join(' / '))
+  pg.psql('alter table public.session_chart_config disable row level security;', 'c')
+  const rc = s12('c').filas.filter(f => f.s === 'rls')
+  oraculo('S12-rls-control', 'CONTROL: con la RLS apagada en session_chart_config, s12 la muestra rls=false', rc.find(f => f.o === 'session_chart_config')?.d === 'rls=false' && rc.filter(f => f.d === 'rls=true').length === 3, rc.map(f => f.o + ' ' + f.d).join(' / '))
   const sinComentarios = S12.replace(/--.*$/gm, '')
   oraculo('S12-una-select', 'el texto es UNA sola sentencia SELECT (con WITH), sin escrituras ni EXECUTE',
     (sinComentarios.match(/;/g) || []).length === 1 && /^\s*with\b/i.test(sinComentarios) && !/\b(insert|update|delete|truncate|execute|create|alter|drop|grant|revoke|call|do)\b/i.test(sinComentarios), '')

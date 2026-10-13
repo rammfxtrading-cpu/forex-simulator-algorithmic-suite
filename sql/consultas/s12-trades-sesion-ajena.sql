@@ -29,6 +29,9 @@
 --   session_chart_config  lo mismo para una configuracion · fecha: updated_at
 --   sim_sessions          su challenge_parent_id es de otro usuario o no existe
 --                         · fecha: created_at
+--   rls                   RLS activa en las cuatro tablas (Astra E1R3-01): sin
+--                         ella las politicas de la preparatoria no se aplican.
+--                         Si alguna sale rls=false o NO EXISTE, se PARA
 -- ============================================================================
 with casos as (
   select 'sim_trades' tabla, t.id, t.session_id apunta, coalesce(t.closed_at, t.opened_at, t.created_at) fecha,
@@ -67,5 +70,8 @@ select seccion, objeto, detalle from (
          || ' · fecha=' || coalesce(to_char(c.fecha at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') || ' UTC', '-')
     from casos c join tipos t on t.tabla = c.tabla and t.tipo = c.tipo
   union all
-  select 3, 0, 'FIN', 's12', 'consulta'
+  select 3, v.o, 'rls', v.nombre, coalesce('rls=' || (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.' || v.nombre)), 'NO EXISTE')
+    from (values (1, 'sim_sessions'), (2, 'sim_trades'), (3, 'session_drawings'), (4, 'session_chart_config')) v(o, nombre)
+  union all
+  select 4, 0, 'FIN', 's12', 'consulta'
 ) x order by o, o2, objeto collate "C";

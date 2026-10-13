@@ -42,8 +42,8 @@
 --       dentro de un disparador (pg_trigger_depth() > 1) Y con la marca de
 --       transaccion sim.rev_saldo_trades = la sesion, que pone esa funcion
 --       justo antes y borra justo despues (diseño o.16.5). Un cierre por
---       sim_cierre_v0 sube el contador 2 (trade + saldo): es monotonico; nadie
---       debe contar unidades, solo compararlo.
+--       sim_cierre_v0 sube el contador +1 por el trade y +1 solo si cambia el
+--       saldo: es monotonico; nadie cuenta unidades, solo se compara.
 --   dos politicas RESTRICTIVE de sim_trades para authenticated (ronda 3 ter,
 --       CTO 13-oct, o.16.7): sim_trades_sesion_propia_insert (WITH CHECK) y
 --       sim_trades_sesion_propia_update (USING y WITH CHECK) exigen que la
@@ -495,9 +495,14 @@ BEGIN
       RAISE EXCEPTION 'sim-004a: public.% es % y se esperaba %: no se aplica nada', f, coalesce(v_tipo, '(no existe)'), v_txt;
     END IF;
   END LOOP;
-  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.sim_sessions'::regclass)
-     OR NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.sim_trades'::regclass) THEN
-    RAISE EXCEPTION 'sim-004a: RLS apagada en sim_sessions o sim_trades: revisar antes';
+  -- RLS activa en las cuatro tablas que protegen las politicas de esta etapa (Astra E1R3-01): sin ella,
+  -- las RESTRICTIVE de sim_trades, session_drawings y session_chart_config existirian sin aplicarse.
+  -- En la primera ejecucion y en la reejecucion; si alguna esta apagada no se toca nada
+  SELECT string_agg(t, ', ' ORDER BY t) INTO v_txt
+    FROM unnest(ARRAY['sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config']) t
+   WHERE NOT coalesce((SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = to_regclass('public.' || t)), false);
+  IF v_txt IS NOT NULL THEN
+    RAISE EXCEPTION 'sim-004a: RLS apagada (o tabla ausente) en public.%: revisar antes, no se toca nada', v_txt;
   END IF;
 
   -- ── ¿estado 0, 1, 2 o a medias? ─────────────────────────────────────────
@@ -885,6 +890,13 @@ BEGIN
       RAISE EXCEPTION 'sim-004a: las politicas de public.% no son las previstas: %', f, coalesce(v_pol_trades, '(ninguna)');
     END IF;
   END LOOP;
+  -- y la RLS sigue activa en las cuatro (E1R3-01), al final tambien
+  SELECT string_agg(t, ', ' ORDER BY t) INTO v_txt
+    FROM unnest(ARRAY['sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config']) t
+   WHERE NOT coalesce((SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = to_regclass('public.' || t)), false);
+  IF v_txt IS NOT NULL THEN
+    RAISE EXCEPTION 'sim-004a: RLS apagada en public.%', v_txt;
+  END IF;
 
   PERFORM set_config('search_path', v_sp, true);
 END
@@ -931,6 +943,9 @@ select seccion, detalle from (
   select 5, 'disparadores internos (FK)', t.tgrelid::regclass::text || ' · ' || count(*)
     from pg_trigger t where t.tgisinternal and t.tgrelid in ('public.sim_sessions'::regclass, 'public.sim_trades'::regclass)
    group by t.tgrelid
+  union all
+  select 5, 'rls', c.relname || ' · rls=' || c.relrowsecurity
+    from pg_class c where c.oid in ('public.sim_sessions'::regclass, 'public.sim_trades'::regclass, 'public.session_drawings'::regclass, 'public.session_chart_config'::regclass)
   union all
   select 5, 'politica ' || p.tablename, p.policyname || ' · ' || p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text
     from pg_policies p where p.schemaname = 'public' and p.tablename in ('sim_trades', 'session_drawings', 'session_chart_config')

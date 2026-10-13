@@ -2247,7 +2247,7 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
   Si no, conserva el de antes (o +1 si cambia `balance`). **Por qué un cliente no lo imita:** la marca sola no basta (E12-no-se-imita la pone a mano con `set_config` y no tiene efecto) y la profundidad sola tampoco basta. Los únicos UPDATE de `sim_sessions` a profundidad > 1 son el nuestro y los de las FK (`SET NULL` de `challenge_parent_id`), que no tocan `rev_saldo`.
 - **El registro A** ignora el UPDATE anidado (solo `rev_saldo`, a profundidad > 1). No es una escritura de cliente; la de `sim_trades` ya queda registrada (E12-registro). Además, registrarlo haría insertar en el registro a profundidad 3, y `solo_disparador` lo rechazaría.
 - **B** no se dispara: el SET no menciona `balance`.
-- **Unidades:** un cierre por `sim_cierre_v0` sube el contador **2** (el trade y el saldo). Es monotónico; **nadie debe contar unidades**: `advance` solo compara igualdad.
+- **Unidades** (precisión de Astra, ronda 3): el contador sube **+1 por el trade** y **+1 más solo si cambia el saldo**. Un cierre por `sim_cierre_v0` con pnl ≠ 0 sube 2; con pnl 0 (el saldo no cambia), sube 1. Es monotónico; **nadie cuenta unidades**: `advance` solo compara igualdad con el valor leído.
 
 **Interacción:**
 - **La puerta:** el UPDATE anidado lleva las mismas cabeceras y el mismo JWT que la escritura del trade, así que decide igual. Y solo existe si la escritura del trade ya pasó su propia puerta (BEFORE). No abre ninguna vía: solo puede sumar 1 a `rev_saldo` de la sesión del trade.
@@ -2297,7 +2297,7 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
    - **Con los volúmenes de hoy** (centenares de trades por alumno) es despreciable.
    - **Al borrar un alumno con muchos trades,** crece un poco la tabla hasta el próximo VACUUM.
 5. **El registro:** el UPDATE anidado no se registra. Lo que se pierde es solo un `rev_saldo` derivado; la escritura del trade queda registrada con su rol, cliente y transacción. s10 no cambia, porque no clasificaba sesiones por esa fila.
-6. **`sim_cierre_v0` sube 2:** `advance` solo compara igualdad. El doble lo emula igual (+1 el trade, +1 el saldo si cambia), y el SQL está en E11-cierre-sube.
+6. **Unidades:** +1 por el trade y +1 solo si cambia el saldo (un cierre con pnl ≠ 0 sube 2; con pnl 0, 1). `advance` solo compara igualdad. El doble lo emula igual y el SQL está en E11-cierre-sube.
 7. **sim-003 (motor 1):** `sim_comando` inserta trades en sesiones v1 y ahora sube su `rev_saldo`. El v1 no lo usa (tiene su `version`) y no hace daño. sim-003 sigue ejecutándose después de la preparatoria (E2).
 
 #### o.16.7 Un alumno solo escribe trades en SUS sesiones (CTO 13-oct)
@@ -2335,7 +2335,7 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 
 1. **Recursión de RLS:** las políticas de `sim_trades` leen `sim_sessions`. La de `sim_sessions` («Users see own sessions») solo mira `user_id` y no lee `sim_trades`: no hay ciclo.
    - El EXISTS se evalúa con la RLS de `sim_sessions` de `authenticated`, que deja ver solo las propias. Es coherente y redundante con `s.user_id = auth.uid()`.
-   - **Si algún día** una política de `sim_sessions` leyera `sim_trades`, PostgreSQL daría «infinite recursion detected in policy» y fallaría cerrado (error, no permiso). La guarda no vigila las políticas de `sim_sessions`.
+   - **Precisión (Astra, ronda 3; su OWN-06):** que una política futura de `sim_sessions` lea `sim_trades` **no forma un ciclo por sí sola**. Las RESTRICTIVE de `sim_trades` son de INSERT y UPDATE, no de SELECT, así que leer `sim_trades` desde `sim_sessions` no vuelve a evaluar estas políticas. Una política futura que sí cierre un ciclo (PostgreSQL da «infinite recursion detected in policy» y falla cerrado) **necesita su propia prueba**; la guarda no vigila las políticas de `sim_sessions`.
 2. **Rendimiento:**
    - El EXISTS busca por `sim_sessions.id`, que tiene índice (la clave primaria), y filtra `user_id` en esa misma fila. `auth.uid()` va en initplan.
    - INSERT, una búsqueda por fila; UPDATE, una por fila candidata. El cliente actualiza por id: una.
@@ -2414,3 +2414,26 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 5. **Concurrencia del padre:** el disparador lee el padre sin cerrojo. Si el padre se borra a la vez, la FK, que sí lo bloquea, lo resuelve. Si cambia de dueño a la vez, es el caso 4.
 6. **`service_role`** no pasa por la RLS y sí por el disparador del padre. Los endpoints siguen comprobando la propiedad, como hoy: `advance` compara `session.user_id` y `create` usa el usuario del token.
 7. **Las filas de antes** (trades, dibujos, config y padres cruzados) no se arreglan aquí: las mide s12 y, si hay alguna, el runbook para.
+
+#### o.16.11 E1R3-01: RLS activa en las cuatro tablas protegidas (Astra ronda 3: SÍ sobre `d7cc838`, con un medio)
+
+**El hallazgo** (OWN-05 de Astra): las políticas RESTRICTIVE de `session_drawings` y `session_chart_config` solo protegen con RLS activa en esas tablas, y la preparatoria no lo comprobaba. Con la RLS apagada, terminaba bien y A podía escribir en la configuración de B.
+
+**El cierre:**
+- **La guarda de la preparatoria** exige `relrowsecurity = true` en `sim_sessions`, `sim_trades`, `session_drawings` y `session_chart_config`:
+  - al principio (estado 0, antes de crear nada, y en cada reejecución);
+  - y otra vez al final.
+
+  Si alguna está apagada o falta, aborta con «sim-004a: RLS apagada (o tabla ausente) en public.<tablas>» y no toca nada.
+- **El informe** muestra `rls | <tabla> · rls=true` de las cuatro.
+- **s11 y s12** traen una sección `rls` con las cuatro tablas, así que la comprobación previa también lo confirma.
+- **Ensayo** (`sim-004a` §15, `s11` 2c, `s12`), con rojo previo contra `d7cc838`: 5 + 2 + 2 en rojo.
+  - OWN-05 permanente, con las dos tablas apagadas → aborta;
+  - los dos controles negativos, cada tabla por separado → aborta nombrándola;
+  - la reejecución con una apagada → aborta;
+  - el informe;
+  - s11 y s12, limpios y con una tabla apagada.
+
+**Runbook:**
+- **s11 y s12** (pasos previos) **y la guarda de la preparatoria** confirman RLS activa en las cuatro tablas.
+- **Si s11 o s12 dicen `rls=false` o `NO EXISTE` en alguna,** se para y decide el CTO: sin RLS, las políticas nuevas existirían sin aplicarse.

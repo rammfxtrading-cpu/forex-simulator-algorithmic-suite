@@ -32,6 +32,9 @@
 --                  PUBLIC va con fila propia; anon, authenticated y service_role
 --                  incluyen lo que heredan de PUBLIC y de los roles de que son
 --                  miembros (has_column_privilege)
+--   4 rls          RLS activa (rls=true) en sim_sessions, sim_trades,
+--                  session_drawings y session_chart_config (Astra E1R3-01).
+--                  Si alguna sale rls=false o NO EXISTE, se PARA
 -- ============================================================================
 with tablas (o, nombre) as (
   values (1, 'sim_sessions'), (2, 'sim_trades'), (3, 'sim_alumnos'), (4, 'sim_arrendamientos'), (5, 'sim_recibos'), (6, 'sim_eventos')
@@ -74,5 +77,8 @@ select seccion, objeto, detalle from (
          || case when (ef.en_tabla and ef.n_si = ef.n) or (not ef.en_tabla and ef.n_si = 0) then '' else ' · DIFIERE DE LA TABLA' end
     from ef
   union all
-  select 4, 0, 'FIN', 's11', 'consulta'
+  select 4, v.o, 'rls', v.nombre, coalesce('rls=' || (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.' || v.nombre)), 'NO EXISTE')
+    from (values (1, 'sim_sessions'), (2, 'sim_trades'), (3, 'session_drawings'), (4, 'session_chart_config')) v(o, nombre)
+  union all
+  select 5, 0, 'FIN', 's11', 'consulta'
 ) x order by o, o2, objeto collate "C";

@@ -121,6 +121,14 @@ create role zz_anon nologin; grant update (${colE}) on public.sim_eventos to zz_
     difiere('sim_eventos · anon · UPDATE', colE) && !/DIFIERE/.test(lineaQ('sim_eventos · authenticated · UPDATE')),
     `${lineaQ('sim_eventos · anon · UPDATE')} | ${lineaQ('sim_eventos · authenticated · UPDATE')}`)
 
+  titulo('2c · RLS activa en las cuatro tablas protegidas (Astra E1R3-01)')
+  const rl = de(r, 'rls')
+  oraculo('S11-rls', 'limpio: rls=true en sim_sessions, sim_trades, session_drawings y session_chart_config', rl.length === 4 && rl.every(f => f.d === 'rls=true'), rl.map(f => f.o + ' ' + f.d).join(' / '))
+  pg.psql('alter table public.session_drawings disable row level security;', 'q')
+  const rq = de(s11('q'), 'rls')
+  oraculo('S11-rls-control', 'CONTROL: con la RLS apagada en session_drawings, s11 la muestra rls=false (y las otras tres true)',
+    rq.find(f => f.o === 'session_drawings')?.d === 'rls=false' && rq.filter(f => f.d === 'rls=true').length === 3, rq.map(f => f.o + ' ' + f.d).join(' / '))
+
   titulo('3 · sin sim-003')
   monta('n', { s3: false })
   const n = s11('n')

@@ -937,6 +937,31 @@ commit;`, 'pq')
   oraculo('E14-MUT-sin-politica-config', 'mutante sin la politica de INSERT de config: A ocupa la config de B y B ya no puede guardar la suya → E14-escribir-ajena / E14-select-delete lo ven', mo.ok && !mb.ok, errs(mo, mb) || 'A ocupa')
   oraculo('E14-MUT-sin-padre', 'mutante sin el disparador del padre: A ocupa la hija v1 de B y la legitima de B ya no entra (indice unico) → E14-okupa-v1 lo ve', mp.ok && !mpl.ok, errs(mp, mpl))
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  titulo('15 · RLS activa en las cuatro tablas protegidas (Astra E1R3-01; o.16.11)')
+  {
+  // OWN-05 de Astra (revisiones-suite/2026-10-13-astra-sim-etapa1-r3-evidencias): RLS apagada en dibujos y config
+  monta('rlx'); pg.psql('alter table public.session_drawings disable row level security; alter table public.session_chart_config disable row level security;', 'rlx')
+  const ap = pgx(PREP, 'rlx')
+  oraculo('E15-OWN-05', 'OWN-05 (Astra): con la RLS apagada en session_drawings y session_chart_config, la preparatoria ABORTA con error prefijado y no crea nada (antes terminaba bien y A escribia en la config de B)',
+    !ap.ok && /sim-004a: RLS apagada \(o tabla ausente\) en public\.session_chart_config, session_drawings/.test(err1(ap)) && uno(`select count(*) from pg_class where relname = 'sim_escrituras_v0'`, 'rlx') === '0'
+    && uno(`select count(*) from pg_policy where polname like '%sesion_propia%'`, 'rlx') === '0', err1(ap) || 'TERMINA BIEN')
+  for (const t of ['session_drawings', 'session_chart_config']) {
+    const db = 'rl' + t.slice(8, 12)
+    monta(db); pg.psql(`alter table public.${t} disable row level security;`, db)
+    const a = pgx(PREP, db)
+    oraculo(`E15-sin-rls-${t}`, `RLS apagada solo en ${t}: la preparatoria aborta nombrandola y sin crear nada`,
+      !a.ok && new RegExp(`sim-004a: RLS apagada \\(o tabla ausente\\) en public\\.${t}:`).test(err1(a)) && uno(`select count(*) from pg_class where relname = 'sim_escrituras_v0'`, db) === '0', err1(a) || 'TERMINA BIEN')
+  }
+  // reejecucion: aplicada, alguien apaga la RLS de una → la reejecucion aborta
+  monta('rlr'); const a1 = pgx(PREP, 'rlr')
+  oraculo('E15-informe', 'el informe muestra rls=true en las cuatro tablas (sim_sessions, sim_trades, session_drawings, session_chart_config)',
+    a1.ok && ['sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config'].every(t => new RegExp(`^rls\\|${t} · rls=true$`, 'm').test(a1.out)), a1.out.split('\n').filter(l => /^rls\|/.test(l)).join(' / '))
+  pg.psql('alter table public.session_chart_config disable row level security;', 'rlr')
+  const a2 = pgx(PREP, 'rlr')
+  oraculo('E15-reejecucion', 'aplicada la preparatoria, si se apaga la RLS de session_chart_config la reejecucion aborta (no da un informe correcto)', !a2.ok && /RLS apagada .*session_chart_config/.test(err1(a2)), err1(a2) || 'TERMINA BIEN')
+  }
 } finally {
   pg.cierra()
 }
