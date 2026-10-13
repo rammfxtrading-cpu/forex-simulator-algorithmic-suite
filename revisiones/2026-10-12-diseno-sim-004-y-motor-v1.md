@@ -2102,3 +2102,54 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 - **Runbook, paso previo OBLIGATORIO a la preparatoria:**
   1. Ramón ejecuta s11 en el editor SQL y devuelve el resultado completo, que va a revisiones-suite.
   2. Si `acl_columna` trae alguna fila distinta de «total», o `efectivo` trae «DIFIERE DE LA TABLA», **se para y decide el CTO**. La guarda de la preparatoria abortaría igualmente por `sim_sessions` o `sim_trades`.
+
+### o.15 Autorrevisión adversaria de `a7ba57f..a5ce6f9` (CTO 13-oct)
+
+**Validado por el CTO:** el tope de 3 reintentos con aviso. **Añadido en `30ffd3d`:**
+- antes de cada reintento, una espera corta y creciente: 250 ms y después 500;
+- en cada intento se relee el reto con `challenge/status`, y el servidor relee la sesión en cada llamada.
+- **Ensayado:** CAS-cliente-espera; contra `a5ce6f9`, en rojo.
+
+**1. El tipo del saldo en el CAS: cambiado (`6bcd8d0`).**
+- **Lo que había:** `session.balance`, el número JSON de PostgREST pasado a float por supabase-js.
+- **Medido en PostgreSQL 17 local** (`pruebas/etapa1-cas-saldo.mjs`) con 9 saldos escritos por SQL:
+  - casan por el número JS: 10234.57, 10234.50, 10234.5700, 0.10, 99999999.99, 10000.300000000001 y 123456789012345.67;
+  - **no casan** los de más de 17 cifras significativas: 10000.300000000000000001 y 10234.570000000000000000001. Con ellos habría un 409 eterno sin carrera.
+- **Ahora:** `advance` lee `balance_texto:balance::text` en la misma lectura de la sesión y el WHERE usa ese texto. Por texto casan los 9.
+- **El doble** compara un `numeric` por sus decimales, sin float.
+
+**2. ABA: puede dar un resultado incorrecto; queda como riesgo residual documentado.**
+- **El caso:** entre la lectura de `advance` y su UPDATE, otra pestaña guarda un cierre −x y otro +x. El saldo vuelve al leído y el CAS pasa.
+- **El efecto:** el evaluador v0 (`lib/challengeEngine.js`) solo mira pnl y DD; no hay días mínimos ni número de trades.
+  - **Puede conceder una fase incorrectamente:** si el −x hunde el DD diario por debajo del suelo antes del +x, con el historial completo el reto estaría quemado, y `advance` concede la fase con lo que leyó. Los dos cierres quedan como trades de la madre.
+  - **Un `fail` no se deshace:** el peor DD solo crece.
+  - **Un cierre de pnl 0** no cambia el saldo, ni el pnl, ni el DD, así que no altera el veredicto.
+- **La columna `version` de `sim_sessions` no sirve:** solo la mantienen las RPC v1 de sim-003 (`sim-003-persistencia-aditiva.sql:664`). En motor 0 ningún UPDATE la sube y ningún disparador la mantiene. Usarla sería un CAS que nunca ve nada.
+- **Riesgo residual (no se arregla en la etapa 1).** Hacen falta a la vez:
+  - el mismo alumno en dos pestañas sobre la misma sesión de reto;
+  - dos cierres que se compensan al céntimo, guardados en los milisegundos entre la lectura y el UPDATE de `advance`;
+  - y que el primero rompa el DD.
+
+  Desde la misma pestaña es imposible: la barrera de E1-04. **Lo cierra la transición del v1** (d7: `avanzar-fase` en SQL con la fila bloqueada y el `version` del motor 1).
+
+**3. Respuesta perdida: idempotente, sin cambio de código.**
+- Si el primer `advance` se confirma y la respuesta no llega:
+  - el cliente no reintenta solo, porque solo reintenta ante un 409 `saldo_cambiado`;
+  - si el alumno vuelve a pulsar, la barrera relee el reto y el servidor responde **409 «La sesión ya está cerrada»** (paso 4, `status ≠ 'active'`; además, el CAS exige `status = 'active'`).
+- No hay segunda fase ni segunda hija.
+- **Ensayado:** CAS-respuesta-perdida, verde también en `a5ce6f9`.
+- **Límite de UX:** el alumno se queda en la sesión ya superada, sin ir a la hija, hasta volver al dashboard.
+
+**4. Otras escrituras de `balance` en `sim_sessions`: ninguna fuera del CAS ni de `sim_cierre_v0`.**
+- **Repositorio:** `components`, `pages`, `lib`, `scripts`, `sql` y `.github`. Solo hay INSERT de sesiones nuevas (`dashboard.js:221` y `create.js:97` con `balance = capital`; la hija de `advance.js` con `capital`; las RPC v1 de sim-003, `:394` y `:749`).
+- **La reversión de `advance`** (si falla el INSERT de la hija) escribe solo `status = 'active'`. La madre conserva el `balance = balanceNow` que escribió el CAS.
+- **El hub** (otro repositorio, solo lectura): `pages/api/users/delete.js:104` borra; no escribe saldo.
+
+**5. s11: PUBLIC y lo heredado por `anon`.**
+- **Ya lo cubría:**
+  - en `acl_columna` sale la ACL tal cual, con PUBLIC (grantee vacío, «=r/…»);
+  - en `efectivo`, `has_column_privilege` de `anon`, `authenticated` y `service_role` incluye lo heredado de PUBLIC y de los roles de que son miembros.
+- **Añadido (`14ddee1`):** PUBLIC con fila propia en `efectivo`, y dos controles:
+  - un SELECT de columna a PUBLIC sale «DIFIERE» en PUBLIC y en los tres roles;
+  - un UPDATE de columna a un rol del que `anon` es miembro sale «DIFIERE» para `anon` y no para `authenticated`.
+- La guarda de la preparatoria ya incluía PUBLIC (E1-05).
