@@ -294,8 +294,8 @@ try {
   db.log.length = 0
   await pasoP()
   pulsa(p, p.boton('▲ Buy')); await p.asienta(100); if (p.boton('Ejecutar Buy')) { pulsa(p, p.boton('Ejecutar Buy')); await p.asienta(100) }
-  oraculo('L-sesion', 'sesion legado: etiqueta «Simulador anterior · solo lectura», no abre posiciones y no guarda avance',
-    /Simulador anterior · solo lectura/.test(p.texto()) && !p.busca(x => x.tipo === 'button' && /^1 POS$/.test(p.texto(x).trim())) && escriturasSesion().length === 0,
+  oraculo('L-sesion', 'sesion legado: etiqueta «Simulador anterior · solo lectura», no abre posiciones y no guarda avance (last_timestamp)',
+    /Simulador anterior · solo lectura/.test(p.texto()) && !p.busca(x => x.tipo === 'button' && /^1 POS$/.test(p.texto(x).trim())) && !escriturasSesion().some(c => c.payload && 'last_timestamp' in c.payload),
     `${escriturasSesion().length} escrituras`)
   p.desmonta()
   b = await montaBanco({ legado: true })
@@ -428,6 +428,9 @@ try {
     }
     oraculo('MUT-' + caso, `mutante «${desc}» → su oraculo lo ve`, visto)
   }
+  oraculo('E-clase-08', 'un error de conexion (SQLSTATE 08xxx) no es cierto: el COMMIT pudo ocurrir; 23505, P0001, 57014, PGRST202 y HTTP 4xx si',
+    !!CI && CI.errorCierto({ code: '08006' }, 500) === false && CI.errorCierto({ code: '08003' }) === false && ['23505', 'P0001', '57014', 'PGRST202'].every(c => CI.errorCierto({ code: c }))
+    && CI.errorCierto({ code: '' }, 409) === true && CI.errorCierto({ code: '' }, 0) === false && CI.errorCierto({ code: '' }, 502) === false)
 } finally {
   Date.now = ahoraReal
 }

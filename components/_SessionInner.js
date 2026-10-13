@@ -690,7 +690,7 @@ export default function SessionPage(){
           if(tf&&activePairRef.current){
             const n={...pairTfRef.current,[activePairRef.current]:tf}
             pairTfRef.current=n;setPairTf(n)
-            if(id && !soloLecturaRef.current) supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(avisaSiError('el marco temporal')).catch(()=>avisa('No se ha podido guardar el marco temporal. Comprueba tu conexión.'))
+            if(id) supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(avisaSiError('el marco temporal')).catch(()=>avisa('No se ha podido guardar el marco temporal. Comprueba tu conexión.'))
           }
           return ''
         })
@@ -1789,7 +1789,7 @@ export default function SessionPage(){
       <div className="vidrio" style={s.tfBar}>
         {TF_LIST.map(tf=>(
           <button key={tf} style={{...s.tfBtn,...(activeTf===tf?s.tfActive:{})}}
-            onClick={()=>{const n={...pairTfRef.current,[activePair]:tf};pairTfRef.current=n;setPairTf(n);if(id&&!soloLecturaRef.current)supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(avisaSiError('el marco temporal')).catch(()=>avisa('No se ha podido guardar el marco temporal. Comprueba tu conexión.'))}}
+            onClick={()=>{const n={...pairTfRef.current,[activePair]:tf};pairTfRef.current=n;setPairTf(n);if(id)supabase.from("sim_sessions").update({timeframe:tf}).eq("id",id).then(avisaSiError('el marco temporal')).catch(()=>avisa('No se ha podido guardar el marco temporal. Comprueba tu conexión.'))}}
           >{tf}</button>
         ))}
         <div style={{flex:1}}/>
