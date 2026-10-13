@@ -143,13 +143,17 @@ try {
   ver('montaje: s04 literal + sim-002 + sim-003 aplicada por pgx (no superusuario), FIN', /FIN\|sim-003 aplicada$/.test(fin1(s3primera)))
   ver('pgx: no superusuario, bypassrls, createrole (s06)', uno(`select rolsuper||','||rolbypassrls||','||rolcreaterole from pg_roles where rolname = 'pgx'`) === 'false,true,true')
   const foto0 = foto()
+  const nodo0 = uno(`select relfilenode from pg_class where oid = 'public.sim_sessions'::regclass`)
   const ap1 = pgx(PREP)
   oraculo('E1-aplica', 'la preparatoria se aplica entera como pgx y acaba en FIN | sim-004a-preparatoria aplicada',
     ap1.ok && fin1(ap1) === 'FIN|sim-004a-preparatoria aplicada', err1(ap1) || fin1(ap1))
-  oraculo('E1-informe', 'informe: estado «registro instalado», 3 tablas con RLS, 7 funciones, sim_servicio sin mantenimiento y version 1',
+  oraculo('E1-informe', 'informe: estado «registro instalado», 3 tablas con RLS, 8 funciones (con la del contador), la columna rev_saldo bigint not null default 0 sin ACL, sim_servicio sin mantenimiento y version 1',
     /^estado\|registro instalado$/m.test(ap1.out) && (ap1.out.match(/^tabla\|.* rls=true/gm) || []).length === 3
-    && (ap1.out.match(/^funcion\|/gm) || []).length === 7 && /^sim_servicio\|mantenimiento=false · version_minima=1$/m.test(ap1.out), ap1.out.split('\n').length + ' lineas')
+    && (ap1.out.match(/^funcion\|/gm) || []).length === 8 && /^columna\|sim_sessions\.rev_saldo bigint · not null=true · default 0 · acl de columna=0$/m.test(ap1.out) && /^sim_servicio\|mantenimiento=false · version_minima=1$/m.test(ap1.out), ap1.out.split('\n').length + ' lineas')
   const foto1 = foto()
+  oraculo('E1-rev-sin-reescritura', 'la columna rev_saldo se añade SIN reescribir sim_sessions (mismo relfilenode) y las filas de antes valen 0',
+    uno(`select relfilenode from pg_class where oid = 'public.sim_sessions'::regclass`) === nodo0 && uno(`select count(*) filter (where rev_saldo <> 0)||'/'||count(*) from public.sim_sessions`) === '0/5',
+    nodo0 + ' · ' + uno(`select count(*) filter (where rev_saldo <> 0)||'/'||count(*) from public.sim_sessions`))
   const ap2 = pgx(PREP)
   oraculo('E1-reejecuta', 'segunda ejecucion: FIN, el mismo informe, el catalogo identico (y distinto del de antes de aplicar)',
     ap2.ok && fin1(ap2) === 'FIN|sim-004a-preparatoria aplicada' && ap2.out === ap1.out && foto() === foto1 && foto1 !== foto0, err1(ap2))
@@ -208,7 +212,7 @@ try {
     ['cierre total pnl 0: {balance, last_timestamp}', `update public.sim_sessions set balance = 10000, last_timestamp = 1767600120 where id = '${SA}';`, 'cols=last_timestamp delta=0', 1],
     ['guardado: {last_timestamp, timeframe}', `update public.sim_sessions set last_timestamp = 1767600180, timeframe = 'H1' where id = '${SA}';`, 'cols=last_timestamp delta=0', 0],
     ['TF: {timeframe}', `update public.sim_sessions set timeframe = 'M5' where id = '${SA}';`, 'cols=timeframe delta=0', 0],
-    ['{balance} +12,34', `update public.sim_sessions set balance = 10012.34 where id = '${SA}';`, 'cols=balance delta=12.34', 1]]
+    ['{balance} +12,34', `update public.sim_sessions set balance = 10012.34 where id = '${SA}';`, 'cols=balance,rev_saldo delta=12.34', 1]]
   const marcas = []
   for (const [desc, q, esperado, m] of CASOS) {
     const r = viejo(q)
@@ -373,12 +377,12 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
   filas = desde(k); k = ultimo()
   oraculo('E7-total', 'total: trade + saldo + last_timestamp en una transaccion, firmado; devuelve el id del trade',
     r.ok && r.out === u(401) && saldo(SA2) === '10097,1767700000' && filas.length === 2 && /^sim_trades INSERT .*pnl=97 trade=true cli=etapa1-1/.test(filas[0])
-    && /^sim_sessions UPDATE .*cols=balance,last_timestamp delta=97 .*marca=1/.test(filas[1])
+    && /^sim_sessions UPDATE .*cols=balance,last_timestamp,rev_saldo delta=97 .*marca=1/.test(filas[1])
     && n(`select count(distinct xact) from public.sim_escrituras_v0 where id in (select id from public.sim_escrituras_v0 order by id desc limit 2)`) === 1, filas.join(' / ') || err1(r))
   r = nuevo(`select public.sim_cierre_v0('${SA2}', 10087, null, ${L(T(u(402), '-10.00'))});`)
   filas = desde(k); k = ultimo()
   oraculo('E7-parcial', 'parcial: last_timestamp NULL = se conserva; solo SET balance (como hoy)',
-    r.ok && saldo(SA2) === '10087,1767700000' && filas.length === 2 && /^sim_sessions UPDATE .*cols=balance delta=-10 /.test(filas[1]), filas.join(' / ') || err1(r))
+    r.ok && saldo(SA2) === '10087,1767700000' && filas.length === 2 && /^sim_sessions UPDATE .*cols=balance,rev_saldo delta=-10 /.test(filas[1]), filas.join(' / ') || err1(r))
   const antesB = saldo(SB)
   const e1 = nuevo(`select public.sim_cierre_v0('${u(999)}', 1, 1, ${L(T(u(403), '1.00'))});`)
   const e2 = nuevo(`select public.sim_cierre_v0('${SA2}', 1, 1, ${L(T(u(404), '1.00', { evento_id: 5 }))});`)
@@ -504,7 +508,26 @@ update public.sim_sessions set timeframe = 'H1' where id = '${SA}';`)
     ['SELECT de columna del registro a PUBLIC', `grant select (id) on public.sim_escrituras_v0 to public;`],
     ['UPDATE de columna heredado: un rol con el grant, miembro authenticated', `create role zz_columna nologin; grant update (mantenimiento) on public.sim_servicio to zz_columna; grant zz_columna to authenticated;`],
     ['UPDATE de columna de sim_sessions a anon', `grant update (balance) on public.sim_sessions to anon;`],
-    ['UPDATE de columna de sim_trades a authenticated', `grant update (pnl) on public.sim_trades to authenticated;`]]
+    ['UPDATE de columna de sim_trades a authenticated', `grant update (pnl) on public.sim_trades to authenticated;`],
+    // ronda 3 (CTO 13-oct, Astra E1R2-01): el contador de revision del saldo
+    ['sin el disparador del contador', `drop trigger sim_sessions_rev_saldo on public.sim_sessions;`],
+    ['contador con la condicion invertida', `create or replace function public.sim_sessions_rev_saldo() returns trigger language plpgsql security invoker set search_path = '' as $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.rev_saldo := 0;
+  ELSIF NEW.balance IS NOT DISTINCT FROM OLD.balance THEN
+    NEW.rev_saldo := OLD.rev_saldo + 1;
+  ELSE
+    NEW.rev_saldo := OLD.rev_saldo;
+  END IF;
+  RETURN NEW;
+END
+$$;`],
+    ['contador deshabilitado', `alter table public.sim_sessions disable trigger sim_sessions_rev_saldo;`],
+    ['rev_saldo sin NOT NULL', `alter table public.sim_sessions alter column rev_saldo drop not null;`],
+    ['rev_saldo sin DEFAULT', `alter table public.sim_sessions alter column rev_saldo drop default;`],
+    ['rev_saldo de otro tipo', `alter table public.sim_sessions alter column rev_saldo type integer;`],
+    ['UPDATE de columna de rev_saldo a authenticated', `grant update (rev_saldo) on public.sim_sessions to authenticated;`]]
   monta('g')
   pgx(PREP, 'g')
   for (const [desc, q] of MUTANTES) {
@@ -573,6 +596,41 @@ rollback;`, 'g')
   const sinUna2 = pg.psql(`begin; drop trigger sim_escrituras_v0_puerta on public.sim_trades;\n` + PUERTA.replace(/\nselect seccion, detalle from \([\s\S]*$/, '\n') + '\nrollback;')
   oraculo('E10-puerta-a-medias', 'la puerta solo en una tabla → la preparatoria y la puerta abortan (no la «completan» ni la dan por buena)',
     !sinUna.ok && /puerta esta A MEDIAS/.test(err1(sinUna)) && !sinUna2.ok && /ni los del estado 1 ni los del 2/.test(err1(sinUna2)), err1(sinUna) + ' | ' + err1(sinUna2))
+
+  // ═══════════════════════════════════════════════════════════════════════
+  titulo('11 · el contador de revision del saldo, rev_saldo (ronda 3, CTO 13-oct; Astra E1R2-01)')
+  {
+  monta('rv'); const apR = pgx(PREP, 'rv')
+  ver('rv: preparatoria aplicada (estado 1, sin puerta)', apR.ok, err1(apR))
+  const rev = (sid = SA) => uno(`select rev_saldo from public.sim_sessions where id = '${sid}'`, 'rv')
+  const RV = u(150)
+  const ins = nuevo(`insert into public.sim_sessions (id, user_id, name, pair, timeframe, date_from, date_to, capital, balance, rev_saldo)
+    values ('${RV}', '${A}', 'rv', 'EURUSD', 'H1', '2026-01-01', '2026-02-01', 10000, 10000, 5);`, A, 'rv')
+  oraculo('E11-insert-0', 'INSERT con rev_saldo = 5: el disparador lo deja en 0', ins.ok && rev(RV) === '0', err1(ins) || rev(RV))
+  const r0 = rev()
+  const v1 = viejo(`update public.sim_sessions set balance = 10050 where id = '${SA}';`, A, 'rv')
+  const v2 = viejo(`update public.sim_sessions set balance = 10000, last_timestamp = 1767600000 where id = '${SA}';`, A, 'rv')
+  oraculo('E11-viejo-sube', 'el cliente viejo (sin firma, antes de la puerta) escribe el saldo dos veces y vuelve al mismo: el contador sube 2',
+    v1.ok && v2.ok && r0 === '0' && rev() === '2', `${r0} → ${rev()} ${err1(v1)}${err1(v2)}`)
+  const v3 = viejo(`update public.sim_sessions set balance = 10000 where id = '${SA}';`, A, 'rv')
+  const v4 = viejo(`update public.sim_sessions set timeframe = 'M5', last_timestamp = 1767600060 where id = '${SA}';`, A, 'rv')
+  oraculo('E11-mismo-saldo', 'el mismo saldo reescrito, o un UPDATE sin balance: el contador no sube', v3.ok && v4.ok && rev() === '2', rev())
+  const f1 = nuevo(`update public.sim_sessions set rev_saldo = 999 where id = '${SA}';`, A, 'rv')
+  const f2 = nuevo(`update public.sim_sessions set rev_saldo = 0, balance = 10001 where id = '${SA}';`, A, 'rv')
+  const f3 = escribe({ rol: 'service_role' }, `update public.sim_sessions set rev_saldo = 0 where id = '${SA}';`, 'rv')
+  oraculo('E11-no-se-fija', 'nadie lo fija ni lo restaura: SET rev_saldo = 999 no cambia nada; SET rev_saldo = 0 con el saldo cambiado sube 1 (no vuelve a 0); service_role tampoco',
+    f1.ok && f2.ok && f3.ok && rev() === '3', `${rev()} ${err1(f1)}${err1(f2)}${err1(f3)}`)
+  const T = (id, pnl) => JSON.stringify({ id, user_id: A, pair: 'EURUSD', side: 'BUY', lots: '1.00', entry_price: '1.10000', exit_price: '1.10100', pnl, result: 'WIN', opened_at: '2026-01-05T10:00:00Z', closed_at: '2026-01-05T11:00:00Z' })
+  const c1 = nuevo(`select public.sim_cierre_v0('${SA}', 10031, 1767700000, ${L(T(u(950), '30.00'))});`, A, 'rv')
+  oraculo('E11-cierre-sube', 'un cierre por sim_cierre_v0 sube el contador 1', c1.ok && rev() === '4', err1(c1) || rev())
+  const pz = pgx(PUERTA, 'rv')
+  const vp = viejo(`update public.sim_sessions set balance = 1 where id = '${SA}';`, A, 'rv')
+  const np = nuevo(`update public.sim_sessions set balance = 10032 where id = '${SA}';`, A, 'rv')
+  oraculo('E11-puerta', 'con la puerta: el cliente viejo se rechaza y el contador no se mueve; el firmado pasa y sube 1 (la puerta va antes por el nombre)',
+    pz.ok && !vp.ok && /sim_escrituras_v0_puerta/.test(err1(vp)) && np.ok && rev() === '5', `${err1(pz)} · ${err1(vp)} · ${rev()}`)
+  const reP = pgx(PREP, 'rv')
+  oraculo('E11-reejecuta', 'preparatoria y puerta otra vez en el estado 2 con el contador en uso: FIN y nada cambia', reP.ok && pgx(PUERTA, 'rv').ok && rev() === '5', err1(reP))
+  }
 } finally {
   pg.cierra()
 }
