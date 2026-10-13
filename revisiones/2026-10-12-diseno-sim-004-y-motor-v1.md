@@ -2218,14 +2218,84 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 
 1. **Cambios del historial evaluado sin cambio de saldo:**
    - **un cierre de pnl 0** (aceptado en o.14): no altera el veredicto, porque el evaluador v0 solo mira pnl y DD;
-   - **un cierre partido del cliente viejo antes de la puerta** (el INSERT del trade llega y el UPDATE del saldo no): añade un trade con pnl ≠ 0 sin subir el contador. **Puede alterar el veredicto.** Hace falta a la vez una pestaña vieja (anterior al despliegue) con un cierre partido justo en la ventana de `advance` de una pestaña nueva, en la misma sesión. Desaparece al activar la puerta. **Para el CTO:** ¿se acepta hasta la puerta, o también se cuenta en el contador cualquier escritura de `sim_trades` (un disparador en `sim_trades` que suba el de su sesión)?
-   - **UPDATE o DELETE directo de `sim_trades` por el alumno** (PostgREST con su JWT): ningún cliente lo hace, pero la RLS de hoy lo permite sobre sus filas. Con el mismo acceso el alumno ya puede escribir su saldo directamente: es el límite del v0 frente al dueño de la fila, que el v1 resuelve;
+   - **un cierre partido del cliente viejo antes de la puerta** (el INSERT del trade llega y el UPDATE del saldo no): añade un trade con pnl ≠ 0 sin subir el contador. **Puede alterar el veredicto.** Hace falta a la vez una pestaña vieja (anterior al despliegue) con un cierre partido justo en la ventana de `advance` de una pestaña nueva, en la misma sesión. Desaparece al activar la puerta. **CERRADO (CTO 13-oct, no se acepta hasta la puerta):** toda escritura de `sim_trades` sube también el contador de su sesión (o.16.5).
+   - **UPDATE o DELETE directo de `sim_trades` por el alumno** (PostgREST con su JWT): ningún cliente lo hace, pero la RLS de hoy lo permite sobre sus filas. **Ahora también sube el contador (o.16.5), así que `advance` lo ve.** Que el alumno pueda escribir su propio saldo sigue siendo el límite del v0 frente al dueño de la fila, que el v1 resuelve;
    - **cambios de `capital`, `challenge_type` o `challenge_phase`** entre la lectura y el UPDATE: ningún escritor legítimo los toca en una sesión activa;
-   - **`sim_borrar_legacy` (sim-003)** borra los trades y pone `balance = capital`. Si el saldo ya era el capital, el contador no sube y el status no cambia. Solo se llega por `/api/sim/borrar`, que en la etapa 1 responde 503.
-2. **Escritores de `sim_trades` sin escritura de saldo:**
+   - **`sim_borrar_legacy` (sim-003)** borra los trades y pone `balance = capital`. Ahora cada trade borrado sube el contador (o.16.5). Además, solo se llega por `/api/sim/borrar`, que en la etapa 1 responde 503.
+2. **Escritores de `sim_trades` sin escritura de saldo** (todos suben ya el contador por o.16.5):
    - `sim_cierre_v0` siempre escribe el saldo;
    - el cliente viejo, en dos sentencias (lo de arriba);
    - las RPC de sim-003: `sim_comando` (solo motor 1), y `sim_borrar_legacy` / `sim_borrar_sesion` / `sim_borrar_alumno` (borran);
    - las cascadas de borrado (la sesión desaparece y el CAS no encuentra fila);
    - el hub solo borra.
 3. **El orden lectura de sesión → historial es estricto:** dos `await` seguidos en el handler, medido en R3-orden.
+
+#### o.16.5 Toda escritura de `sim_trades` sube el contador (CTO 13-oct; Ramón aprueba la columna)
+
+**La decisión:** no se acepta el cierre partido del cliente viejo hasta la puerta. Cualquier INSERT, UPDATE o DELETE de `sim_trades` sube también el `rev_saldo` de su sesión; en un UPDATE que cambia `session_id`, el de las dos.
+
+**El mecanismo** (`sql/sim-004a-preparatoria.sql`):
+- **Disparador `sim_trades_rev_saldo`,** AFTER INSERT OR UPDATE OR DELETE … FOR EACH ROW. Es AFTER para que la fila ya haya pasado la puerta, las FK y la RLS: solo cuenta lo que de verdad se escribió.
+- **Su función `public.sim_trades_rev_saldo()`:**
+  - SECURITY DEFINER, `search_path` vacío, sin SQL dinámico. DEFINER para que el UPDATE de la sesión no dependa de la RLS ni del rol que escribió el trade (`service_role`, el dueño, las cascadas);
+  - para cada sesión afectada, **en orden de id**: pone la marca de transacción `sim.rev_saldo_trades = <id de la sesión>`, ejecuta `UPDATE … SET rev_saldo = rev_saldo + 1 WHERE id = <sesión>` y borra la marca. Suma exactamente 1 por fila escrita.
+- **El disparador de `sim_sessions`** acepta ese +1 solo si se cumplen las tres:
+  1. `pg_trigger_depth() > 1`: el UPDATE se ejecuta dentro de un disparador. Ninguna sentencia de cliente puede (PostgREST, `service_role` incluido, manda sentencias de nivel 1; una RPC tampoco sube la profundidad);
+  2. la marca vale exactamente el id de ESA sesión;
+  3. el valor nuevo es exactamente el de antes + 1.
+
+  Si no, conserva el de antes (o +1 si cambia `balance`). **Por qué un cliente no lo imita:** la marca sola no basta (E12-no-se-imita la pone a mano con `set_config` y no tiene efecto) y la profundidad sola tampoco basta. Los únicos UPDATE de `sim_sessions` a profundidad > 1 son el nuestro y los de las FK (`SET NULL` de `challenge_parent_id`), que no tocan `rev_saldo`.
+- **El registro A** ignora el UPDATE anidado (solo `rev_saldo`, a profundidad > 1). No es una escritura de cliente; la de `sim_trades` ya queda registrada (E12-registro). Además, registrarlo haría insertar en el registro a profundidad 3, y `solo_disparador` lo rechazaría.
+- **B** no se dispara: el SET no menciona `balance`.
+- **Unidades:** un cierre por `sim_cierre_v0` sube el contador **2** (el trade y el saldo). Es monotónico; **nadie debe contar unidades**: `advance` solo compara igualdad.
+
+**Interacción:**
+- **La puerta:** el UPDATE anidado lleva las mismas cabeceras y el mismo JWT que la escritura del trade, así que decide igual. Y solo existe si la escritura del trade ya pasó su propia puerta (BEFORE). No abre ninguna vía: solo puede sumar 1 a `rev_saldo` de la sesión del trade.
+- **Inmutabilidad:** no la toca.
+- **`pg_trigger_depth`:** el `solo_disparador` del registro no ve nada nuevo, porque A no inserta en el anidado.
+- **ACL de columna y s11:** no cambian; no hay columnas nuevas.
+- **sim-003 después:** no cambia (E2).
+- **Catálogo y guarda:** el disparador entra en el catálogo exacto del estado 1 de la preparatoria y de la puerta (tgtype 29). La guarda compara el cuerpo literal de las dos funciones.
+
+**Bloqueos** (dos conexiones reales, `sim-004a` §12b):
+- Ahora toda escritura de un trade bloquea también la fila de su sesión hasta el COMMIT. `sim_cierre_v0` la toma en su INSERT (antes la tomaba en su UPDATE, en la misma transacción); el cliente viejo, en su INSERT.
+- Probados sin interbloqueo:
+  - dos cierres a la vez;
+  - un INSERT del cliente viejo y un cierre;
+  - un cierre y el CAS de `advance`, que espera, vuelve a mirar el contador y no actualiza;
+  - dos trades movidos entre las mismas dos sesiones en sentidos opuestos (bloqueo en orden de id);
+  - el borrado de todas las sesiones de un alumno, como el hub, y un cierre, que falla limpio.
+
+**Ensayo, con rojo previo contra `b685748`:**
+- **`sim-004a` §12:** INSERT, UPDATE, UPDATE de `session_id` (las dos), DELETE y `service_role` suben el contador; el cierre partido pasa a fallar el CAS; los intentos de imitar o restaurar desde `authenticated` y `service_role` no tienen efecto; el registro.
+- **Mutantes funcionales:** sin el disparador de trades, el cierre partido pasa; si el disparador de sesiones acepta cualquier subida, un cliente lo fija. Además, dos mutantes de catálogo (E9).
+- **`etapa1-servidor` §5 y `etapa1-cola`:** el cierre partido del cliente viejo en la ventana de `advance`, con pass y fail → 409; el cliente reevalúa con el trade y no concede (CAS-cliente-partido); UPDATE y DELETE de trades. Rojo con el doble de `b685748`.
+
+**El hub (solo lectura, 13-oct):** no lee `sim_sessions` en ningún sitio. Solo la borra por `user_id` (`pages/api/users/delete.js:104`). No tiene tipos generados de Supabase ni esquemas estrictos (zod). Una columna nueva no rompe nada.
+
+**Runbook (o.16.3 sigue valiendo):**
+- **Aprobado:** Ramón aprueba la columna (13-oct). Se avisa al hub igualmente.
+- **La preparatoria va antes del despliegue.** El `advance` nuevo responde 503 sin la columna. El cliente viejo que quede abierto también sube el contador con sus trades desde la preparatoria, sin esperar a la puerta.
+- **Durante la ventana**, nada de borrados masivos (hub, `sim_borrar_alumno`). Cada trade borrado actualiza su sesión, y dos borrados concurrentes del mismo alumno se podrían interbloquear (o.16.6).
+
+#### o.16.6 Autorrevisión adversaria de o.16.5
+
+1. **¿Puede alguien imitar el +1?** Hacen falta a la vez estar dentro de un disparador y la marca para esa sesión.
+   - **Clientes:** ninguno puede ejecutar un UPDATE de `sim_sessions` a profundidad > 1 con un SET elegido por él. Las RPC expuestas no suben la profundidad, y la marca puesta a mano a profundidad 1 no sirve (E12-no-se-imita, con `authenticated` y `service_role`).
+   - **El dueño:** con `postgres` puede crear un disparador propio; queda dentro del límite frente al dueño ya aceptado (n.8.2).
+   - **Un disparador futuro** que actualice `sim_sessions`: la guarda del catálogo exacto lo rechazaría.
+2. **Un alumno puede subir el contador de una sesión ajena.** La RLS de `sim_trades` en s04 solo exige `user_id = auth.uid()` (USING sin WITH CHECK propio), no la propiedad de la sesión.
+   - **El caso:** un alumno que conozca el uuid de una sesión ajena puede escribir un trade con ese `session_id`. El disparador (DEFINER) le sube el contador y el `advance` de la víctima recibe 409: como mucho 3 intentos y un aviso. Puede volver a pulsar.
+   - **Lo que no es nuevo:** ese trade ya ensuciaba hoy el historial de la víctima (`advance` lee los trades por `session_id`). El contador solo lo hace visible.
+   - **Pregunta al CTO:** ¿se cierra ya con una política WITH CHECK que exija que la sesión sea del alumno? Es un cambio de RLS en `sim_trades` que sería suyo decidir. ¿O se deja al v1?
+3. **Bloqueos:** los cinco casos de §12b pasan con dos conexiones reales, pero no son una prueba exhaustiva de todos los intercalados.
+   - **Un riesgo que sí veo:** dos borrados masivos concurrentes del mismo alumno (hub + `sim_borrar_alumno`, o dos `sim_borrar_alumno`) bloquean sesiones en órdenes distintos (el de los trades y el de las sesiones). Pueden interbloquearse: PostgreSQL aborta uno con 40P01 y nada queda a medias.
+   - Son operaciones de administración; el runbook ya pide no hacerlas durante la ventana.
+   - Los cierres de alumnos solo bloquean una sesión cada uno y no participan en ciclos.
+4. **Coste:**
+   - **Por fila de trade escrita,** un UPDATE más de la sesión (una versión de fila y su WAL). Un borrado de N trades de una sesión hace N actualizaciones de la misma fila.
+   - **Con los volúmenes de hoy** (centenares de trades por alumno) es despreciable.
+   - **Al borrar un alumno con muchos trades,** crece un poco la tabla hasta el próximo VACUUM.
+5. **El registro:** el UPDATE anidado no se registra. Lo que se pierde es solo un `rev_saldo` derivado; la escritura del trade queda registrada con su rol, cliente y transacción. s10 no cambia, porque no clasificaba sesiones por esa fila.
+6. **`sim_cierre_v0` sube 2:** `advance` solo compara igualdad. El doble lo emula igual (+1 el trade, +1 el saldo si cambia), y el SQL está en E11-cierre-sube.
+7. **sim-003 (motor 1):** `sim_comando` inserta trades en sesiones v1 y ahora sube su `rev_saldo`. El v1 no lo usa (tiene su `version`) y no hace daño. sim-003 sigue ejecutándose después de la preparatoria (E2).
