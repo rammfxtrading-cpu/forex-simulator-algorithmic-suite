@@ -23,8 +23,14 @@
 --                 acepte texto, texteq, bucket_id text con la colacion por
 --                 defecto. Si no: «NO ACREDITADO: …» y mercado-001 abortaria
 --   1 cerrojo     public.mercado_cerrojo (E2R3-01, sql/mercado-000-cerrojo.sql):
---                 si existe, su RLS, politicas, disparadores y permisos; si no,
---                 si el nombre esta libre
+--                 si existe, su RLS, politicas, disparadores, reglas, permisos
+--                 directos y EFECTIVOS (E2R4-01: con herencia y pertenencias,
+--                 la misma regla que la guarda de mercado-000) y su veredicto;
+--                 si no, si el nombre esta libre. Y «por defecto»: los
+--                 privilegios por defecto del creador en public y globales; sin
+--                 la tabla, si dan algo a un rol que mercado-000 no revoca,
+--                 «OTROS ROLES … PARAR». Y «pertenencias»: de que roles son
+--                 miembros anon, authenticated y service_role
 --   2 disparador  cada disparador de storage.objects: momento, ordenes, por
 --                 fila o por sentencia, funcion, si es del esquema storage o
 --                 AJENA, lenguaje, SECURITY DEFINER y md5 del cuerpo (12 hex),
@@ -167,6 +173,45 @@ texto as (
            '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', '<uuid>', 'g'),
            '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+', '<email>', 'g') t
     from (select policyname, 2 s, 'USING' cual, qual t from veredicto union all select policyname, 3, 'WITH CHECK', with_check from veredicto) x
+),
+-- E2R4-01 (Astra, CTO 14-oct): los permisos EFECTIVOS del cerrojo, con la misma
+-- regla que la guarda de sql/mercado-000-cerrojo.sql: con herencia y
+-- pertenencias (los privilegios de cualquier rol del que sean miembros)
+cer as (
+  select c.oid, c.relowner, c.relacl from pg_catalog.pg_class c where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo')
+),
+cer_privs as (
+  select pr from pg_catalog.unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']
+                                   || case when pg_catalog.current_setting('server_version_num')::int >= 170000 then array['MAINTAIN'] else array[]::text[] end) pr
+),
+cer_ef as (
+  select u.u, u.n, coalesce((select pg_catalog.string_agg(p.pr, ',' order by p.pr) from cer_privs p
+                              where case when u.u = 'PUBLIC' then pg_catalog.has_table_privilege('public', cer.oid, p.pr)
+                                         else exists (select 1 from pg_catalog.pg_roles r where pg_catalog.pg_has_role(u.u, r.oid, 'MEMBER')
+                                                                                            and pg_catalog.has_table_privilege(r.oid, cer.oid, p.pr)) end), '-') ef
+    from cer, pg_catalog.unnest(array['PUBLIC', 'anon', 'authenticated', 'service_role']) with ordinality u(u, n)
+),
+cer_acl as (
+  select case when x.grantee = 0 then 'PUBLIC' else x.grantee::pg_catalog.regrole::text end quien, x.grantee, x.privilege_type, x.is_grantable, cer.relowner
+    from cer, pg_catalog.aclexplode(cer.relacl) x
+),
+cer_perm as (
+  select (select pg_catalog.string_agg(a.quien || ':' || a.privilege_type, ',' order by a.quien, a.privilege_type) from cer_acl a where a.grantee <> a.relowner) permisos,
+         (select pg_catalog.string_agg(distinct a.quien, ',') from cer_acl a where a.grantee not in (a.relowner, 'service_role'::pg_catalog.regrole)) ajenos,
+         (select pg_catalog.string_agg(e.u || '=' || e.ef, ' ' order by e.n) from cer_ef e) efectivos,
+         (select pg_catalog.bool_and(case when e.u = 'service_role' then e.ef = 'DELETE,INSERT,SELECT' else e.ef = '-' end) from cer_ef e)
+         and coalesce((select pg_catalog.string_agg(a.privilege_type, ',' order by a.privilege_type) from cer_acl a where a.grantee = 'service_role'::pg_catalog.regrole), '-') = 'DELETE,INSERT,SELECT'
+         and not exists (select 1 from cer_acl a where a.grantee = 'service_role'::pg_catalog.regrole and a.is_grantable) efectivos_ok
+),
+-- los privilegios por defecto del creador (el dueño del cerrojo; si no existe,
+-- quien corre s14, que es quien correra mercado-000) en public y globales
+cer_def as (
+  select r.rolname, d.defaclnamespace, x.grantee,
+         case when x.grantee = 0 then 'PUBLIC' else x.grantee::pg_catalog.regrole::text end quien, x.privilege_type
+    from pg_catalog.pg_roles r
+    join pg_catalog.pg_default_acl d on d.defaclrole = r.oid and d.defaclobjtype = 'r' and d.defaclnamespace in (0, 'public'::pg_catalog.regnamespace)
+    cross join lateral pg_catalog.aclexplode(d.defaclacl) x
+   where r.oid = coalesce((select relowner from cer), (select oid from pg_catalog.pg_roles where rolname = current_user))
 )
 select seccion, objeto, detalle from (
   select 1 o, 1 s, 'bucket' seccion, b.id objeto,
@@ -186,11 +231,33 @@ select seccion, objeto, detalle from (
                      else 'NO EXISTE (mercado-000 sin aplicar); el nombre esta libre' end
               else (select 'rls=' || c.relrowsecurity || ' · politicas=' || (select count(*) from pg_catalog.pg_policy p where p.polrelid = c.oid)
                            || ' · disparadores=' || (select count(*) from pg_catalog.pg_trigger g where g.tgrelid = c.oid and not g.tgisinternal)
-                           || ' · permisos=' || coalesce((select pg_catalog.string_agg(r.rolname || ':' || x.privilege_type, ',' order by r.rolname, x.privilege_type)
-                                                           from pg_catalog.aclexplode(c.relacl) x join pg_catalog.pg_roles r on r.oid = x.grantee
-                                                          where r.rolname in ('anon', 'authenticated', 'service_role')), '-')
-                                         || case when exists (select 1 from pg_catalog.aclexplode(c.relacl) x where x.grantee = 0) then ',PUBLIC' else '' end
-                      from pg_catalog.pg_class c where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo')) end
+                           || ' · reglas=' || (select count(*) from pg_catalog.pg_rewrite w where w.ev_class = c.oid)
+                           || ' · permisos=' || coalesce(k.permisos, '-')
+                           || ' · efectivos: ' || k.efectivos
+                           || case when k.efectivos_ok and k.ajenos is null then ' · permisos acreditados'
+                                   else ' · PERMISOS NO ACREDITADOS' || coalesce(' (ajenos: ' || k.ajenos || ')', '') || ': mercado-000 abortaria; PARAR (E2R4-01)' end
+                      from pg_catalog.pg_class c, cer_perm k where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo')) end
+  union all
+  -- E2R4-01: de que roles son miembros (con o sin herencia) anon, authenticated y service_role:
+  -- sus privilegios en el cerrojo cuentan como suyos (mercado-000 los comprueba)
+  select 1, 2, 'cerrojo', 'pertenencias',
+         (select pg_catalog.string_agg(u.u || ': ' || coalesce((select pg_catalog.string_agg(r.rolname, ',' order by r.rolname) from pg_catalog.pg_roles r
+                                                                 where r.rolname <> u.u and pg_catalog.pg_has_role(u.u, r.oid, 'MEMBER')), '-'), ' · ' order by u.n)
+            from pg_catalog.unnest(array['anon', 'authenticated', 'service_role']) with ordinality u(u, n)
+           where pg_catalog.to_regrole(u.u) is not null)
+  union all
+  -- E2R4-01: de donde vienen los grants de una tabla nueva: los privilegios por defecto del creador
+  select 1, 2, 'cerrojo', 'por defecto',
+         (select r.rolname from pg_catalog.pg_roles r where r.oid = coalesce((select relowner from cer), (select oid from pg_catalog.pg_roles where rolname = current_user)))
+         || ': en public: ' || coalesce((select pg_catalog.string_agg(g, '; ' order by g) from (select d.quien || '=' || pg_catalog.string_agg(d.privilege_type, ',' order by d.privilege_type) g
+                                                                                                  from cer_def d where d.defaclnamespace <> 0 group by d.quien) a), '-')
+         || ' · global: ' || coalesce((select pg_catalog.string_agg(g, '; ' order by g) from (select d.quien || '=' || pg_catalog.string_agg(d.privilege_type, ',' order by d.privilege_type) g
+                                                                                               from cer_def d where d.defaclnamespace = 0 group by d.quien) a), '-')
+         || case when not exists (select 1 from cer)
+                  and exists (select 1 from cer_def d, pg_catalog.pg_roles r where r.rolname = d.rolname and d.grantee not in (0, r.oid, 'anon'::pg_catalog.regrole, 'authenticated'::pg_catalog.regrole, 'service_role'::pg_catalog.regrole))
+                 then ' · OTROS ROLES (' || (select pg_catalog.string_agg(distinct d.quien, ',') from cer_def d, pg_catalog.pg_roles r where r.rolname = d.rolname and d.grantee not in (0, r.oid, 'anon'::pg_catalog.regrole, 'authenticated'::pg_catalog.regrole, 'service_role'::pg_catalog.regrole))
+                      || '): mercado-000 abortaria (no se les revoca a ciegas); PARAR (E2R4-01)'
+                 else '' end
   union all
   select 2, 1, 'rls', 'storage.objects', 'rls=' || c.relrowsecurity from pg_catalog.pg_class c where c.oid = pg_catalog.to_regclass('storage.objects')
   union all

@@ -16,6 +16,16 @@
  *     (el DELETE tardio de E2R3-01); recurso y descripcion con forma cerrada
  *   4 anon y authenticated no leen, ni escriben, ni borran (permission denied)
  *   5 como el postgres no superusuario de s06 tambien aplica
+ *   6 E2R4-01 (Astra, CTO 14-oct): permisos EFECTIVOS, no solo el ACL directo.
+ *     anon, authenticated y PUBLIC: ningun privilegio, contando herencia y
+ *     pertenencias (tambien las de solo SET ROLE); service_role: exactamente
+ *     SELECT, INSERT y DELETE, sin opcion de conceder; cualquier destinatario
+ *     del ACL que no sea el dueño ni service_role aborta y se lista (no se le
+ *     revoca a ciegas). En primera aplicacion y en reejecucion. El negativo de
+ *     Astra (rol heredado con TRUNCATE por default privileges) y variantes con
+ *     UPDATE y TRIGGER. El informe y el error dicen los privilegios por
+ *     defecto del creador en public.
+ *   7 E2R4-02: una regla de reescritura (DO INSTEAD NOTHING) aborta
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -38,10 +48,19 @@ const monta = (extra = '') => {
   return db
 }
 const err1 = r => (r.err.split('\n').find(l => /ERROR/.test(l)) || r.err.split('\n')[0] || '').replace(/^.*ERROR:\s+/, '')
-const catalogo = db => pg.psql(`select coalesce((select string_agg(relname || ':' || relkind, ',' order by relname) from pg_class where relnamespace = 'public'::regnamespace and relname like 'mercado_cerrojo%'), '-');
-select coalesce((select relacl::text from pg_class where oid = to_regclass('public.mercado_cerrojo')), '-');`, db).out
+// la foto del catalogo para «nada cambia». E2R4: con el montaje de s04, «relname || ':' || relkind» era
+// ambiguo (text || "char") y la consulta fallaba: la foto salia vacia y «nada cambia» aprobaba en vacio.
+// Ahora, con casts explicitos, y si la consulta falla, la prueba se para (no devuelve una foto vacia)
+const catalogo = db => {
+  const r = pg.psql(`select coalesce((select string_agg(relname::text || ':' || relkind::text, ',' order by relname) from pg_class where relnamespace = 'public'::regnamespace and relname::text like 'mercado_cerrojo%'), '-');
+select coalesce((select relacl::text from pg_class where oid = to_regclass('public.mercado_cerrojo')), '-');`, db)
+  if (!r.ok || r.out.split('\n').length !== 2) throw new Error(`catalogo ${db}: la foto no se puede tomar: ${r.err || r.out}`)
+  return r.out
+}
 // una orden como un rol, en una transaccion que se deshace salvo que se pida
 const como = (rol, q, db, { deshace = true } = {}) => pg.psql(`begin; set local role ${rol};\n${q}\n${deshace ? 'rollback' : 'commit'};`, db)
+// la migracion ya aplicada (el DO), para montar las reejecuciones
+const M0DO = M0.slice(M0.indexOf('do $m$'), M0.indexOf('select seccion'))
 
 try {
   pg.arranca()
@@ -54,6 +73,7 @@ try {
   const forma = pg.psql(`select string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then ' nn' else '' end, ', ' order by a.attnum) from pg_attribute a where a.attrelid = 'public.mercado_cerrojo'::regclass and a.attnum > 0 and not a.attisdropped`, d1).out
   oraculo('M000', 'columnas: recurso text (clave), dueno uuid, desde timestamptz, descripcion text, todas not null', forma === 'recurso text nn, dueno uuid nn, desde timestamp with time zone nn, descripcion text nn', forma)
   const antes2 = catalogo(d1)
+  ver('control: la foto del catalogo ve la tabla y su ACL (no esta vacia)', /^mercado_cerrojo:r,mercado_cerrojo_pkey:i\n\{.*service_role=ard\//.test(antes2), antes2)
   const r1b = pg.psql(M0, d1)
   oraculo('M000', 'segunda ejecucion: termina bien, dice que ya estaba y no cambia nada', r1b.ok && /ya existe; se comprueba su forma y no se toca/.test(r1b.err) && catalogo(d1) === antes2 && /FIN\|mercado-000 aplicada$/.test(r1b.out), r1b.err)
   oraculo('M000', 'el SQL no crea politicas, funciones ni disparadores (fuera comentarios)', !/\bcreate\s+(policy|function|trigger|or replace)\b/i.test(M0.replace(/--.*$/gm, '')))
@@ -65,7 +85,7 @@ try {
     ['un indice con el nombre de su clave', `create table public.otra (x int); create index mercado_cerrojo_pkey on public.otra (x);`, /nombre mercado_cerrojo .* ya esta ocupado/],
     ['un tipo compuesto con ese nombre (crea tambien una relacion)', `create type public.mercado_cerrojo as (x int);`, /ya esta ocupado|otra forma \(no es una tabla/],
     ['un tipo enumerado con el nombre del tipo de su arreglo', `create type public._mercado_cerrojo as enum ('x');`, /ya esta ocupado/],
-    ['la tabla buena con un grant a anon', `${M0.split('do $m$')[0]}\n${M0.slice(M0.indexOf('do $m$'), M0.indexOf('select seccion'))} grant select on public.mercado_cerrojo to anon;`, /otra forma \(PUBLIC, anon o authenticated tienen permisos/],
+    ['la tabla buena con un grant a anon', `${M0.split('do $m$')[0]}\n${M0.slice(M0.indexOf('do $m$'), M0.indexOf('select seccion'))} grant select on public.mercado_cerrojo to anon;`, /permisos de public\.mercado_cerrojo NO ACREDITADOS \(.*destinatarios ajenos: anon=SELECT/],
     ['la tabla buena con una politica', `${M0.slice(M0.indexOf('do $m$'), M0.indexOf('select seccion'))} create policy p on public.mercado_cerrojo for select to authenticated using (true);`, /otra forma \(tiene politicas/],
     ['la tabla buena con la RLS apagada', `${M0.slice(M0.indexOf('do $m$'), M0.indexOf('select seccion'))} alter table public.mercado_cerrojo disable row level security;`, /otra forma \(RLS apagada/],
     ['la tabla buena con un disparador', `${M0.slice(M0.indexOf('do $m$'), M0.indexOf('select seccion'))} create function public.f() returns trigger language plpgsql as $f$ begin return new; end $f$; create trigger t before insert on public.mercado_cerrojo for each row execute function public.f();`, /otra forma \(tiene disparadores/],
@@ -115,5 +135,71 @@ try {
   oraculo('M000', 'pgx (no superusuario, bypassrls): aplica y acaba en FIN', r5.status === 0 && /FIN\|mercado-000 aplicada$/.test((r5.stdout || '').trim()), (r5.stderr || '').split('\n').find(l => /ERROR/.test(l)) || r5.stdout)
   const r5b = pg.psql(`begin;\n${M0}\ncommit;`, monta())
   oraculo('M000', 'en una sola transaccion (como el editor): el informe dice lock_timeout=5s · statement_timeout=30s', r5b.ok && /limites\|lock_timeout=5s · statement_timeout=30s/.test(r5b.out), err1(r5b) || r5b.out)
+
+  titulo('6 · E2R4-01: permisos efectivos (herencia, pertenencias, destinatarios ajenos)')
+  // los roles inventados son del cluster: se crean una vez y cada montaje los usa o no
+  pg.psql(`create role heredado; create role solo_set;`, 'postgres')
+  const HER = `grant heredado to authenticated;`
+  const DEF = priv => `${HER} alter default privileges for role postgres in schema public grant ${priv} on tables to heredado;`
+  // las pertenencias son del cluster, no de la base: se quitan despues de cada caso
+  const limpiaRoles = () => { const r = pg.psql(`revoke heredado from authenticated; revoke solo_set from authenticated; revoke service_role from anon; revoke postgres from service_role;`, 'postgres'); if (!r.ok) throw new Error(`limpiar roles: ${r.err}`) }
+  {
+    // el control de Astra: en ese montaje, una tabla nueva cualquiera SI deja a authenticated hacer TRUNCATE
+    const d = monta(`${DEF('truncate')} create table public.testigo (x int);`)
+    ver('control (Astra): con TRUNCATE por defecto a heredado, una tabla nueva de public a la que se le quitan los grants directos (como hace mercado-000) sigue dejando a authenticated hacer TRUNCATE', pg.psql(`revoke all on public.testigo from public, anon, authenticated, service_role; select has_table_privilege('authenticated', 'public.testigo', 'TRUNCATE') and not exists (select 1 from pg_class c, aclexplode(c.relacl) x where c.oid = 'public.testigo'::regclass and x.grantee = 'authenticated'::regrole)`, d).out === 't')
+    const a = catalogo(d)
+    const r = pg.psql(M0, d)
+    oraculo('E2R4-01', 'el negativo de Astra, primera aplicacion: aborta, lista heredado y el TRUNCATE efectivo de authenticated, enseña el default ACL del creador, y no crea nada', !r.ok && /mercado-000: permisos de public\.mercado_cerrojo NO ACREDITADOS/.test(r.err) && /destinatarios ajenos: heredado=TRUNCATE/.test(r.err) && /authenticated tiene TRUNCATE/.test(r.err) && /por defecto de postgres: en public: .*heredado=TRUNCATE/.test(r.err) && catalogo(d) === a && a.startsWith('-'), err1(r))
+    const t = como('authenticated', `truncate public.testigo;`, d)
+    ver('control: el TRUNCATE de authenticated sobre la tabla testigo funciona (el riesgo era real en el montaje)', t.ok, t.err)
+    limpiaRoles()
+  }
+  for (const [priv, PRIV] of [['update', 'UPDATE'], ['trigger', 'TRIGGER']]) {
+    const d = monta(DEF(priv))
+    const a = catalogo(d)
+    const r = pg.psql(M0, d)
+    oraculo('E2R4-01', `variante ${PRIV} heredado por default privileges: aborta, lo lista (heredado=${PRIV}, authenticated tiene ${PRIV}) y no crea nada`, !r.ok && new RegExp(`destinatarios ajenos: heredado=${PRIV}`).test(r.err) && new RegExp(`authenticated tiene ${PRIV}`).test(r.err) && catalogo(d) === a, err1(r))
+    limpiaRoles()
+  }
+  const REEJ = [
+    ['TRUNCATE concedido despues a heredado (el de Astra, en reejecucion)', `${HER} ${M0DO} grant truncate on public.mercado_cerrojo to heredado;`, /destinatarios ajenos: heredado=TRUNCATE.*authenticated tiene TRUNCATE/],
+    ['UPDATE concedido despues a heredado', `${HER} ${M0DO} grant update on public.mercado_cerrojo to heredado;`, /destinatarios ajenos: heredado=UPDATE.*authenticated tiene UPDATE/],
+    ['TRIGGER concedido despues a heredado', `${HER} ${M0DO} grant trigger on public.mercado_cerrojo to heredado;`, /destinatarios ajenos: heredado=TRIGGER.*authenticated tiene TRIGGER/],
+    ['un grant a PUBLIC', `${M0DO} grant select on public.mercado_cerrojo to public;`, /destinatarios ajenos: PUBLIC=SELECT.*PUBLIC tiene SELECT/],
+    ['un grant a un rol que authenticated solo puede tomar con SET ROLE (sin herencia)', `grant solo_set to authenticated with inherit false; ${M0DO} grant delete on public.mercado_cerrojo to solo_set;`, /destinatarios ajenos: solo_set=DELETE.*authenticated tiene DELETE/],
+    ['anon miembro de service_role, sin herencia (solo SET ROLE): sin ningun grant ajeno', `${M0DO} grant service_role to anon with inherit false;`, /anon tiene DELETE,INSERT,SELECT/],
+    ['service_role miembro del dueño (hereda todo)', `${M0DO} grant postgres to service_role;`, /service_role tiene DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE \(tienen que ser exactamente DELETE,INSERT,SELECT\)/],
+    ['service_role con TRUNCATE directo', `${M0DO} grant truncate on public.mercado_cerrojo to service_role;`, /service_role tiene DELETE,INSERT,SELECT,TRUNCATE/],
+    ['service_role con MAINTAIN (PostgreSQL 17)', `${M0DO} grant maintain on public.mercado_cerrojo to service_role;`, /service_role tiene DELETE,INSERT,MAINTAIN,SELECT/],
+    ['service_role con opcion de conceder', `${M0DO} grant select on public.mercado_cerrojo to service_role with grant option;`, /service_role puede conceder/],
+  ]
+  for (const [que, sql, error] of REEJ) {
+    const d = monta(sql)
+    const a = catalogo(d)
+    const r = pg.psql(M0, d)
+    oraculo('E2R4-01', `reejecucion con ${que}: aborta, lo lista y no toca nada`, !r.ok && /mercado-000: permisos de public\.mercado_cerrojo NO ACREDITADOS/.test(r.err) && error.test(r.err) && catalogo(d) === a, err1(r))
+    limpiaRoles()
+  }
+  ver('control: tras limpiar, ni anon ni authenticated ni service_role pertenecen a ningun rol', pg.psql(`select count(*) from pg_auth_members m where m.member in ('anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole)`, 'postgres').out === '0')
+  {
+    // el ACL limpio, con el default ACL de s06: aplica, y el informe lo acredita y lo enseña
+    const d = monta()
+    const r = pg.psql(M0, d)
+    oraculo('E2R4-01', 'limpio: el informe dice los efectivos (PUBLIC, anon y authenticated nada; service_role DELETE,INSERT,SELECT) y ningun destinatario ajeno', r.ok && /^efectivos\|PUBLIC=- · anon=- · authenticated=- · service_role=DELETE,INSERT,SELECT · ajenos=ninguno$/m.test(r.out), r.err || r.out)
+    oraculo('E2R4-01', 'limpio: el informe enseña los privilegios por defecto del creador en public (los de s06, que la migracion quita)', r.ok && /^por defecto\|postgres: en public: anon=.*TRUNCATE.*; authenticated=.*; service_role=.* · global: -$/m.test(r.out), r.out)
+    const r2 = pg.psql(M0, d)
+    oraculo('E2R4-01', 'reejecucion limpia: el mismo informe', r2.ok && /^efectivos\|PUBLIC=- · anon=- · authenticated=- · service_role=DELETE,INSERT,SELECT · ajenos=ninguno$/m.test(r2.out), r2.err || r2.out)
+    const tr = ['anon', 'authenticated'].map(rol => como(rol, `truncate public.mercado_cerrojo;`, d))
+    oraculo('E2R4-01', 'anon y authenticated: TRUNCATE denegado', tr.every(x => !x.ok && /permission denied for table mercado_cerrojo/.test(x.err)), tr.map(err1).join(' / '))
+  }
+
+  titulo('7 · E2R4-02: reglas de reescritura')
+  {
+    const d = monta(`${M0DO} create rule no_insert as on insert to public.mercado_cerrojo do instead nothing;`)
+    ver('control (Astra): con la regla, el INSERT de service_role «funciona» y no deja fila', pg.psql(`begin; set local role service_role; insert into public.mercado_cerrojo (recurso, dueno, descripcion) values ('mercado/v1', '11111111-2222-4333-8444-555555555555', 'mercado-v1-publica'); select count(*) from public.mercado_cerrojo; rollback;`, d).out === '0')
+    const a = catalogo(d)
+    const r = pg.psql(M0, d)
+    oraculo('E2R4-02', 'reejecucion con una regla DO INSTEAD NOTHING: aborta «tiene reglas» y no toca nada', !r.ok && /otra forma \(.*tiene reglas de reescritura/.test(r.err) && catalogo(d) === a && pg.psql(`select count(*) from pg_rewrite where ev_class = 'public.mercado_cerrojo'::regclass`, d).out === '1', err1(r))
+  }
 } finally { pg.cierra() }
 fin()

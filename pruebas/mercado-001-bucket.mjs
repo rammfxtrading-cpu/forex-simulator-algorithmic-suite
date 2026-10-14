@@ -23,6 +23,7 @@
  *     un disparador por sentencia en DELETE la deja «no concluyente»; sin grants
  *     no alcanza; el centinela no queda y el rol vuelve; como el postgres no
  *     superusuario de s06 tambien aplica
+ *   9 E2R4-01/02: s14 y los permisos efectivos del cerrojo (por defecto, acreditados, NO ACREDITADOS, reglas)
  *   5 s14: una sola SELECT, en READ ONLY; antes («NO EXISTE», politicas con su
  *     veredicto y su texto, UUID enmascarados, disparadores) y despues (privado,
  *     trozos por par, puntero, cerrojo); sin nombres de objetos de otros buckets
@@ -351,6 +352,35 @@ insert into storage.objects (bucket_id, name, metadata) values ('forex-data', 'E
   const q1 = s14(d3)
   oraculo('S14', 'despues: mercado privado; EURUSD 2 trozos, 17.000 bytes y 1 manifiesto; GBPUSD 1 trozo; puntero con su hora; el cerrojo (E2R3-01) en la base, sin aplicar y con el nombre libre; 1 constancia de liberacion', r3.ok && q1.ok && /bucket\|mercado\|public=false · file_size_limit=5242880/.test(q1.out) && /mercado\|EURUSD\|trozos=2 · bytes=17000 · manifiestos=1/.test(q1.out) && /mercado\|GBPUSD\|trozos=1 · bytes=7000 · manifiestos=0/.test(q1.out) && /mercado\|puntero\|v1\/actual.json · actualizado/.test(q1.out) && /cerrojo\|public.mercado_cerrojo\|NO EXISTE \(mercado-000 sin aplicar\); el nombre esta libre/.test(q1.out) && !/protocolo anterior/.test(q1.out) && /mercado\|liberaciones\|1 constancia/.test(q1.out), q1.err || q1.out)
   oraculo('S14', 'sin nombres de objetos de otros buckets (ni EURUSD/M1/…)', q1.ok && !/M1\/2026/.test(q1.out))
+
+  titulo('9 · E2R4-01: s14 y los permisos efectivos del cerrojo')
+  {
+    const M0 = lee('sql/mercado-000-cerrojo.sql')
+    // las pertenencias son del cluster: la de la seccion 3 (alumnos, E2R2-02) sigue viva; se quita para empezar limpio
+    pg.psql(`create role heredado; do $r$ begin if exists (select 1 from pg_roles where rolname = 'alumnos') then revoke alumnos from authenticated; end if; end $r$;`, 'postgres')
+    const limpia = () => { const r = pg.psql(`revoke heredado from authenticated; revoke service_role from anon;`, 'postgres'); if (!r.ok) throw new Error(r.err) }
+    const linea = (q, obj) => q.out.split('\n').filter(l => l.startsWith(`cerrojo|${obj}|`)).join(' / ')
+    const dA = monta(`alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;`)
+    const qA = s14(dA)
+    oraculo('E2R4-01', 's14 antes de mercado-000: «por defecto» enseña los privilegios por defecto del creador en public (los de s06) y no pide parar', qA.ok && /^cerrojo\|por defecto\|postgres: en public: anon=.*TRUNCATE.*; authenticated=.*; service_role=.* · global: -$/m.test(qA.out), linea(qA, 'por defecto') || qA.err)
+    oraculo('E2R4-01', 's14 antes: «pertenencias» dice que anon, authenticated y service_role no son miembros de nadie', qA.ok && /^cerrojo\|pertenencias\|anon: - · authenticated: - · service_role: -$/m.test(qA.out), linea(qA, 'pertenencias') || qA.err)
+    const dB = monta(`grant heredado to authenticated; alter default privileges for role postgres in schema public grant truncate on tables to heredado;`)
+    const qB = s14(dB)
+    oraculo('E2R4-01', 's14 antes, con el montaje de Astra (TRUNCATE por defecto a heredado): «OTROS ROLES (heredado) … PARAR»', qB.ok && /^cerrojo\|por defecto\|.*heredado=TRUNCATE.* · OTROS ROLES \(heredado\): mercado-000 abortaria .*PARAR/m.test(qB.out), linea(qB, 'por defecto') || qB.err)
+    oraculo('E2R4-01', 's14 antes, con el montaje de Astra: «pertenencias» dice authenticated: heredado', /^cerrojo\|pertenencias\|anon: - · authenticated: heredado · service_role: -$/m.test(qB.out), linea(qB, 'pertenencias'))
+    limpia()
+    const dC = monta(); const rC = pg.psql(M0, dC); const qC = s14(dC)
+    oraculo('E2R4-01', 's14 despues de mercado-000: reglas=0, solo service_role, efectivos nada salvo service_role DELETE,INSERT,SELECT: «permisos acreditados»', rC.ok && qC.ok && /^cerrojo\|public\.mercado_cerrojo\|rls=true · politicas=0 · disparadores=0 · reglas=0 · permisos=service_role:DELETE,service_role:INSERT,service_role:SELECT · efectivos: PUBLIC=- anon=- authenticated=- service_role=DELETE,INSERT,SELECT · permisos acreditados$/m.test(qC.out), linea(qC, 'public.mercado_cerrojo') || rC.err || qC.err)
+    pg.psql(`grant heredado to authenticated; grant truncate on public.mercado_cerrojo to heredado;`, dC)
+    const qD = s14(dC)
+    oraculo('E2R4-01', 's14 con TRUNCATE a un rol que authenticated hereda: lo enseña y «PERMISOS NO ACREDITADOS (ajenos: heredado) … PARAR»', qD.ok && /authenticated=TRUNCATE .*PERMISOS NO ACREDITADOS \(ajenos: heredado\): mercado-000 abortaria; PARAR/.test(linea(qD, 'public.mercado_cerrojo')), linea(qD, 'public.mercado_cerrojo') || qD.err)
+    limpia(); pg.psql(`revoke truncate on public.mercado_cerrojo from heredado; grant service_role to anon with inherit false;`, dC)
+    const qE = s14(dC)
+    oraculo('E2R4-01', 's14 con anon miembro de service_role solo por SET ROLE (ningun grant ajeno): anon=DELETE,INSERT,SELECT y «PERMISOS NO ACREDITADOS»', qE.ok && /anon=DELETE,INSERT,SELECT .*PERMISOS NO ACREDITADOS: mercado-000 abortaria/.test(linea(qE, 'public.mercado_cerrojo')), linea(qE, 'public.mercado_cerrojo') || qE.err)
+    limpia()
+    const rF = pg.psql(`create rule no_insert as on insert to public.mercado_cerrojo do instead nothing;`, dC), qF = s14(dC)
+    oraculo('E2R4-02', 's14 enseña una regla de reescritura en el cerrojo (reglas=1)', rF.ok && /· reglas=1 ·/.test(linea(qF, 'public.mercado_cerrojo')), linea(qF, 'public.mercado_cerrojo') || rF.err)
+  }
   oraculo('S14', 'una sola SELECT: sin escrituras ni EXECUTE (fuera comentarios)', (() => { const sin = S14.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''"); return !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|perform|call|do)\b/i.test(sin) && (sin.match(/;/g) || []).length === 1 })())
 } finally { pg.cierra() }
 fin()
