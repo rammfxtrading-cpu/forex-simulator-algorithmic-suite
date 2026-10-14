@@ -283,7 +283,7 @@ create policy "lectura forex" on storage.objects for select to public using (buc
   // el arbol solo: mutante sin el search_path fijo y sin la lista de operadores ajenos
   const M1soloArbol = M1.replace("perform pg_catalog.set_config('search_path', 'pg_catalog, pg_temp', true);", "perform pg_catalog.set_config('search_path', 'public, pg_catalog', true);")
     .replace(/\n    \(select 'operador = fuera de pg_catalog que acepta texto: '[\s\S]*?having count\(\*\) > 0\),/, '')
-    .replace(/case when \(select s\.n from pg_catalog\.unnest[\s\S]*?no empieza por pg_catalog' end,/, "null,")
+    .replace(/case when \(select s\.n from pg_catalog\.unnest[\s\S]*?no empieza por pg_catalog[^']*' end,/, "null,")
   ver('el mutante «solo arbol» quita exactamente el contexto fijo, la lista de operadores y la comprobacion del search_path', M1soloArbol !== M1 && !/operador = fuera de pg_catalog/.test(M1soloArbol) && !/no empieza por pg_catalog/.test(M1soloArbol) && M1soloArbol.includes("'public, pg_catalog', true"))
   const dArbol = monta(SUPA + OP_ASTRA + POL_ASTRA)
   const rArbol = pg.psql(M1soloArbol, dArbol)
@@ -316,6 +316,24 @@ create policy "lectura forex" on storage.objects for select to public using (buc
   bloqueo.kill()
   oraculo('E2R2-02', `con storage.buckets bloqueada por otra sesion: aborta por lock_timeout en ~5 s, no espera los 20 (${Math.round(dt / 1000)} s)`, !rEsp.ok && /lock timeout/.test(rEsp.err) && dt < 12000, err1(rEsp))
 
+  titulo('8 · E2R3-02 y E2R3-03 (Astra): sombreado de catalogos e INSERT por sentencia')
+  // el escenario de Astra (sql-adversario.mjs, ronda 3) tal cual
+  const dS = monta(`create sequence public.efecto_insert; create function storage.efecto_insert() returns trigger language plpgsql as $$ begin perform nextval('public.efecto_insert'); return null; end $$; create trigger efecto_insert after insert on storage.objects for each statement execute function storage.efecto_insert();`)
+  const visible = pg.psql('begin read only;\nset local search_path=pg_catalog,public;\n' + S14 + '\nrollback;', dS)
+  const oculto = pg.psql('create temp table pg_trigger as select * from pg_catalog.pg_trigger where false; set search_path=pg_temp,pg_catalog,public;\nbegin read only;\n' + S14 + '\nrollback;', dS)
+  ver('control: sin sombreado, s14 enseña el disparador', visible.ok && visible.out.includes('efecto_insert'), visible.err)
+  oraculo('E2R3-02', 's14 no oculta disparador por pg_temp (los catalogos van calificados con pg_catalog)', oculto.ok && oculto.out.includes('disparador|efecto_insert|'), oculto.out.split('\n').filter(x => /disparador|contexto/.test(x)).join(' / ') || oculto.err)
+  oraculo('E2R3-02', 'y con un esquema temporal delante de pg_catalog, el contexto NO queda acreditado', oculto.ok && /contexto\|lista blanca\|NO ACREDITADO: el search_path \(pg_temp_\d+,pg_catalog,public\) no empieza por pg_catalog/.test(oculto.out), oculto.out.split('\n').filter(x => /contexto/.test(x)).join(' / '))
+  const rTemp = pg.psql('create temp table pg_trigger as select * from pg_catalog.pg_trigger where false; set search_path=pg_temp,pg_catalog,public;\n' + M1, dS)
+  oraculo('E2R3-02', 'mercado-001 en esa misma sesion fija su contexto (pg_catalog, pg_temp) y no se deja engañar: aplica igual que sin la tabla temporal', rTemp.ok && /FIN\|mercado-001 aplicada$/.test(rTemp.out), err1(rTemp))
+  oraculo('E2R3-03', 's14: el AFTER INSERT por sentencia sale como POR SENTENCIA, con su lenguaje y el md5 de su cuerpo, y el resumen manda PARAR hasta que el CTO lo acredite', /disparador\|efecto_insert\|AFTER INSERT · POR SENTENCIA · storage\.efecto_insert · funcion de storage · plpgsql · md5 del cuerpo [0-9a-f]{12}/.test(visible.out) && /disparador\|\(resumen\)\|1 en storage\.objects \(1 por sentencia\): .*PARAR hasta que el CTO acredite/.test(visible.out), visible.out.split('\n').filter(x => /disparador/.test(x)).join(' / '))
+  const dS2 = monta(`create sequence public.efecto_insert; create function storage.efecto_insert() returns trigger language plpgsql as $$ begin perform nextval('public.efecto_insert'); return null; end $$; create trigger efecto_insert after insert on storage.objects for each statement execute function storage.efecto_insert();`)
+  const efecto = pg.psql('begin;\n' + M1 + '\ncommit;\nselect last_value || \'|\' || is_called from public.efecto_insert;', dS2)
+  oraculo('E2R3-03', 'lo que documenta p.13.2: el INSERT del centinela dispara el INSERT por sentencia, y su efecto no transaccional queda tras el rollback', efecto.ok && efecto.out.split('\n').at(-1) === '1|true', efecto.out.split('\n').at(-1) || efecto.err)
+  const dNo = monta()
+  const qNo = s14(dNo)
+  oraculo('E2R3-03', 'sin disparadores: el resumen dice «ninguno»', qNo.ok && /disparador\|\(resumen\)\|ninguno en storage\.objects/.test(qNo.out), qNo.out.split('\n').filter(x => /disparador/.test(x)).join(' / '))
+
   titulo('5 · s14 (solo lectura)')
   const d3 = monta(`create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');
 create policy "rara" on storage.objects for select to authenticated using (name like 'x%' or owner = '0f0e0d0c-0b0a-4908-8706-050403020100'::uuid);
@@ -331,7 +349,7 @@ insert into storage.objects (bucket_id, name, metadata) values ('forex-data', 'E
     ('mercado', 'v1/EURUSD/manifiestos/v1.1.${'c'.repeat(64)}.json', '{"size": 500}'), ('mercado', 'v1/GBPUSD/2026/03/02.${'d'.repeat(64)}.bin.br', '{"size": 7000}'),
     ('mercado', 'v1/actual.json', '{"size": 300}'), ('mercado', 'v1/_liberados/20261014T100500Z.${'e'.repeat(16)}.json', '{"size": 200}');`, d3)
   const q1 = s14(d3)
-  oraculo('S14', 'despues: mercado privado; EURUSD 2 trozos, 17.000 bytes y 1 manifiesto; GBPUSD 1 trozo; puntero con su hora; sin cerrojo; 1 constancia de liberacion', r3.ok && q1.ok && /bucket\|mercado\|public=false · file_size_limit=5242880/.test(q1.out) && /mercado\|EURUSD\|trozos=2 · bytes=17000 · manifiestos=1/.test(q1.out) && /mercado\|GBPUSD\|trozos=1 · bytes=7000 · manifiestos=0/.test(q1.out) && /mercado\|puntero\|v1\/actual.json · actualizado/.test(q1.out) && /mercado\|cerrojo\|no hay/.test(q1.out) && /mercado\|liberaciones\|1 constancia/.test(q1.out), q1.err || q1.out)
+  oraculo('S14', 'despues: mercado privado; EURUSD 2 trozos, 17.000 bytes y 1 manifiesto; GBPUSD 1 trozo; puntero con su hora; el cerrojo (E2R3-01) en la base, sin aplicar y con el nombre libre; 1 constancia de liberacion', r3.ok && q1.ok && /bucket\|mercado\|public=false · file_size_limit=5242880/.test(q1.out) && /mercado\|EURUSD\|trozos=2 · bytes=17000 · manifiestos=1/.test(q1.out) && /mercado\|GBPUSD\|trozos=1 · bytes=7000 · manifiestos=0/.test(q1.out) && /mercado\|puntero\|v1\/actual.json · actualizado/.test(q1.out) && /cerrojo\|public.mercado_cerrojo\|NO EXISTE \(mercado-000 sin aplicar\); el nombre esta libre/.test(q1.out) && !/protocolo anterior/.test(q1.out) && /mercado\|liberaciones\|1 constancia/.test(q1.out), q1.err || q1.out)
   oraculo('S14', 'sin nombres de objetos de otros buckets (ni EURUSD/M1/…)', q1.ok && !/M1\/2026/.test(q1.out))
   oraculo('S14', 'una sola SELECT: sin escrituras ni EXECUTE (fuera comentarios)', (() => { const sin = S14.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''"); return !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|perform|call|do)\b/i.test(sin) && (sin.match(/;/g) || []).length === 1 })())
 } finally { pg.cierra() }

@@ -22,12 +22,16 @@
 --                 que empieza por pg_catalog, ningun operador «=» ajeno que
 --                 acepte texto, texteq, bucket_id text con la colacion por
 --                 defecto. Si no: «NO ACREDITADO: …» y mercado-001 abortaria
+--   1 cerrojo     public.mercado_cerrojo (E2R3-01, sql/mercado-000-cerrojo.sql):
+--                 si existe, su RLS, politicas, disparadores y permisos; si no,
+--                 si el nombre esta libre
 --   2 disparador  cada disparador de storage.objects: momento, ordenes, por
---                 fila o por sentencia, funcion y si su funcion es del esquema
---                 storage (Supabase Storage) o AJENA. La sonda de mercado-001
---                 los dispara (por fila, los del centinela; por sentencia,
---                 todos los de UPDATE y DELETE): el runbook para si hay alguno
---                 ajeno o por sentencia en UPDATE/DELETE (E2R2-02)
+--                 fila o por sentencia, funcion, si es del esquema storage o
+--                 AJENA, lenguaje, SECURITY DEFINER y md5 del cuerpo (12 hex),
+--                 y un resumen. La sonda de mercado-001 los dispara (por fila,
+--                 los del centinela; por sentencia, todos los de INSERT, UPDATE
+--                 y DELETE: E2R3-03): el runbook PARA ante cualquiera hasta que
+--                 el CTO lo acredite como estandar y sin efectos externos
 --   3 politica    cada politica de storage.objects: orden, PERMISSIVE o
 --                 RESTRICTIVE, roles y veredicto con la MISMA lista blanca
 --                 que la guarda de mercado-001 (el bloque «clasificador» es
@@ -38,18 +42,18 @@
 --                 authenticated o public (E2R2-02): con alguna, mercado-001
 --                 abortaria antes de la sonda
 --   4 mercado     si existe: trozos y manifiestos por par, el puntero
---                 (v1/actual.json) y su ultima actualizacion, el cerrojo
---                 (v1/_cerrojo.json), la congelacion del liberador
---                 (v1/_congelado), las constancias de liberacion
---                 (v1/_liberados/) y objetos fuera de v1/
+--                 (v1/actual.json) y su ultima actualizacion, las constancias
+--                 de liberacion (v1/_liberados/), objetos fuera de v1/ y, si
+--                 los hubiera, objetos del protocolo anterior del cerrojo
+--                 (v1/_cerrojo.json, v1/_congelado)
 -- ============================================================================
 with recursive
 -- >>> clasificador (identico en sql/mercado-001-bucket.sql y sql/consultas/s14-mercado-storage.sql)
 -- E2R2-01 (Astra, CTO 14-oct): el texto de una politica no dice que operador
 -- ejecuta: «bucket_id = 'x'::text» puede ser un «=» de otro esquema si el
 -- search_path lo pone delante. El veredicto se acredita en tres sitios:
---   · ctx: el search_path empieza por pg_catalog (mercado-001 lo fija; si s14 se
---     corre con otro, no concluye); ningun operador «=» fuera de pg_catalog
+--   · ctx: el search_path empieza por pg_catalog, sin un esquema temporal delante
+--     (E2R3-02; mercado-001 lo fija; si s14 se corre con otro, no concluye); ningun operador «=» fuera de pg_catalog
 --     acepta text, varchar, bpchar, name, unknown, un dominio sobre ellos o un
 --     pseudotipo; pg_catalog.=(text,text) es texteq; bucket_id es text con la
 --     colacion por defecto, y esa colacion es determinista. Si algo falla, TODAS
@@ -61,8 +65,8 @@ with recursive
 ctx as (
   select pg_catalog.concat_ws('; ',
     case when (select s.n from pg_catalog.unnest(pg_catalog.current_schemas(true)) with ordinality s(n, k)
-                where s.n OPERATOR(pg_catalog.!~) '^pg_temp' order by s.k limit 1) OPERATOR(pg_catalog.<>) 'pg_catalog'
-         then 'el search_path (' || pg_catalog.array_to_string(pg_catalog.current_schemas(true), ',') || ') no empieza por pg_catalog' end,
+                order by s.k limit 1) OPERATOR(pg_catalog.<>) 'pg_catalog'
+         then 'el search_path (' || pg_catalog.array_to_string(pg_catalog.current_schemas(true), ',') || ') no empieza por pg_catalog (un esquema temporal delante cuenta: ejecutar en una sesion nueva)' end,
     (select 'operador = fuera de pg_catalog que acepta texto: ' || pg_catalog.string_agg(z.nombre, ', ' order by z.nombre) from (
      select n.nspname || '.=(' || pg_catalog.format_type(o.oprleft, null) || ',' || pg_catalog.format_type(o.oprright, null) || ')' nombre
        from pg_catalog.pg_operator o join pg_catalog.pg_namespace n on n.oid = o.oprnamespace
@@ -173,18 +177,41 @@ select seccion, objeto, detalle from (
   union all
   select 1, 1, 'bucket', 'mercado', 'NO EXISTE' where not exists (select 1 from storage.buckets where id = 'mercado' or name = 'mercado')
   union all
-  select 2, 1, 'rls', 'storage.objects', 'rls=' || c.relrowsecurity from pg_class c where c.oid = to_regclass('storage.objects')
+  -- E2R3-01: el cerrojo del publicador, en la base (sql/mercado-000-cerrojo.sql)
+  select 1, 2, 'cerrojo', 'public.mercado_cerrojo',
+         case when pg_catalog.to_regclass('public.mercado_cerrojo') is null then
+                case when exists (select 1 from pg_catalog.pg_class c where c.relnamespace = 'public'::pg_catalog.regnamespace and c.relname in ('mercado_cerrojo', 'mercado_cerrojo_pkey'))
+                       or exists (select 1 from pg_catalog.pg_type y where y.typnamespace = 'public'::pg_catalog.regnamespace and y.typname in ('mercado_cerrojo', '_mercado_cerrojo'))
+                     then 'NO EXISTE, pero el nombre esta OCUPADO (indice o tipo): mercado-000 abortaria'
+                     else 'NO EXISTE (mercado-000 sin aplicar); el nombre esta libre' end
+              else (select 'rls=' || c.relrowsecurity || ' · politicas=' || (select count(*) from pg_catalog.pg_policy p where p.polrelid = c.oid)
+                           || ' · disparadores=' || (select count(*) from pg_catalog.pg_trigger g where g.tgrelid = c.oid and not g.tgisinternal)
+                           || ' · permisos=' || coalesce((select pg_catalog.string_agg(r.rolname || ':' || x.privilege_type, ',' order by r.rolname, x.privilege_type)
+                                                           from pg_catalog.aclexplode(c.relacl) x join pg_catalog.pg_roles r on r.oid = x.grantee
+                                                          where r.rolname in ('anon', 'authenticated', 'service_role')), '-')
+                                         || case when exists (select 1 from pg_catalog.aclexplode(c.relacl) x where x.grantee = 0) then ',PUBLIC' else '' end
+                      from pg_catalog.pg_class c where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo')) end
+  union all
+  select 2, 1, 'rls', 'storage.objects', 'rls=' || c.relrowsecurity from pg_catalog.pg_class c where c.oid = pg_catalog.to_regclass('storage.objects')
   union all
   select 2, 1, 'contexto', 'lista blanca', case when c.problemas = '' then 'acreditada: search_path empieza por pg_catalog; ningun operador = ajeno que acepte texto; texteq; bucket_id text con la colacion por defecto'
                                                   else 'NO ACREDITADO: ' || c.problemas || ': mercado-001 abortaria' end from ctx c
   union all
+  -- E2R3-02: catalogos calificados (una tabla temporal pg_trigger no los sombrea)
+  -- E2R3-03: la sonda dispara los de INSERT (el centinela), UPDATE y DELETE, por fila y por sentencia
   select 2, 2, 'disparador', t.tgname,
          case when t.tgtype & 2 = 2 then 'BEFORE' when t.tgtype & 64 = 64 then 'INSTEAD OF' else 'AFTER' end || ' '
-         || concat_ws('/', case when t.tgtype & 4 = 4 then 'INSERT' end, case when t.tgtype & 8 = 8 then 'DELETE' end, case when t.tgtype & 16 = 16 then 'UPDATE' end, case when t.tgtype & 32 = 32 then 'TRUNCATE' end)
+         || pg_catalog.concat_ws('/', case when t.tgtype & 4 = 4 then 'INSERT' end, case when t.tgtype & 8 = 8 then 'DELETE' end, case when t.tgtype & 16 = 16 then 'UPDATE' end, case when t.tgtype & 32 = 32 then 'TRUNCATE' end)
          || ' · ' || case when t.tgtype & 1 = 1 then 'por fila' else 'POR SENTENCIA' end || ' · ' || n.nspname || '.' || f.proname || case when t.tgenabled = 'D' then ' · desactivado' else '' end
          || ' · ' || case when n.nspname = 'storage' then 'funcion de storage' else 'FUNCION AJENA (fuera de storage)' end
-    from pg_trigger t join pg_proc f on f.oid = t.tgfoid join pg_namespace n on n.oid = f.pronamespace
-   where t.tgrelid = to_regclass('storage.objects') and not t.tgisinternal
+         || ' · ' || l.lanname || case when f.prosecdef then ' · SECURITY DEFINER' else '' end || ' · md5 del cuerpo ' || pg_catalog.left(pg_catalog.md5(coalesce(f.prosrc, '')), 12)
+    from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
+   where t.tgrelid = pg_catalog.to_regclass('storage.objects') and not t.tgisinternal
+  union all
+  select 2, 2, 'disparador', '(resumen)',
+         case when count(*) = 0 then 'ninguno en storage.objects'
+              else count(*)::text || ' en storage.objects (' || count(*) filter (where t.tgtype & 1 = 0) || ' por sentencia): la sonda de mercado-001 los dispara; PARAR hasta que el CTO acredite cada uno como estandar de Supabase y sin efectos externos' end
+    from pg_catalog.pg_trigger t where t.tgrelid = pg_catalog.to_regclass('storage.objects') and not t.tgisinternal
   union all
   select 3, 1, 'politica', v.policyname, v.cmd || ' · ' || v.permissive || ' · ' || v.roles || ' · '
          || case when v.buckets is not null then 'reconocida: solo ' || v.buckets
@@ -207,11 +234,8 @@ select seccion, objeto, detalle from (
   select 4, 1, 'mercado', 'puntero', coalesce((select 'v1/actual.json · actualizado ' || to_char(m.updated_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') || ' UTC' from m where m.name = 'v1/actual.json'), 'no hay')
    where exists (select 1 from storage.buckets where id = 'mercado')
   union all
-  select 4, 1, 'mercado', 'cerrojo', coalesce((select 'PUESTO desde ' || to_char(m.updated_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') || ' UTC' from m where m.name = 'v1/_cerrojo.json'), 'no hay')
-   where exists (select 1 from storage.buckets where id = 'mercado')
-  union all
-  select 4, 1, 'mercado', 'congelacion', coalesce((select 'PUESTA desde ' || to_char(m.updated_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') || ' UTC: los publicadores no publican (scripts/mercado-v1-liberar-cerrojo.mjs)' from m where m.name = 'v1/_congelado'), 'no hay')
-   where exists (select 1 from storage.buckets where id = 'mercado')
+  select 4, 1, 'mercado', 'protocolo anterior', 'HAY ' || pg_catalog.string_agg(m.name, ', ') || ': el cerrojo ya no vive en Storage (E2R3-01); no se usa: avisar al CTO'
+    from m where m.name in ('v1/_cerrojo.json', 'v1/_congelado') having count(*) > 0
   union all
   select 4, 1, 'mercado', 'liberaciones', count(*)::text || ' constancia(s) en v1/_liberados/ (scripts/mercado-v1-liberar-cerrojo.mjs)' from m where m.name ~ '^v1/_liberados/' having count(*) > 0
   union all

@@ -123,8 +123,8 @@ with recursive
 -- E2R2-01 (Astra, CTO 14-oct): el texto de una politica no dice que operador
 -- ejecuta: «bucket_id = 'x'::text» puede ser un «=» de otro esquema si el
 -- search_path lo pone delante. El veredicto se acredita en tres sitios:
---   · ctx: el search_path empieza por pg_catalog (mercado-001 lo fija; si s14 se
---     corre con otro, no concluye); ningun operador «=» fuera de pg_catalog
+--   · ctx: el search_path empieza por pg_catalog, sin un esquema temporal delante
+--     (E2R3-02; mercado-001 lo fija; si s14 se corre con otro, no concluye); ningun operador «=» fuera de pg_catalog
 --     acepta text, varchar, bpchar, name, unknown, un dominio sobre ellos o un
 --     pseudotipo; pg_catalog.=(text,text) es texteq; bucket_id es text con la
 --     colacion por defecto, y esa colacion es determinista. Si algo falla, TODAS
@@ -136,8 +136,8 @@ with recursive
 ctx as (
   select pg_catalog.concat_ws('; ',
     case when (select s.n from pg_catalog.unnest(pg_catalog.current_schemas(true)) with ordinality s(n, k)
-                where s.n OPERATOR(pg_catalog.!~) '^pg_temp' order by s.k limit 1) OPERATOR(pg_catalog.<>) 'pg_catalog'
-         then 'el search_path (' || pg_catalog.array_to_string(pg_catalog.current_schemas(true), ',') || ') no empieza por pg_catalog' end,
+                order by s.k limit 1) OPERATOR(pg_catalog.<>) 'pg_catalog'
+         then 'el search_path (' || pg_catalog.array_to_string(pg_catalog.current_schemas(true), ',') || ') no empieza por pg_catalog (un esquema temporal delante cuenta: ejecutar en una sesion nueva)' end,
     (select 'operador = fuera de pg_catalog que acepta texto: ' || pg_catalog.string_agg(z.nombre, ', ' order by z.nombre) from (
      select n.nspname || '.=(' || pg_catalog.format_type(o.oprleft, null) || ',' || pg_catalog.format_type(o.oprright, null) || ')' nombre
        from pg_catalog.pg_operator o join pg_catalog.pg_namespace n on n.oid = o.oprnamespace
