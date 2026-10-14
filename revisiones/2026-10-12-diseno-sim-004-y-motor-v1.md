@@ -2641,10 +2641,10 @@ Positivos:
   - `lock_timeout = 5s` también dentro del DO, donde sí vale. Medido: con `storage.buckets` bloqueada 20 s por otra sesión, aborta a los 5 s.
   - El informe dice los límites que vio.
 - **Lo que queda (sustituye a p.12.7.1):**
-  - El INSERT del centinela dispara los disparadores INSERT por fila.
+  - El INSERT del centinela dispara todos los disparadores de INSERT, **por fila y por sentencia** (corregido el 14-oct, Astra E2R3-03: faltaba el de sentencia; medido, una secuencia avanza).
   - El UPDATE y el DELETE disparan todos los disparadores **por sentencia** de UPDATE y DELETE, aunque no alcancen ninguna fila.
   - Lo transaccional se deshace; lo que no lo es (una secuencia, una llamada fuera de la base), no. Medido: con un BEFORE UPDATE por sentencia de función ajena, la secuencia avanza.
-  - Por eso s14 enseña cada disparador con el esquema de su función («función de storage» o «FUNCIÓN AJENA»), y el runbook para si hay alguno ajeno o por sentencia en UPDATE/DELETE.
+  - Por eso s14 enseña cada disparador con el esquema de su función («función de storage» o «FUNCIÓN AJENA»). Desde p.14.3, el runbook **para ante cualquier disparador** de `storage.objects` hasta que el CTO lo acredite como estándar y sin efectos externos.
   - Qué disparadores son «los estándar de Supabase» lo confirma el CTO con la salida de s14. No hay una lista comprobada contra este proyecto.
 
 **p.13.3 · E2R2-03: el liberador y la congelación.** Storage no borra condicionalmente, así que el DELETE del cerrojo puede llevarse otro cerrojo puesto después de la última lectura (el intercalado de Astra). Diseño del CTO:
@@ -2686,4 +2686,70 @@ Positivos:
    - si el editor ejecuta el texto en una sola transacción.
 
    Lo dicen s14 y la fila `limites` del informe.
+
+### p.14 · Etapa 2, ronda 4: E2R3-01..E2R3-03 (14-oct)
+
+Astra dijo NO a `a25a1d9` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-r3.md`). Cerrados E2R2-02, 04, 05 y `1871c43`. El CTO cierra los tres hallazgos nuevos. Su contraprueba Node `delete-tardio.mjs` es ya la prueba permanente `pruebas/astra-e2r3-delete-tardio.mjs`, y está en verde. Sus casos SQL de la ronda 3 están en `pruebas/mercado-001-bucket.mjs`, sección 8.
+
+**p.14.1 · E2R3-01: el cerrojo pasa a la base (decisión técnica del CTO).** El DELETE de Storage es por ruta. Un DELETE incierto (timeout del cliente con la petición todavía en el servidor) podía llegar tarde y borrar el cerrojo de otro publicador: Astra lo reprodujo con dos «publicado» y un par perdido del puntero.
+
+**`sql/mercado-000-cerrojo.sql`** (nuevo, sin aplicar):
+- **La tabla `public.mercado_cerrojo`,** una fila por recurso:
+  - `recurso` text PK, con CHECK `= 'mercado/v1'`;
+  - `dueno` uuid not null;
+  - `desde` timestamptz not null default `now()`;
+  - `descripcion` text not null, con CHECK de forma cerrada `^[a-z0-9][a-z0-9-]{0,39}$`.
+- **Acceso:** RLS activa y sin políticas. Se quita todo a PUBLIC, `anon`, `authenticated` y `service_role` (el default ACL de Supabase, medido en s06, daba todo a los tres), y se da a `service_role` solo SELECT, INSERT y DELETE.
+- **Nombre:** `mercado_cerrojo` no aparece en ninguno de los repos que comparten la base ni en el montaje literal de s04. La migración aborta igualmente si en el catálogo real está ocupado (relación, índice de la clave o tipo).
+- **Idempotente y atómica:**
+  - si la tabla ya existe con esta forma, no la toca;
+  - si existe con otra forma (columnas, restricciones, RLS, políticas, disparadores, índices, permisos de tabla o de columna), aborta con «mercado-000:».
+  - La comprobación de forma corre también recién creada.
+- **Contexto:** `SET LOCAL` y, dentro del DO, `search_path` y `lock_timeout` fijos, como `mercado-001`.
+- **Va en el runbook antes de `mercado-001`.**
+
+**El protocolo** (`lib/mercado/publica-v1.mjs`, `liberar-v1.mjs` y el puerto real en `scripts/mercado-v1-dependencias.mjs`):
+- **Adquirir:** INSERT; un 23505 es «cerrojo puesto». Sin respuesta, se relee: es nuestro solo si su dueño es nuestro UUID.
+- **Justo antes del puntero:** SELECT del cerrojo. Si su dueño ya no es nuestro UUID, **no se escribe el puntero** y se para. Los trozos y manifiestos ya subidos son inmutables (por sha) y no cambian nada publicado.
+- **Soltar:** `DELETE … WHERE recurso = 'mercado/v1' AND dueno = <uuid de la ejecución>`. Un DELETE tardío solo puede borrar la fila de su propio dueño.
+- **Liberar a mano:** `--confirmo <uuid>`.
+  1. Relee: tiene que ser ese dueño.
+  2. Deja la constancia en `v1/_liberados/` como hasta ahora (esquema `mercado-liberacion@2`, con el recurso).
+  3. Hace el DELETE condicional. Si se pierde la respuesta y la fila sigue, código 3; repetir es inocuo.
+
+**La congelación de Storage (E2R2-03) se retira.** Hacía falta porque el DELETE por ruta podía llevarse el cerrojo de otro: la congelación impedía que quien lo tomaba durante la liberación escribiera. Con el DELETE condicional ese caso no existe:
+- el DELETE del liberador (o uno tardío) solo borra la fila de su dueño, que tiene un UUID por ejecución, así que nunca la de un publicador posterior;
+- dos liberadores a la vez sobre el mismo dueño son inocuos: uno borra la fila y el otro 0 filas;
+- un publicador que tome el cerrojo durante una liberación lo conserva.
+
+Lo que la congelación cubría además (no publicar mientras alguien libera) ya no protege nada. Con ella se van `v1/_congelado`, `--descongela`, la comprobación del publicador y su relectura, y `pruebas/mercado-v1-congelacion.mjs`. La sustituye `pruebas/mercado-v1-cerrojo.mjs`.
+
+**Residuales:**
+- **El que se mantiene (CTO):** liberar por error a un dueño vivo, protegido por la confirmación. Su efecto queda acotado: el vivo no escribe el puntero (prueba 2 de `mercado-v1-cerrojo.mjs`). Le queda escribir trozos y manifiestos inmutables, que no cambian nada publicado, y le puede pasar entre su última comprobación y el PUT del puntero.
+- **Nuevo, y que falla cerrado:** un INSERT de adquisición incierto que llega tarde deja una fila con el UUID de una ejecución que ya se rindió. Nadie publica hasta liberarla a mano (prueba en `mercado-v1-storage.mjs`).
+
+**p.14.2 · E2R3-02: s14 y el sombreado de catálogos.** El inventario de s14 nombraba `pg_class`, `pg_trigger`, `pg_proc` y `pg_namespace` sin calificar: una tabla temporal `pg_trigger` con `search_path=pg_temp,…` ocultaba los disparadores. Ahora:
+- **Catálogos y funciones:** todos los catálogos del inventario, y las funciones de catálogo que usa (`to_regclass`, `aclexplode`), van como `pg_catalog.…`.
+- **Contexto:** `ctx` exige que el **primer** esquema de `current_schemas(true)`, también uno temporal, sea `pg_catalog`. Con un esquema temporal delante, «NO ACREDITADO»: hay que ejecutarlo en una sesión nueva.
+- **`mercado-001`:** fija `pg_catalog, pg_temp`, así que no le afecta. Medido: en la misma sesión con la tabla temporal, aplica igual.
+- **Negativo permanente:** el caso de Astra.
+
+**p.14.3 · E2R3-03: INSERT por sentencia.**
+- **p.13.2 corregido:** el INSERT del centinela dispara también los de INSERT por sentencia.
+- **s14:** enseña cada disparador con lenguaje, SECURITY DEFINER y md5 del cuerpo (12 hex), y una fila `disparador | (resumen)`. Con cualquier disparador en `storage.objects`, el resumen dice «PARAR hasta que el CTO acredite cada uno como estándar de Supabase y sin efectos externos».
+- **El runbook:** para ante cualquier disparador no acreditado. El esquema `storage` no se toma como garantía.
+
+**p.14.4 · Autorrevisión adversaria.**
+1. **Mutantes** (medidos; evidencias en `revisiones-suite/2026-10-14-mercado-v1-etapa2-r4/`):
+   - **El publicador sin la comprobación antes del puntero:** 3 rojos en `mercado-v1-cerrojo.mjs`.
+   - **El puerto real con el DELETE sin la condición del dueño:** 1 rojo en `mercado-v1-cerrojo.mjs`, sección 5.
+   - **Lo que ninguno pone en rojo:** `astra-e2r3-delete-tardio.mjs` y `mercado-v1-storage.mjs`, porque usan el doble del cerrojo, que lleva la condición dentro.
+
+   La condición del puerto real la vigilan la sección 5 (lo que pide a PostgREST) y `mercado-000-cerrojo.mjs` (la semántica en PostgreSQL).
+2. **Huecos del puerto real** (`cerrojoDe`, supabase-js/PostgREST): no se ensaya contra PostgREST, solo su semántica SQL contra PostgreSQL (`pruebas/mercado-000-cerrojo.mjs`) y la lógica con el doble. Supone tres cosas que no se han comprobado contra Supabase:
+   - que PostgREST devuelve `code: '23505'` en la clave repetida;
+   - que `delete().eq().eq().select()` devuelve las filas borradas;
+   - que `service_role` ve `public.mercado_cerrojo`. El esquema `public` lo expone PostgREST; anon y authenticated no tienen permisos.
+3. **La tabla está en `public`,** que PostgREST expone. Sin grants ni políticas para `anon` y `authenticated` (probado: permission denied en las cuatro órdenes), no la leen ni la escriben. Lo que s14 enseña: RLS, políticas, disparadores y permisos de la tabla.
+4. **s14 no puede leer la fila del cerrojo:** sería una consulta a una tabla que puede no existir, y s14 es una sola SELECT sin EXECUTE. El cerrojo vigente lo enseña el simulacro de `liberar-cerrojo`.
 
