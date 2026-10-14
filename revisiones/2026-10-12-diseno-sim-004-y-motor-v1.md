@@ -3060,3 +3060,57 @@ Hecha sobre lo construido: `lib/servidor/*`, los seis endpoints, el cambio del m
 6. **`COLUMNAS_SESION`** fija la lista de columnas que pide el cliente. Una columna que se quitara en el futuro rompería la lectura entera. La prueba la contrasta con el catálogo del montaje, no con producción. La s04 que lo demuestre en producción es de Ramón.
 7. **Determinismo:** ningún tope depende del reloj. El 429 de la tasa sí, pero lo decide la RPC con `t_decision`.
 8. **Medidas locales:** ni la red de Supabase ni la de Vercel están medidas (q.6).
+
+### q.10 Decisiones del CTO del 14-oct sobre las paradas de q.8 (resumen)
+
+- **Quema de 1F y 3F:**
+  - a) el empuje de 5 ticks se aplica a cada posición por separado, recortado a la vela de su par en ese minuto;
+  - b) sin esa vela, sin empuje: su último precio;
+  - c) tocar el límite es fallar, con la comparación inclusiva.
+  - **Hecho en `4235196`.** La comparación inclusiva es una marca de los límites de la suite (`inclusivo`). FTMO y la práctica siguen estrictos, porque sus oráculos aprobados lo exigen (A29, A32, A33: «exacto: no incumple»). Lectura mía: la pregunta (q.8.1.c) era solo sobre 1F/3F. Va en la parte 2 del encargo del motor.
+- **Fase siguiente:**
+  - d) la hija empieza en el minuto siguiente al cierre que superó la fase;
+  - e) fija la versión vigente del mercado al pasar, como al crear; la madre no se toca.
+- **Tramos:**
+  - f) fuera el tope de 7 días: presupuesto de 6 s de reloj o un máximo de minutos de mercado calibrado; la respuesta dice hasta dónde llegó;
+  - g) optimizar el motor: 1 día con 9 pares en ≤ 2 s en local, idéntico byte a byte.
+- **Antes del corte:**
+  - h) s15, de solo lectura, con las columnas del cliente;
+  - i) sim-004b en el runbook, antes de los endpoints.
+
+### q.11 Rendimiento del motor (g): de 8,4 s a 1,73 s por día con nueve pares
+
+**Corrección de q.6:** los 40 / 91 / 171 s de q.6 se midieron mientras otra tanda corría en la misma máquina. Con la máquina libre, el mismo escenario da **8,4 s por día** (`4235196`, máximo de 3 repeticiones). La conclusión de q.6 (no cabe en 10 s) seguía siendo cierta, pero las cifras eran malas.
+
+**Método:**
+- `pruebas/medidas/tramos.mjs <repeticiones> 1`: el peor caso de q.6. Nueve pares con una posición y una pendiente lejana cada uno, y paseo aleatorio con semilla fija en todos los minutos: cada minuto elige camino en los nueve.
+- Se mide solo `CA.avanza` (el motor), en esta máquina y con la máquina libre.
+- **La huella** (sha256 del estado serializado y de los eventos) sale idéntica antes y después.
+- Perfil: `node --cpu-prof` y `pruebas/medidas/perfil.mjs`, que da el tiempo propio por función.
+
+**Antes** (perfil de un día):
+- un 30 % en normalizar racionales (`mcd` y `R`) dentro de la equity de cada punto;
+- un 7 % en `precio`;
+- un 7 % en `structuredClone`;
+- el resto, en `pnlUSD`, `instrumento` y los bucles del minuto.
+
+**Qué cambia** (`lib/motor/cartera.mjs`, solo en el cálculo; nada de lo que se guarda):
+1. **`flotantePos_µ`:**
+   - calcula el mismo racional que `pnlUSD` + `suma` + `usdAMicro`, en enteros sin normalizar (`redondeaAlPar` no necesita el máximo común divisor: mismo valor, mismo redondeo);
+   - guarda una memoria por posición: si no cambian su precio de salida, su conversión, sus lotes ni lo ya cerrado, no se recalcula;
+   - y los datos fijos de cada par (contrato, potencias de diez, par de conversión) se calculan una vez.
+2. **La copia del estado en el minuto:** una copia profunda de JSON con BigInt (`clona`) en lugar de `structuredClone`, que da la misma estructura.
+   - Probé también a compartir las partes que nada escribe (`costes`, `versiones`, `pares`, `limites`). No ganaba nada medible y lo deshice.
+
+**Después: 1,73 s por día** (1.725–1.733 ms; máximo de 3 repeticiones), con la misma huella `dc0678f7fc301e15`. Las salidas están en `revisiones/medidas/2026-10-14-rendimiento-{antes-4235196,despues}.txt`.
+
+**Byte a byte, más allá de la huella** (que no tenía eventos):
+- `pruebas/medidas/equivalencia.mjs` saca con `git show` el motor de `4235196` a una carpeta temporal y lo compara con el optimizado en escenarios aleatorios con semilla fija:
+  - de 1 a 9 pares, cruces incluidos;
+  - SL/TP, pendientes, huecos de apertura y pares sin vela;
+  - límites estrictos (práctica, FTMO) e inclusivos (1F, 3F);
+  - parciales.
+- Compara el estado serializado y los eventos tras cada paso.
+- **200 de 200 idénticos**, con 747 eventos económicos, 226 cierres y 49 breaches.
+- **Control positivo:** contra `a7d4da8` (sin la suite) ve 77 diferencias, los escenarios 1F/3F. Así que el detector detecta.
+- Además, la tanda entera (A37 y todos los oráculos) sigue en verde.

@@ -18,6 +18,7 @@
  * No esta en la tanda (tarda minutos).
  */
 import { performance } from 'node:perf_hooks'
+import { createHash } from 'node:crypto'
 import { importa } from '../lib.mjs'
 import { cerrojoEnMemoria } from '../cerrojo-falso.mjs'
 const P = await importa('lib/mercado/publicador-v1.mjs')
@@ -28,7 +29,9 @@ const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
 const { manifiestosVigentes, creaLector, creaCache } = await importa('lib/servidor/mercado.mjs')
 const { resultadoDe } = await importa('lib/servidor/comando.mjs')
 const { PARES } = await importa('lib/servidor/sobre.mjs')
+// argumentos: [repeticiones] [dias…] (fracciones permitidas: 0.0833 ≈ 2 h). Por defecto: 3 · 1, 3, 7
 const REP = Number(process.argv[2] ?? 3)
+const DIAS = process.argv.slice(3).map(Number).filter(x => x > 0)
 const U = iso => Date.parse(iso) / 1000
 const BASE = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3, NZDUSD: 0.6, USDCAD: 1.37, USDCHF: 0.88, USDJPY: 150.2 }
 const DIG = p => (/JPY/.test(p) ? 3 : 5)
@@ -65,8 +68,8 @@ async function partida() {
 }
 const e0 = await partida()
 console.log(`partida: 9 posiciones y 9 pendientes en ${e0.reloj.cursor} (${new Date(e0.reloj.cursor * 1000).toISOString()})`)
-for (const dias of [1, 3, 7]) {
-  const hasta = T0 + dias * 86400
+for (const dias of DIAS.length ? DIAS : [1, 3, 7]) {
+  const hasta = T0 + Math.round(dias * 1440) * 60
   const filas = []
   for (let k = 0; k < REP; k++) {
     const t0 = performance.now()
@@ -77,8 +80,10 @@ for (const dias of [1, 3, 7]) {
     const res = resultadoDe({ tipo: 'avanzar', comando: {}, antes: e0, despues: r.estado, eventos: r.eventos, detencion: r.detencion })
     const t3 = performance.now()
     const bytes = Buffer.byteLength(JSON.stringify(res), 'utf8')
-    filas.push({ lectura: t1 - t0, calculo: t2 - t1, adaptar: t3 - t2, bytes, eventos: r.eventos.length, minutos: r.estado.sincronizacion?.minutos ?? 0, cursor: r.estado.reloj.cursor, detencion: r.detencion?.motivo ?? null })
+    // la huella del resultado: estado serializado y eventos (el mismo escenario antes y despues de optimizar: identicos)
+    const huella = createHash('sha256').update(CA.serializa(r.estado)).update(CA.serializa(r.eventos)).digest('hex')
+    filas.push({ huella, lectura: t1 - t0, calculo: t2 - t1, adaptar: t3 - t2, bytes, eventos: r.eventos.length, minutos: r.estado.sincronizacion?.minutos ?? 0, cursor: r.estado.reloj.cursor, detencion: r.detencion?.motivo ?? null })
   }
   const max = k => Math.max(...filas.map(f => f[k]))
-  console.log(`${dias} dia(s) naturales: lectura max ${max('lectura').toFixed(0)} ms · calculo max ${max('calculo').toFixed(0)} ms · adaptar max ${max('adaptar').toFixed(0)} ms · resultado ${(max('bytes') / 1048576).toFixed(2)} MB · ${filas[0].eventos} eventos · cursor ${new Date(filas[0].cursor * 1000).toISOString()} · detencion ${filas[0].detencion}`)
+  console.log(`${dias} dia(s) naturales: lectura max ${max('lectura').toFixed(0)} ms · calculo max ${max('calculo').toFixed(0)} ms · adaptar max ${max('adaptar').toFixed(0)} ms · resultado ${(max('bytes') / 1048576).toFixed(2)} MB · ${filas[0].eventos} eventos · cursor ${new Date(filas[0].cursor * 1000).toISOString()} · detencion ${filas[0].detencion} · huella ${filas[0].huella.slice(0, 16)}${filas.every(f => f.huella === filas[0].huella) ? '' : ' (¡distinta entre repeticiones!)'}`)
 }
