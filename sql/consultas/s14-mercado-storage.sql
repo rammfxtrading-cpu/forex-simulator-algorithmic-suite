@@ -25,7 +25,9 @@
 --   1 cerrojo     public.mercado_cerrojo (E2R3-01, sql/mercado-000-cerrojo.sql):
 --                 si existe, su RLS, politicas, disparadores, reglas, permisos
 --                 directos y EFECTIVOS (E2R4-01: con herencia y pertenencias,
---                 la misma regla que la guarda de mercado-000) y su veredicto;
+--                 la misma regla que la guarda de mercado-000), su dueño y si
+--                 anon, authenticated o service_role pueden actuar como el
+--                 (E2R5-01), y su veredicto;
 --                 si no, si el nombre esta libre. Y «por defecto»: los
 --                 privilegios por defecto del creador en public y globales; sin
 --                 la tabla, si dan algo a un rol que mercado-000 no revoca,
@@ -201,7 +203,10 @@ cer_perm as (
          (select pg_catalog.string_agg(e.u || '=' || e.ef, ' ' order by e.n) from cer_ef e) efectivos,
          (select pg_catalog.bool_and(case when e.u = 'service_role' then e.ef = 'DELETE,INSERT,SELECT' else e.ef = '-' end) from cer_ef e)
          and coalesce((select pg_catalog.string_agg(a.privilege_type, ',' order by a.privilege_type) from cer_acl a where a.grantee = 'service_role'::pg_catalog.regrole), '-') = 'DELETE,INSERT,SELECT'
-         and not exists (select 1 from cer_acl a where a.grantee = 'service_role'::pg_catalog.regrole and a.is_grantable) efectivos_ok
+         and not exists (select 1 from cer_acl a where a.grantee = 'service_role'::pg_catalog.regrole and a.is_grantable) efectivos_ok,
+         -- E2R5-01: quien puede actuar como el dueño (concede lo que quiera aunque su ACL este vacio)
+         (select pg_catalog.string_agg(u.u, ',' order by u.n) from cer, pg_catalog.unnest(array['anon', 'authenticated', 'service_role']) with ordinality u(u, n)
+           where pg_catalog.pg_has_role(u.u, cer.relowner, 'MEMBER')) como_dueno
 ),
 -- los privilegios por defecto del creador (el dueño del cerrojo; si no existe,
 -- quien corre s14, que es quien correra mercado-000) en public y globales
@@ -234,8 +239,10 @@ select seccion, objeto, detalle from (
                            || ' · reglas=' || (select count(*) from pg_catalog.pg_rewrite w where w.ev_class = c.oid)
                            || ' · permisos=' || coalesce(k.permisos, '-')
                            || ' · efectivos: ' || k.efectivos
-                           || case when k.efectivos_ok and k.ajenos is null then ' · permisos acreditados'
-                                   else ' · PERMISOS NO ACREDITADOS' || coalesce(' (ajenos: ' || k.ajenos || ')', '') || ': mercado-000 abortaria; PARAR (E2R4-01)' end
+                           || ' · dueño=' || c.relowner::pg_catalog.regrole::text
+                           || case when k.efectivos_ok and k.ajenos is null and k.como_dueno is null then ' · permisos acreditados'
+                                   else ' · PERMISOS NO ACREDITADOS' || coalesce(' (ajenos: ' || k.ajenos || ')', '')
+                                        || coalesce(' (pueden actuar como el dueño: ' || k.como_dueno || ')', '') || ': mercado-000 abortaria; PARAR (E2R4-01, E2R5-01)' end
                       from pg_catalog.pg_class c, cer_perm k where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo')) end
   union all
   -- E2R4-01: de que roles son miembros (con o sin herencia) anon, authenticated y service_role:

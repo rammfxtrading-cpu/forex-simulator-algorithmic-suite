@@ -370,7 +370,7 @@ insert into storage.objects (bucket_id, name, metadata) values ('forex-data', 'E
     oraculo('E2R4-01', 's14 antes, con el montaje de Astra: «pertenencias» dice authenticated: heredado', /^cerrojo\|pertenencias\|anon: - · authenticated: heredado · service_role: -$/m.test(qB.out), linea(qB, 'pertenencias'))
     limpia()
     const dC = monta(); const rC = pg.psql(M0, dC); const qC = s14(dC)
-    oraculo('E2R4-01', 's14 despues de mercado-000: reglas=0, solo service_role, efectivos nada salvo service_role DELETE,INSERT,SELECT: «permisos acreditados»', rC.ok && qC.ok && /^cerrojo\|public\.mercado_cerrojo\|rls=true · politicas=0 · disparadores=0 · reglas=0 · permisos=service_role:DELETE,service_role:INSERT,service_role:SELECT · efectivos: PUBLIC=- anon=- authenticated=- service_role=DELETE,INSERT,SELECT · permisos acreditados$/m.test(qC.out), linea(qC, 'public.mercado_cerrojo') || rC.err || qC.err)
+    oraculo('E2R4-01', 's14 despues de mercado-000: reglas=0, solo service_role, efectivos nada salvo service_role DELETE,INSERT,SELECT: «permisos acreditados»', rC.ok && qC.ok && /^cerrojo\|public\.mercado_cerrojo\|rls=true · politicas=0 · disparadores=0 · reglas=0 · permisos=service_role:DELETE,service_role:INSERT,service_role:SELECT · efectivos: PUBLIC=- anon=- authenticated=- service_role=DELETE,INSERT,SELECT · dueño=postgres · permisos acreditados$/m.test(qC.out), linea(qC, 'public.mercado_cerrojo') || rC.err || qC.err)
     pg.psql(`grant heredado to authenticated; grant truncate on public.mercado_cerrojo to heredado;`, dC)
     const qD = s14(dC)
     oraculo('E2R4-01', 's14 con TRUNCATE a un rol que authenticated hereda: lo enseña y «PERMISOS NO ACREDITADOS (ajenos: heredado) … PARAR»', qD.ok && /authenticated=TRUNCATE .*PERMISOS NO ACREDITADOS \(ajenos: heredado\): mercado-000 abortaria; PARAR/.test(linea(qD, 'public.mercado_cerrojo')), linea(qD, 'public.mercado_cerrojo') || qD.err)
@@ -378,6 +378,13 @@ insert into storage.objects (bucket_id, name, metadata) values ('forex-data', 'E
     const qE = s14(dC)
     oraculo('E2R4-01', 's14 con anon miembro de service_role solo por SET ROLE (ningun grant ajeno): anon=DELETE,INSERT,SELECT y «PERMISOS NO ACREDITADOS»', qE.ok && /anon=DELETE,INSERT,SELECT .*PERMISOS NO ACREDITADOS: mercado-000 abortaria/.test(linea(qE, 'public.mercado_cerrojo')), linea(qE, 'public.mercado_cerrojo') || qE.err)
     limpia()
+    // E2R5-01: el dueño con su ACL revocado y authenticated que puede tomar su rol: NO ACREDITADOS
+    pg.psql(`do $r$ begin if not exists (select 1 from pg_roles where rolname = 'dueno_ficticio') then create role dueno_ficticio nosuperuser noinherit; end if; end $r$; grant dueno_ficticio to authenticated with inherit false, set true;`, 'postgres')
+    pg.psql(`alter table public.mercado_cerrojo owner to dueno_ficticio; revoke all on public.mercado_cerrojo from dueno_ficticio;`, dC)
+    const qG = s14(dC)
+    oraculo('E2R5-01', 's14 con el dueño sin ACL y authenticated que puede tomar su rol: efectivos vacios, pero «dueño=dueno_ficticio · PERMISOS NO ACREDITADOS (pueden actuar como el dueño: authenticated)»', qG.ok && /authenticated=- service_role=DELETE,INSERT,SELECT · dueño=dueno_ficticio · PERMISOS NO ACREDITADOS \(pueden actuar como el dueño: authenticated\): mercado-000 abortaria/.test(linea(qG, 'public.mercado_cerrojo')), linea(qG, 'public.mercado_cerrojo') || qG.err)
+    const vuelta = [pg.psql(`revoke dueno_ficticio from authenticated;`, 'postgres'), pg.psql(`alter table public.mercado_cerrojo owner to postgres;`, dC)]
+    if (!vuelta.every(x => x.ok)) throw new Error(`deshacer E2R5-01: ${vuelta.map(x => x.err).join(' ')}`)
     const rF = pg.psql(`create rule no_insert as on insert to public.mercado_cerrojo do instead nothing;`, dC), qF = s14(dC)
     oraculo('E2R4-02', 's14 enseña una regla de reescritura en el cerrojo (reglas=1)', rF.ok && /· reglas=1 ·/.test(linea(qF, 'public.mercado_cerrojo')), linea(qF, 'public.mercado_cerrojo') || rF.err)
   }

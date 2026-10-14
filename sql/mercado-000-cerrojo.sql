@@ -38,7 +38,13 @@
 --       service_role: exactamente SELECT, INSERT y DELETE, sin opcion de
 --         conceder;
 --       en el ACL, nadie mas que el dueño y service_role. A un destinatario
---         ajeno NO se le revoca a ciegas: se aborta y se lista.
+--         ajeno NO se le revoca a ciegas: se aborta y se lista;
+--       ni anon, ni authenticated, ni service_role pueden actuar como el
+--         DUEÑO (ser miembros de su rol, con herencia o solo con SET ROLE).
+--         E2R5-01 (Astra r5): el dueño puede volver a concederse cualquier
+--         privilegio aunque su ACL este revocado, y has_table_privilege no lo
+--         ve: con el dueño sin permisos, authenticated tomaba su rol, se daba
+--         TRUNCATE y vaciaba la tabla.
 --     El error dice tambien los privilegios por defecto del creador en public
 --     (pg_default_acl), de donde suelen venir. En primera aplicacion (la
 --     creacion se deshace entera) y en cada reejecucion.
@@ -141,7 +147,11 @@ begin
                 where c.oid = t and x.grantee = 'service_role'::regrole) is distinct from 'DELETE,INSERT,SELECT'
          then 'el ACL directo de service_role no es DELETE,INSERT,SELECT' end,
     case when exists (select 1 from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) x
-                       where c.oid = t and x.grantee = 'service_role'::regrole and x.is_grantable) then 'service_role puede conceder' end
+                       where c.oid = t and x.grantee = 'service_role'::regrole and x.is_grantable) then 'service_role puede conceder' end,
+    -- E2R5-01: nadie de los tres puede actuar como el dueño (que concede lo que quiera, aunque su ACL este vacio)
+    (select string_agg(u.u || ' puede actuar como el dueño (' || c.relowner::regrole::text || ')', '; ' order by u.n)
+       from pg_class c, unnest(array['anon', 'authenticated', 'service_role']) with ordinality u(u, n)
+      where c.oid = t and pg_has_role(u.u, c.relowner, 'MEMBER'))
   ) into permisos;
   if permisos <> '' then
     -- de donde suelen venir: los privilegios por defecto del creador (el dueño) en public y globales

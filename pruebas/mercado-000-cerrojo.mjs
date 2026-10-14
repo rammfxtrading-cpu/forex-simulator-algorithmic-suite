@@ -138,11 +138,11 @@ try {
 
   titulo('6 · E2R4-01: permisos efectivos (herencia, pertenencias, destinatarios ajenos)')
   // los roles inventados son del cluster: se crean una vez y cada montaje los usa o no
-  pg.psql(`create role heredado; create role solo_set;`, 'postgres')
+  pg.psql(`create role heredado; create role solo_set; create role dueno_ficticio nosuperuser noinherit;`, 'postgres')
   const HER = `grant heredado to authenticated;`
   const DEF = priv => `${HER} alter default privileges for role postgres in schema public grant ${priv} on tables to heredado;`
   // las pertenencias son del cluster, no de la base: se quitan despues de cada caso
-  const limpiaRoles = () => { const r = pg.psql(`revoke heredado from authenticated; revoke solo_set from authenticated; revoke service_role from anon; revoke postgres from service_role;`, 'postgres'); if (!r.ok) throw new Error(`limpiar roles: ${r.err}`) }
+  const limpiaRoles = () => { const r = pg.psql(`revoke heredado from authenticated; revoke solo_set from authenticated; revoke service_role from anon; revoke postgres from service_role; revoke dueno_ficticio from authenticated; revoke dueno_ficticio from service_role;`, 'postgres'); if (!r.ok) throw new Error(`limpiar roles: ${r.err}`) }
   {
     // el control de Astra: en ese montaje, una tabla nueva cualquiera SI deja a authenticated hacer TRUNCATE
     const d = monta(`${DEF('truncate')} create table public.testigo (x int);`)
@@ -161,6 +161,14 @@ try {
     oraculo('E2R4-01', `variante ${PRIV} heredado por default privileges: aborta, lo lista (heredado=${PRIV}, authenticated tiene ${PRIV}) y no crea nada`, !r.ok && new RegExp(`destinatarios ajenos: heredado=${PRIV}`).test(r.err) && new RegExp(`authenticated tiene ${PRIV}`).test(r.err) && catalogo(d) === a, err1(r))
     limpiaRoles()
   }
+  const DUENO_SIN_ACL = `alter table public.mercado_cerrojo owner to dueno_ficticio; revoke all on public.mercado_cerrojo from dueno_ficticio;`
+  {
+    // el control de E2R5-01: en ese montaje la escalada es real (authenticated toma el dueño, se concede TRUNCATE y vacia la tabla)
+    const d = monta(`${M0DO} ${DUENO_SIN_ACL} grant dueno_ficticio to authenticated with inherit false, set true; insert into public.mercado_cerrojo (recurso, dueno, descripcion) values ('mercado/v1', '11111111-2222-4333-8444-555555555555', 'mercado-v1-publica');`)
+    const e = pg.psql(`begin; set local session authorization authenticated; select has_table_privilege('authenticated', 'public.mercado_cerrojo', 'TRUNCATE'); set local role dueno_ficticio; grant truncate on public.mercado_cerrojo to authenticated; reset role; truncate public.mercado_cerrojo; reset session authorization; select count(*) from public.mercado_cerrojo; rollback;`, d)
+    ver('control (E2R5-01): authenticated no tiene TRUNCATE, pero toma el dueño sin permisos, se lo concede y vacia la tabla', e.ok && e.out === 'f\n0', e.err || e.out)
+    limpiaRoles()
+  }
   const REEJ = [
     ['TRUNCATE concedido despues a heredado (el de Astra, en reejecucion)', `${HER} ${M0DO} grant truncate on public.mercado_cerrojo to heredado;`, /destinatarios ajenos: heredado=TRUNCATE.*authenticated tiene TRUNCATE/],
     ['UPDATE concedido despues a heredado', `${HER} ${M0DO} grant update on public.mercado_cerrojo to heredado;`, /destinatarios ajenos: heredado=UPDATE.*authenticated tiene UPDATE/],
@@ -172,6 +180,9 @@ try {
     ['service_role con TRUNCATE directo', `${M0DO} grant truncate on public.mercado_cerrojo to service_role;`, /service_role tiene DELETE,INSERT,SELECT,TRUNCATE/],
     ['service_role con MAINTAIN (PostgreSQL 17)', `${M0DO} grant maintain on public.mercado_cerrojo to service_role;`, /service_role tiene DELETE,INSERT,MAINTAIN,SELECT/],
     ['service_role con opcion de conceder', `${M0DO} grant select on public.mercado_cerrojo to service_role with grant option;`, /service_role puede conceder/],
+    // E2R5-01 (Astra r5): el dueño con su ACL revocado sigue pudiendo conceder; authenticated o service_role pueden ser el
+    ['authenticated puede actuar como el dueño (SET ROLE, sin herencia), con el ACL del dueño revocado (E2R5-01)', `${M0DO} ${DUENO_SIN_ACL} grant dueno_ficticio to authenticated with inherit false, set true;`, /authenticated puede actuar como el dueño \(dueno_ficticio\)/],
+    ['service_role puede actuar como el dueño (SET ROLE, sin herencia), con el ACL del dueño revocado (E2R5-01)', `${M0DO} ${DUENO_SIN_ACL} grant dueno_ficticio to service_role with inherit false, set true;`, /service_role puede actuar como el dueño \(dueno_ficticio\)/],
   ]
   for (const [que, sql, error] of REEJ) {
     const d = monta(sql)
