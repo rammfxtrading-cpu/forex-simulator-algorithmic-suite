@@ -12,6 +12,7 @@
  *     que no existe: 410; epoca 2: 426;
  *   · POST /api/sim/tomar: apagado sin el interruptor; de punta a punta.
  */
+import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa, escenario, perfil, tok, db } from './lib.mjs'
 import { llama } from './supabase-falso.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
@@ -29,7 +30,7 @@ const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3,
 function velas(desde, hasta, px) { const o = []; for (let t = Date.parse(desde + 'T00:00:00Z') / 1000; t < Date.parse(hasta + 'T00:00:00Z') / 1000; t += 60) if (!minutoCerrado(t)) o.push({ time: t, open: px, high: px, low: px, close: px, volume: 1 }); return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-await PV.publica({ almacen: mercado, planes: PARES.map(par => P.planificaPar({ par, velas: velas('2025-01-06', '2025-01-11', PX[par]), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: PARES.map(par => P.planificaPar({ par, velas: velas('2025-01-06', '2025-01-11', PX[par]), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 const crear = (k, o = {}) => ({ session_id: u(1000 + k), command_id: u(2000 + k), epoca: 1, name: 'S' + k, pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-01', date_to: '2025-12-31', capital: '10000', challenge_type: null, ...o })
 const tomar = (k, o = {}) => ({ session_id: u(1000 + k), command_id: u(3000 + Math.floor(Math.random() * 1e8)), epoca: 1, cliente_id: 'pestana-1', forzar: false, ...o })
 

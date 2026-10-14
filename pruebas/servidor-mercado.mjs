@@ -17,6 +17,7 @@
  *     error del almacen: error propio, sin el texto ajeno (BF-02);
  *   · de punta a punta: la cartera de dos pares avanza con esas fuentes.
  */
+import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
 const P = await importa('lib/mercado/publicador-v1.mjs')
 const PV = await importa('lib/mercado/publica-v1.mjs')
@@ -47,7 +48,7 @@ const planDe = (par, px) => P.planificaPar({ par, velas: velas('2026-03-01', '20
 const a = almacen()
 const planes = [planDe('EURUSD', 1.1), planDe('GBPUSD', 1.3)]
 ver('control: los dos planes publican', planes.every(p => p.estado === 'publica'), planes.map(P.resumen).join(' / '))
-await PV.publica({ almacen: a, planes, dueno: 'mercado-v1-publica', ahora: '2026-10-14T10:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: a, planes, dueno: 'mercado-v1-publica', ahora: '2026-10-14T10:00:00.000Z' })
 const fijaDe = p => `${p.par}@${p.manifiesto.version}:${p.manifiesto.huella}`
 
 titulo('1 · manifiestos vigentes (crear)')

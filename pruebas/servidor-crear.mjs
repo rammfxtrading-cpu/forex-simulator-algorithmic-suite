@@ -19,6 +19,7 @@
  *     mantenimiento → 503; admin sin simulador_activo → 403 (h.4); y de punta a
  *     punta con la RPC real.
  */
+import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa, escenario, perfil, tok, db, A, ADM } from './lib.mjs'
 import { llama } from './supabase-falso.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
@@ -88,7 +89,7 @@ const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3,
 const mercado = almacen()
 const planes = PARES.map(par => P.planificaPar({ par, velas: velas('2025-01-06', '2025-01-11', PX[par]), texto: '', anterior: null, diasAceptados: new Map() }))
 ver('control: los nueve pares publican', planes.every(p => p.estado === 'publica'), planes.map(p => p.estado).join())
-await PV.publica({ almacen: mercado, planes, dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes, dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 const fijados = Object.fromEntries(planes.map(p => [p.par, `${p.par}@${p.manifiesto.version}:${p.manifiesto.huella}`]))
 
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay; la parte contra la RPC real no se ha ejecutado', false); fin() }
