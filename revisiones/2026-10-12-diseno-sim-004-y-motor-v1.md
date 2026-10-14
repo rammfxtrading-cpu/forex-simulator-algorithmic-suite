@@ -2971,6 +2971,8 @@ Además, la proyección de A37 de `pruebas/motor/cartera.mjs` compara ya la conv
 | 3 días | 76 ms | **91,3 s** | 0 ms | 0,01 MB |
 | 7 días (con fin de semana) | 110 ms | **170,9 s** | 1 ms | 0,01 MB |
 
+> ⚠️ **Corrección (14-oct, tarde): estas cifras son malas.** Las medí mientras otra tanda entera corría en la misma máquina: las dos competían por la CPU. Con la máquina libre, el mismo escenario da **8,4 s por día** antes de optimizar y **1,73 s** después (q.11). Lo que sigue en q.6 (el tamaño no limita y 7 días no caben en 10 s) seguía siendo cierto, pero los segundos no. Desde q.11, toda medida se toma sin otra prueba en paralelo, con tres repeticiones y el máximo.
+
 - Unos **28 ms por minuto de mercado con nueve pares expuestos**: cada minuto elige camino en los nueve, con dos simulaciones aisladas por par.
 - **El tamaño no limita;** el tiempo, sí. Para p99 ≤ 10 s, en el peor caso, un tramo es como mucho de unas **4–5 horas de mercado**. En Vercel Hobby, probablemente menos.
 - Con la tasa de un avance cada 5 s por alumno (V4-03), una reproducción rápida con todo expuesto avanzaría como mucho unas 4–5 h de mercado cada 5–10 s.
@@ -3114,3 +3116,26 @@ Hecha sobre lo construido: `lib/servidor/*`, los seis endpoints, el cambio del m
 - **200 de 200 idénticos**, con 747 eventos económicos, 226 cierres y 49 breaches.
 - **Control positivo:** contra `a7d4da8` (sin la suite) ve 77 diferencias, los escenarios 1F/3F. Así que el detector detecta.
 - Además, la tanda entera (A37 y todos los oráculos) sigue en verde.
+
+### q.12 Tramos con presupuesto (f; sustituye al tope de 7 días de q.6)
+
+**Hecho** (`lib/servidor/comando.mjs`):
+- Un `avanzar` llega hasta su `hasta` o se corta antes, en la frontera de un trozo de minutos de mercado, por lo primero que llegue:
+  - el presupuesto de reloj: **6 s**, mirado entre trozos (un trozo nunca se parte);
+  - el máximo de minutos de mercado: **2.400**;
+  - un terminal (breach, objetivo) o una detención.
+- Trozos de 60 minutos de mercado. «Minuto de mercado» es el calendario de `lib/mercado/calidad.mjs`; un festivo cuenta como abierto, lo que solo acorta el trozo.
+- La respuesta lleva `alcanzado` y `cortado`, también en un repetido (salen del recibo). El cliente encadena tramos.
+- Cada tramo es **una** llamada a `sim_comando`: atómica y con su CAS.
+- Paso = salto (§ 3.8): un tramo cortado es exactamente el avance de un tirón hasta donde llegó, y encadenar da lo mismo que no cortar.
+- Sigue el 413 de los 4 MB. Desaparece el `422 tramo_demasiado_largo`.
+
+**Calibración del máximo:** el peor caso medido tras la optimización (q.11) es **1,2 ms por minuto de mercado** (1.733 ms / 1.440 minutos). Con la mitad del presupuesto (3 s) para el motor, salen 2.500 minutos; queda **2.400 (40 h de mercado)**. Si Vercel es más lento, el presupuesto de reloj corta antes.
+
+**Oráculos** (`pruebas/servidor-tramos.mjs`, 10; 8 en rojo contra `a8e40a4`):
+- el corte por minutos y por reloj (con un reloj inyectado), cada uno igual al avance de un tirón;
+- encadenar = un solo avance;
+- un avance que cabe, sin cortar;
+- el tope como parámetro, lo que no se calcula y el 413.
+
+⚠️ **Lo que cambia frente a q.6:** con el reloj, el mismo comando puede llegar más o menos lejos según la máquina. **El resultado ya no es determinista** (decisión del CTO). Un reintento con la misma clave tras un commit recibe el recibo (idempotencia). Si el primer intento no llegó a confirmarse, el reintento recalcula y puede cortar en otro sitio; los dos resultados son estados válidos.
