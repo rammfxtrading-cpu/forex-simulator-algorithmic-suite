@@ -2587,11 +2587,103 @@ Astra: `revisiones-suite/2026-10-14-astra-mercado-v1-etapa2.md` (E2-01 alto; E2-
 **p.12.6 Datos (decisión 1).** `scripts/mercado-v1-confirma-copia.mjs` (lógica `lib/mercado/copia-v1.mjs`): solo `info()` (18 del `.json.gz`, que no existe, y 18 del `.json`), ninguna descarga. Resultado (14-oct 00:20): los 18 anuales 2024–2025 miden lo mismo en Storage, en el listado del 4-oct y en la copia del 5-oct, con `lastModified` idéntico al milisegundo y la copia cuadrando con su `.sha256`. Base de trabajo: `~/copias-suite/2026-10-14-mercado-v1-base-b52730` (2024–2025 de la copia, 2026 de la descarga del 13-oct; 27 sha256 verificados). La descarga (`scripts/mercado-v1-descarga.mjs`) sigue bajando solo `.json.gz`: para 2024–2025 no sirve (son `.json`) y se usa la copia confirmada.
 
 **p.12.7 Autorrevisión adversaria (lo que queda, con su consecuencia).**
-1. **La sonda a ciegas toca, y deshace, las filas que una política abra a `anon`/`authenticated`**, también de otros buckets: dispara sus disparadores y bloquea esas filas mientras dura el DO. Nada persiste (subtransacción deshecha). Si en producción hay una política así, la capa 1 aborta antes; s14 la enseña.
+1. ~~La sonda a ciegas toca, y deshace, las filas que una política abra a `anon`/`authenticated` […]. Nada persiste (subtransacción deshecha). Si en producción hay una política así, la capa 1 aborta antes; s14 la enseña.~~ **Corregido el 14-oct (Astra E2R2-02, CTO): era falso.** La capa 1 admite políticas de escritura de otros buckets, y lo que hacen sus disparadores no siempre se deshace: Astra midió una secuencia que avanzó de `1|f` a `4|t` con la fila restaurada. El rollback deshace los cambios transaccionales de filas, no los efectos no transaccionales del código que se ejecuta. Lo que queda ahora, en p.13.2.
 2. **Un disparador por sentencia en DELETE** (Supabase ha añadido en versiones recientes uno que prohíbe el DELETE directo; **no comprobado** si este proyecto lo tiene) dejaría la sonda «no concluyente» y la migración abortaría siempre. s14 lista los disparadores: mirarlo antes.
 3. **La sonda no prueba INSERT** (el CTO pidió SELECT/UPDATE/DELETE); las políticas INSERT las cubre la capa 1.
-4. **Fuera de la sonda:** funciones del esquema `storage` con SECURITY DEFINER que lean `objects` (p. ej. las de listado), y operadores `=` redefinidos en el `search_path`. Ninguna está comprobada; la capa 1 no las ve.
+4. **Fuera de la sonda:** funciones del esquema `storage` con SECURITY DEFINER que lean `objects` (p. ej. las de listado), y operadores `=` redefinidos en el `search_path`. Ninguna está comprobada; la capa 1 no las ve. **Lo segundo lo demostró Astra (E2R2-01) y queda cerrado en p.13.1.**
 5. **La capa 1 es estricta a propósito:** una RESTRICTIVE sin bucket o una política correcta escrita de otra forma aborta; según s04 (10-oct) producción no tiene políticas en `storage.objects`, pero eso hay que volver a verlo con s14.
-6. **Un festivo en viernes no sale nunca «completo»** con la regla del domingo de `estadoDia` (el viernes cierra a las 22:00 UTC en invierno; la regla pide velas desde las 23:00 UTC): el **25-dic-2026 y el 1-ene-2027 son viernes**. Preexistente, no lo toco (lo comparte el diario): lo decide el CTO antes de diciembre. **Cerrado el 14-oct (CTO), en el commit siguiente a `3d1c0a9`:** el mercado reducido en viernes pide velas en su última hora con mercado según el horario (21:00 UTC en invierno), no desde las 23:00; de domingo a jueves esa hora es la de las 23:00 y nada cambia (`pruebas/estadodia-festivo-viernes.mjs`: regresión de todos los días de 2024 a 2028 contra la regla anterior, el diario y el publicador; en la base real, 9.140 días sin ningún cambio). **Sigue abierto:** un festivo en viernes cuyas velas acaben antes del cierre (o sin ninguna: es probable en un 1-ene en viernes, si sigue el patrón medido de lunes a jueves, sin velas hasta la reapertura de las 22:00 UTC, que en viernes no hay; no está medido) sigue pendiente; solo lo completa la lista de días cortos (`dias-aceptados.mjs`) o un cierre confirmado, que decide el CTO con el dato.
+6. **Un festivo en viernes no sale nunca «completo»** con la regla del domingo de `estadoDia` (el viernes cierra a las 22:00 UTC en invierno; la regla pide velas desde las 23:00 UTC): el **25-dic-2026 y el 1-ene-2027 son viernes**. Preexistente, no lo toco (lo comparte el diario): lo decide el CTO antes de diciembre. **Cerrado el 14-oct (CTO), en el commit siguiente a `3d1c0a9`:** el mercado reducido en viernes pide velas en su última hora con mercado según el horario (21:00 UTC en invierno), no desde las 23:00; de domingo a jueves esa hora es la de las 23:00 y nada cambia (`pruebas/estadodia-festivo-viernes.mjs`: regresión de todos los días de 2024 a 2028 contra la regla anterior, el diario y el publicador; en la base real, 9.140 días sin ningún cambio). **Sigue abierto:** un festivo en viernes cuyas velas acaben antes del cierre (o sin ninguna: es probable en un 1-ene en viernes, si sigue el patrón medido de lunes a jueves, sin velas hasta la reapertura de las 22:00 UTC, que en viernes no hay; no está medido) sigue pendiente; solo lo completa la lista de días cortos (`dias-aceptados.mjs`) o un cierre confirmado, que decide el CTO con el dato. **CTO 14-oct: se decide en diciembre con el dato real; fecha de revisión: 20-dic-2026** (antes del 25-dic-2026 y del 1-ene-2027, los dos viernes).
 7. **Los detalles del planificador** (`incidente`, `retenido.detalle`) llevan mensajes del motor sobre la copia local verificada; no son errores ajenos y no pasan por `texto()`.
 8. **Si el proceso muere entre el PUT del puntero y su relectura**, no hay mensaje: queda el cerrojo, y `liberar-cerrojo` pide comprobar antes; el verificador dice qué puntero hay.
+
+### p.13 · Etapa 2, ronda 3: E2R2-01..E2R2-05 (14-oct)
+
+Astra dijo NO a `cd99f06` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-r2.md`). El CTO cierra los cinco hallazgos. Sus contrapruebas son permanentes: las Node en `pruebas/astra-e2r2-contrapruebas.mjs` y las SQL en `pruebas/mercado-001-bucket.mjs`, secciones 6 y 7.
+
+**p.13.1 · E2R2-01: la identidad del operador.** El texto `bucket_id = 'x'::text` no dice qué operador ejecuta PostgreSQL: con `search_path=public,pg_catalog`, un `public.=(text,text)` se escribe igual (medido: `pg_get_expr` lo pone sin calificar). Ahora la lista blanca solo da por reconocida una política si se acredita en tres sitios, y falla cerrado ante lo demás:
+- **Contexto (`ctx`):**
+  - `mercado-001` fija `search_path = pg_catalog, pg_temp` antes de inspeccionar, para que `pg_get_expr` califique cualquier operador ajeno (sale `OPERATOR(public.=)`).
+  - s14, que es una sola SELECT y no puede fijarlo, comprueba que el `search_path` empiece por `pg_catalog`; si no, «NO ACREDITADO».
+  - Además, en los dos:
+    - ningún operador `=` fuera de `pg_catalog` acepta `text`, `varchar`, `bpchar`, `name`, `unknown`, un dominio sobre ellos o un pseudotipo;
+    - `pg_catalog.=(text,text)` es `texteq`;
+    - `storage.objects.bucket_id` es `text` con la colación por defecto, y esa colación es determinista.
+  - Si algo falla, ninguna política queda reconocida y la migración aborta con «no se puede acreditar la lista blanca», aunque no haya políticas.
+- **El texto:** el de siempre (p.12), escrito con ese contexto. Una conversión (`::varchar`), un `COLLATE` o un operador calificado distinto rompen la forma.
+- **El árbol (`pg_policy.polqual`/`polwithcheck`):**
+  - todos sus `:opno` son operadores de `pg_catalog`;
+  - está `texteq`;
+  - no hay listas de operadores (`:opnos`).
+
+  No depende del `search_path`. Con un mutante que anula el contexto y la lista de operadores, el árbol sigue rechazando la política de Astra.
+
+**Negativo común** (migración y s14): el operador falso de Astra con su política INSERT, con su `search_path` y con el de siempre. Variantes:
+- operador sin políticas;
+- dominio;
+- `name`;
+- `varchar` contra `text`;
+- polimórfico;
+- otro esquema;
+- columna con colación `C`;
+- colación ICU no determinista con `'MERCADO'`;
+- conversiones `varchar`.
+
+Positivos:
+- `OPERATOR(pg_catalog.=)` escrito a mano;
+- un `=` ajeno de otros tipos (`point`), que no molesta.
+
+**p.13.2 · E2R2-02: los efectos de la sonda.**
+- **Precondición nueva, en el mismo bloque:** si alguna política UPDATE, DELETE o ALL de `storage.objects`, de cualquier bucket, se aplica a `anon`, `authenticated` o `public` (directamente o por pertenencia, `pg_has_role`), la migración aborta con la lista antes de la sonda. s14 la enseña en la sección `escritura`. Con el escenario de Astra (política ALL de forex-data y disparador con secuencia), ahora aborta y la secuencia no se mueve.
+- **La sonda:** SELECT del centinela, y UPDATE y DELETE solo del centinela (`WHERE id = <su id>`).
+- **Límites:**
+  - `SET LOCAL statement_timeout = '30s'` y `lock_timeout = '5s'` delante del DO. Valen si el editor lo ejecuta todo en una transacción, que es lo que hace con un texto de varias órdenes; **no está comprobado en el editor**. En psql sin BEGIN no hacen nada.
+  - Medido en local: un `statement_timeout` puesto dentro del DO no limita el DO.
+  - `lock_timeout = 5s` también dentro del DO, donde sí vale. Medido: con `storage.buckets` bloqueada 20 s por otra sesión, aborta a los 5 s.
+  - El informe dice los límites que vio.
+- **Lo que queda (sustituye a p.12.7.1):**
+  - El INSERT del centinela dispara los disparadores INSERT por fila.
+  - El UPDATE y el DELETE disparan todos los disparadores **por sentencia** de UPDATE y DELETE, aunque no alcancen ninguna fila.
+  - Lo transaccional se deshace; lo que no lo es (una secuencia, una llamada fuera de la base), no. Medido: con un BEFORE UPDATE por sentencia de función ajena, la secuencia avanza.
+  - Por eso s14 enseña cada disparador con el esquema de su función («función de storage» o «FUNCIÓN AJENA»), y el runbook para si hay alguno ajeno o por sentencia en UPDATE/DELETE.
+  - Qué disparadores son «los estándar de Supabase» lo confirma el CTO con la salida de s14. No hay una lista comprobada contra este proyecto.
+
+**p.13.3 · E2R2-03: el liberador y la congelación.** Storage no borra condicionalmente, así que el DELETE del cerrojo puede llevarse otro cerrojo puesto después de la última lectura (el intercalado de Astra). Diseño del CTO:
+- **`v1/_congelado`:** de solo inserción. Es también la exclusión entre liberadores: si existe, el liberador no arranca.
+- **El liberador, con `--confirmo`:**
+  1. Congela con su UUID.
+  2. Lee el cerrojo dos veces; las dos tienen que ser el que enseñó.
+  3. Deja constancia.
+  4. Borra el cerrojo y comprueba que ya no está.
+  5. Retira su congelación (relee y solo la suya), también si algo falló por el camino.
+
+  Si no puede retirarla, código 3 y la orden `--descongela <id>`, también nueva, para una congelación de una liberación muerta. El simulacro enseña la congelación si la hay.
+- **El publicador:**
+  - Justo después de tomar su cerrojo y antes de escribir nada, mira la congelación. Si existe, o no se puede leer, suelta su cerrojo y no publica («congelado», código 3 en la orden).
+  - **Añadido de la autorrevisión:** después relee su cerrojo y exige que siga siendo el suyo. Sin esto, si la lectura de la congelación de B llega cuando el liberador ya ha borrado el cerrojo de B y retirado su congelación, B publicaría sin exclusión. La prueba 2 de `pruebas/mercado-v1-congelacion.mjs` lo reproduce, y el mutante sin la relectura da rojo.
+- **El oráculo literal de Astra** («el cerrojo B se conserva») no se puede cumplir sin borrado condicional. La garantía del CTO es otra: quien toma el cerrojo durante una liberación no escribe nada. Probado:
+  - con el intercalado de Astra, con un publicador real;
+  - con un publicador vivo que suelta su cerrojo durante la liberación;
+  - con la lectura retrasada.
+- **Lo que no cubre:**
+  - Liberar el cerrojo de un publicador que sigue vivo y ya pasó su comprobación; para eso está la confirmación humana de que el dueño murió.
+  - Dos personas con `--descongela` a la vez sobre una congelación que no está muerta: el borrado de la congelación tampoco es condicional. `--descongela` es para una liberación muerta, y la hace una sola persona.
+
+**p.13.4 · E2R2-04: la frontera del CLI.**
+- **Los cinco scripts** `scripts/mercado-v1-*.mjs` (todos menos `-dependencias`, que es un módulo) corren dentro de `frontera()` (`lib/mercado/frontera-cli.mjs`): un error que llegue ahí, también uno sin capturar o una promesa rechazada, sale como mensaje propio o como «clase código», con código 3.
+- **El listado del script de confirmación**, ilegible o que no sea JSON: «listado_ilegible», código 3, sin su contenido ni el mensaje del parser.
+- **El dueño del cerrojo (y de la congelación):** solo se enseña si es un valor propio conocido (`mercado-v1-publica`, `mercado-v1-liberar-cerrojo`). Si no, «(ajeno)» y los 16 primeros hex de su sha256.
+
+**p.13.5 · E2R2-05: los cortos efectivos.** El planificador, con manifiesto anterior, recalcula los cortos aceptados efectivos de los días ya publicados y los compara con los del manifiesto. Lo hace antes de cualquier salida `sin_cambios`, y si difieren hay incidente. El verificador lo hereda porque replanifica desde el manifiesto vigente. Con el escenario de Astra, los dos lo ven.
+
+**p.13.6 · Autorrevisión adversaria.**
+1. **Mutantes** (publicador sin la congelación, sin la relectura del cerrojo, sin comparar los cortos): cada uno da rojo en al menos una prueba. El mutante sin congelación deja la prueba de congelación sin terminar (código 13), no con un rojo limpio.
+2. **La carrera de la lectura retrasada** (p.13.3) la encontré al escribir la prueba del publicador vivo. Cerrada con la relectura.
+3. **s14 con un operador polimórfico ajeno:** antes de fijar la comparación de `polroles` a `OPERATOR(pg_catalog.=)`, s14 fallaba con «operator is not unique». Ahora da su veredicto. Otros operadores sin calificar del bloque se resuelven en `pg_catalog` mientras el `search_path` empiece por él, que es lo que comprueba `ctx`. Con otro `search_path`, s14 dice «NO ACREDITADO»; en el peor caso falla con error, nunca da un veredicto falso que yo haya visto.
+4. **No comprobado contra producción:**
+   - qué operadores `=` ajenos hay (extensiones);
+   - qué políticas de escritura hay;
+   - qué disparadores tiene `storage.objects`;
+   - si el editor ejecuta el texto en una sola transacción.
+
+   Lo dicen s14 y la fila `limites` del informe.
+
