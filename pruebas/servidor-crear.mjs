@@ -116,10 +116,12 @@ try {
   const e2f = r2f.http === 201 ? JSON.parse(m.uno(d, `select estado::text from public.sim_sessions where id = '${u(1002)}'`)) : null
   const f2f = r2f.http === 201 ? m.uno(d, `select challenge_type || ' ' || challenge_phase from public.sim_sessions where id = '${u(1002)}'`) : null
   oraculo('CREA', 'reto 2F: 201; reto@1 con FTMO_2STEP, fase 1, objetivo 110.000 y la cartera de los nueve pares dentro; challenge_type 2F, fase 1', r2f.http === 201 && e2f?.esquema === 'reto@1' && e2f.reglas === 'ftmo-2step@2026-10-05' && e2f.fase === 1 && e2f.motor?.esquema === 'sim-cartera@1' && e2f.motor.pares.length === 9 && JSON.stringify(e2f.objetivo_µ) === JSON.stringify({ $b: '110000000000' }) && f2f === '2F 1', JSON.stringify({ http: r2f.http, c: r2f.cuerpo, e: e2f && { esquema: e2f.esquema, reglas: e2f.reglas, objetivo: e2f.objetivo_µ } }))
-  for (const t of ['1F', '3F']) {
-    const antes = m.uno(d, 'select count(*) from public.sim_recibos')
-    const r = await crea(base({ session_id: u(1100), command_id: u(2100), challenge_type: t, capital: '100000' }))
-    oraculo('CREA', `${t}: 422 reto_no_disponible hasta SUITE_${t} (q.3, commit 7), sin llamar a la RPC`, r.http === 422 && r.cuerpo?.motivo === 'reto_no_disponible' && m.uno(d, 'select count(*) from public.sim_recibos') === antes, JSON.stringify(r))
+  // 1F y 3F (CTO 14-oct, q.10): con SUITE_1F y SUITE_3F; otro alumno, para no gastar el cupo de AL
+  const TR = u(3); m.alumno(d, TR)
+  for (const [k, t, version, objetivo] of [[0, '1F', 'suite-1f@2026-10-12', '115000000000'], [1, '3F', 'suite-3f@2026-10-12', '105000000000']]) {
+    const r = await crea(base({ session_id: u(1100 + k), command_id: u(2100 + k), challenge_type: t, capital: '100000' }), TR)
+    const e = r.http === 201 ? JSON.parse(m.uno(d, `select estado::text from public.sim_sessions where id = '${u(1100 + k)}'`)) : null
+    oraculo('CREA', `${t}: 201 con ${version}, fase 1 y objetivo ${objetivo} µ`, r.http === 201 && e?.reglas === version && e.fase === 1 && e.objetivo_µ?.$b === objetivo && e.motor?.limites?.every(l => l.inclusivo === true), JSON.stringify({ r, e: e && { reglas: e.reglas, o: e.objetivo_µ, l: e.motor?.limites } }).slice(0, 400))
   }
   const rSin = await crea(base({ session_id: u(1003), command_id: u(2004) }), SIN)
   oraculo('CREA', 'alumno sin simulador_activo: la RPC responde 403 sin_acceso y no crea nada', rSin.http === 403 && rSin.cuerpo?.motivo === 'sin_acceso' && m.uno(d, `select count(*) from public.sim_sessions where id = '${u(1003)}'`) === '0', JSON.stringify(rSin))
