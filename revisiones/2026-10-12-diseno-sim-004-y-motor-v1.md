@@ -3187,3 +3187,22 @@ Sobre `4235196` (la suite), `a8e40a4` (el rendimiento), `5ea4e9d` (los tramos), 
    - con sim-003 sola (la de producción), solo funciona 2F 1→2. El completado y 3F necesitan sim-004b, como ya dice el runbook (q.13).
 6. **s15:** su lista y `COLUMNAS_SESION` están atadas por una prueba. Si alguien cambia una sin la otra, la tanda se pone en rojo; pero en producción solo vale si Ramón la corre antes del despliegue (q.13, paso 1).
 7. **Las medidas:** todas locales. El presupuesto de 6 s corta en Vercel si el motor va más lento; nadie ha medido Vercel.
+
+### q.15 La propiedad de los tramos (CTO 14-oct, noche: la parada de q.14)
+
+**`pruebas/motor/tramos-propiedad.mjs`, permanente:**
+- 200 escenarios aleatorios, semilla `20261014` (impresa en la salida, reproducible):
+  - FTMO 2F (fases 1 y 2), 1F, 3F (fases 1–3) y práctica con límite;
+  - de 1 a 4 pares, cruces incluidos;
+  - posiciones con SL/TP y pendientes, con lotes grandes;
+  - 150 minutos que cruzan la medianoche del reto.
+- Cada uno se avanza de un tirón y cortado en tramos: puntos al azar (a veces a mitad de minuto) y **siempre** la medianoche, el minuto exacto de cada breach y el de cada cierre por SL/TP. Entre tramos, el estado se serializa y se deserializa.
+- **Exigencia:** estado final y eventos idénticos byte a byte (`serializa`).
+- **Resultado: 200 de 200.**
+- **Controles:** con breach 33, con cierre por SL/TP 172, con la medianoche cortada y su reset 159. Si alguno fuera 0, control roto.
+- **Mutantes cazados** (la prueba los ve antes de darse por buena):
+  - un tramo que pierde el minuto siguiente al corte: 129 escenarios distintos;
+  - uno que repite el último minuto del tramo anterior: 106;
+  - un corte que reinicia el último reset: 159.
+- Con el código actual sale verde: no hay hallazgo.
+- La prueba ejerce el motor con velas en listas. El bucle de tramos del servidor (`comando.mjs`) llama a las mismas funciones (`avanzaReto`, `CA.avanza`) con las fuentes del mercado, y eso lo cubre `pruebas/servidor-tramos.mjs` (práctica y reto 3F).
