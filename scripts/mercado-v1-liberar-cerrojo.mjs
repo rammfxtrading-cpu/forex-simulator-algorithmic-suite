@@ -10,10 +10,13 @@
 //   node scripts/mercado-v1-liberar-cerrojo.mjs                     → enseña el cerrojo; NO borra
 //   node scripts/mercado-v1-liberar-cerrojo.mjs --confirmo <clave>   → lo libera
 // Codigos: 0 no habia o liberado · 1 no liberado · 3 error · 4 uso. La logica: lib/mercado/liberar-v1.mjs.
+import { frontera } from '../lib/mercado/frontera-cli.mjs'
 import { ordenLibera } from '../lib/mercado/liberar-v1.mjs'
 import { dependencias } from './mercado-v1-dependencias.mjs'
 
-const d = dependencias()
-const r = await ordenLibera(process.argv.slice(2), { almacen: d.almacen, ahora: () => new Date().toISOString(), entorno: process.env })
-for (const l of r.lineas) console.log(l)
-process.exitCode = r.codigo
+await frontera('liberar el cerrojo', async () => {
+  const d = dependencias()
+  const r = await ordenLibera(process.argv.slice(2), { almacen: d.almacen, ahora: () => new Date().toISOString(), entorno: process.env })
+  for (const l of r.lineas) console.log(l)
+  process.exitCode = r.codigo
+})

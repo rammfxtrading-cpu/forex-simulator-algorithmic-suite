@@ -200,8 +200,10 @@ const rZ = await PV.publica({ almacen: aZ, planes: [planEU()], dueno: 'mercado-v
 oraculo('E2-03', 'al soltar, solo se borra el cerrojo con NUESTRO id: si al final hay otro (mismo dueño y fecha), se deja', rZ.estado === 'publicado' && aZ.o.get('v1/_cerrojo.json')?.toString() === OTRO)
 oraculo('E2-03', 'un id que no es un UUID: error, nada subido', /UUID/.test((await atrapa(() => PV.publica({ almacen: almacen(), planes: [planEU()], dueno: 'prueba', ahora: 'x', id: 'mercado-v1-publica 2026' }))).e?.message ?? ''))
 // al soltar el cerrojo tras publicar bien: si no se puede (leerlo o borrarlo falla), se dice; no se tapa el resultado
-for (const [que, falla] of [['releerlo', { lee: (ruta, b) => (ruta === 'v1/_cerrojo.json' ? (() => { throw new Error('503') })() : b) }], ['borrarlo', null]]) {
-  const aS = almacen(falla ?? {})
+// (releerlo falla AL SOLTARLO, ya con el puntero: la relectura de despues de tomarlo, E2R2-03, es otra)
+let hayPuntero = () => false
+for (const [que, falla] of [['releerlo', { lee: (ruta, b) => (ruta === 'v1/_cerrojo.json' && hayPuntero() ? (() => { throw new Error('503') })() : b) }], ['borrarlo', null]]) {
+  const aS = almacen(falla ?? {}); hayPuntero = () => aS.o.has('v1/actual.json')
   if (!falla) aS.borra = async () => { throw new Error('500 https://proyecto.supabase.co/?apikey=FUGA123') }
   const { r, e } = await atrapa(() => PV.publica({ almacen: aS, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
   oraculo('E2-03', `publicado y no se pudo soltar el cerrojo (${que}): «publicado» con cerrojoSuelto false; el puntero esta`, !e && r?.estado === 'publicado' && r.cerrojoSuelto === false && aS.o.has('v1/actual.json'), e?.message ?? JSON.stringify({ estado: r?.estado, cerrojoSuelto: r?.cerrojoSuelto }))

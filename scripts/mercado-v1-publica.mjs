@@ -9,9 +9,12 @@
 //   ... --publica [--anota]        PUBLICA en el bucket privado «mercado» (claves); --anota
 //                                  añade las publicaciones al fichero de aceptaciones (commit)
 // Codigos: 0 bien · 1 incidente · 3 sin terminar · 4 uso. La logica: lib/mercado/orden-v1.mjs.
+import { frontera } from '../lib/mercado/frontera-cli.mjs'
 import { ordenPublica } from '../lib/mercado/orden-v1.mjs'
 import { dependencias } from './mercado-v1-dependencias.mjs'
 
-const r = await ordenPublica(process.argv.slice(2), dependencias())
-for (const l of r.lineas) console.log(l)
-process.exitCode = r.codigo
+await frontera('publicador', async () => {
+  const r = await ordenPublica(process.argv.slice(2), dependencias())
+  for (const l of r.lineas) console.log(l)
+  process.exitCode = r.codigo
+})
