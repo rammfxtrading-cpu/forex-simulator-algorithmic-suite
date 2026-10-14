@@ -2725,7 +2725,7 @@ Astra dijo NO a `a25a1d9` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-
 Lo que la congelación cubría además (no publicar mientras alguien libera) ya no protege nada. Con ella se van `v1/_congelado`, `--descongela`, la comprobación del publicador y su relectura, y `pruebas/mercado-v1-congelacion.mjs`. La sustituye `pruebas/mercado-v1-cerrojo.mjs`.
 
 **Residuales:**
-- **El que se mantiene (CTO):** liberar por error a un dueño vivo, protegido por la confirmación. Su efecto queda acotado: el vivo no escribe el puntero (prueba 2 de `mercado-v1-cerrojo.mjs`). Le queda escribir trozos y manifiestos inmutables, que no cambian nada publicado, y le puede pasar entre su última comprobación y el PUT del puntero.
+- **El que se mantiene (CTO):** liberar por error a un dueño vivo, protegido por la confirmación. *(Corregido en p.15.4, Astra r4.)* Su efecto queda acotado **solo si el vivo pierde el cerrojo antes de su comprobación previa al puntero**: entonces no escribe el puntero (prueba 2 de `mercado-v1-cerrojo.mjs`) y solo le quedan trozos y manifiestos inmutables, que no cambian nada publicado. **Si lo pierde entre esa comprobación y el PUT, sí puede escribir el puntero** sin ser dueño, y sobrescribir el de otro: la comprobación y el PUT no son una transacción entre la base y Storage. Esa ventana es el residual aceptado; «el vivo no escribe el puntero» no es una garantía absoluta.
 - **Nuevo, y que falla cerrado:** un INSERT de adquisición incierto que llega tarde deja una fila con el UUID de una ejecución que ya se rindió. Nadie publica hasta liberarla a mano (prueba en `mercado-v1-storage.mjs`).
 
 **p.14.2 · E2R3-02: s14 y el sombreado de catálogos.** El inventario de s14 nombraba `pg_class`, `pg_trigger`, `pg_proc` y `pg_namespace` sin calificar: una tabla temporal `pg_trigger` con `search_path=pg_temp,…` ocultaba los disparadores. Ahora:
@@ -2753,3 +2753,101 @@ Lo que la congelación cubría además (no publicar mientras alguien libera) ya 
 3. **La tabla está en `public`,** que PostgREST expone. Sin grants ni políticas para `anon` y `authenticated` (probado: permission denied en las cuatro órdenes), no la leen ni la escriben. Lo que s14 enseña: RLS, políticas, disparadores y permisos de la tabla.
 4. **s14 no puede leer la fila del cerrojo:** sería una consulta a una tabla que puede no existir, y s14 es una sola SELECT sin EXECUTE. El cerrojo vigente lo enseña el simulacro de `liberar-cerrojo`.
 
+
+### p.15 · Etapa 2, ronda 5: E2R4-01 y E2R4-02 (14-oct)
+
+Astra dijo NO a `f294c70` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-r4.md`) por E2R4-01 (medio). E2R3-01, 02 y 03 quedan cerrados, y el protocolo del cerrojo está bien. El CTO cierra E2R4-01 y E2R4-02, corrige p.14.1 y añade el ciclo de prueba contra PostgREST.
+
+**p.15.1 · E2R4-01: `mercado-000` acredita permisos efectivos, no solo el ACL directo.** El caso de Astra:
+1. Un rol `heredado` que `authenticated` hereda recibe TRUNCATE por los privilegios por defecto del creador.
+2. `mercado-000` lo daba por bueno: solo miraba los grants directos de cuatro roles.
+3. Con eso, `authenticated` vaciaba la tabla, porque TRUNCATE no pasa por la RLS.
+
+La guarda, en primera aplicación (la creación se deshace entera) y en cada reejecución:
+- **Herencia y pertenencias:** los privilegios de un rol cuentan como suyos y como los de cualquier rol del que sea miembro, con herencia o sin ella (solo SET ROLE: `pg_has_role(…, 'MEMBER')`). `has_table_privilege` a secas no ve las de solo SET ROLE.
+- **PUBLIC, `anon` y `authenticated`:** ninguno de SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES y TRIGGER. También MAINTAIN, en PostgreSQL 17 o posterior; no sabemos qué versión tiene Supabase, y la comprobación vale en las dos.
+- **`service_role`:**
+  - efectivos, exactamente SELECT, INSERT y DELETE;
+  - en su ACL directo, lo mismo;
+  - sin opción de conceder.
+- **En el ACL, nadie más que el dueño y `service_role`.** A un destinatario ajeno no se le revoca a ciegas: se aborta y se lista.
+- **El error dice** cada rol con cada privilegio y los privilegios por defecto del creador (`pg_default_acl`, en `public` y globales).
+- **El informe de una aplicación buena añade dos filas:**
+  - `efectivos`: PUBLIC, `anon`, `authenticated` y `service_role`, y los ajenos;
+  - `por defecto`: los privilegios por defecto del creador.
+
+**Negativos permanentes** (`pruebas/mercado-000-cerrojo.mjs`, sección 6):
+- **El de Astra:** TRUNCATE por defecto a `heredado`, en primera aplicación, con su control (en ese montaje, `authenticated` sí vacía una tabla nueva).
+- **Variantes en primera aplicación:** UPDATE y TRIGGER por defecto.
+- **Variantes en reejecución:**
+  - TRUNCATE, UPDATE y TRIGGER concedidos después a `heredado`;
+  - un grant a PUBLIC;
+  - un grant a un rol que `authenticated` solo puede tomar con SET ROLE;
+  - `anon` miembro de `service_role` sin herencia, sin ningún grant ajeno (lo caza solo la regla de pertenencias);
+  - `service_role` miembro del dueño;
+  - TRUNCATE y MAINTAIN directos a `service_role`;
+  - `service_role` con opción de conceder.
+
+**s14:**
+- **La fila del cerrojo:**
+  - enseña las reglas;
+  - los permisos directos de todos los destinatarios (no solo de los tres roles);
+  - los efectivos, con la misma regla;
+  - «permisos acreditados» o «PERMISOS NO ACREDITADOS … PARAR».
+- **Dos filas nuevas:**
+  - `pertenencias`: de qué roles son miembros `anon`, `authenticated` y `service_role`;
+  - `por defecto`: los privilegios por defecto de quien corre s14, que es quien correrá `mercado-000`. Si sin la tabla dan algo a un rol que `mercado-000` no revoca, dice «OTROS ROLES … PARAR».
+- **Pruebas:** `pruebas/mercado-001-bucket.mjs`, sección 9.
+
+**p.15.2 · E2R4-02: reglas de reescritura.** La guarda de forma rechaza cualquier fila de `pg_rewrite` sobre la tabla. Negativo: la regla `DO INSTEAD NOTHING` de Astra en reejecución, con su control: con la regla, el INSERT de `service_role` «funciona» y no deja fila.
+
+**p.15.3 · El ciclo de prueba contra PostgREST** (`scripts/mercado-v1-prueba-cerrojo.mjs` y `lib/mercado/prueba-cerrojo-v1.mjs`; runbook, paso 1-ter, tras `mercado-000` y antes de publicar nada).
+- **Qué comprueba:** con el puerto real (`cerrojoDe`), lo que p.14.4.2 suponía sin haberlo visto.
+- **Cómo se ejecuta:** simulacro por defecto; `--ejecuta`; nada con CI.
+- **El ciclo:**
+  1. Si ya hay un cerrojo, no se prueba ni se toca.
+  2. INSERT P → ok.
+  3. INSERT Q → «existe» (23505).
+  4. SELECT → P.
+  5. DELETE condicional con Q → 0 filas, y P sigue.
+  6. DELETE con P → 1 fila.
+  7. SELECT → no hay.
+- **Si algo no cuadra,** para en ese paso y relee una vez: dice qué queda, medido. No libera nada. Un cerrojo de prueba que quede falla cerrado: nadie publica hasta liberarlo.
+- **La descripción** `mercado-v1-prueba` entra en `DUENOS`, para que el liberador la enseñe.
+- **Pruebas:** `pruebas/mercado-v1-prueba-cerrojo.mjs`, 21 oráculos. Incluyen:
+  - la secuencia exacta de órdenes a PostgREST con el puerto real;
+  - un error ajeno saneado;
+  - la respuesta perdida del primer INSERT;
+  - el humo del script, sin `--ejecuta`, que leería claves.
+- **Mutantes:** un paso 2 que acepta cualquier respuesta da 2 rojos; un paso 4 que no mira nada da 1.
+- **Lo que no prueba:** el transporte real. Eso es justo lo que comprueba el paso 1-ter.
+
+**p.15.4 · p.14.1 corregido.** «El vivo no escribe el puntero» solo vale si pierde el cerrojo **antes** de su comprobación previa al puntero. Si lo pierde entre esa comprobación y el PUT, sí puede escribirlo. Esa ventana es el residual ya aceptado: la base y Storage no comparten transacción. Corregidos p.14.1 y la cabecera de `pruebas/mercado-v1-cerrojo.mjs`.
+
+**p.15.5 · Fase 8.** Anotado, sin hacer nada (`revisiones-suite/2026-10-14-fase8-pendiente-truncate-en-public.md`):
+- En Supabase, `anon` y `authenticated` suelen tener TRUNCATE en las tablas de `public` por los privilegios por defecto.
+- TRUNCATE salta la RLS, aunque PostgREST no lo expone.
+- En la fase 8, una consulta de solo lectura de toda la base.
+
+p.14.4.3 («no la leen ni la escriben») era cierto solo por los grants directos; lo que lo acredita ahora es p.15.1.
+
+**p.15.6 · Autorrevisión adversaria.**
+1. **La prueba permanente aprobaba en vacío.**
+   - **El fallo:** en el montaje de s04, la foto del catálogo de `pruebas/mercado-000-cerrojo.mjs` fallaba con «operator is not unique: text || "char"» y devolvía una cadena vacía. Todos sus «nada cambia» de la ronda 4 se cumplían sin mirar nada.
+   - **Cómo salió:** con el `startsWith('-')` del negativo de Astra.
+   - **El arreglo:**
+     - casts explícitos;
+     - si la consulta falla, la prueba se para;
+     - un control positivo: la foto ve la tabla y su ACL.
+   - **Con la foto buena,** todos los «nada cambia» siguen en verde.
+2. **Las pertenencias son del clúster, no de cada base.**
+   - Las pruebas nuevas las quitan después de cada caso, con un control de que no queda ninguna.
+   - Así salió a la luz una pertenencia anterior que sobrevivía: `alumnos` de E2R2-02, en `mercado-001-bucket.mjs`. Se quita al empezar la sección 9.
+3. **Dependencia de entorno.** Si en Supabase `service_role`, `anon` o `authenticated` son miembros de algún rol con privilegios en la tabla, `mercado-000` aborta. Falla cerrado y lo lista. La fila `pertenencias` de s14 lo deja ver antes de aplicar.
+4. **El informe y la guarda calculan los efectivos por separado:** el informe corre fuera del DO. Los vigilan los mismos oráculos: limpio, reejecución limpia y abortos.
+5. **El ciclo va antes de `mercado-001`,** como dice el CTO («tras mercado-000»). Si deja un cerrojo de prueba, el liberador no puede escribir su constancia hasta que exista el bucket (paso 2). Falla cerrado. El runbook lo dice.
+6. **Contraste contra `f294c70`:**
+   - las pruebas nuevas de `mercado-000` dan 18 rojos con el SQL anterior;
+   - las de s14, 8 rojos con el s14 anterior.
+
+   Evidencias en `revisiones-suite/2026-10-14-mercado-v1-etapa2-r5/`.

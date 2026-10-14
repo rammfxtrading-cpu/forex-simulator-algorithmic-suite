@@ -9,7 +9,10 @@
  *     suyo (SELECT): si no lo es, NO escribe el puntero, se para y no toca el
  *     cerrojo de otro;
  *   · el residual aceptado, con su efecto acotado: una persona libera por error
- *     a un publicador VIVO y otro toma el cerrojo; el vivo no escribe el puntero;
+ *     a un publicador VIVO y otro toma el cerrojo ANTES de que el vivo haga su
+ *     comprobacion previa al puntero; entonces el vivo no escribe el puntero.
+ *     Si lo pierde entre esa comprobacion y el PUT, si puede escribirlo: esa
+ *     ventana es el residual aceptado (p.14.1 corregido en p.15.4; Astra r4);
  *   · dos publicadores a la vez: uno toma el cerrojo, el otro no escribe nada;
  *   · soltar es condicional: aunque el DELETE llegue tarde, no borra al siguiente.
  */
@@ -57,7 +60,7 @@ titulo('1 · antes del puntero, el publicador comprueba que el cerrojo sigue sie
   oraculo('CER', 'y al soltar, su DELETE condicional no borra el de B', m.cer.registro.some(x => x[0] === 'suelta' && x[2] === idA) && m.cer.filas.get(CER)?.dueno === idB)
 }
 
-titulo('2 · residual aceptado: una persona libera por error a un publicador VIVO')
+titulo('2 · residual aceptado: una persona libera por error a un publicador VIVO, que lo pierde antes de su comprobacion previa al puntero')
 {
   // A publica EURUSD y se para en su primer trozo; la persona confirma A (error humano); B toma el cerrojo y publica GBPUSD
   const g = puerta(); let para = true
