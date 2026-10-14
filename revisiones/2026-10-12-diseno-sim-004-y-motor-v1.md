@@ -3139,3 +3139,31 @@ Hecha sobre lo construido: `lib/servidor/*`, los seis endpoints, el cambio del m
 - el tope como parámetro, lo que no se calcula y el 413.
 
 ⚠️ **Lo que cambia frente a q.6:** con el reloj, el mismo comando puede llegar más o menos lejos según la máquina. **El resultado ya no es determinista** (decisión del CTO). Un reintento con la misma clave tras un commit recibe el recibo (idempotencia). Si el primer intento no llegó a confirmarse, el reintento recalcula y puede cortar en otro sitio; los dos resultados son estados válidos.
+
+### q.13 Pasar de fase (d, e), s15 (h) y el orden del runbook de la etapa 3 (i)
+
+**`/api/sim/avanzar-fase`** (`lib/servidor/fase.mjs`):
+- Lee la madre confirmada y calcula solo si su versión es la esperada, como `comando`.
+- j.7, sin RPC: `409 posiciones_abiertas` (saldo cerrado ≥ objetivo con posiciones abiertas) o `409 fase_no_superada`.
+- **k < n → la hija k+1:**
+  - mismas reglas y capital, y una cartera nueva de los nueve pares;
+  - **inicio en el minuto siguiente al del cierre que superó la fase (d);**
+  - **el mercado vigente al pasar (e)**, anotado en el resumen del recibo de la hija; la madre no se toca.
+- **k = n → el completado,** sin hija.
+- Oráculos: `pruebas/servidor-fase.mjs`, 19 (18 en rojo antes), contra la RPC real con sim-004b en el ensayo:
+  - 3F con la madre superada por el motor de verdad (TP en el minuto t → hija en t + 120, es decir, el minuto del cierre más 60);
+  - publicar v1.2 antes de pasar → la hija fija v1.2 y la madre sigue en v1.1;
+  - 2 → 3 y el completado; repetidos y `solo_lectura`; por la URL.
+
+**s15** (`sql/consultas/s15-columnas-sesion.sql`): una sola SELECT de solo lectura sobre `information_schema`.
+- Una fila por columna que pide el cliente (`existe · tipo` o `FALTA`), las que sobran y un veredicto («OK» o «FALTAN n: … — NO desplegar ese cliente»).
+- Su lista es, literal, `COLUMNAS_SESION`, y la prueba lo comprueba.
+- Ensayada en local dentro de una transacción READ ONLY (`pruebas/s15-columnas-sesion.mjs`), con el control de una columna que falta. **No se ha corrido en producción.**
+
+**Orden del runbook de la etapa 3 (i).** No hay runbook propio de la etapa 3; este es el orden, para cuando se escriba:
+1. **s15** (Ramón, solo lectura, en el editor SQL): veredicto «OK». Si falta alguna columna, **no se despliega** el cliente con `COLUMNAS_SESION`.
+2. **El mercado v1** según su runbook (`revisiones-suite/2026-10-14-mercado-v1-runbook.md`): `mercado-000`, `mercado-001`, s14, el ciclo de prueba y la primera publicación. Los endpoints leen el bucket `mercado`; sin el puntero, `crear` responde 503.
+3. **sim-004b** (en el editor SQL, entera, de una vez; con el sí de Astra y del CTO): el informe acaba en «FIN | sim-004b aplicada». Desde ahí, **sim-003 no se vuelve a ejecutar**: anotarlo en `sql/APLICADOS.md` con la firma literal.
+   - Va **antes de cualquier despliegue que pueda encender los endpoints**: sin ella, un avance que cruce un hueco aceptado recibe 422, y no hay completado de 1F/3F.
+4. **Desplegar el código de la etapa 3 con los endpoints APAGADOS**: sin `SIM_V1_ENDPOINTS`, todo responde 503, como en la etapa 1.
+5. **Etapa 5 (la ventana de corte, c.7):** sim-004 y, después, `SIM_V1_ENDPOINTS=encendido` y redespliegue.
