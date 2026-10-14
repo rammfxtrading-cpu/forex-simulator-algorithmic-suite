@@ -2981,3 +2981,60 @@ Además, la proyección de A37 de `pruebas/motor/cartera.mjs` compara ya la conv
 - (c) Optimizar antes el motor (la elección de camino aislada por par es la parte cara).
 
 Hoy rige el tope de la spec (7 días), que **no cumple** p99 ≤ 10 s en el peor caso.
+
+### q.7 sim-004b: escrita y ensayada, SIN aplicar
+
+`sql/sim-004b-contrato-v1.sql`. El alcance es el que aprobó el CTO el 14-oct: el «completado» de j.8 y `hueco_aceptado` de S4-04.
+
+**Qué hace:**
+- Amplía `sim_sessions_terminal_valida` (+ `superado`) y `sim_eventos_tipo_check` (+ `hueco_aceptado`).
+- Sustituye tres cuerpos, con la misma firma y los mismos permisos:
+  - `sim_comando`: `hueco_aceptado` válido y de clase económica; `superado` → `409 solo_lectura`;
+  - `sim_tomar_escritor`: `superado` → `409 solo_lectura`;
+  - `sim_avanzar_fase`, generalizada:
+    - de la fase k a la k+1 con hija;
+    - en la última fase (1F 1, 2F 2, 3F 3): sin hija, `superado`, `passed_all`, versión + 1 y el recibo en la propia sesión.
+- **Lo que no hace** (k.1 c) también lo lista para sim-004b): `mercado` por la RPC, reglas `reto@2` y retención. Fuera.
+- **Ningún nombre nuevo:** tampoco choca con `public.mercado_cerrojo`.
+
+**Comprobación final** (también en la segunda ejecución):
+- las dos definiciones nuevas y los tres cuerpos, texto a texto;
+- todas las restricciones, índices únicos y políticas de la sección 8 de sim-003 que no cambian, copiadas al pie de la letra;
+- las nueve funciones de sim-003 con su ACL (EXECUTE solo `service_role`, en las siete RPC);
+- las diez funciones de la preparatoria, por el sha256 de su cuerpo, y sus tablas.
+
+La cabecera lleva el texto de j.9, con la corrección de k.1: sim-003 queda superada.
+
+**Ensayo** (`pruebas/sim-004b.mjs`: 28 oráculos, 23 en rojo sin el fichero):
+- aplicar; reejecutar (mismo informe y catálogo idéntico);
+- a medias, por una restricción vuelta atrás o un cuerpo cambiado: aborta y el catálogo no cambia;
+- sin la preparatoria: no aplica;
+- **sim-003 después: aborta con «sim-003: …» y el catálogo idéntico.** Control: un sim-003 sin esas dos comparaciones termina con éxito, y el oráculo lo detecta;
+- **la preparatoria después: idempotente** (la matriz de k.1 lo pedía comprobado, no supuesto);
+- `hueco_aceptado`: sim-003 → 422; sim-004b → 200 económico; declarado `ultimo_avance` → `clase_incoherente`;
+- j.8:
+  - 2F: 1→2 y 2 → `superado`; 3F: 1→2, 2→3 y 3 → `superado`; 1F: 1 → `superado`;
+  - una hija en la última fase → 422 sin sesión nueva;
+  - repetido, con el mismo recibo y sin versión nueva; otra clave → `solo_lectura`; `sim_comando` y `sim_tomar_escritor` → `solo_lectura`;
+  - CAS, acceso revocado, `fase_no_superada`, `transicion_hecha`;
+  - borrar un `superado`, y la cadena 3F entera desde la raíz.
+
+**No toco `sql/APLICADOS.md`** (orden del principal). Cuando se aplique, hay que anotar allí lo que dice k.1: sim-003 ya no se vuelve a ejecutar.
+
+### q.8 Paradas: lo que la especificación no decide (preguntas para el CTO)
+
+1. **1F y 3F en el motor (`SUITE_1F`, `SUITE_3F`, j.6–j.7):** sin hacer. La regla de quema no está decidida para la cartera v1.
+   - a) **«Cierre de todo al precio de quema ± 5 ticks hacia el lado peor, recortado a la vela».** Con varios pares (semántica de la cartera, j.7.2):
+     - ¿se empuja 5 ticks cada posición desde su precio en ese punto?
+     - ¿y el recorte a «la vela» es la de su par en ese minuto?
+   - b) **Un breach sin vela:** a medianoche, en un reset; tras un fill de un comando entre minutos; o de un par cuyo mercado está cerrado en ese minuto. ¿A qué rango se recorta el empuje?
+   - c) **«≤ límite = fallar»** (hoy el motor rompe con `<`). ¿Prefieres una marca en el límite (cambio del motor de la cartera, para Astra) o guardar `límite + 1 µUSD` (sin tocar el motor, pero el evento `breach` enseñaría ese límite)?
+   - El resto de j.7.3 está claro: el objetivo, el DD diario sobre el saldo al empezar el día de Madrid (con los mismos cambios de hora que Praga), los días mínimos 0 y `altoDe` leyendo `dias_minimos` de las reglas.
+2. **`fase.mjs` y `/api/sim/avanzar-fase`:** sin hacer. La RPC generalizada ya está (sim-004b).
+   - a) **El inicio de la fase k+1.** La spec (§ 5) dice «el reloj donde lo dejó la fase 1». La fase 1 se detiene dentro del minuto t del cierre que supera. ¿La hija empieza en t (rehace ese minuto, sin posiciones) o en t + 60?
+   - b) **El mercado que fija la hija:** ¿el efectivo de la madre (`versiones.mercado_efectivo` o la raíz) o el vigente al pasar? A26 dice que la sesión fija el suyo al crearse, y la hija es una sesión nueva.
+3. **Confirmaciones pequeñas de lo ya hecho** (decidido por mí, revisable):
+   - a) en un cierre por comando, la conversión lleva `minuto = en.t` y `fase: null` (q.5);
+   - b) `sim_trades.pnl` (numeric(10,2)) = el neto en céntimos, redondeado al par (`dinero.mjs`);
+   - c) `/api/sim/estado` de una sesión v0 → `409 no_es_v1`.
+4. **El umbral de los tramos** (q.6).

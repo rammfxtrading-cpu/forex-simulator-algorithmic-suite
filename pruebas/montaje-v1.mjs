@@ -10,6 +10,7 @@
 //   m.rpc('d1')(nombre, args)                                  la RPC como service_role,
 //       con la forma de supabase-js: { data, error: { code, message } | null }
 //   m.uno('d1', sql)                                           una lectura como superusuario
+//   m.comoEjecutor('d1', texto)                                un fichero SQL como el ejecutor de s06 → { ok, out, err }
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
@@ -69,5 +70,5 @@ insert into public.profiles (id, email, plan, simulador_activo, rol_global) valu
     const linea = r.out.split('\n').filter(l => l && !/^(BEGIN|SET|COMMIT)$/.test(l)).at(-1)
     return { data: JSON.parse(linea), error: null }
   }
-  return { pg, base, uno, alumno, rpc, arranca: () => pg.arranca(), cierra: () => pg.cierra() }
+  return { pg, base, uno, alumno, rpc, comoEjecutor: (db, texto) => pgx(texto, db), arranca: () => pg.arranca(), cierra: () => pg.cierra() }
 }
