@@ -31,6 +31,7 @@
  *     queda en true ni si la sonda falla a mitad (misma sesion); protect_objects_delete tiene que existir con su
  *     forma y habilitado. s14: inventario de storage.buckets con cuerpo, y acreditacion por definicion, habilitado
  *     y md5 completo
+ *     CTO 14-oct (tras la s14c): los cinco de storage.buckets acreditados y montados byte a byte
  *   5 s14: una sola SELECT, en READ ONLY; antes («NO EXISTE», politicas con su
  *     veredicto y su texto, UUID enmascarados, disparadores) y despues (privado,
  *     trozos por par, puntero, cerrojo); sin nombres de objetos de otros buckets
@@ -53,16 +54,17 @@ import path from 'node:path'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { BIN, hayPostgres, cluster } from './pg-ensayo.mjs'
 import { PRODUCCION } from './estado-s04.mjs'
-import { PROTECT_DELETE, UPDATE_UPDATED_AT, DISPARADORES_OBJETOS, PROTECT_BUCKETS_DELETE, COMPRUEBA_MD5, MD5_ESPERADO } from './storage-supabase.mjs'
+import { PROTECT_DELETE, UPDATE_UPDATED_AT, DISPARADORES_OBJETOS, COMPRUEBA_MD5, MD5_ESPERADO, ENFORCE_BUCKET_NAME_LENGTH, PROTECT_BUCKET_CONTROL_COLUMNS, ENFORCE_BUCKET_LIFECYCLE_SERVICE_ROLE, COLUMNAS_CICLO, DISPARADORES_BUCKETS, COMPRUEBA_MD5_BUCKETS, MD5_BUCKETS_ESPERADO } from './storage-supabase.mjs'
 if (!hayPostgres()) { ver(`PostgreSQL 17 en ${BIN}: NO hay, la prueba no se ha ejecutado`, false); fin() }
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const M1 = lee('sql/mercado-001-bucket.sql')
 const S14 = lee('sql/consultas/s14-mercado-storage.sql')
 const pg = cluster()
 const REALES = `alter table storage.objects add column metadata jsonb, add column updated_at timestamptz default now(), add column owner uuid, add column owner_id text;`
-// CTO 14-oct (s14b): los dos disparadores de Supabase en storage.objects, con sus funciones byte a byte. mercado-001
-// exige protect_objects_delete; sin el, ver la seccion 10
-const STORAGE_SUPABASE = `${PROTECT_DELETE}\n${UPDATE_UPDATED_AT}\n${DISPARADORES_OBJETOS}`
+// CTO 14-oct (s14b, s14c): los disparadores de Supabase en storage.objects (2) y storage.buckets (5), con sus funciones
+// byte a byte. mercado-001 exige protect_objects_delete; sin el, ver la seccion 10. Las columnas NOT NULL type y
+// versioning_status de storage.buckets y los valores por defecto, PENDIENTES de la s14d (no se inventan)
+const STORAGE_SUPABASE = `${PROTECT_DELETE}\n${UPDATE_UPDATED_AT}\n${DISPARADORES_OBJETOS}\n${COLUMNAS_CICLO}\n${ENFORCE_BUCKET_NAME_LENGTH}\n${PROTECT_BUCKET_CONTROL_COLUMNS}\n${ENFORCE_BUCKET_LIFECYCLE_SERVICE_ROLE}\n${DISPARADORES_BUCKETS}`
 // los grants de Supabase sobre storage a anon y authenticated (condicion del escenario)
 const SUPA = `grant usage on schema storage to anon, authenticated; grant all on storage.objects, storage.buckets to anon, authenticated;`
 // el postgres de produccion segun s06: no superusuario, bypassrls, miembro de anon y authenticated
@@ -339,7 +341,7 @@ create policy "lectura forex" on storage.objects for select to public using (buc
   oraculo('E2R3-02', 'y con un esquema temporal delante de pg_catalog, el contexto NO queda acreditado', oculto.ok && /contexto\|lista blanca\|NO ACREDITADO: el search_path \(pg_temp_\d+,pg_catalog,public\) no empieza por pg_catalog/.test(oculto.out), oculto.out.split('\n').filter(x => /contexto/.test(x)).join(' / '))
   const rTemp = pg.psql('create temp table pg_trigger as select * from pg_catalog.pg_trigger where false; set search_path=pg_temp,pg_catalog,public;\n' + M1, dS)
   oraculo('E2R3-02', 'mercado-001 en esa misma sesion fija su contexto (pg_catalog, pg_temp) y no se deja engañar: aplica igual que sin la tabla temporal', rTemp.ok && /FIN\|mercado-001 aplicada$/.test(rTemp.out), err1(rTemp))
-  oraculo('E2R3-03', 's14: el AFTER INSERT por sentencia sale como POR SENTENCIA, con su lenguaje y el md5 de su cuerpo, y el resumen manda PARAR hasta que el CTO lo acredite', /disparador\|efecto_insert\|AFTER INSERT · POR SENTENCIA · storage\.efecto_insert · funcion de storage · plpgsql · md5 del cuerpo [0-9a-f]{12}/.test(visible.out) && /disparador\|efecto_insert\|.* · NO ACREDITADO$/m.test(visible.out) && /disparador\|\(resumen\)\|storage\.objects: 3 \(2 por sentencia\) · storage\.buckets: 0 · sin acreditar: 1: .*PARAR hasta que el CTO acredite/.test(visible.out), visible.out.split('\n').filter(x => /disparador/.test(x)).join(' / '))
+  oraculo('E2R3-03', 's14: el AFTER INSERT por sentencia sale como POR SENTENCIA, con su lenguaje y el md5 de su cuerpo, y el resumen manda PARAR hasta que el CTO lo acredite', /disparador\|efecto_insert\|AFTER INSERT · POR SENTENCIA · storage\.efecto_insert · funcion de storage · plpgsql · md5 del cuerpo [0-9a-f]{12}/.test(visible.out) && /disparador\|efecto_insert\|.* · NO ACREDITADO$/m.test(visible.out) && /disparador\|\(resumen\)\|storage\.objects: 3 \(2 por sentencia\) · storage\.buckets: 5 · sin acreditar: 1: .*PARAR hasta que el CTO acredite/.test(visible.out), visible.out.split('\n').filter(x => /disparador/.test(x)).join(' / '))
   const dS2 = monta(`create sequence public.efecto_insert; create function storage.efecto_insert() returns trigger language plpgsql as $$ begin perform nextval('public.efecto_insert'); return null; end $$; create trigger efecto_insert after insert on storage.objects for each statement execute function storage.efecto_insert();`)
   const efecto = pg.psql('begin;\n' + M1 + '\ncommit;\nselect last_value || \'|\' || is_called from public.efecto_insert;', dS2)
   oraculo('E2R3-03', 'lo que documenta p.13.2: el INSERT del centinela dispara el INSERT por sentencia, y su efecto no transaccional queda tras el rollback', efecto.ok && efecto.out.split('\n').at(-1) === '1|true', efecto.out.split('\n').at(-1) || efecto.err)
@@ -347,7 +349,7 @@ create policy "lectura forex" on storage.objects for select to public using (buc
   const qNo = s14(dNo)
   oraculo('E2R3-03', 'sin disparadores: el resumen dice «ninguno»', qNo.ok && /disparador\|\(resumen\)\|ninguno en storage\.objects ni en storage\.buckets$/m.test(qNo.out), qNo.out.split('\n').filter(x => /disparador/.test(x)).join(' / '))
   const qSupa = s14(monta())
-  oraculo('S14-CTO', 'con los dos de Supabase (cuerpos de la s14b): cada uno «acreditado (CTO 14-oct)» y el resumen no pide parar', qSupa.ok && /^disparador\|protect_objects_delete\|BEFORE DELETE · POR SENTENCIA · storage\.protect_delete · funcion de storage · plpgsql · md5 del cuerpo 998d324ea2b1 · acreditado \(CTO 14-oct\)$/m.test(qSupa.out) && /^disparador\|update_objects_updated_at\|BEFORE UPDATE · por fila · storage\.update_updated_at_column · funcion de storage · plpgsql · md5 del cuerpo 7596e66a7698 · acreditado \(CTO 14-oct\)$/m.test(qSupa.out) && /^disparador\|\(resumen\)\|storage\.objects: 2 \(1 por sentencia\) · storage\.buckets: 0 · sin acreditar: 0: todos acreditados por el CTO \(s14b, 14-oct\)$/m.test(qSupa.out), qSupa.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || qSupa.err)
+  oraculo('S14-CTO', 'con los siete de Supabase (cuerpos de la s14b y la s14c): cada uno «acreditado (CTO 14-oct)», ningun cuerpo, y el resumen no pide parar', qSupa.ok && (qSupa.out.match(/^disparador\|buckets\.[a-z_]+\|.* · acreditado \(CTO 14-oct\)$/mg) || []).length === 5 && !/^cuerpo\|/m.test(qSupa.out) && !/NO ACREDITADO/.test(qSupa.out) && /^disparador\|protect_objects_delete\|BEFORE DELETE · POR SENTENCIA · storage\.protect_delete · funcion de storage · plpgsql · md5 del cuerpo 998d324ea2b1 · acreditado \(CTO 14-oct\)$/m.test(qSupa.out) && /^disparador\|update_objects_updated_at\|BEFORE UPDATE · por fila · storage\.update_updated_at_column · funcion de storage · plpgsql · md5 del cuerpo 7596e66a7698 · acreditado \(CTO 14-oct\)$/m.test(qSupa.out) && /^disparador\|\(resumen\)\|storage\.objects: 2 \(1 por sentencia\) · storage\.buckets: 5 · sin acreditar: 0: todos acreditados por el CTO \(s14b y s14c, 14-oct\)$/m.test(qSupa.out), qSupa.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || qSupa.err)
 
   titulo('5 · s14 (solo lectura)')
   const d3 = monta(`create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');
@@ -512,27 +514,29 @@ create trigger zz_revienta before delete on storage.objects for each statement e
       oraculo('PD-05', `protect_objects_delete ${nombre}: aborta «falta el disparador protect_objects_delete» y nada cambia`, !r.ok && /falta el disparador protect_objects_delete de Supabase/.test(r.err) && estado(d) === a, err1(r))
     }
     // 6 s14: el inventario cubre storage.buckets, con cuerpo y PARAR; la acreditacion exige definicion, habilitado y md5 completo
-    const dB = monta(`create function storage.enforce_bucket_name_length() returns trigger language plpgsql as $f$
+    ver('control: el montaje tiene los cuerpos de buckets medidos en produccion byte a byte (md5 de la s14c)', pg.psql(COMPRUEBA_MD5_BUCKETS, d0).out === MD5_BUCKETS_ESPERADO, pg.psql(COMPRUEBA_MD5_BUCKETS, d0).out)
+    // un cuerpo de buckets cambiado (una linea): NO ACREDITADO, su cuerpo linea a linea y PARAR
+    const dB = monta(`create or replace function storage.enforce_bucket_name_length() returns trigger language plpgsql as $f$
 begin
-    if length(new.name) > 100 then raise exception 'bucket name too long'; end if;
+    if length(new.name) > 63 then raise exception 'bucket name too long'; end if;
     return new;
 end;
-$f$;
-create trigger enforce_bucket_name_length_trigger before insert or update of name on storage.buckets for each row execute function storage.enforce_bucket_name_length();
-${PROTECT_BUCKETS_DELETE}`)
+$f$;`)
     const qB = s14(dB)
-    oraculo('S14-CTO', 's14: los disparadores de storage.buckets salen como «buckets.<nombre>», NO ACREDITADOS (tambien el que usa protect_delete), y el resumen los cuenta y manda PARAR', qB.ok && /^disparador\|buckets\.enforce_bucket_name_length_trigger\|BEFORE INSERT\/UPDATE · por fila · storage\.enforce_bucket_name_length · funcion de storage · plpgsql · md5 del cuerpo [0-9a-f]{12} · NO ACREDITADO$/m.test(qB.out) && /^disparador\|buckets\.protect_buckets_delete\|BEFORE DELETE · POR SENTENCIA · storage\.protect_delete · .* · NO ACREDITADO$/m.test(qB.out) && /^disparador\|\(resumen\)\|storage\.objects: 2 \(1 por sentencia\) · storage\.buckets: 2 · sin acreditar: 2: la sonda y el INSERT del bucket de mercado-001 los disparan; PARAR hasta que el CTO acredite/m.test(qB.out), qB.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || qB.err)
+    oraculo('S14-CTO', 's14: una funcion de buckets con el cuerpo cambiado → su disparador NO ACREDITADO, los demas acreditados, y el resumen manda PARAR', qB.ok && /^disparador\|buckets\.enforce_bucket_name_length_trigger\|BEFORE INSERT\/UPDATE · por fila · storage\.enforce_bucket_name_length · funcion de storage · plpgsql · md5 del cuerpo [0-9a-f]{12} · NO ACREDITADO$/m.test(qB.out) && (qB.out.match(/^disparador\|buckets\.[a-z_]+\|.* · acreditado \(CTO 14-oct\)$/mg) || []).length === 4 && /^disparador\|\(resumen\)\|storage\.objects: 2 \(1 por sentencia\) · storage\.buckets: 5 · sin acreditar: 1: la sonda y el INSERT del bucket de mercado-001 los disparan; PARAR hasta que el CTO acredite/m.test(qB.out), qB.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || qB.err)
     const cuerpo = qB.out.split('\n').filter(x => x.startsWith('cuerpo|storage.enforce_bucket_name_length ')).map(x => x.split('|').slice(2).join('|'))
     const md5B = pg.psql(`select md5(prosrc) from pg_proc where proname = 'enforce_bucket_name_length'`, dB).out
-    oraculo('S14-CTO', 's14: el cuerpo de la funcion no acreditada de buckets, linea a linea, reconstruye prosrc byte a byte; el de protect_delete (acreditada) no se repite', cuerpo.length > 2 && createHash('md5').update(cuerpo.join('\n')).digest('hex') === md5B && !qB.out.split('\n').some(x => x.startsWith('cuerpo|storage.protect_delete')), `${cuerpo.length} lineas · ${md5B}`)
-    for (const [nombre, extra] of [
-      ['el cuerpo de protect_delete cambiado (un espacio)', `create or replace function storage.protect_delete() returns trigger language plpgsql as $f$ begin return null; end; $f$;`],
+    oraculo('S14-CTO', 's14: el cuerpo de la funcion no acreditada, linea a linea, reconstruye prosrc byte a byte; las acreditadas no sacan cuerpo', cuerpo.length > 2 && createHash('md5').update(cuerpo.join('\n')).digest('hex') === md5B && qB.out.split('\n').filter(x => x.startsWith('cuerpo|')).every(x => x.startsWith('cuerpo|storage.enforce_bucket_name_length ')), `${cuerpo.length} lineas · ${md5B}`)
+    const qB2 = s14(monta(`drop trigger protect_bucket_control_insert on storage.buckets; create trigger protect_bucket_control_insert before insert on storage.buckets for each row execute function storage.protect_bucket_control_columns('otro_rol');`))
+    oraculo('S14-CTO', 's14: el mismo cuerpo con otro argumento (protect_bucket_control_columns(\'otro_rol\')) → NO ACREDITADO (la definicion cuenta)', qB2.ok && /^disparador\|buckets\.protect_bucket_control_insert\|.* · NO ACREDITADO$/m.test(qB2.out) && /sin acreditar: 1: .*PARAR/.test(qB2.out), qB2.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || qB2.err)
+    for (const [nombre, extra, cuantos] of [
+      ['el cuerpo de protect_delete cambiado (lo usan objects y buckets: 2 sin acreditar)', `create or replace function storage.protect_delete() returns trigger language plpgsql as $f$ begin return null; end; $f$;`, 2],
       ['habilitado SIEMPRE (A, no el medido)', `alter table storage.objects enable always trigger protect_objects_delete;`],
       ['desactivado', `alter table storage.objects disable trigger update_objects_updated_at;`],
       ['otra definicion (BEFORE UPDATE OF name)', `drop trigger update_objects_updated_at on storage.objects; create trigger update_objects_updated_at before update of name on storage.objects for each row execute function storage.update_updated_at_column();`],
     ]) {
       const q = s14(monta(extra))
-      oraculo('S14-CTO', `s14: ${nombre} → NO ACREDITADO y PARAR`, q.ok && /^disparador\|(protect_objects_delete|update_objects_updated_at)\|.* · NO ACREDITADO$/m.test(q.out) && /^disparador\|\(resumen\)\|.*sin acreditar: 1: .*PARAR/m.test(q.out), q.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || q.err)
+      oraculo('S14-CTO', `s14: ${nombre} → NO ACREDITADO y PARAR`, q.ok && /^disparador\|(protect_objects_delete|update_objects_updated_at)\|.* · NO ACREDITADO$/m.test(q.out) && new RegExp(`^disparador\\|\\(resumen\\)\\|.*sin acreditar: ${cuantos ?? 1}: .*PARAR`, 'm').test(q.out), q.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || q.err)
     }
     const dAl = monta(SUPA + `alter table storage.objects enable always trigger protect_objects_delete;`)
     const rAl = pg.psql(M1, dAl)

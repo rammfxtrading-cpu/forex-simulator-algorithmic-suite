@@ -47,7 +47,7 @@
 --                 Cada uno dice «acreditado (CTO 14-oct)» si coinciden tabla,
 --                 nombre, definicion exacta, habilitado y md5 COMPLETO de su
 --                 funcion con la lista «acreditados» (los dos de storage.objects
---                 de la s14b), o «NO ACREDITADO». De las funciones no acreditadas
+--                 de la s14b y los cinco de storage.buckets de la s14c), o «NO ACREDITADO». De las funciones no acreditadas
 --                 de storage.buckets sale el cuerpo linea a linea («cuerpo»).
 --                 El resumen cuenta los dos sitios y los sin acreditar: PARAR
 --   3 politica    cada politica de storage.objects: orden, PERMISSIVE o
@@ -176,11 +176,17 @@ escritura as (
                       where r.rolname in ('anon', 'authenticated') and pg_catalog.pg_has_role(r.oid, x.rol, 'MEMBER')))
 )
 -- <<< clasificador
--- los disparadores que el CTO ha acreditado (14-oct, s14b de produccion): estandar de Supabase, SECURITY INVOKER,
--- dueño supabase_storage_admin, sin proconfig y sin efectos externos. Solo estos; los de storage.buckets, no (aun)
+-- los disparadores que el CTO ha acreditado (14-oct, s14b y s14c de produccion): estandar de Supabase, SECURITY
+-- INVOKER, dueño supabase_storage_admin y sin efectos externos. Por su md5 COMPLETO: si cambia, NO ACREDITADO y PARAR
 , acreditados (tabla, nombre, definicion, md5) as (values
   ('objects'::text, 'protect_objects_delete'::text, 'CREATE TRIGGER protect_objects_delete BEFORE DELETE ON storage.objects FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()'::text, '998d324ea2b1abc49351e8c2367b5796'::text),
-  ('objects', 'update_objects_updated_at', 'CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()', '7596e66a7698d5a6b5129c5ce9b24c5f')
+  ('objects', 'update_objects_updated_at', 'CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()', '7596e66a7698d5a6b5129c5ce9b24c5f'),
+  -- los cinco de storage.buckets (CTO 14-oct, s14c)
+  ('buckets', 'enforce_bucket_name_length_trigger', 'CREATE TRIGGER enforce_bucket_name_length_trigger BEFORE INSERT OR UPDATE OF name ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_name_length()', 'bd3d77a2603f7f344035a81def5502fa'),
+  ('buckets', 'protect_bucket_control_insert', 'CREATE TRIGGER protect_bucket_control_insert BEFORE INSERT ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns(''service_role'')', '7870415452678f5aa85f91dde952ef12'),
+  ('buckets', 'protect_bucket_control_update', 'CREATE TRIGGER protect_bucket_control_update BEFORE UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns()', '7870415452678f5aa85f91dde952ef12'),
+  ('buckets', 'protect_bucket_control_update_role', 'CREATE TRIGGER protect_bucket_control_update_role AFTER UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_lifecycle_service_role(''service_role'')', '7691066f4111610b457b74bdead6e80b'),
+  ('buckets', 'protect_buckets_delete', 'CREATE TRIGGER protect_buckets_delete BEFORE DELETE ON storage.buckets FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()', '998d324ea2b1abc49351e8c2367b5796')
 )
 , m as (
   select o.name, o.updated_at, coalesce((o.metadata ->> 'size')::bigint, 0) bytes
@@ -353,7 +359,7 @@ select seccion, objeto, detalle from (
                    || ' · sin acreditar: ' || count(*) filter (where a.tabla is null)
                    || case when count(*) filter (where a.tabla is null) > 0
                            then ': la sonda y el INSERT del bucket de mercado-001 los disparan; PARAR hasta que el CTO acredite cada uno como estandar de Supabase y sin efectos externos'
-                           else ': todos acreditados por el CTO (s14b, 14-oct)' end end
+                           else ': todos acreditados por el CTO (s14b y s14c, 14-oct)' end end
     from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid join pg_catalog.pg_proc f on f.oid = t.tgfoid
          left join acreditados a on a.tabla = r.relname and a.nombre = t.tgname and a.definicion = pg_catalog.pg_get_triggerdef(t.oid)
                                 and a.md5 = pg_catalog.md5(coalesce(f.prosrc, '')) and t.tgenabled = 'O'
