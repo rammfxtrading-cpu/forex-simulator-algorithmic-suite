@@ -107,7 +107,7 @@ oraculo('FES', 'la linea es de otro par: se retiene', p7d.retenido?.dia === '202
 const p7e = P.planificaPar({ par: 'EURUSD', velas: nav2, texto: huecoNav + linea(co({ velas: 100 })), anterior: null, diasAceptados: new Map() })
 const p7f = P.planificaPar({ par: 'EURUSD', velas: velas('2025-12-21', '2026-01-02', { faltan: [['2025-12-24T22:00Z', '2025-12-25T22:00Z']] }), texto: huecoNav + linea(co()) + linea(co({ velas: 100, nota: 'corregido despues de publicar' })), anterior: p7b.manifiesto, diasAceptados: new Map() })
 oraculo('FES', 'corregir con otra linea el corto de un festivo YA publicado: incidente (los cortos hasta la frontera no pueden cambiar)', p7e.estado === 'publica' && p7f.estado === 'incidente' && /cortos aceptados/.test(p7f.incidente ?? ''), P.resumen?.(p7f))
-// (en miercoles: un festivo en viernes no sale nunca «completo» con la regla del domingo de estadoDia; hueco para el CTO)
+// (en miercoles; el festivo en viernes, en pruebas/estadodia-festivo-viernes.mjs)
 const full = velas('2024-12-30', '2025-01-04')
 ver('control: el miercoles 1-ene-2025 tiene 1.440 velas', full.filter(v => v.time >= S('2025-01-01') && v.time < S('2025-01-02')).length === 1440)
 const qFull = P.planificaPar({ par: 'EURUSD', velas: full, texto: '', anterior: null, diasAceptados: new Map() })
