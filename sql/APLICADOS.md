@@ -128,3 +128,17 @@ Coincide con lo que el bloque DO exige antes de terminar (si cualquiera de esas 
 - **s10 (paso 4):**
   - 0 filas en el registro; «registro instalado», puerta NO activa;
   - `statement_timeout`: `authenticated` 8 s, `anon` 3 s. La regla de o.11.2 es ≤ 10 s, para que la espera de 20 s cubra 2 × timeout: 2 × 8 s = 16 s < 20 s, se cumple.
+
+## s10 diaria hasta la puerta (procedimiento: `revisiones-suite/2026-10-14-sim-etapa1-registro-retencion-y-diario.md`, § 4)
+
+Solo las cifras: ni ids ni importes. s10 de `3fa2b3f`, con sha256 `eaa23bc7…7576` comprobado al copiarla al portapapeles. Ramón la ejecuta en el SQL Editor y pega la salida en la sesión; la salida no se guarda.
+
+| Día (Madrid) | Hora de s10 (UTC) | estado | A · sin firma 72 h | B · última sin firma | C · incidencias | D · dudosos | E · anomalías | F · volumen del último día | timeout (authenticated / anon) |
+|---|---|---|---:|---|---:|---:|---:|---|---|
+| 14-oct | 08:29:45 | registro instalado (puerta NO activa) | 0 | ninguna | 0 | 0 | 0 | 13-oct: 49 filas (aún ninguna del 14-oct) | 8 s / 3 s |
+
+- **14-oct:**
+  - 49 filas en total, todas firmadas: 0 sin firma de alumno, 0 de `service_role`, 0 «otras». La primera es del 13-oct 18:13:14 UTC.
+  - Una sola fila `alumno`, con versión firmada `etapa1-1`.
+  - s10 lista también `authenticator`, con 8 s.
+  - Sin ninguna escritura sin firma, las 72 h se cuentan desde la instalación (13-oct, hacia las 19:30): **lo antes posible para la puerta, el 16-oct hacia las 19:30**. Hace falta una s10 de esa hora o posterior con A = 0, y el sí del CTO.
