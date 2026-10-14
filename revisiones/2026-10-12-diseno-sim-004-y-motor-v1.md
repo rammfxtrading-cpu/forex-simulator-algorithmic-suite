@@ -2901,3 +2901,26 @@ Hechos, sobre `f294c70` y en verde (tanda 112): el plan, `lib/servidor/mercado.m
 Mientras no se decida, cualquier comando que cierre algo no puede pasar la RPC. Eso incluye un `avanzar` que salte un SL o un TP.
 
 **Lo que también queda dicho para sim-004b** (planificado, no es pregunta): un `avanzar` que cruce un hueco aceptado emite `hueco_aceptado`. sim-003 lo rechaza (422 `resultado_invalido`), así que los comandos sobre el mercado real necesitan sim-004b (S4-04).
+
+**Decisión del CTO (14-oct) sobre `spread_micro`:** es informativo, el coste del spread de ese trade en µUSD. Ya va en el bruto a través de los precios y nunca se resta otra vez.
+- `spread_micro = redondeo_µ(spread_pips(par, costes@1) × tamaño_pip(par) × unidades_cerradas × conversión_a_USD × 1e6)`.
+- `spread_pips` y `tamaño_pip`, los del motor. Unidades, las de esa fila (en un parcial, solo la parte cerrada).
+- Conversión: **la misma tasa** con la que el motor pasa ese trade a USD en el evento `cierre` (su campo `conversion`). Prohibido un segundo camino.
+- Redondeo de `dinero.mjs`, una sola vez al final; entero ≥ 0.
+- **Paradas obligatorias:** (1) algo suma o resta `spread_micro` al neto, al saldo o al drawdown; (2) el motor aplica un spread que no sale de `costes@1`; (3) `conversion` no existe o no está fijada en el evento `cierre`.
+- sim-004b aprobada con `hueco_aceptado` además del «completado» (j.8): se escribe y se ensaya en local, sin aplicar.
+
+**Comprobación de las paradas (14-oct, sobre `24a6d81`):**
+- (1) **No salta.** sim-003 guarda `spread_micro` en la fila y no lo usa en nada (S:627–631). El motor no tiene ningún spread aparte: el spread entra solo en los precios (`askDe`, `salidaDe`, `precioEjecucion`, `lib/motor/cartera.mjs:95–97`).
+- (2) **No salta.** `spread_ticks` sale de `spreadTicks(costes, par)` al crear la cartera (`cartera.mjs:73`, `costes.mjs`), es fijo por sesión y no cambia en ningún sitio.
+- (3) **SALTA.** El evento `cierre` **no lleva `conversion`**:
+  - `cartera.mjs:155` emite `{ tipo, posicion, par, motivo, lado, precio, lotes_c, bruto_µ, comision_µ, neto_µ, hueco, en, [sincronizacion] }`, y `motor.mjs:157` lo mismo sin `par`;
+  - la tasa existe solo dentro del cálculo: `pnlExacto` → `convDe(par, ctx)` (`cartera.mjs:98–106`). Es el bid propio (pares con USD base), `ctx.conv` del par de conversión (cruces) o nada (USD cotizado);
+  - y depende del punto del minuto: en las fases 1–3, la apertura del par de conversión; en la 4, su cierre (`cartera.mjs:261`). Fuera del evento no se puede reconstruir sin un segundo camino.
+
+**Pregunta para el CTO:** para cumplir la decisión, el evento `cierre` del motor tiene que llevar su conversión. Eso cambia el motor aprobado (el formato del evento y, con él, la equivalencia de A37 entre cartera y motor de un par).
+- ¿Lo añado (p. ej. `conversion: { par, bid, en }`, o `null` con USD cotizado, en `cartera.mjs` y `motor.mjs`), con oráculos?
+- ¿Con qué forma? La persistencia (§ 2.4) dice «par, minuto, fase, valor».
+- ¿Va a Astra como cambio del motor antes de seguir?
+
+Mientras tanto, `comando` sigue parado.
