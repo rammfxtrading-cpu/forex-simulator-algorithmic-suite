@@ -144,11 +144,12 @@ const ESC = [
   { id: 'P-23a', par: 'EURUSD', costes: COSTES_1, limites: [{ regla: 'perdida_diaria', limite: '95000' }], filas: [plana('1.10000'), plana('1.05000')], pasos: [['abrir', 'BUY', 'mercado', '1'], ['abrir', 'BUY', 'limit', '1', '1.05003'], ['avanza', 1]] },
   { id: 'tras fill', par: 'EURUSD', costes: COSTES_1, capital: '95005', limites: [{ regla: 'perdida_diaria', limite: '95000' }], filas: [plana('1.10010'), plana('1.10000')], pasos: [['abrir', 'BUY', 'limit', '1', '1.10003', { sl: '1.10000' }], ['abrir', 'BUY', 'limit', '1', '1.10003'], ['avanza', 1]] },
 ]
-// proyeccion economica comun (§ 12.4): eventos sin ids de transporte y con el momento como (minuto, fase)
+// proyeccion economica comun (§ 12.4): eventos sin ids de transporte y con el momento como (minuto, fase);
+// el cierre, con su conversion byte a byte (CTO 14-oct; enTexto: 'sin' si falta, que no es null)
 const fase = en => en?.t != null ? 'cmd' : en?.fase ?? (en?.tramo != null ? en.tramo + 1 : null)
 // el breach de la cartera guarda los precios de todos sus pares (precios); con un solo par, es el precio del motor de un par
 const precioDe = x => x.precio ?? (x.precios && Object.values(x.precios).length === 1 ? Object.values(x.precios)[0] : null)
-const proyEv = ev => ev.map(x => [x.tipo, x.posicion ?? null, x.orden ?? null, x.motivo ?? x.regla ?? null, precioDe(x), x.lotes_c ?? null, x.bruto_µ ?? null, x.comision_µ ?? null, x.equity_µ ?? null, x.en?.vela ?? x.en?.t ?? null, fase(x.en), !!x.ambigua])
+const proyEv = ev => ev.map(x => [x.tipo, x.posicion ?? null, x.orden ?? null, x.motivo ?? x.regla ?? null, precioDe(x), x.lotes_c ?? null, x.bruto_µ ?? null, x.comision_µ ?? null, x.equity_µ ?? null, x.en?.vela ?? x.en?.t ?? null, fase(x.en), !!x.ambigua, x.tipo === 'cierre' ? enTexto(x.conversion) ?? 'sin' : null])
 // P7-04 (Astra): la proyeccion economica COMPLETA de cada posicion y orden: margen fijado y liberado, comisiones
 // devengada y asignada, cerrados, P&L exacto y redondeado acumulados (los residuos), ids y seq, y el momento
 const proyPos = p => [p.id, p.seq, p.lado, p.lotes_iniciales_c, p.lotes_c, p.cerrados_c, p.entrada, p.sl, p.tp, p.margen_fijado_µ ?? null, p.margen_liberado_µ ?? null, p.comision_devengada_µ, p.comision_asignada_µ, [p.pnl_exacto_cerrado?.n, p.pnl_exacto_cerrado?.d], p.pnl_redondeado_cerrado_µ, p.abierta_en?.vela ?? p.abierta_en?.t ?? null, fase(p.abierta_en)]

@@ -2924,3 +2924,31 @@ Mientras no se decida, cualquier comando que cierre algo no puede pasar la RPC. 
 - ¿Va a Astra como cambio del motor antes de seguir?
 
 Mientras tanto, `comando` sigue parado.
+
+### q.5 La conversión en el evento `cierre` (decisión del CTO, 14-oct)
+
+**Decisión:** el motor escribe en el evento `cierre` la tasa que usó: `conversion: { par, minuto, fase, valor }`, o `null` con USD cotizado. En `cartera.mjs` y en `motor.mjs`.
+- `valor` es exactamente el número que `convDe` (o `conversion()` en el motor de un par) dio para el P&L de ese cierre: se toma **una vez** en `cierraPosicion` y se pasa al P&L y al evento. `spread_micro` usa ese mismo valor.
+- **A37:** la cartera y el motor de un par dan la misma conversión, byte a byte.
+- **Formato v1 corregido en sitio, sin versión nueva:** no hay trades v1 en producción.
+
+**Hecho** (`conversionDe` en `lib/motor/motor.mjs`, que importa la cartera). Es un dato de más en el evento y no cambia ningún cálculo: la tanda entera queda igual.
+- `minuto` y `fase` son **el punto del cierre**: `en.vela` y su fase 1–4 (en el motor de un par, `tramo + 1`).
+- Un cierre por comando (entre minutos) lleva `minuto = en.t` y `fase: null`.
+- ⚠️ **Lo decido yo, por coherencia con la proyección de A37 (`fase(en)`), y lo pregunto al CTO:** la spec no dice qué es «minuto» en un cierre por comando. Su `valor` es el bid del par de conversión en el cursor, es decir, el cierre del minuto anterior a `en.t`.
+
+**Prueba de que no hay trades v1 (punto 3 de la decisión), por código:**
+- Una fila v1 de `sim_trades` exige `motor_version = 1` y un `evento_id` con FK a `sim_eventos` (`sim_trades_v1_coherente`, `sim_trades_evento_id_fkey`).
+- Solo `sim_comando` (sim-003, EXECUTE solo `service_role`) inserta en `sim_eventos` o escribe `motor_version = 1`. `authenticated` no tiene INSERT en `sim_eventos` (sim-003: solo SELECT de lo suyo).
+- `git grep` en `main` (`4fc0e17`) y en lo desplegado (`origin/main` = `3fa2b3f`), sobre `pages lib components scripts`: **ninguna** aparición de `sim_comando`, `motor_version`, `evento_id` ni `*_micro`.
+- El único escritor de trades es `sim_cierre_v0` (preparatoria), que no escribe `motor_version` (queda en 0).
+- Los `/api/sim/*` desplegados son el 503 de la etapa 1.
+
+**Oráculos:** `pruebas/motor/conversion.mjs`, 13, con 12 en rojo contra `63be57d`:
+- AUDCAD en las fases 1–4 (USDCAD de apertura 1,37000 en las fases 1–3; de cierre 1,30000 en la 4, por un breach en s = 0);
+- USDJPY, GBPJPY y EURUSD (`null`);
+- un parcial por comando;
+- A37 byte a byte en USDJPY (SL y parcial) y EURUSD;
+- que la conversión sobrevive a serializar.
+
+Además, la proyección de A37 de `pruebas/motor/cartera.mjs` compara ya la conversión de cada cierre. Un mutante solo en la cartera (minuto + 1) la pone en rojo (A08).
