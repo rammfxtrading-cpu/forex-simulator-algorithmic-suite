@@ -2851,3 +2851,37 @@ p.14.4.3 («no la leen ni la escriben») era cierto solo por los grants directos
    - las de s14, 8 rojos con el s14 anterior.
 
    Evidencias en `revisiones-suite/2026-10-14-mercado-v1-etapa2-r5/`.
+## q · etapa 3: lib/servidor y endpoints (CTO 14-oct)
+
+Rama `etapa3-simulador`, desde `etapa2-simulador` (`a25a1d9`). Sin push y nada en Supabase. Método de la etapa 2: plan corto, construcción sin esperar OK, parada solo ante una decisión de producto o algo que contradiga el diseño.
+
+### q.1 Alcance (según § f, e.1–e.4, b.1–b.3, i.2, j.7–j.8)
+
+- **`lib/servidor/`** (nuevo, `.mjs` puros con puertos inyectados; e.1):
+  - `mercado.mjs`: el lector del mercado v1 para los endpoints. Lee el puntero y los manifiestos vigentes del bucket privado `mercado` (crear) o los manifiestos **fijados** en el estado (comandos), y los trozos del tramo por sha, con caché. Falla cerrado: sin puntero, sin manifiesto o con un trozo alterado, no hay comando.
+  - `sobre.mjs`: validación cerrada de la intención (b.1: claves conocidas, tipos y rangos; lo que sobra es `422 carga_invalida`) y el sobre canónico de cada tipo, del que la RPC calcula el digest.
+  - `crear.mjs`, `fase.mjs`: los estados iniciales (práctica con `cartera.crea`; reto con `creaReto`), con el mercado fijado de **los nueve pares** (A26; h.10 habla de «avanzar 7 días con 9 pares», y hoy el alumno cambia de par dentro de una sesión).
+  - `comando.mjs`: deserializa el estado confirmado, aplica el motor fuera de bloqueo y devuelve `resultado = { resultado, motivo, clase, estado, eventos, trades, proyeccion, resumen }` en la forma que valida `sim_comando` (sim-003, S:500–560), con los trades `*_micro` desde los eventos `cierre` (e.3).
+  - `rpc.mjs`: la llamada a la RPC con `service_role` y como mucho tres reintentos 40P01 con el mismo `command_id` (b.1).
+- **Endpoints finos** `pages/api/sim/{crear,tomar,comando,avanzar-fase,borrar,estado}.js` (b.2; `estado` es S4-07): autentican (`requireSimulador`, con el admin sin `simulador_activo` cortado en el endpoint: h.4), construyen los puertos reales y llaman a `lib/servidor/`. La respuesta es el jsonb de la RPC con su `http`.
+- **El interruptor** (b.1, o.8): los endpoints solo funcionan con la variable de entorno `SIM_V1_ENDPOINTS=encendido`; sin ella, el `503 mantenimiento` de la etapa 1, sin autenticar ni leer el cuerpo. Además, con `sim_servicio.mantenimiento = true` (o ilegible), `503` sin llamar a la RPC (o.12). **En el despliegue siguen apagados:** se encienden en la etapa 5 (c.7, paso 5).
+- **Tramos (S4-08, h.10):** el `hasta` de un `avanzar` se acota por una medida del ensayo (p99 ≤ 10 s y cuerpo ≤ 4 MB con nueve pares), no por los 7 días. Un avance más largo son varios `avanzar` sucesivos, cada uno con su recibo.
+- **Reglas de 1F y 3F en el motor** (j.7.3, j.8.1): `SUITE_1F` y `SUITE_3F` en `lib/motor/reto.mjs`, con sus días mínimos (0) y su base de DD diario. Su quema propia (cierre de todo ± 5 ticks, j.6) es motor: si no cabe sin cambiar lo aprobado de `FTMO_2STEP`, paro y pregunto.
+
+### q.2 Dependencias
+
+- **La puerta** (`sim-004a-puerta`, ≤ 20-oct): no bloquea la etapa 3, que no se despliega encendida. Los endpoints v1 no escriben en v0 y no pasan por el registro A/B.
+- **La etapa 2:** sin el bucket `mercado` y su primer puntero (mercado-001 sin aplicar, Astra r3 pendiente), `crear` responde `503` sin llamar a la RPC. Las pruebas usan un almacén en memoria con trozos reales construidos por el publicador.
+- **SQL:** las RPC de sim-003 están aplicadas y no se tocan. Lo que la etapa 3 necesita y sim-003 no tiene (el «completado» de j.8: `superado`, transición final de `sim_avanzar_fase`, `solo_lectura` sobre `superado`) es **sim-004b**. Se escribe idempotente y atómica, se ensaya en local con nombres comprobados en el catálogo, y **no se aplica**. `versiones.mercado_efectivo` no pide SQL: `sim_comando` guarda el estado sin mirar dentro.
+
+### q.3 Orden de commits
+
+1. Este plan.
+2. `lib/servidor/mercado.mjs` y sus pruebas.
+3. `sobre.mjs`, `crear.mjs`, `rpc.mjs` y `/api/sim/crear` (con el interruptor), contra `sim_crear_sesion` real en el PostgreSQL de ensayo.
+4. `/api/sim/tomar` y `comando.mjs` + `/api/sim/comando`: abrir, modificar, cancelar, cerrar, avanzar y checkpoint, contra `sim_comando` real; respuesta perdida, reintento, conflicto, caducado, 410, 40P01, dos pestañas (A18–A24).
+5. `/api/sim/estado` (S4-07) y `/api/sim/borrar`.
+6. Tramos medidos (S4-08).
+7. `SUITE_1F` y `SUITE_3F`.
+8. `fase.mjs` + `/api/sim/avanzar-fase` y sim-004b (sin aplicar).
+9. Autorrevisión adversaria y encargo de Astra.
