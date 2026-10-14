@@ -2894,3 +2894,54 @@ En producción, el dueño será `postgres`, del que no son miembros los tres rol
 **Pruebas:** dos oráculos nuevos en `mercado-v1-prueba-cerrojo.mjs`, que suma 23.
 
 Una limpieza automática condicionada al propio UUID, con relectura y estado incierto, como la que Astra menciona como alternativa, no se hace. Sería una decisión del CTO.
+
+**p.16.3 · E2R5-01 completo: decisión del CTO (14-oct).** `mercado-000`, en primera aplicación y en reejecución, y s14:
+1. **El dueño de `mercado_cerrojo` es quien ejecuta** (`current_user`), y quien ejecuta no es `anon`, `authenticated`, `service_role` ni `authenticator`. Si no, aborta con «el dueño es X y no quien ejecuta (Y)» o «quien ejecuta es X, un rol de la API».
+2. **«Puede actuar como el dueño»** incluye a `authenticator`, porque PostgREST entra con él y toma el rol del JWT. Usa `pg_has_role(rol, dueño, 'MEMBER')`, que cubre herencia, SET y cadenas. Si `authenticator` no existe, `mercado-000` no tiene nada que mirar y s14 lo dice («no existe (en Supabase debería: avisar al CTO)»).
+3. **Atributos:**
+   - `anon` y `authenticated`, sin SUPERUSER, CREATEROLE ni BYPASSRLS;
+   - `service_role`, sin SUPERUSER ni CREATEROLE. Su BYPASSRLS se informa y no aborta.
+4. **El informe de `mercado-000`** añade la fila `roles`.
+5. **s14:**
+   - la fila del cerrojo da «PERMISOS NO ACREDITADOS (… roles: motivo)» con cualquiera de los tres puntos, nunca «permisos acreditados»;
+   - la fila nueva `cerrojo | roles`, antes y después de aplicar, enseña el dueño (o el que será, quien ejecuta), los atributos y `authenticator`, y acaba en «· PARAR: motivo».
+
+**Negativos permanentes** (`mercado-000-cerrojo.mjs`, sección 6; `mercado-001-bucket.mjs`, sección 9):
+- el dueño cambiado a otro rol, con y sin ACL;
+- `authenticator` miembro del dueño, en primera aplicación y en reejecución;
+- una cadena de dos niveles hasta el dueño;
+- `authenticated` con BYPASSRLS;
+- `anon` con CREATEROLE;
+- `service_role` con CREATEROLE;
+- la migración ejecutada como `anon`.
+
+**Contraste contra `22cbde1`:** 11 rojos en `mercado-000` y 7 en s14. **La cadena de dos niveles ya salía en verde contra `22cbde1`:** `pg_has_role(…, 'MEMBER')` sigue las cadenas. Queda como negativo permanente, pero no fue un rojo previo.
+
+**El montaje del ensayo** crea un `authenticator` como el de un Supabase estándar: `noinherit login`, miembro de `anon`, `authenticated` y `service_role`, y no del dueño. Así el caso limpio comprueba que no hay falso positivo. Lo mismo con el ejecutor `pgx` de s06, que no es superusuario y es miembro de los tres con ADMIN.
+
+**Consulta de solo lectura, razonada sin ejecutarla, para un Supabase estándar** (es la misma lógica que la fila `cerrojo | roles` de s14):
+
+```sql
+select current_user,
+       (select string_agg(rolname || ':' || rolsuper || '/' || rolcreaterole || '/' || rolbypassrls, ' ' order by rolname)
+          from pg_roles where rolname in ('anon', 'authenticated', 'service_role')),
+       to_regrole('authenticator') is not null,
+       pg_has_role('authenticator', current_user, 'MEMBER'),
+       (select string_agg(u, ',') from unnest(array['anon', 'authenticated', 'service_role']) u where pg_has_role(u, current_user, 'MEMBER'));
+```
+
+| Qué | Lo esperado | De dónde sale |
+|---|---|---|
+| `current_user` (el dueño que será) | `postgres` | **Medido**, s06 del 12-oct: ejecutor del editor `postgres`, current_user y session_user |
+| Atributos | `anon:false/false/false`, `authenticated:false/false/false`, `service_role:false/false/true` | **Medido**, s06: anon y authenticated sin superuser, createrole ni bypassrls; service_role con bypassrls, sin superuser ni createrole |
+| `anon`, `authenticated` o `service_role` miembros de `postgres` | ninguno (`null`) | **Medido**, s06: la única membresía entre esos roles es `postgres` → los tres (postgres es miembro de ellos, no al revés) |
+| `authenticator` existe | `true` | **Razonado, no medido:** en Supabase existe siempre (PostgREST entra con él) |
+| `authenticator` miembro de `postgres` | `false` | **Razonado, no medido:** en un Supabase estándar, `authenticator` es miembro de `anon`, `authenticated` y `service_role`, y estos no lo son de `postgres` (medido). Le quedaría una pertenencia directa a `postgres` u otra cadena que s06 no miró |
+
+**Lo que dudo, y lo verá la s14 previa del runbook:** las dos filas de `authenticator`. En el paso 1, la fila `cerrojo | roles` tiene que decir «authenticator: no puede actuar como el dueño». Si dice «no existe» o «PUEDE ACTUAR COMO EL DUEÑO», se para. El resto está medido en producción.
+
+**Autorrevisión adversaria:**
+1. **Pertenencia solo con ADMIN OPTION** (PostgreSQL 16 o posterior, sin INHERIT ni SET): `pg_has_role(…, 'MEMBER')` la cuenta como pertenencia, así que aborta. Es lo prudente: quien tiene ADMIN sobre el rol puede concedérselo.
+2. **Atributos de `authenticator`:** no se comprueban; no estaban en la decisión. Con CREATEROLE, desde PostgreSQL 16 solo administra los roles que crea, no el dueño. Queda anotado, no abortado.
+3. **`pertenencias` no lista las de `authenticator`:** en Supabase siempre es miembro de los tres, y la regla del runbook («parar si no es `-`») pararía siempre. Lo que importa de `authenticator` (si puede llegar al dueño) está en `roles`.
+4. **El ensayo crea `authenticator` en el clúster entero:** la única cadena hacia el dueño que se prueba es la que ya da su pertenencia a `authenticated`. Por eso, con el dueño sin ACL y `authenticated` que puede tomarlo, s14 también nombra a `authenticator`. Es lo correcto: en Supabase, `authenticator` llega a todo lo que llegan `anon`, `authenticated` y `service_role`.
