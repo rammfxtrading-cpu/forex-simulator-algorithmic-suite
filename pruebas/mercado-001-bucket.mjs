@@ -358,11 +358,25 @@ insert into storage.objects (bucket_id, name, metadata) values ('forex-data', 'E
     const M0 = lee('sql/mercado-000-cerrojo.sql')
     // las pertenencias son del cluster: la de la seccion 3 (alumnos, E2R2-02) sigue viva; se quita para empezar limpio
     pg.psql(`create role heredado; do $r$ begin if exists (select 1 from pg_roles where rolname = 'alumnos') then revoke alumnos from authenticated; end if; end $r$;`, 'postgres')
+    // E2R5-01 completo: authenticator como en un Supabase estandar (miembro de los tres roles, no del dueño)
+    const rAu = pg.psql(`create role authenticator noinherit login; grant anon, authenticated, service_role to authenticator;`, 'postgres')
+    if (!rAu.ok) throw new Error(`authenticator: ${rAu.err}`)
+    const ROLES_LIMPIO = 'anon: - · authenticated: - · service_role: BYPASSRLS (el de Supabase: se informa) · authenticator: no puede actuar como el dueño'
     const limpia = () => { const r = pg.psql(`revoke heredado from authenticated; revoke service_role from anon;`, 'postgres'); if (!r.ok) throw new Error(r.err) }
     const linea = (q, obj) => q.out.split('\n').filter(l => l.startsWith(`cerrojo|${obj}|`)).join(' / ')
     const dA = monta(`alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;`)
     const qA = s14(dA)
     oraculo('E2R4-01', 's14 antes de mercado-000: «por defecto» enseña los privilegios por defecto del creador en public (los de s06) y no pide parar', qA.ok && /^cerrojo\|por defecto\|postgres: en public: anon=.*TRUNCATE.*; authenticated=.*; service_role=.* · global: -$/m.test(qA.out), linea(qA, 'por defecto') || qA.err)
+    oraculo('E2R5-01', 's14 antes, Supabase estandar: «roles» dice el dueño que sera (quien ejecuta), los atributos y que authenticator no puede actuar como el; sin PARAR', qA.ok && new RegExp(`^cerrojo\\|roles\\|dueño que sera \\(quien ejecuta\\)=postgres · ${ROLES_LIMPIO.replace(/[()]/g, '\\$&')}$`, 'm').test(qA.out), linea(qA, 'roles') || qA.err)
+    for (const [que, sql, deshace, dice] of [
+      ['authenticator miembro de quien ejecuta (el dueño que sera)', `grant postgres to authenticator;`, `revoke postgres from authenticator;`, /authenticator: PUEDE ACTUAR COMO EL DUEÑO · PARAR: authenticator puede actuar como el dueño \(postgres\)/],
+      ['authenticated con BYPASSRLS', `alter role authenticated bypassrls;`, `alter role authenticated nobypassrls;`, /authenticated: BYPASSRLS .*· PARAR: authenticated tiene BYPASSRLS/],
+      ['anon con CREATEROLE', `alter role anon createrole;`, `alter role anon nocreaterole;`, /anon: CREATEROLE .*· PARAR: anon tiene CREATEROLE/],
+    ]) {
+      pg.psql(sql, 'postgres'); const q = s14(dA); const v = pg.psql(deshace, 'postgres')
+      if (!v.ok) throw new Error(`deshacer: ${v.err}`)
+      oraculo('E2R5-01', `s14 antes, con ${que}: «roles» dice PARAR y el motivo`, q.ok && dice.test(linea(q, 'roles')), linea(q, 'roles') || q.err)
+    }
     oraculo('E2R4-01', 's14 antes: «pertenencias» dice que anon, authenticated y service_role no son miembros de nadie', qA.ok && /^cerrojo\|pertenencias\|anon: - · authenticated: - · service_role: -$/m.test(qA.out), linea(qA, 'pertenencias') || qA.err)
     const dB = monta(`grant heredado to authenticated; alter default privileges for role postgres in schema public grant truncate on tables to heredado;`)
     const qB = s14(dB)
@@ -371,6 +385,7 @@ insert into storage.objects (bucket_id, name, metadata) values ('forex-data', 'E
     limpia()
     const dC = monta(); const rC = pg.psql(M0, dC); const qC = s14(dC)
     oraculo('E2R4-01', 's14 despues de mercado-000: reglas=0, solo service_role, efectivos nada salvo service_role DELETE,INSERT,SELECT: «permisos acreditados»', rC.ok && qC.ok && /^cerrojo\|public\.mercado_cerrojo\|rls=true · politicas=0 · disparadores=0 · reglas=0 · permisos=service_role:DELETE,service_role:INSERT,service_role:SELECT · efectivos: PUBLIC=- anon=- authenticated=- service_role=DELETE,INSERT,SELECT · dueño=postgres · permisos acreditados$/m.test(qC.out), linea(qC, 'public.mercado_cerrojo') || rC.err || qC.err)
+    oraculo('E2R5-01', 's14 despues, Supabase estandar: «roles» dice dueño=postgres y nada que parar', qC.ok && linea(qC, 'roles') === `cerrojo|roles|dueño=postgres · ${ROLES_LIMPIO}`, linea(qC, 'roles'))
     pg.psql(`grant heredado to authenticated; grant truncate on public.mercado_cerrojo to heredado;`, dC)
     const qD = s14(dC)
     oraculo('E2R4-01', 's14 con TRUNCATE a un rol que authenticated hereda: lo enseña y «PERMISOS NO ACREDITADOS (ajenos: heredado) … PARAR»', qD.ok && /authenticated=TRUNCATE .*PERMISOS NO ACREDITADOS \(ajenos: heredado\): mercado-000 abortaria; PARAR/.test(linea(qD, 'public.mercado_cerrojo')), linea(qD, 'public.mercado_cerrojo') || qD.err)
@@ -382,8 +397,12 @@ insert into storage.objects (bucket_id, name, metadata) values ('forex-data', 'E
     pg.psql(`do $r$ begin if not exists (select 1 from pg_roles where rolname = 'dueno_ficticio') then create role dueno_ficticio nosuperuser noinherit; end if; end $r$; grant dueno_ficticio to authenticated with inherit false, set true;`, 'postgres')
     pg.psql(`alter table public.mercado_cerrojo owner to dueno_ficticio; revoke all on public.mercado_cerrojo from dueno_ficticio;`, dC)
     const qG = s14(dC)
-    oraculo('E2R5-01', 's14 con el dueño sin ACL y authenticated que puede tomar su rol: efectivos vacios, pero «dueño=dueno_ficticio · PERMISOS NO ACREDITADOS (pueden actuar como el dueño: authenticated)»', qG.ok && /authenticated=- service_role=DELETE,INSERT,SELECT · dueño=dueno_ficticio · PERMISOS NO ACREDITADOS \(pueden actuar como el dueño: authenticated\): mercado-000 abortaria/.test(linea(qG, 'public.mercado_cerrojo')), linea(qG, 'public.mercado_cerrojo') || qG.err)
-    const vuelta = [pg.psql(`revoke dueno_ficticio from authenticated;`, 'postgres'), pg.psql(`alter table public.mercado_cerrojo owner to postgres;`, dC)]
+    oraculo('E2R5-01', 's14 con el dueño sin ACL y authenticated que puede tomar su rol: efectivos vacios, pero «dueño=dueno_ficticio · PERMISOS NO ACREDITADOS»: authenticated, y authenticator a traves de authenticated (como en Supabase), pueden actuar como el dueño', qG.ok && /authenticated=- service_role=DELETE,INSERT,SELECT · dueño=dueno_ficticio · PERMISOS NO ACREDITADOS \(pueden actuar como el dueño: authenticated,authenticator\) \(roles: el dueño es dueno_ficticio y no quien ejecuta \(postgres\); authenticated puede actuar como el dueño \(dueno_ficticio\); authenticator puede actuar como el dueño \(dueno_ficticio\)\): mercado-000 abortaria/.test(linea(qG, 'public.mercado_cerrojo')) && /· PARAR: el dueño es dueno_ficticio y no quien ejecuta/.test(linea(qG, 'roles')), linea(qG, 'public.mercado_cerrojo') || qG.err)
+    // el dueño cambiado a otro rol CON su ACL y sin pertenencias: tambien NO ACREDITADO (el dueño no es quien ejecuta)
+    pg.psql(`revoke dueno_ficticio from authenticated;`, 'postgres'); pg.psql(`grant all on public.mercado_cerrojo to dueno_ficticio;`, dC)
+    const qH = s14(dC)
+    oraculo('E2R5-01', 's14 con el dueño cambiado a otro rol con su ACL (sin pertenencias): NO ACREDITADOS por roles y «roles» dice PARAR', qH.ok && /PERMISOS NO ACREDITADOS \(roles: el dueño es dueno_ficticio y no quien ejecuta \(postgres\)\)/.test(linea(qH, 'public.mercado_cerrojo')) && /· PARAR: el dueño es dueno_ficticio/.test(linea(qH, 'roles')), `${linea(qH, 'public.mercado_cerrojo')} / ${linea(qH, 'roles')}`)
+    const vuelta = [pg.psql(`revoke dueno_ficticio from authenticated;`, 'postgres'), pg.psql(`alter table public.mercado_cerrojo owner to postgres; revoke all on public.mercado_cerrojo from dueno_ficticio;`, dC)]
     if (!vuelta.every(x => x.ok)) throw new Error(`deshacer E2R5-01: ${vuelta.map(x => x.err).join(' ')}`)
     const rF = pg.psql(`create rule no_insert as on insert to public.mercado_cerrojo do instead nothing;`, dC), qF = s14(dC)
     oraculo('E2R4-02', 's14 enseña una regla de reescritura en el cerrojo (reglas=1)', rF.ok && /· reglas=1 ·/.test(linea(qF, 'public.mercado_cerrojo')), linea(qF, 'public.mercado_cerrojo') || rF.err)

@@ -27,7 +27,10 @@
 --                 directos y EFECTIVOS (E2R4-01: con herencia y pertenencias,
 --                 la misma regla que la guarda de mercado-000), su dueño y si
 --                 anon, authenticated o service_role pueden actuar como el
---                 (E2R5-01), y su veredicto;
+--                 (E2R5-01), y su veredicto. Y «roles»: el dueño (o el que
+--                 sera: quien ejecuta), los atributos de anon, authenticated y
+--                 service_role, y si authenticator puede actuar como el dueño;
+--                 con cualquier problema, «PARAR» y el motivo (E2R5-01, CTO);
 --                 si no, si el nombre esta libre. Y «por defecto»: los
 --                 privilegios por defecto del creador en public y globales; sin
 --                 la tabla, si dan algo a un rol que mercado-000 no revoca,
@@ -205,8 +208,26 @@ cer_perm as (
          and coalesce((select pg_catalog.string_agg(a.privilege_type, ',' order by a.privilege_type) from cer_acl a where a.grantee = 'service_role'::pg_catalog.regrole), '-') = 'DELETE,INSERT,SELECT'
          and not exists (select 1 from cer_acl a where a.grantee = 'service_role'::pg_catalog.regrole and a.is_grantable) efectivos_ok,
          -- E2R5-01: quien puede actuar como el dueño (concede lo que quiera aunque su ACL este vacio)
-         (select pg_catalog.string_agg(u.u, ',' order by u.n) from cer, pg_catalog.unnest(array['anon', 'authenticated', 'service_role']) with ordinality u(u, n)
-           where pg_catalog.pg_has_role(u.u, cer.relowner, 'MEMBER')) como_dueno
+         (select pg_catalog.string_agg(u.u, ',' order by u.n) from cer, pg_catalog.unnest(array['anon', 'authenticated', 'service_role', 'authenticator']) with ordinality u(u, n)
+           where pg_catalog.to_regrole(u.u) is not null and pg_catalog.pg_has_role(u.u, cer.relowner, 'MEMBER')) como_dueno
+),
+-- E2R5-01 completo (CTO 14-oct): el dueño (si no hay tabla, el que sera: quien ejecuta), los atributos de los
+-- roles de la API y quien puede actuar como el dueño, authenticator incluido (PostgREST entra con el). La misma
+-- regla que mercado-000: con cualquier problema, PARAR
+roles_chk as (
+  select d.oid dueno, d.rolname dueno_nombre,
+         pg_catalog.concat_ws('; ',
+           case when current_user in ('anon', 'authenticated', 'service_role', 'authenticator') then 'quien ejecuta es ' || current_user || ', un rol de la API' end,
+           case when d.rolname <> current_user then 'el dueño es ' || d.rolname || ' y no quien ejecuta (' || current_user || ')' end,
+           (select pg_catalog.string_agg(r.rolname || ' tiene ' || a.atributo, '; ' order by r.rolname, a.atributo)
+              from pg_catalog.pg_roles r, lateral (values ('SUPERUSER', r.rolsuper), ('CREATEROLE', r.rolcreaterole),
+                                                          ('BYPASSRLS', r.rolbypassrls and r.rolname <> 'service_role')) a(atributo, tiene)
+             where r.rolname in ('anon', 'authenticated', 'service_role') and a.tiene),
+           (select pg_catalog.string_agg(u.u || ' puede actuar como el dueño (' || d.rolname || ')', '; ' order by u.n)
+              from pg_catalog.unnest(array['anon', 'authenticated', 'service_role', 'authenticator']) with ordinality u(u, n)
+             where pg_catalog.to_regrole(u.u) is not null and pg_catalog.pg_has_role(u.u, d.oid, 'MEMBER'))) problemas
+    from pg_catalog.pg_roles d
+   where d.oid = coalesce((select relowner from cer), (select oid from pg_catalog.pg_roles where rolname = current_user))
 ),
 -- los privilegios por defecto del creador (el dueño del cerrojo; si no existe,
 -- quien corre s14, que es quien correra mercado-000) en public y globales
@@ -240,10 +261,24 @@ select seccion, objeto, detalle from (
                            || ' · permisos=' || coalesce(k.permisos, '-')
                            || ' · efectivos: ' || k.efectivos
                            || ' · dueño=' || c.relowner::pg_catalog.regrole::text
-                           || case when k.efectivos_ok and k.ajenos is null and k.como_dueno is null then ' · permisos acreditados'
+                           || case when k.efectivos_ok and k.ajenos is null and k.como_dueno is null and x.problemas = '' then ' · permisos acreditados'
                                    else ' · PERMISOS NO ACREDITADOS' || coalesce(' (ajenos: ' || k.ajenos || ')', '')
-                                        || coalesce(' (pueden actuar como el dueño: ' || k.como_dueno || ')', '') || ': mercado-000 abortaria; PARAR (E2R4-01, E2R5-01)' end
-                      from pg_catalog.pg_class c, cer_perm k where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo')) end
+                                        || coalesce(' (pueden actuar como el dueño: ' || k.como_dueno || ')', '')
+                                        || case when x.problemas <> '' then ' (roles: ' || x.problemas || ')' else '' end || ': mercado-000 abortaria; PARAR (E2R4-01, E2R5-01)' end
+                      from pg_catalog.pg_class c, cer_perm k, roles_chk x where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo')) end
+  union all
+  -- E2R5-01: quien ejecuta y sera el dueño (o el dueño), los atributos de los roles de la API y authenticator
+  select 1, 2, 'cerrojo', 'roles',
+         case when exists (select 1 from cer) then 'dueño=' else 'dueño que sera (quien ejecuta)=' end || x.dueno_nombre
+         || ' · ' || (select pg_catalog.string_agg(r.rolname || ': ' || coalesce(nullif(pg_catalog.concat_ws(',', case when r.rolsuper then 'SUPERUSER' end, case when r.rolcreaterole then 'CREATEROLE' end,
+                                                                                   case when r.rolbypassrls then 'BYPASSRLS' || case when r.rolname = 'service_role' then ' (el de Supabase: se informa)' else '' end end), ''), '-'),
+                                                  ' · ' order by r.rolname)
+                       from pg_catalog.pg_roles r where r.rolname in ('anon', 'authenticated', 'service_role'))
+         || ' · authenticator: ' || case when pg_catalog.to_regrole('authenticator') is null then 'no existe (en Supabase deberia: avisar al CTO)'
+                                         when pg_catalog.pg_has_role('authenticator', x.dueno, 'MEMBER') then 'PUEDE ACTUAR COMO EL DUEÑO'
+                                         else 'no puede actuar como el dueño' end
+         || case when x.problemas <> '' then ' · PARAR: ' || x.problemas || ': mercado-000 abortaria (E2R5-01)' else '' end
+    from roles_chk x
   union all
   -- E2R4-01: de que roles son miembros (con o sin herencia) anon, authenticated y service_role:
   -- sus privilegios en el cerrojo cuentan como suyos (mercado-000 los comprueba)

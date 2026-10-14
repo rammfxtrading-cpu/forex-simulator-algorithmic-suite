@@ -64,6 +64,14 @@ const M0DO = M0.slice(M0.indexOf('do $m$'), M0.indexOf('select seccion'))
 
 try {
   pg.arranca()
+  // E2R5-01 completo (CTO 14-oct): authenticator como en un Supabase estandar (PostgREST entra con el y toma el rol
+  // del JWT): miembro de anon, authenticated y service_role, y NO del dueño. Asi el caso limpio prueba que no hay falso positivo
+  const rA = pg.psql(`do $r$ begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role nologin bypassrls; end if;
+end $r$; create role authenticator noinherit login; grant anon, authenticated, service_role to authenticator;`, 'postgres')
+  if (!rA.ok) throw new Error(`authenticator: ${rA.err}`)
   titulo('1 · limpio: crea la tabla; segunda ejecucion, nada')
   const d1 = monta()
   const r1 = pg.psql(M0, d1)
@@ -138,11 +146,13 @@ try {
 
   titulo('6 · E2R4-01: permisos efectivos (herencia, pertenencias, destinatarios ajenos)')
   // los roles inventados son del cluster: se crean una vez y cada montaje los usa o no
-  pg.psql(`create role heredado; create role solo_set; create role dueno_ficticio nosuperuser noinherit;`, 'postgres')
+  pg.psql(`create role heredado; create role solo_set; create role dueno_ficticio nosuperuser noinherit; create role intermedio_ficticio noinherit;`, 'postgres')
   const HER = `grant heredado to authenticated;`
   const DEF = priv => `${HER} alter default privileges for role postgres in schema public grant ${priv} on tables to heredado;`
   // las pertenencias son del cluster, no de la base: se quitan despues de cada caso
-  const limpiaRoles = () => { const r = pg.psql(`revoke heredado from authenticated; revoke solo_set from authenticated; revoke service_role from anon; revoke postgres from service_role; revoke dueno_ficticio from authenticated; revoke dueno_ficticio from service_role;`, 'postgres'); if (!r.ok) throw new Error(`limpiar roles: ${r.err}`) }
+  const limpiaRoles = () => { const r = pg.psql(`revoke heredado from authenticated; revoke solo_set from authenticated; revoke service_role from anon; revoke postgres from service_role; revoke dueno_ficticio from authenticated; revoke dueno_ficticio from service_role;
+    revoke postgres from authenticator; revoke intermedio_ficticio from authenticated; revoke postgres from intermedio_ficticio;
+    alter role authenticated nobypassrls; alter role anon nocreaterole; alter role service_role nocreaterole;`, 'postgres'); if (!r.ok) throw new Error(`limpiar roles: ${r.err}`) }
   {
     // el control de Astra: en ese montaje, una tabla nueva cualquiera SI deja a authenticated hacer TRUNCATE
     const d = monta(`${DEF('truncate')} create table public.testigo (x int);`)
@@ -153,6 +163,24 @@ try {
     const t = como('authenticated', `truncate public.testigo;`, d)
     ver('control: el TRUNCATE de authenticated sobre la tabla testigo funciona (el riesgo era real en el montaje)', t.ok, t.err)
     limpiaRoles()
+  }
+  for (const [que, sql, error] of [
+    ['authenticator miembro del dueño', `grant postgres to authenticator;`, /authenticator puede actuar como el dueño \(postgres\)/],
+    ['authenticated con BYPASSRLS', `alter role authenticated bypassrls;`, /authenticated tiene BYPASSRLS/],
+    ['anon con CREATEROLE', `alter role anon createrole;`, /anon tiene CREATEROLE/],
+  ]) {
+    const d = monta(sql)
+    const a = catalogo(d)
+    const r = pg.psql(M0, d)
+    oraculo('E2R5-01', `primera aplicacion con ${que}: aborta, lo lista y no crea nada`, !r.ok && /mercado-000: permisos de public\.mercado_cerrojo NO ACREDITADOS/.test(r.err) && error.test(r.err) && catalogo(d) === a && a.startsWith('-'), err1(r))
+    limpiaRoles()
+  }
+  {
+    // quien ejecuta es uno de los roles de la API: el dueño seria anon
+    const d = monta(`grant create on schema public to anon;`)
+    const a = catalogo(d)
+    const r = pg.psql(`set role anon;\n${M0}`, d)
+    oraculo('E2R5-01', 'primera aplicacion ejecutada como anon: aborta («quien ejecuta es anon») y no crea nada', !r.ok && /quien ejecuta es anon, un rol de la API/.test(r.err) && catalogo(d) === a && a.startsWith('-'), err1(r))
   }
   for (const [priv, PRIV] of [['update', 'UPDATE'], ['trigger', 'TRIGGER']]) {
     const d = monta(DEF(priv))
@@ -183,6 +211,14 @@ try {
     // E2R5-01 (Astra r5): el dueño con su ACL revocado sigue pudiendo conceder; authenticated o service_role pueden ser el
     ['authenticated puede actuar como el dueño (SET ROLE, sin herencia), con el ACL del dueño revocado (E2R5-01)', `${M0DO} ${DUENO_SIN_ACL} grant dueno_ficticio to authenticated with inherit false, set true;`, /authenticated puede actuar como el dueño \(dueno_ficticio\)/],
     ['service_role puede actuar como el dueño (SET ROLE, sin herencia), con el ACL del dueño revocado (E2R5-01)', `${M0DO} ${DUENO_SIN_ACL} grant dueno_ficticio to service_role with inherit false, set true;`, /service_role puede actuar como el dueño \(dueno_ficticio\)/],
+    // E2R5-01 completo (CTO 14-oct)
+    ['el dueño cambiado a otro rol, con su ACL', `${M0DO} alter table public.mercado_cerrojo owner to dueno_ficticio;`, /el dueño es dueno_ficticio y no quien ejecuta \(postgres\)/],
+    ['el dueño cambiado a otro rol, sin ACL', `${M0DO} ${DUENO_SIN_ACL}`, /el dueño es dueno_ficticio y no quien ejecuta \(postgres\)/],
+    ['authenticator miembro del dueño', `${M0DO} grant postgres to authenticator;`, /authenticator puede actuar como el dueño \(postgres\)/],
+    ['una cadena de dos niveles hasta el dueño (authenticated → intermedio → dueño, solo SET ROLE)', `${M0DO} grant postgres to intermedio_ficticio with inherit false, set true; grant intermedio_ficticio to authenticated with inherit false, set true;`, /authenticated puede actuar como el dueño \(postgres\)/],
+    ['authenticated con BYPASSRLS', `${M0DO} alter role authenticated bypassrls;`, /authenticated tiene BYPASSRLS/],
+    ['anon con CREATEROLE', `${M0DO} alter role anon createrole;`, /anon tiene CREATEROLE/],
+    ['service_role con CREATEROLE', `${M0DO} alter role service_role createrole;`, /service_role tiene CREATEROLE/],
   ]
   for (const [que, sql, error] of REEJ) {
     const d = monta(sql)
@@ -199,6 +235,7 @@ try {
     oraculo('E2R4-01', 'limpio: el informe dice los efectivos (PUBLIC, anon y authenticated nada; service_role DELETE,INSERT,SELECT) y ningun destinatario ajeno', r.ok && /^efectivos\|PUBLIC=- · anon=- · authenticated=- · service_role=DELETE,INSERT,SELECT · ajenos=ninguno$/m.test(r.out), r.err || r.out)
     oraculo('E2R4-01', 'limpio: el informe enseña los privilegios por defecto del creador en public (los de s06, que la migracion quita)', r.ok && /^por defecto\|postgres: en public: anon=.*TRUNCATE.*; authenticated=.*; service_role=.* · global: -$/m.test(r.out), r.out)
     const r2 = pg.psql(M0, d)
+    oraculo('E2R5-01', 'limpio, con un authenticator como el de Supabase (miembro de los tres roles, no del dueño): el informe dice el dueño, los atributos y que authenticator no puede actuar como el dueño', r.ok && /^roles\|dueño=postgres \(quien ejecuta\) · anon: - · authenticated: - · service_role: BYPASSRLS \(el de Supabase: se informa\) · authenticator: no puede actuar como el dueño$/m.test(r.out), r.out)
     oraculo('E2R4-01', 'reejecucion limpia: el mismo informe', r2.ok && /^efectivos\|PUBLIC=- · anon=- · authenticated=- · service_role=DELETE,INSERT,SELECT · ajenos=ninguno$/m.test(r2.out), r2.err || r2.out)
     const tr = ['anon', 'authenticated'].map(rol => como(rol, `truncate public.mercado_cerrojo;`, d))
     oraculo('E2R4-01', 'anon y authenticated: TRUNCATE denegado', tr.every(x => !x.ok && /permission denied for table mercado_cerrojo/.test(x.err)), tr.map(err1).join(' / '))

@@ -44,7 +44,13 @@
 --         E2R5-01 (Astra r5): el dueño puede volver a concederse cualquier
 --         privilegio aunque su ACL este revocado, y has_table_privilege no lo
 --         ve: con el dueño sin permisos, authenticated tomaba su rol, se daba
---         TRUNCATE y vaciaba la tabla.
+--         TRUNCATE y vaciaba la tabla. Tampoco authenticator: PostgREST entra
+--         con el y toma el rol que diga el JWT (CTO 14-oct);
+--       el dueño es QUIEN EJECUTA (current_user), y quien ejecuta no es anon,
+--         authenticated, service_role ni authenticator (CTO 14-oct);
+--       atributos: anon y authenticated sin SUPERUSER, CREATEROLE ni
+--         BYPASSRLS; service_role sin SUPERUSER ni CREATEROLE (su BYPASSRLS es
+--         el de Supabase: se informa, no aborta).
 --     El error dice tambien los privilegios por defecto del creador en public
 --     (pg_default_acl), de donde suelen venir. En primera aplicacion (la
 --     creacion se deshace entera) y en cada reejecucion.
@@ -148,10 +154,21 @@ begin
          then 'el ACL directo de service_role no es DELETE,INSERT,SELECT' end,
     case when exists (select 1 from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) x
                        where c.oid = t and x.grantee = 'service_role'::regrole and x.is_grantable) then 'service_role puede conceder' end,
-    -- E2R5-01: nadie de los tres puede actuar como el dueño (que concede lo que quiera, aunque su ACL este vacio)
+    -- E2R5-01: nadie de los cuatro puede actuar como el dueño (que concede lo que quiera, aunque su ACL este vacio);
+    -- authenticator, porque PostgREST entra con el y toma el rol del JWT (si no existe, no hay nada que mirar)
     (select string_agg(u.u || ' puede actuar como el dueño (' || c.relowner::regrole::text || ')', '; ' order by u.n)
-       from pg_class c, unnest(array['anon', 'authenticated', 'service_role']) with ordinality u(u, n)
-      where c.oid = t and pg_has_role(u.u, c.relowner, 'MEMBER'))
+       from pg_class c, unnest(array['anon', 'authenticated', 'service_role', 'authenticator']) with ordinality u(u, n)
+      where c.oid = t and to_regrole(u.u) is not null and pg_has_role(u.u, c.relowner, 'MEMBER')),
+    -- el dueño es quien ejecuta, y quien ejecuta no es un rol de la API
+    case when current_user in ('anon', 'authenticated', 'service_role', 'authenticator')
+         then 'quien ejecuta es ' || current_user || ', un rol de la API' end,
+    (select 'el dueño es ' || c.relowner::regrole::text || ' y no quien ejecuta (' || current_user || ')'
+       from pg_class c where c.oid = t and c.relowner <> (select r.oid from pg_roles r where r.rolname = current_user)),
+    -- atributos de rol
+    (select string_agg(r.rolname || ' tiene ' || a.atributo, '; ' order by r.rolname, a.atributo)
+       from pg_roles r, lateral (values ('SUPERUSER', r.rolsuper), ('CREATEROLE', r.rolcreaterole),
+                                        ('BYPASSRLS', r.rolbypassrls and r.rolname <> 'service_role')) a(atributo, tiene)
+      where r.rolname in ('anon', 'authenticated', 'service_role') and a.tiene)
   ) into permisos;
   if permisos <> '' then
     -- de donde suelen venir: los privilegios por defecto del creador (el dueño) en public y globales
@@ -197,6 +214,18 @@ select seccion, detalle from (
     || ' · ajenos=' || coalesce((select pg_catalog.string_agg(distinct case when x.grantee = 0 then 'PUBLIC' else x.grantee::pg_catalog.regrole::text end, ',')
                                    from pg_catalog.pg_class c, pg_catalog.aclexplode(c.relacl) x
                                   where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo') and x.grantee not in (c.relowner, 'service_role'::pg_catalog.regrole)), 'ninguno')
+  union all
+  -- E2R5-01: el dueño (quien ejecuta), los atributos de los roles de la API y authenticator (los ha comprobado el DO)
+  select 2, 'roles', (
+    select 'dueño=' || r.rolname || case when r.rolname = current_user then ' (quien ejecuta)' else ' (NO es quien ejecuta: ' || current_user || ')' end
+      from pg_catalog.pg_class c join pg_catalog.pg_roles r on r.oid = c.relowner where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo'))
+    || ' · ' || (select pg_catalog.string_agg(r.rolname || ': ' || coalesce(nullif(pg_catalog.concat_ws(',', case when r.rolsuper then 'SUPERUSER' end, case when r.rolcreaterole then 'CREATEROLE' end,
+                                                                               case when r.rolbypassrls then 'BYPASSRLS' || case when r.rolname = 'service_role' then ' (el de Supabase: se informa)' else '' end end), ''), '-'),
+                                              ' · ' order by r.rolname)
+                   from pg_catalog.pg_roles r where r.rolname in ('anon', 'authenticated', 'service_role'))
+    || ' · authenticator: ' || case when pg_catalog.to_regrole('authenticator') is null then 'no existe'
+                                    when pg_catalog.pg_has_role('authenticator', (select c.relowner from pg_catalog.pg_class c where c.oid = pg_catalog.to_regclass('public.mercado_cerrojo')), 'MEMBER')
+                                    then 'PUEDE ACTUAR COMO EL DUEÑO' else 'no puede actuar como el dueño' end
   union all
   -- y los privilegios por defecto del creador (el dueño), en public y globales: de ahi vienen los grants de una tabla nueva
   select 2, 'por defecto', (
