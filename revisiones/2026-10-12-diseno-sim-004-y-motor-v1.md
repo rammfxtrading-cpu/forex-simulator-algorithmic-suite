@@ -2893,7 +2893,7 @@ En producción, el dueño será `postgres`, del que no son miembros los tres rol
 
 **Pruebas:** dos oráculos nuevos en `mercado-v1-prueba-cerrojo.mjs`, que suma 23.
 
-Una limpieza automática condicionada al propio UUID, con relectura y estado incierto, como la que Astra menciona como alternativa, no se hace. Sería una decisión del CTO.
+Una limpieza automática condicionada al propio UUID, con relectura y estado incierto, como la que Astra menciona como alternativa, no se hace. **Decisión del CTO (14-oct): no.** Se queda la parada con recuperación manual por UUID.
 
 **p.16.3 · E2R5-01 completo: decisión del CTO (14-oct).** `mercado-000`, en primera aplicación y en reejecución, y s14:
 1. **El dueño de `mercado_cerrojo` es quien ejecuta** (`current_user`), y quien ejecuta no es `anon`, `authenticated`, `service_role` ni `authenticator`. Si no, aborta con «el dueño es X y no quien ejecuta (Y)» o «quien ejecuta es X, un rol de la API».
