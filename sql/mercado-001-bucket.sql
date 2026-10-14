@@ -58,6 +58,24 @@
 --     («sonda no concluyente»: p. ej. un disparador). El centinela se deshace
 --     siempre (ROLLBACK de su subtransaccion) y se comprueba que no queda y
 --     que el rol vuelve a ser el de antes. No crea politicas ni grants.
+--     protect_delete (Astra/CTO 14-oct, s14b de produccion): Supabase tiene en
+--     storage.objects el disparador protect_objects_delete (BEFORE DELETE, por
+--     sentencia, storage.protect_delete), que lanza 42501 «Direct deletion from
+--     storage tables is not allowed» ANTES de la RLS salvo que el ajuste
+--     storage.allow_delete_query valga 'true'. Sin mas, el DELETE de la sonda
+--     fallaria siempre por el disparador y no probaria la RLS. Por eso: la
+--     sonda EXIGE que protect_objects_delete exista con esa forma y este
+--     habilitado (si no, aborta: no seria el Storage medido); el ajuste ya
+--     'true' al empezar tambien aborta (protect_delete estaria apagado para
+--     todos); SOLO para la sentencia DELETE del centinela, y dentro de su
+--     subtransaccion, la sonda pone storage.allow_delete_query = 'true' (local
+--     a la transaccion, como hace la API de Storage) y lo repone justo despues;
+--     la subtransaccion se deshace igual, y al acabar se comprueba que el
+--     ajuste no ha quedado en 'true'. Un 42501 con el mensaje de protect_delete
+--     NUNCA cuenta como «la RLS bloquea»: es «sonda no concluyente». El informe
+--     dice el valor del ajuste al terminar. NOTA (PostgreSQL): una vez fijado en
+--     la sesion, al deshacerse vuelve a '' (vacio), no a NULL; protect_delete
+--     lo trata igual (COALESCE('', 'false') != 'true': bloquea).
 --     LO QUE EL ROLLBACK NO DESHACE (E2R2-02): el INSERT del centinela y las
 --     ordenes de la sonda disparan los disparadores de storage.objects (por
 --     fila, los del centinela; por sentencia, todos los de UPDATE y DELETE);
@@ -78,9 +96,11 @@
 -- la consulta s14 (solo lectura), que enseña el texto de cada politica.
 -- NO comprobado en local: si el editor de Supabase deja a postgres insertar en
 -- storage.buckets y storage.objects y hacer SET LOCAL ROLE anon/authenticated
--- (en otras migraciones lo hizo: sql/ del simulador, k.4), ni que disparadores
--- tiene storage.objects en produccion (s14 los lista: uno por sentencia en
--- DELETE haria la sonda no concluyente). Si el editor rechaza el INSERT en
+-- (en otras migraciones lo hizo: sql/ del simulador, k.4). Los disparadores de
+-- storage.objects de produccion se midieron con s14b (14-oct) y el ensayo usa
+-- sus cuerpos byte a byte (pruebas/storage-supabase.mjs); los de
+-- storage.buckets, que dispara el INSERT del bucket, los enseña s14c y el
+-- runbook para hasta que el CTO los acredite. Si el editor rechaza el INSERT en
 -- storage.buckets: alternativa del panel en el runbook (decision 4 del CTO).
 -- ============================================================================
 set local statement_timeout = '30s';
@@ -102,6 +122,8 @@ declare
   k bigint;
   alcance text := '';
   dudas text := '';
+  ajuste_inicio text;
+  ajuste_previo text;
 begin
   -- E2R2-01: contexto de resolucion fijo antes de inspeccionar nada; E2R2-02: esperas acotadas
   perform pg_catalog.set_config('search_path', 'pg_catalog, pg_temp', true);
@@ -257,6 +279,17 @@ select (select c.problemas from ctx c) problemas,
   end if;
 
   -- CAPA 2: sonda con un centinela que se deshace
+  -- protect_delete (CTO 14-oct): el disparador de Supabase tiene que estar, con su forma y habilitado
+  if not exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace
+                  where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'protect_objects_delete' and not t.tgisinternal
+                    and t.tgenabled in ('O', 'A') and n.nspname = 'storage' and f.proname = 'protect_delete'
+                    and t.tgtype & 1 = 0 and t.tgtype & 2 = 2 and t.tgtype & 8 = 8) then
+    raise exception 'mercado-001: falta el disparador protect_objects_delete de Supabase en storage.objects (BEFORE DELETE por sentencia, storage.protect_delete) o esta desactivado: la sonda no seria la del Storage medido; no se crea nada; decide el CTO';
+  end if;
+  ajuste_inicio := pg_catalog.current_setting('storage.allow_delete_query', true);
+  if ajuste_inicio = 'true' then
+    raise exception 'mercado-001: storage.allow_delete_query ya vale true al empezar: protect_delete no protege nada en esta sesion; no se crea nada; decide el CTO';
+  end if;
   select exists (select 1 from pg_attribute where attrelid = 'storage.objects'::regclass and attname = 'owner' and not attisdropped) into con_owner;
   select exists (select 1 from pg_attribute where attrelid = 'storage.objects'::regclass and attname = 'owner_id' and not attisdropped) into con_owner_id;
   begin
@@ -287,7 +320,12 @@ select (select c.problemas from ctx c) problemas,
             execute format('set local role %I', yo);
             execute 'select count(*) from storage.objects where bucket_id = $1 and name = $2 and metadata ->> ''sonda_mercado_001'' = $2' into k using 'mercado', centinela;
           else
+            -- protect_delete (CTO 14-oct): el ajuste SOLO para esta sentencia, como la API de Storage; se repone
+            -- justo despues y la subtransaccion se deshace igual. Asi lo que se prueba es la RLS
+            ajuste_previo := pg_catalog.current_setting('storage.allow_delete_query', true);
+            perform pg_catalog.set_config('storage.allow_delete_query', 'true', true);
             execute 'delete from storage.objects where id = $1' using cid;
+            perform pg_catalog.set_config('storage.allow_delete_query', coalesce(ajuste_previo, ''), true);
             execute format('set local role %I', yo);
             execute 'select 1 - count(*) from storage.objects where bucket_id = $1 and name = $2' into k using 'mercado', centinela;
           end if;
@@ -296,7 +334,10 @@ select (select c.problemas from ctx c) problemas,
         exception
           when sqlstate 'MR002' then null;
           when insufficient_privilege then
-            if sqlerrm !~ '^permission denied for (table objects|schema storage)$' then
+            if sqlerrm ~ '^Direct deletion from storage tables' then
+              -- el 42501 de protect_delete NUNCA es «la RLS bloquea» (CTO 14-oct)
+              dudas := dudas || rol || ' ' || op || ': 42501 con el mensaje de protect_delete (' || sqlerrm || '): no prueba la RLS; ';
+            elsif sqlerrm !~ '^permission denied for (table objects|schema storage)$' then
               dudas := dudas || rol || ' ' || op || ': ' || sqlstate || ' ' || sqlerrm || '; ';
             end if;
           when others then
@@ -309,6 +350,9 @@ select (select c.problemas from ctx c) problemas,
   end;
   if current_user::text <> yo then
     raise exception 'mercado-001: tras la sonda el rol es % y no %; no se crea nada', current_user, yo;
+  end if;
+  if pg_catalog.current_setting('storage.allow_delete_query', true) = 'true' then
+    raise exception 'mercado-001: tras la sonda storage.allow_delete_query vale true; no se crea nada';
   end if;
   if exists (select 1 from storage.objects where bucket_id = 'mercado' and name = centinela) then
     raise exception 'mercado-001: el centinela de la sonda no se ha deshecho; no se crea nada';
@@ -335,7 +379,10 @@ select seccion, detalle from (
   union all
   select 3, 'politicas de storage.objects', count(*)::text || ' (todas reconocidas: si no, no se habria llegado aqui)' from pg_policies p where p.schemaname = 'storage' and p.tablename = 'objects'
   union all
-  select 4, 'sonda', 'anon y authenticated no alcanzan un centinela de mercado (SELECT, UPDATE y DELETE del centinela); centinela deshecho; ninguna politica de escritura para ellos'
+  select 4, 'sonda', 'anon y authenticated no alcanzan un centinela de mercado (SELECT, UPDATE y DELETE del centinela; el DELETE con storage.allow_delete_query=true solo en su sentencia, para probar la RLS y no protect_delete); centinela deshecho; ninguna politica de escritura para ellos'
+  union all
+  select 4, 'ajuste', 'storage.allow_delete_query al terminar = ' || coalesce('«' || pg_catalog.current_setting('storage.allow_delete_query', true) || '»', 'NULL')
+         || case when pg_catalog.current_setting('storage.allow_delete_query', true) = 'true' then ' · ES TRUE: PARAR' else ' (no es true: protect_delete vuelve a bloquear los DELETE directos)' end
   union all
   select 4, 'limites', 'lock_timeout=' || current_setting('lock_timeout') || ' · statement_timeout=' || current_setting('statement_timeout') || ' (en el editor, una sola transaccion: 5s y 30s; dentro del DO, lock_timeout=5s siempre)'
   union all

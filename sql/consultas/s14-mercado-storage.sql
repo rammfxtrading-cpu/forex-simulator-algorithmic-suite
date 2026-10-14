@@ -36,13 +36,20 @@
 --                 la tabla, si dan algo a un rol que mercado-000 no revoca,
 --                 «OTROS ROLES … PARAR». Y «pertenencias»: de que roles son
 --                 miembros anon, authenticated y service_role
---   2 disparador  cada disparador de storage.objects: momento, ordenes, por
+--   2 disparador  cada disparador de storage.objects y (CTO 14-oct) de
+--                 storage.buckets, donde mercado-001 inserta el bucket: momento, ordenes, por
 --                 fila o por sentencia, funcion, si es del esquema storage o
 --                 AJENA, lenguaje, SECURITY DEFINER y md5 del cuerpo (12 hex),
 --                 y un resumen. La sonda de mercado-001 los dispara (por fila,
 --                 los del centinela; por sentencia, todos los de INSERT, UPDATE
 --                 y DELETE: E2R3-03): el runbook PARA ante cualquiera hasta que
---                 el CTO lo acredite como estandar y sin efectos externos
+--                 el CTO lo acredite como estandar y sin efectos externos.
+--                 Cada uno dice «acreditado (CTO 14-oct)» si coinciden tabla,
+--                 nombre, definicion exacta, habilitado y md5 COMPLETO de su
+--                 funcion con la lista «acreditados» (los dos de storage.objects
+--                 de la s14b), o «NO ACREDITADO». De las funciones no acreditadas
+--                 de storage.buckets sale el cuerpo linea a linea («cuerpo»).
+--                 El resumen cuenta los dos sitios y los sin acreditar: PARAR
 --   3 politica    cada politica de storage.objects: orden, PERMISSIVE o
 --                 RESTRICTIVE, roles y veredicto con la MISMA lista blanca
 --                 que la guarda de mercado-001 (el bloque «clasificador» es
@@ -169,6 +176,12 @@ escritura as (
                       where r.rolname in ('anon', 'authenticated') and pg_catalog.pg_has_role(r.oid, x.rol, 'MEMBER')))
 )
 -- <<< clasificador
+-- los disparadores que el CTO ha acreditado (14-oct, s14b de produccion): estandar de Supabase, SECURITY INVOKER,
+-- dueño supabase_storage_admin, sin proconfig y sin efectos externos. Solo estos; los de storage.buckets, no (aun)
+, acreditados (tabla, nombre, definicion, md5) as (values
+  ('objects'::text, 'protect_objects_delete'::text, 'CREATE TRIGGER protect_objects_delete BEFORE DELETE ON storage.objects FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()'::text, '998d324ea2b1abc49351e8c2367b5796'::text),
+  ('objects', 'update_objects_updated_at', 'CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()', '7596e66a7698d5a6b5129c5ce9b24c5f')
+)
 , m as (
   select o.name, o.updated_at, coalesce((o.metadata ->> 'size')::bigint, 0) bytes
     from storage.objects o where o.bucket_id = 'mercado'
@@ -308,19 +321,43 @@ select seccion, objeto, detalle from (
   union all
   -- E2R3-02: catalogos calificados (una tabla temporal pg_trigger no los sombrea)
   -- E2R3-03: la sonda dispara los de INSERT (el centinela), UPDATE y DELETE, por fila y por sentencia
-  select 2, 2, 'disparador', t.tgname,
+  -- CTO 14-oct (s14b, s14c): tambien los de storage.buckets, donde mercado-001 inserta el bucket; y cada uno
+  -- dice si el CTO lo ha acreditado: por tabla, nombre, definicion exacta (pg_get_triggerdef), habilitado y
+  -- md5 COMPLETO del cuerpo de su funcion. Lo que no coincide en todo, NO ACREDITADO: PARAR
+  select 2, 2, 'disparador', case when r.relname = 'objects' then t.tgname::text else 'buckets.' || t.tgname end,
          case when t.tgtype & 2 = 2 then 'BEFORE' when t.tgtype & 64 = 64 then 'INSTEAD OF' else 'AFTER' end || ' '
          || pg_catalog.concat_ws('/', case when t.tgtype & 4 = 4 then 'INSERT' end, case when t.tgtype & 8 = 8 then 'DELETE' end, case when t.tgtype & 16 = 16 then 'UPDATE' end, case when t.tgtype & 32 = 32 then 'TRUNCATE' end)
          || ' · ' || case when t.tgtype & 1 = 1 then 'por fila' else 'POR SENTENCIA' end || ' · ' || n.nspname || '.' || f.proname || case when t.tgenabled = 'D' then ' · desactivado' else '' end
          || ' · ' || case when n.nspname = 'storage' then 'funcion de storage' else 'FUNCION AJENA (fuera de storage)' end
          || ' · ' || l.lanname || case when f.prosecdef then ' · SECURITY DEFINER' else '' end || ' · md5 del cuerpo ' || pg_catalog.left(pg_catalog.md5(coalesce(f.prosrc, '')), 12)
-    from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
-   where t.tgrelid = pg_catalog.to_regclass('storage.objects') and not t.tgisinternal
+         || case when a.tabla is not null then ' · acreditado (CTO 14-oct)' else ' · NO ACREDITADO' end
+    from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid
+         join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
+         left join acreditados a on a.tabla = r.relname and a.nombre = t.tgname and a.definicion = pg_catalog.pg_get_triggerdef(t.oid)
+                                and a.md5 = pg_catalog.md5(coalesce(f.prosrc, '')) and t.tgenabled = 'O'
+   where t.tgrelid in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets')) and not t.tgisinternal
+  union all
+  -- el cuerpo de cada funcion NO acreditada que dispara un disparador de storage.buckets (CTO 14-oct), linea a linea
+  select 2, 3, 'cuerpo', x.fn || ' ' || pg_catalog.lpad(c.i::text, 3, '0'), c.linea
+    from (select distinct n.nspname || '.' || f.proname fn, f.prosrc
+            from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace
+           where t.tgrelid = pg_catalog.to_regclass('storage.buckets') and not t.tgisinternal
+             and pg_catalog.md5(coalesce(f.prosrc, '')) not in (select a.md5 from acreditados a)) x,
+         pg_catalog.regexp_split_to_table(coalesce(x.prosrc, ''), E'\n') with ordinality c(linea, i)
   union all
   select 2, 2, 'disparador', '(resumen)',
-         case when count(*) = 0 then 'ninguno en storage.objects'
-              else count(*)::text || ' en storage.objects (' || count(*) filter (where t.tgtype & 1 = 0) || ' por sentencia): la sonda de mercado-001 los dispara; PARAR hasta que el CTO acredite cada uno como estandar de Supabase y sin efectos externos' end
-    from pg_catalog.pg_trigger t where t.tgrelid = pg_catalog.to_regclass('storage.objects') and not t.tgisinternal
+         case when count(*) = 0 then 'ninguno en storage.objects ni en storage.buckets'
+              else 'storage.objects: ' || count(*) filter (where t.tgrelid = pg_catalog.to_regclass('storage.objects'))
+                   || ' (' || count(*) filter (where t.tgrelid = pg_catalog.to_regclass('storage.objects') and t.tgtype & 1 = 0) || ' por sentencia)'
+                   || ' · storage.buckets: ' || count(*) filter (where t.tgrelid = pg_catalog.to_regclass('storage.buckets'))
+                   || ' · sin acreditar: ' || count(*) filter (where a.tabla is null)
+                   || case when count(*) filter (where a.tabla is null) > 0
+                           then ': la sonda y el INSERT del bucket de mercado-001 los disparan; PARAR hasta que el CTO acredite cada uno como estandar de Supabase y sin efectos externos'
+                           else ': todos acreditados por el CTO (s14b, 14-oct)' end end
+    from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid join pg_catalog.pg_proc f on f.oid = t.tgfoid
+         left join acreditados a on a.tabla = r.relname and a.nombre = t.tgname and a.definicion = pg_catalog.pg_get_triggerdef(t.oid)
+                                and a.md5 = pg_catalog.md5(coalesce(f.prosrc, '')) and t.tgenabled = 'O'
+   where t.tgrelid in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets')) and not t.tgisinternal
   union all
   select 3, 1, 'politica', v.policyname, v.cmd || ' · ' || v.permissive || ' · ' || v.roles || ' · '
          || case when v.buckets is not null then 'reconocida: solo ' || v.buckets

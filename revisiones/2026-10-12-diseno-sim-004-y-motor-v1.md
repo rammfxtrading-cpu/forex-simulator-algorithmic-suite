@@ -2945,3 +2945,51 @@ select current_user,
 2. **Atributos de `authenticator`:** no se comprueban; no estaban en la decisión. Con CREATEROLE, desde PostgreSQL 16 solo administra los roles que crea, no el dueño. Queda anotado, no abortado.
 3. **`pertenencias` no lista las de `authenticator`:** en Supabase siempre es miembro de los tres, y la regla del runbook («parar si no es `-`») pararía siempre. Lo que importa de `authenticator` (si puede llegar al dueño) está en `roles`.
 4. **El ensayo crea `authenticator` en el clúster entero:** la única cadena hacia el dueño que se prueba es la que ya da su pertenencia a `authenticated`. Por eso, con el dueño sin ACL y `authenticated` que puede tomarlo, s14 también nombra a `authenticator`. Es lo correcto: en Supabase, `authenticator` llega a todo lo que llegan `anon`, `authenticated` y `service_role`.
+
+### p.17 · Etapa 2, ronda 7: protect_delete, los disparadores de storage.buckets y el inventario de s14 (14-oct, noche)
+
+**Lo que pasó.** El CTO autorizó aplicar hoy hasta el ciclo de prueba. La s14 de producción (Ramón, 14-oct; `sql/consultas/salidas/s14-mercado-storage-2026-10-14-antes.csv`) salió como se esperaba salvo una fila: `disparador | (resumen) | 2 en storage.objects (1 por sentencia) … PARAR`. Se paró. La s14b (`sql/consultas/s14b-disparadores-storage.sql`, salida en `salidas/s14b-disparadores-storage-2026-10-14.csv`) enseñó:
+- `storage.protect_delete` (md5 `998d324ea2b1abc49351e8c2367b5796`): BEFORE DELETE **por sentencia** en `storage.objects` (y en `storage.buckets`); lanza 42501 «Direct deletion from storage tables is not allowed. Use the Storage API instead.» salvo que `storage.allow_delete_query` valga `'true'`. SECURITY INVOKER, dueño `supabase_storage_admin`, sin proconfig.
+- `storage.update_updated_at_column` (md5 `7596e66a7698d5a6b5129c5ce9b24c5f`): BEFORE UPDATE por fila, pone `updated_at`.
+- Cinco disparadores en `storage.buckets` que s14 no inventariaba (hueco de s14): `enforce_bucket_name_length_trigger`, `protect_bucket_control_insert`, `protect_bucket_control_update`, `protect_bucket_control_update_role` y `protect_buckets_delete`.
+- `anon` y `authenticated` tienen SELECT, INSERT, UPDATE y DELETE en `storage.objects`, USAGE en `storage` y EXECUTE de `protect_delete`; `storage.allow_delete_query` sin valor; nada fijado por base o rol.
+
+**El CTO acreditó** las dos funciones de `storage.objects` (estándar de Supabase, sin efectos externos) y los privilegios de anon/authenticated (bloqueados por la RLS). **No acreditó** los cinco de `storage.buckets` (s14c, `sql/consultas/s14c-disparadores-buckets.sql`). Hoy no se aplica nada.
+
+#### p.17.1 · Qué hacía mercado-001 (9476ac1) con protect_delete
+
+Medido en local con los cuerpos de producción byte a byte (`pruebas/storage-supabase.mjs`, md5 comprobado en el montaje) y los grants de Supabase:
+- La sonda hace, como `anon` y como `authenticated`, un DELETE del centinela. `protect_delete` es por sentencia: se dispara aunque la RLS no deje ver ninguna fila y lanza su 42501 antes de que la RLS actúe.
+- Ese 42501 no tiene el mensaje «permission denied for table objects», así que la sonda lo cuenta como duda: **`mercado-001: sonda no concluyente: anon DELETE: 42501 Direct deletion … ; no se crea nada`**. Es un **aborto atómico**: el DO revierte el INSERT del bucket y el centinela; nada queda. Ni falso verde ni verde real: con el Storage de producción, 9476ac1 **no podría aplicarse nunca**.
+- El falso verde existe si un disparador lanzara 42501 con el mensaje exacto de permisos (el ensayo puntual `m001-protect` lo construyó a mano): la sonda lo contaría como «no alcanza» sin haber probado la RLS. Con el `protect_delete` real no pasa, porque su mensaje es otro.
+
+#### p.17.2 · El arreglo (CTO 14-oct), en `sql/mercado-001-bucket.sql`, sin aplicar
+
+1. **La sonda exige** que `protect_objects_delete` exista en `storage.objects` con su forma (BEFORE DELETE, por sentencia, `storage.protect_delete`) y habilitado (`tgenabled` O o A). Si no, aborta: no sería el Storage medido.
+2. **Si `storage.allow_delete_query` ya vale `'true'` al empezar**, aborta: `protect_delete` estaría apagado para toda la sesión. (No lo pidió el CTO; es falla cerrada. Ver p.17.4.)
+3. **Solo para la sentencia DELETE del centinela**, dentro de su subtransacción y ya como `anon`/`authenticated`: `set_config('storage.allow_delete_query', 'true', true)`, el DELETE, y se repone el valor anterior justo después. La subtransacción se deshace igual, y con ella el ajuste. Así lo que se prueba es la RLS, como hace la API de Storage.
+4. **Un 42501 con el mensaje de `protect_delete` nunca cuenta como «la RLS bloquea»:** va a «sonda no concluyente», con su texto.
+5. **Tras la sonda, si el ajuste vale `'true'`, aborta.** El informe tiene una fila nueva: `ajuste | storage.allow_delete_query al terminar = «…»`, y «ES TRUE: PARAR» si lo fuera.
+
+**Choque con la especificación (para el CTO):** el CTO pidió una fila que demuestre que el ajuste «vuelve a ser NULL». En PostgreSQL no es posible en la misma sesión: una vez que un ajuste personalizado se ha fijado, al deshacerse vuelve a `''` (vacío), no a NULL; `set_config(…, null, true)` también deja `''`. Medido en PostgreSQL 17 local. `protect_delete` trata `''` igual que NULL (`COALESCE('', 'false') != 'true'`: bloquea). La fila dice el valor real (`«»`) y la prueba exige que no sea `'true'` **y** que un DELETE directo siguiente, en la misma sesión, lo pare `protect_delete`. Si el CTO prefiere otra forma de demostrarlo, se cambia.
+
+#### p.17.3 · s14 con storage.buckets y la acreditación
+
+- El inventario de disparadores cubre `storage.objects` y `storage.buckets` (estos como `buckets.<nombre>`).
+- Cada disparador dice «acreditado (CTO 14-oct)» solo si coinciden tabla, nombre, definición exacta (`pg_get_triggerdef`), `tgenabled = 'O'` y el md5 **completo** del cuerpo de su función con la lista `acreditados` de s14 (hoy, los dos de `storage.objects` de la s14b); si no, «NO ACREDITADO».
+- De cada función no acreditada de `storage.buckets` sale su cuerpo línea a línea.
+- El resumen: `storage.objects: N (P por sentencia) · storage.buckets: M · sin acreditar: K`, con PARAR si K > 0. Lo esperado hoy en producción: `storage.buckets: 5 · sin acreditar: 5` → PARAR hasta que el CTO acredite los de buckets (s14c) y la acreditación entre por commit en la lista.
+- Runbook: paso 0 nuevo (s14b y s14c) antes de la s14, y las expectativas nuevas de s14 y de `mercado-001`.
+
+#### p.17.4 · Autorrevisión adversaria
+
+1. **`set_config` como `anon`.** `storage.allow_delete_query` es un ajuste personalizado sin definir (lo enseña la s14b: sin valor); cualquier rol puede fijarlo. Si en producción estuviera definido como solo para superusuario, el `set_config` fallaría con 42501 «permission denied to set parameter» → «sonda no concluyente». Falla cerrado; no lo he podido medir sin aplicar.
+2. **Falso verde residual.** Un disparador ajeno que lanzara 42501 con el mensaje exacto «permission denied for table objects» seguiría pareciendo «no alcanza». Lo cubre el inventario de s14: cualquier disparador no acreditado es PARAR antes de aplicar. No lo cubre `mercado-001` por sí sola.
+3. **`tgenabled = 'A'`.** `mercado-001` acepta `protect_objects_delete` habilitado SIEMPRE; s14 solo acredita con `'O'` (el medido). Con `'A'`, s14 diría NO ACREDITADO y el runbook pararía: más estricto, no menos.
+4. **`pg_get_triggerdef` depende del `search_path`.** Con `storage` en el `search_path` del editor, la definición saldría sin calificar y s14 diría NO ACREDITADO. Falla cerrado.
+5. **El ajuste ya `'true'` al empezar** aborta. No lo pidió el CTO; si no lo quiere, se quita (una guarda).
+6. **El INSERT del bucket** dispara los cinco de `storage.buckets`. La sonda no los prueba: los acredita el CTO con la s14c. `protect_bucket_control_insert` recibe `'service_role'` como argumento y `mercado-001` inserta como `postgres`: si esa función rechaza a quien no sea `service_role`, `mercado-001` abortaría atómicamente. Lo dirá su cuerpo (s14c).
+7. **El montaje de las pruebas** lleva ahora los dos disparadores reales en todos los casos (sin ellos, `mercado-001` aborta por la guarda 1). Los casos que no llevan los grants de Supabase sobre `storage` siguen viendo «permission denied» antes que `protect_delete`, y eso también se acepta como «no alcanza». Las pruebas de la sección 10 usan los grants de Supabase, que son los medidos.
+8. **Contraste:** las pruebas nuevas contra el SQL de 9476ac1 dan 38 rojos (y 2 controles rotos, de los mutantes que no existen en el SQL viejo): todos los positivos de `mercado-001` pasan a «sonda no concluyente», que es lo que habría pasado en producción.
+
+**mercado-000 y los privilegios por defecto (pregunta 2 del CTO).** Por código: en la primera creación, `revoke all on table public.mercado_cerrojo from public, anon, authenticated, service_role` y `grant select, insert, delete … to service_role`, y después la guarda de permisos efectivos. Los privilegios por defecto dan a la tabla nueva los ocho privilegios para los tres roles (y para el dueño), y el `revoke` se los quita antes de comprobar, así que no aborta por ellos. Cobertura permanente: `pruebas/mercado-000-cerrojo.mjs`, sección 1 (montaje con `alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role`, ejecutando como superusuario; oráculo «permisos: solo service_role … (el default ACL de Supabase quitado)»). **Hueco:** la sección 5 (no superusuario, `pgx`) no tiene privilegios por defecto propios, así que la combinación exacta de producción (ejecutor no superusuario con su propio default ACL, incluida la entrada explícita del dueño) **no es una prueba permanente**. La comprobé con un ensayo puntual: la fila «por defecto» de s14 coincide carácter a carácter con la de producción (cambiando el nombre del rol), `mercado-000` aplica, el ACL final es `{pgx=arwdDxtm/pgx,service_role=ard/pgx}`, `anon` y `authenticated` sin ningún privilegio efectivo, y la reejecución da los mismos efectivos. Convertirlo en prueba permanente es una línea de montaje; lo decide el CTO.
