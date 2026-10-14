@@ -2885,3 +2885,19 @@ Rama `etapa3-simulador`, desde `etapa2-simulador` (`a25a1d9`). Sin push y nada e
 7. `SUITE_1F` y `SUITE_3F`.
 8. `fase.mjs` + `/api/sim/avanzar-fase` y sim-004b (sin aplicar).
 9. Autorrevisión adversaria y encargo de Astra.
+
+### q.4 Parada (14-oct): `spread_micro` no está decidido
+
+Hechos, sobre `f294c70` y en verde (tanda 112): el plan, `lib/servidor/mercado.mjs`, `crear` y `tomar`, contra las RPC reales de sim-003. **`comando` no empieza**, por esto:
+
+- `sim_trades_v1_coherente` (sim-003) exige `spread_micro IS NOT NULL` en cada trade v1, y e.3 dice que sale del evento `cierre`.
+- **El motor no lo calcula:** el evento `cierre` trae `bruto_µ`, `comision_µ` y `neto_µ`, no `spread_µ`. El spread ya está dentro de los precios (ask = bid + spread).
+- La spec (§ 2.4) da el coste por lote para los pares con USD cotizado (EURUSD 3,00 USD…). Para los demás dice «según USDJPY/USDCAD/USDCHF», sin fijar con qué precio (el de apertura, el de cierre, bid o ask) ni cómo se redondea a µUSD.
+
+**Pregunta para el CTO:** ¿qué es `spread_micro` en un trade v1?
+- ¿El coste del spread de toda la posición cerrada (spread en ticks × lotes cerrados × valor del tick), con la conversión de qué instante?
+- ¿Y con qué redondeo, el de `dinero.mjs` (al µ, mitades al par)?
+
+Mientras no se decida, cualquier comando que cierre algo no puede pasar la RPC. Eso incluye un `avanzar` que salte un SL o un TP.
+
+**Lo que también queda dicho para sim-004b** (planificado, no es pregunta): un `avanzar` que cruce un hueco aceptado emite `hueco_aceptado`. sim-003 lo rechaza (422 `resultado_invalido`), así que los comandos sobre el mercado real necesitan sim-004b (S4-04).
