@@ -2952,3 +2952,32 @@ Mientras tanto, `comando` sigue parado.
 - que la conversión sobrevive a serializar.
 
 Además, la proyección de A37 de `pruebas/motor/cartera.mjs` compara ya la conversión de cada cierre. Un mutante solo en la cartera (minuto + 1) la pone en rojo (A08).
+
+### q.6 Tramos (S4-08): el mecanismo, hecho; el umbral medido NO cabe en 7 días
+
+**Hecho** (`lib/servidor/comando.mjs`, `LIMITES`). Topes **deterministas**: el mismo comando sobre el mismo estado da siempre lo mismo; nada depende del reloj.
+- **Tramo:** `hasta − (cursor, o el inicio) ≤ 7 días naturales`, que nunca son más de 7 días de mercado (§ 1.7). Si lo supera: `422 tramo_demasiado_largo` con `hasta_maximo`, sin calcular ni llamar a la RPC.
+- **Tamaño:** la llamada a la RPC en UTF-8 ≤ 4 MB (h.10). Si lo supera: `413 resultado_demasiado_grande`, sin RPC (rechazo seguro: el cliente parte el tramo).
+- Un comando que no se calcula (versión distinta) no se acota.
+- Oráculos: `pruebas/servidor-tramos.mjs`.
+
+**Medido** (`pruebas/medidas/tramos.mjs`, fuera de la tanda; salida en `revisiones/medidas/2026-10-14-tramos-s4-08.txt`).
+- Peor caso: nueve pares con una posición y una pendiente cada uno, y movimiento en todos los minutos.
+- En esta máquina, sin Supabase ni Vercel:
+
+| Tramo | Lectura del mercado | Motor | Adaptar | Resultado |
+|---|---|---|---|---|
+| 1 día natural | 106 ms | **40,1 s** | 1 ms | 0,01 MB |
+| 3 días | 76 ms | **91,3 s** | 0 ms | 0,01 MB |
+| 7 días (con fin de semana) | 110 ms | **170,9 s** | 1 ms | 0,01 MB |
+
+- Unos **28 ms por minuto de mercado con nueve pares expuestos**: cada minuto elige camino en los nueve, con dos simulaciones aisladas por par.
+- **El tamaño no limita;** el tiempo, sí. Para p99 ≤ 10 s, en el peor caso, un tramo es como mucho de unas **4–5 horas de mercado**. En Vercel Hobby, probablemente menos.
+- Con la tasa de un avance cada 5 s por alumno (V4-03), una reproducción rápida con todo expuesto avanzaría como mucho unas 4–5 h de mercado cada 5–10 s.
+
+**Pregunta para el CTO (no la decido):** ¿cómo se fija el umbral?
+- (a) Un tope fijo en minutos, el del peor caso medido (unas 4 h);
+- (b) Un tope por trabajo (minutos × pares expuestos), también determinista;
+- (c) Optimizar antes el motor (la elección de camino aislada por par es la parte cara).
+
+Hoy rige el tope de la spec (7 días), que **no cumple** p99 ≤ 10 s en el peor caso.

@@ -1,0 +1,4 @@
+partida: 9 posiciones y 9 pendientes en 1736125200 (2025-01-06T01:00:00.000Z)
+1 dia(s) naturales: lectura max 106 ms · calculo max 40078 ms · adaptar max 1 ms · resultado 0.01 MB · 0 eventos · cursor 2025-01-07T01:00:00.000Z · detencion null
+3 dia(s) naturales: lectura max 76 ms · calculo max 91284 ms · adaptar max 0 ms · resultado 0.01 MB · 0 eventos · cursor 2025-01-09T01:00:00.000Z · detencion null
+7 dia(s) naturales: lectura max 110 ms · calculo max 170899 ms · adaptar max 1 ms · resultado 0.01 MB · 0 eventos · cursor 2025-01-13T01:00:00.000Z · detencion null
