@@ -2857,3 +2857,40 @@ p.14.4.3 («no la leen ni la escriben») era cierto solo por los grants directos
 s14 → `mercado-000` → `mercado-001` → s14 → ciclo de prueba (paso 3-bis) → primera publicación.
 
 Además, si s14 enseña que `anon`, `authenticated` o `service_role` pertenecen a algún rol (la fila `pertenencias` con algo distinto de `-`), el runbook para antes de aplicar nada, y el CTO comprueba qué permisos tiene ese rol.
+
+### p.16 · Etapa 2, ronda 6: E2R5-01 y E2R5-02 (14-oct)
+
+Astra dijo NO a `4ad33a6` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-r5.md`):
+- **Cerrados:** E2R4-02, el oráculo de la foto del catálogo y la regresión de E2R3.
+- **E2R4-01:** parcial por E2R5-01.
+- **E2R5-02:** bajo.
+
+Lo hecho sigue lo que propone Astra; el CTO no dio una regla aparte.
+
+**p.16.1 · E2R5-01: quien puede actuar como el dueño.** El dueño de una tabla puede volver a concederse cualquier privilegio aunque su ACL esté revocado, y `has_table_privilege` no lo ve. El caso de Astra:
+1. Se cambia el dueño a `dueno_ficticio` y se le revoca todo.
+2. `authenticated` (o `service_role`) es miembro de ese rol, sin herencia y con SET ROLE.
+3. La reejecución acreditaba la tabla.
+4. Después, `authenticated` tomaba el rol del dueño, se concedía TRUNCATE y vaciaba la tabla.
+
+**El arreglo:**
+- **`mercado-000`:** aborta si `anon`, `authenticated` o `service_role` son miembros del rol dueño (`pg_has_role(…, relowner, 'MEMBER')`, con herencia o solo SET ROLE), y lo dice: «X puede actuar como el dueño (rol)».
+- **s14:** la fila del cerrojo enseña `dueño=…`. Si alguno de los tres puede actuar como él, dice «PERMISOS NO ACREDITADOS (pueden actuar como el dueño: …)».
+
+**Pruebas permanentes:**
+- `mercado-000-cerrojo.mjs`: las dos variantes de Astra (`authenticated` y `service_role`), con el control de que la escalada es real en el montaje.
+- `mercado-001-bucket.mjs`, sección 9: la variante en s14.
+
+**La contraprueba de Astra** (`propias-pg.mjs`, solo con las rutas cambiadas) da 0 fallos contra el SQL nuevo, en sus doce casos.
+
+En producción, el dueño será `postgres`, del que no son miembros los tres roles (Supabase concede al revés: `postgres` es miembro de ellos). Si no fuera así, aborta y lo lista.
+
+**p.16.2 · E2R5-02: el ciclo no promete limpiar.** Se conserva la parada: al fallar después del INSERT de P, deja el cerrojo a propósito y no intenta un DELETE que podría quedar también incierto. Queda dicho:
+- en el código;
+- en el simulacro;
+- en el mensaje al parar: no se sigue con el runbook hasta liberarlo y ver «No hay cerrojo»;
+- en el runbook, paso 3-bis: recuperación a mano por UUID, y el paso 4 no empieza sin un ciclo con código 0.
+
+**Pruebas:** dos oráculos nuevos en `mercado-v1-prueba-cerrojo.mjs`, que suma 23.
+
+Una limpieza automática condicionada al propio UUID, con relectura y estado incierto, como la que Astra menciona como alternativa, no se hace. Sería una decisión del CTO.

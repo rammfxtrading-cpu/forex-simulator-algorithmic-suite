@@ -37,6 +37,7 @@ titulo('1 · simulacro por defecto, uso y CI')
   const r = await T.ordenPruebaCerrojo([], deps(cer))
   oraculo('CICLO', 'sin argumentos: SIMULACRO, dice el ciclo y como ejecutarlo; no llama a nada (codigo 1)', r.codigo === 1 && cer.registro.length === 0 && /SIMULACRO/.test(r.lineas[0]) && r.lineas.some(l => /--ejecuta/.test(l)) && r.lineas.some(l => /23505/.test(l)), r.lineas.join(' | '))
   const u = await T.ordenPruebaCerrojo(['--ejecutar'], deps(cer))
+  oraculo('CICLO', 'E2R5-02: el simulacro dice que al parar puede dejar su cerrojo de prueba y que se libera a mano por su UUID', r.lineas.some(l => /puede dejar su cerrojo de prueba .*a mano por su UUID/.test(l)), r.lineas.join(' | '))
   oraculo('CICLO', 'un argumento desconocido: uso (codigo 4) y nada', u.codigo === 4 && cer.registro.length === 0, ultima(u))
   const ci = await T.ordenPruebaCerrojo(['--ejecuta'], deps(cer, { entorno: { GITHUB_ACTIONS: 'true' } }))
   oraculo('CICLO', 'con GITHUB_ACTIONS: no hace nada (codigo 1)', ci.codigo === 1 && cer.registro.length === 0, ultima(ci))
@@ -71,6 +72,7 @@ for (const [que, monta, codigo, dice, ops, queda] of CASOS) {
   const cer = cerrojoEnMemoria({ fallos: { adquiere: (r, d) => (d === Q ? Object.assign(new Error('permission denied https://x.supabase.co/?apikey=FUGA123'), { code: '42501' }) : undefined) } })
   const r = await T.ordenPruebaCerrojo(['--ejecuta'], deps(cer))
   oraculo('CICLO', 'un error ajeno en el duplicado (no 23505): para con codigo 3, saneado, y dice que queda el cerrojo de P', r.codigo === 3 && /PARAR/.test(ultima(r)) && !r.lineas.some(l => FUGA.test(l)) && r.lineas.some(l => l.includes(P) && /queda/.test(l)), r.lineas.join(' | '))
+  oraculo('CICLO', 'E2R5-02: deja P a proposito (no intenta borrarlo) y dice que no se sigue hasta liberarlo', cer.filas.get(CER)?.dueno === P && !cer.registro.some(x => x[0] === 'suelta') && r.lineas.some(l => /no se sigue con el runbook hasta liberarlo/.test(l)), r.lineas.join(' | '))
 }
 {
   const cer = cerrojoEnMemoria({ fallos: { adquiere: () => 'perdida' } })
