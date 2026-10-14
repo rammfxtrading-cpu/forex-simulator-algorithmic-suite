@@ -72,10 +72,14 @@
 --     a la transaccion, como hace la API de Storage) y lo repone justo despues;
 --     la subtransaccion se deshace igual, y al acabar se comprueba que el
 --     ajuste no ha quedado en 'true'. Un 42501 con el mensaje de protect_delete
---     NUNCA cuenta como «la RLS bloquea»: es «sonda no concluyente». El informe
---     dice el valor del ajuste al terminar. NOTA (PostgreSQL): una vez fijado en
---     la sesion, al deshacerse vuelve a '' (vacio), no a NULL; protect_delete
---     lo trata igual (COALESCE('', 'false') != 'true': bloquea).
+--     NUNCA cuenta como «la RLS bloquea»: es «sonda no concluyente». Antes de
+--     la sonda, la funcion del disparador tiene que tener el md5 COMPLETO
+--     acreditado (s14b); si no, «protect_delete ha cambiado: re-acreditar».
+--     Despues, la prueba FUNCIONAL (CTO): un DELETE directo de una fila que no
+--     existe tiene que fallar con el error de protect_delete; si no, aborta. El
+--     informe lo dice en la fila «protect_delete». (En PostgreSQL el ajuste, ya
+--     fijado en la sesion, vuelve a '' y no a NULL: por eso la prueba es
+--     funcional y no del valor.)
 --     LO QUE EL ROLLBACK NO DESHACE (E2R2-02): el INSERT del centinela y las
 --     ordenes de la sonda disparan los disparadores de storage.objects (por
 --     fila, los del centinela; por sentencia, todos los de UPDATE y DELETE);
@@ -286,6 +290,12 @@ select (select c.problemas from ctx c) problemas,
                     and t.tgtype & 1 = 0 and t.tgtype & 2 = 2 and t.tgtype & 8 = 8) then
     raise exception 'mercado-001: falta el disparador protect_objects_delete de Supabase en storage.objects (BEFORE DELETE por sentencia, storage.protect_delete) o esta desactivado: la sonda no seria la del Storage medido; no se crea nada; decide el CTO';
   end if;
+  -- CTO 14-oct (3b): la funcion de ese disparador tiene que ser la ACREDITADA, por su md5 completo (s14b)
+  if (select pg_catalog.md5(coalesce(f.prosrc, '')) from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid
+       where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'protect_objects_delete' and not t.tgisinternal)
+     is distinct from '998d324ea2b1abc49351e8c2367b5796' then
+    raise exception 'mercado-001: protect_delete ha cambiado: re-acreditar (su md5 no es el de la s14b del 14-oct); no se crea nada';
+  end if;
   ajuste_inicio := pg_catalog.current_setting('storage.allow_delete_query', true);
   if ajuste_inicio = 'true' then
     raise exception 'mercado-001: storage.allow_delete_query ya vale true al empezar: protect_delete no protege nada en esta sesion; no se crea nada; decide el CTO';
@@ -354,6 +364,18 @@ select (select c.problemas from ctx c) problemas,
   if pg_catalog.current_setting('storage.allow_delete_query', true) = 'true' then
     raise exception 'mercado-001: tras la sonda storage.allow_delete_query vale true; no se crea nada';
   end if;
+  -- CTO 14-oct (3a): la prueba FUNCIONAL de que protect_delete vuelve a proteger. Un DELETE directo, como quien
+  -- ejecuta, de una fila que no existe: tiene que fallar con el error de protect_delete (es por sentencia: salta
+  -- aunque no haya filas). Si pasa, o falla por otra cosa, aborta
+  begin
+    execute 'delete from storage.objects where id = $1' using gen_random_uuid();
+    raise exception using errcode = 'MR003', message = 'mercado-001: tras la sonda, un DELETE directo de prueba NO lo para protect_delete; no se crea nada';
+  exception
+    when insufficient_privilege then
+      if sqlerrm !~ '^Direct deletion from storage tables is not allowed' then
+        raise exception 'mercado-001: tras la sonda, el DELETE directo de prueba fallo por otra cosa (%: %), no por protect_delete; no se crea nada', sqlstate, sqlerrm;
+      end if;
+  end;
   if exists (select 1 from storage.objects where bucket_id = 'mercado' and name = centinela) then
     raise exception 'mercado-001: el centinela de la sonda no se ha deshecho; no se crea nada';
   end if;
@@ -381,8 +403,8 @@ select seccion, detalle from (
   union all
   select 4, 'sonda', 'anon y authenticated no alcanzan un centinela de mercado (SELECT, UPDATE y DELETE del centinela; el DELETE con storage.allow_delete_query=true solo en su sentencia, para probar la RLS y no protect_delete); centinela deshecho; ninguna politica de escritura para ellos'
   union all
-  select 4, 'ajuste', 'storage.allow_delete_query al terminar = ' || coalesce('«' || pg_catalog.current_setting('storage.allow_delete_query', true) || '»', 'NULL')
-         || case when pg_catalog.current_setting('storage.allow_delete_query', true) = 'true' then ' · ES TRUE: PARAR' else ' (no es true: protect_delete vuelve a bloquear los DELETE directos)' end
+  -- CTO 14-oct (3a): si el DO llego al final, el DELETE directo de prueba tras la sonda lo paro protect_delete
+  select 4, 'protect_delete', 'tras la sonda, un DELETE directo de prueba (fila inexistente) fallo con el error de protect_delete: vuelve a proteger · md5 acreditado 998d324ea2b1abc49351e8c2367b5796'
   union all
   select 4, 'limites', 'lock_timeout=' || current_setting('lock_timeout') || ' · statement_timeout=' || current_setting('statement_timeout') || ' (en el editor, una sola transaccion: 5s y 30s; dentro del DO, lock_timeout=5s siempre)'
   union all

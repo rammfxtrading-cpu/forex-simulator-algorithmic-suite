@@ -141,6 +141,25 @@ end $r$; create role authenticator noinherit login; grant anon, authenticated, s
   const f = path.join(pg.dir, 'x0.sql'); writeFileSync(f, M0)
   const r5 = spawnSync(path.join(BIN, 'psql'), ['-h', pg.dir, '-p', pg.puerto, '-U', 'pgx', '-X', '-q', '-tA', '-v', 'ON_ERROR_STOP=1', '-d', d5, '-f', f], { encoding: 'utf8', env: { PATH: process.env.PATH, LC_ALL: 'en_US.UTF-8', LANG: 'en_US.UTF-8' } })
   oraculo('M000', 'pgx (no superusuario, bypassrls): aplica y acaba en FIN', r5.status === 0 && /FIN\|mercado-000 aplicada$/.test((r5.stdout || '').trim()), (r5.stderr || '').split('\n').find(l => /ERROR/.test(l)) || r5.stdout)
+  // CTO 14-oct (3c): el postgres de Supabase NO es superusuario y tiene SUS PROPIOS privilegios por defecto en public,
+  // con la entrada explicita del dueño. Lo que midio la s14 de produccion del 14-oct (fila «por defecto», literal):
+  const POR_DEFECTO_PROD = 'postgres: en public: anon=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE; authenticated=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE; postgres=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE; service_role=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE · global: -'
+  {
+    const d = monta(PGX)
+    const comoPgx = q => { const f = path.join(pg.dir, 'x5.sql'); writeFileSync(f, q); const r = spawnSync(path.join(BIN, 'psql'), ['-h', pg.dir, '-p', pg.puerto, '-U', 'pgx', '-X', '-q', '-tA', '-v', 'ON_ERROR_STOP=1', '-d', d, '-f', f], { encoding: 'utf8', env: { PATH: process.env.PATH, LC_ALL: 'en_US.UTF-8', LANG: 'en_US.UTF-8' } }); return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() } }
+    const acl = comoPgx(`alter default privileges in schema public grant all on tables to anon, authenticated, service_role; alter default privileges in schema public grant all on tables to pgx;`)
+    const t = comoPgx(`create table public.testigo_def (x int); select relacl::text from pg_class where oid = 'public.testigo_def'::regclass; drop table public.testigo_def;`)
+    ver('control: una tabla nueva de pgx recibe los ocho privilegios para anon, authenticated y service_role (el riesgo es real)', acl.ok && t.ok && t.out === '{anon=arwdDxtm/pgx,authenticated=arwdDxtm/pgx,service_role=arwdDxtm/pgx,pgx=arwdDxtm/pgx}', t.out || t.err || acl.err)
+    const r = comoPgx(M0)
+    const pd = (r.out.split('\n').find(l => l.startsWith('por defecto|')) || '').slice('por defecto|'.length)
+    oraculo('M000', 'no superusuario con el default ACL de produccion (incluida la entrada del dueño): aplica y acaba en FIN', r.ok && /FIN\|mercado-000 aplicada$/.test(r.out), err1(r) || r.out)
+    oraculo('M000', 'su informe «por defecto» es, cambiando el nombre del rol, la fila que midio la s14 de produccion (14-oct)', pd.replaceAll('pgx', 'postgres') === POR_DEFECTO_PROD, pd)
+    const aclF = pg.psql(`select relacl::text from pg_class where oid = 'public.mercado_cerrojo'::regclass`, d).out
+    const ef = pg.psql(`select coalesce(string_agg(r || ':' || p, ','), '-') from unnest(array['anon','authenticated','public']) r, unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p where has_table_privilege(r, 'public.mercado_cerrojo', p)`, d).out
+    oraculo('M000', 'el ACL final: solo el dueño y service_role=ard; anon, authenticated y PUBLIC sin ningun privilegio efectivo', aclF === '{pgx=arwdDxtm/pgx,service_role=ard/pgx}' && ef === '-', `${aclF} · ${ef}`)
+    const r2 = comoPgx(M0)
+    oraculo('M000', 'reejecucion como pgx: aplica, los mismos efectivos', r2.ok && /^efectivos\|PUBLIC=- · anon=- · authenticated=- · service_role=DELETE,INSERT,SELECT · ajenos=ninguno$/m.test(r2.out), err1(r2) || r2.out)
+  }
   const r5b = pg.psql(`begin;\n${M0}\ncommit;`, monta())
   oraculo('M000', 'en una sola transaccion (como el editor): el informe dice lock_timeout=5s · statement_timeout=30s', r5b.ok && /limites\|lock_timeout=5s · statement_timeout=30s/.test(r5b.out), err1(r5b) || r5b.out)
 

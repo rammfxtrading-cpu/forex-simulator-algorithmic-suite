@@ -31,7 +31,10 @@
  *     queda en true ni si la sonda falla a mitad (misma sesion); protect_objects_delete tiene que existir con su
  *     forma y habilitado. s14: inventario de storage.buckets con cuerpo, y acreditacion por definicion, habilitado
  *     y md5 completo
- *     CTO 14-oct (tras la s14c): los cinco de storage.buckets acreditados y montados byte a byte
+ *     CTO 14-oct (tras la s14c): los cinco de storage.buckets acreditados y montados byte a byte; protect_delete con
+ *     el md5 completo acreditado (si cambia, «re-acreditar»); tras la sonda, la prueba FUNCIONAL: un DELETE directo
+ *     de una fila inexistente tiene que fallar con el error de protect_delete (y si quien ejecuta no tiene DELETE,
+ *     aborta por «otra cosa»)
  *   5 s14: una sola SELECT, en READ ONLY; antes («NO EXISTE», politicas con su
  *     veredicto y su texto, UUID enmascarados, disparadores) y despues (privado,
  *     trozos por par, puntero, cerrojo); sin nombres de objetos de otros buckets
@@ -444,7 +447,7 @@ insert into storage.objects (bucket_id, name, metadata) values ('forex-data', 'E
     const a0 = estado(d0)
     const r0 = pg.psql(`begin;\n${M1}\ncommit;`, d0)
     oraculo('PD-01', 'con protect_delete (cuerpo de produccion) y la RLS bloqueando: aplica, el centinela no queda', r0.ok && /FIN\|mercado-001 aplicada$/.test(r0.out) && /objetos en mercado\|0/.test(r0.out) && estado(d0).split('\n')[0].includes('mercado:false:5242880'), err1(r0) || r0.out)
-    oraculo('PD-01', 'el informe dice que el ajuste, al terminar, no es true (vacio: PostgreSQL no vuelve a NULL en la misma sesion)', /^ajuste\|storage\.allow_delete_query al terminar = «» \(no es true: protect_delete vuelve a bloquear los DELETE directos\)$/m.test(r0.out), (r0.out.split('\n').find(l => l.startsWith('ajuste')) || r0.err))
+    oraculo('PD-01', 'el informe dice la prueba funcional (CTO 3a): tras la sonda, un DELETE directo de prueba lo paro protect_delete; y el md5 acreditado', /^protect_delete\|tras la sonda, un DELETE directo de prueba \(fila inexistente\) fallo con el error de protect_delete: vuelve a proteger · md5 acreditado 998d324ea2b1abc49351e8c2367b5796$/m.test(r0.out) && !/^ajuste\|/m.test(r0.out), (r0.out.split('\n').find(l => l.startsWith('protect_delete')) || r0.err))
     ver('control: antes no habia bucket mercado', !a0.split('\n')[0].includes('mercado:'))
 
     // 2 rojo: el mutante sin el ajuste. El DELETE choca con protect_delete y la sonda NO lo cuenta como «la RLS bloquea»
@@ -493,6 +496,35 @@ create trigger zz_revienta before delete on storage.objects for each statement e
     const dD = monta(SUPA), aD = estado(dD)
     const rD = pg.psql(M1deja, dD)
     oraculo('PD-04', 'si el ajuste quedara en true tras la sonda (mutante): aborta y nada cambia', !rD.ok && /tras la sonda storage\.allow_delete_query vale true/.test(rD.err) && estado(dD) === aD, err1(rD))
+    // d2) la prueba funcional (CTO 3a): sin la guarda del valor y con el ajuste dejado en true, el DELETE directo de
+    // prueba ya no falla y mercado-001 aborta por eso
+    const GUARDA_VALOR = /  if pg_catalog\.current_setting\('storage\.allow_delete_query', true\) = 'true' then\n    raise exception 'mercado-001: tras la sonda storage\.allow_delete_query vale true; no se crea nada';\n  end if;\n/
+    const M1sinGuardaDeja = M1.replace(GUARDA_VALOR, "  perform pg_catalog.set_config('storage.allow_delete_query', 'true', true);\n")
+    ver('el mutante «sin la guarda del valor y dejando el ajuste» cambia exactamente esa guarda', M1sinGuardaDeja !== M1 && !/tras la sonda storage\.allow_delete_query vale true/.test(M1sinGuardaDeja))
+    const dG = monta(SUPA), aG = estado(dG), rG = pg.psql(M1sinGuardaDeja, dG)
+    oraculo('PD-06', 'prueba funcional: si tras la sonda protect_delete no protegiera (ajuste en true, sin la guarda del valor), el DELETE directo de prueba lo detecta y aborta; nada cambia', !rG.ok && /tras la sonda, un DELETE directo de prueba NO lo para protect_delete/.test(rG.err) && estado(dG) === aG, err1(rG))
+    // si quien ejecuta no tuviera DELETE en storage.objects, el DELETE de prueba fallaria por permisos y no por
+    // protect_delete: falla cerrado (pgx, el postgres no superusuario, sin DELETE)
+    // (pgx hereda de anon y authenticated: se les quita a los tres; la sonda de esos roles queda en «permission denied»)
+    const dO = monta(SUPA + PGX + `revoke delete on storage.objects from pgx, anon, authenticated;`)
+    ver('control: pgx no tiene DELETE en storage.objects', pg.psql(`select has_table_privilege('pgx', 'storage.objects', 'DELETE')`, dO).out === 'f')
+    const aO = estado(dO), rO = comoPgx(M1, dO)
+    oraculo('PD-06', 'si quien ejecuta no tiene DELETE en storage.objects: el DELETE de prueba falla por permisos, no por protect_delete → aborta y nada cambia', !rO.ok && /el DELETE directo de prueba fallo por otra cosa \(42501: permission denied for table objects\)/.test(rO.err) && estado(dO) === aO, err1(rO))
+    // 3b: el md5 completo de protect_delete
+    const dM = monta(SUPA + `create or replace function storage.protect_delete() returns trigger language plpgsql as $f$
+BEGIN
+    -- Check if storage.allow_delete_query is set to 'true'
+    IF COALESCE(current_setting('storage.allow_delete_query', true), 'false') != 'true' THEN
+        RAISE EXCEPTION 'Direct deletion from storage tables is not allowed. Use the Storage API instead.'
+            USING HINT = 'This prevents accidental data loss from orphaned objects.',
+                  ERRCODE = '42501';
+    END IF;
+    RETURN NULL;
+END; 
+$f$;`)
+    ver('control: el cuerpo alterado tiene un caracter mas que el medido y su md5 ya no es el acreditado', pg.psql(`select (md5(prosrc) <> '998d324ea2b1abc49351e8c2367b5796')::text || ',' || length(prosrc) from pg_proc where proname = 'protect_delete'`, dM).out === `true,${pg.psql(`select length(prosrc) + 1 from pg_proc where proname = 'protect_delete'`, d0).out}`)
+    const aM = estado(dM), rM = pg.psql(M1, dM)
+    oraculo('PD-07', 'protect_delete con el cuerpo alterado (un espacio): aborta «protect_delete ha cambiado: re-acreditar» y nada cambia', !rM.ok && /protect_delete ha cambiado: re-acreditar/.test(rM.err) && estado(dM) === aM, err1(rM))
     // e) el ajuste ya true al empezar (fijado por base): aborta
     const dT = monta(SUPA); pg.psql(`alter database ${dT} set storage.allow_delete_query = 'true'`, 'postgres')
     const aT2 = estado(dT), rT2 = pg.psql(M1, dT)
