@@ -14,6 +14,7 @@
  *   · codigos: 0 bien · 1 incidente o problema · 3 sin comprobar · 4 uso.
  */
 import { titulo, oraculo, fin, importa, db } from './lib.mjs'
+import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 const O = await importa('lib/mercado/orden-v1.mjs')
 const A = await importa('lib/mercado/aceptaciones.mjs')
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
@@ -47,6 +48,7 @@ function deps({ texto = linea(ac()), alm = null, copia = datos } = {}) {
     leeCopia: async (base, par) => { d.llamadas.push(['copia', base, par]); if (!copia[par]) throw new Error(`sin ${par}`); return copia[par] },
     descarga: async par => { d.llamadas.push(['descarga', par]); return copia[par] },
     almacen: () => { d.almacenes++; return d.alm },
+    cerrojo: () => (d.alm.cer ??= cerrojoEnMemoria()),   // E2R3-01: public.mercado_cerrojo en memoria, con su almacen
     leeTexto: async () => d.texto,
     escribeTexto: async t => { d.llamadas.push(['escribeTexto']); d.texto = t },
     escribeInforme: async (ruta, t) => { d.informes[ruta] = t },
@@ -136,9 +138,9 @@ const dI = deps({ alm: (() => { const a = almacen(); let escrito = false; const 
 dI.id = () => '0b7c2f4e-1a2b-4c3d-8e9f-a0b1c2d3e4f5'
 const rI = await pub(['--base', '/copia', '--pares', 'EURUSD', '--publica', '--anota'], dI)
 const lI = rI.lineas.join('\n')
-oraculo('E2-02', 'incierto: codigo 3, «INCIERTO: reconciliar», el cerrojo conservado con su id y la instruccion', rI.codigo === 3 && rI.incierto === true && /INCIERTO: reconciliar/.test(lI) && dI.alm.o.has('v1/_cerrojo.json') && lI.includes('0b7c2f4e-1a2b-4c3d-8e9f-a0b1c2d3e4f5') && /liberar-cerrojo/.test(lI) && /HTTP 503/.test(lI) && !FUGA.test(lI), lI)
+oraculo('E2-02', 'incierto: codigo 3, «INCIERTO: reconciliar», el cerrojo conservado con su id y la instruccion', rI.codigo === 3 && rI.incierto === true && /INCIERTO: reconciliar/.test(lI) && dI.alm.cer.filas.has('mercado/v1') && lI.includes('0b7c2f4e-1a2b-4c3d-8e9f-a0b1c2d3e4f5') && /liberar-cerrojo/.test(lI) && /HTTP 503/.test(lI) && !FUGA.test(lI), lI)
 oraculo('E2-02', 'no anota nada aunque se pida --anota; enseña la publicacion pendiente (con el sha del trozo) y el puntero esperado', !dI.llamadas.some(x => x[0] === 'escribeTexto') && rI.lineas.some(l => { try { const o = JSON.parse(l); return o.tipo === 'publicacion' && o.par === 'EURUSD' && o.trozos.length === 1 } catch { return false } }) && /puntero esperado: \{"esquema":"mercado-puntero@1"/.test(lI), lI)
-const dL = deps({ alm: (() => { const a = almacen(); a.borra = async () => { throw new Error('500') }; return a })() })
+const dL = deps({ alm: (() => { const a = almacen(); a.cer = cerrojoEnMemoria({ fallos: { suelta: () => new Error('500') } }); return a })() })
 const rL = await pub(['--base', '/copia', '--pares', 'EURUSD', '--publica'], dL)
 oraculo('E2-03', 'publicado pero el cerrojo no se pudo soltar: codigo 3 y lo dice con el script para liberarlo', rL.codigo === 3 && rL.lineas.some(l => /publicado EURUSD/.test(l)) && rL.lineas.some(l => /no se pudo soltar/.test(l) && /liberar-cerrojo/.test(l)), rL.lineas.join(' / '))
 // E2-04: en la frontera del log, solo mensajes propios o «clase codigo»

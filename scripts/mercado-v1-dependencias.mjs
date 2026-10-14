@@ -1,6 +1,7 @@
 // Las dependencias REALES de las ordenes del mercado v1 (lib/mercado/orden-v1.mjs):
 // copia local, descarga de forex-data, el almacen del bucket privado «mercado»
-// (supabase-js con service_role), el fichero de aceptaciones y el informe.
+// y el cerrojo de public.mercado_cerrojo (supabase-js con service_role), el
+// fichero de aceptaciones y el informe.
 // BF-02 (bloque G, punto 8): todo error ajeno sale de aqui SANEADO («clase
 // codigo», lib/mercado/errores.mjs): ni URL, ni clave, ni contenido. Las
 // claves se toman del entorno o de .env.local, como los demas scripts; nunca
@@ -83,6 +84,33 @@ function almacen() {
   }
 }
 
+// el cerrojo del publicador: public.mercado_cerrojo (sql/mercado-000-cerrojo.sql;
+// E2R3-01). INSERT que falla si ya hay fila; DELETE condicional al dueño.
+export function cerrojoDe(cliente) {
+  const t = () => cliente().from('mercado_cerrojo')
+  return {
+    async adquiere(recurso, dueno, descripcion) {
+      let r
+      try { r = await t().insert({ recurso, dueno, descripcion }) } catch (e) { throw saneado('poner el cerrojo', e) }
+      if (!r.error) return 'ok'
+      if (r.error.code === '23505') return 'existe'
+      throw saneado('poner el cerrojo', r.error)
+    },
+    async lee(recurso) {
+      let r
+      try { r = await t().select('dueno,desde,descripcion').eq('recurso', recurso).maybeSingle() } catch (e) { throw saneado('leer el cerrojo', e) }
+      if (r.error) throw saneado('leer el cerrojo', r.error)
+      return r.data ?? null
+    },
+    async suelta(recurso, dueno) {
+      let r
+      try { r = await t().delete().eq('recurso', recurso).eq('dueno', dueno).select('dueno') } catch (e) { throw saneado('soltar el cerrojo', e) }
+      if (r.error) throw saneado('soltar el cerrojo', r.error)
+      return Array.isArray(r.data) ? r.data.length : 0
+    },
+  }
+}
+
 // la copia local verificada: PAR_AAAA.json(.gz) con su .sha256 al lado (obligatorio)
 async function leeCopia(base, par) {
   let nombres
@@ -117,7 +145,7 @@ async function descarga(par) {
 export function dependencias() {
   const aceptados = cargaAceptados()
   return {
-    leeCopia, descarga, almacen,
+    leeCopia, descarga, almacen, cerrojo: () => cerrojoDe(sb),
     leeTexto: async () => readFileSync(FICHERO_ACEPTACIONES, 'utf8'),
     escribeTexto: async t => writeFileSync(FICHERO_ACEPTACIONES, t),
     escribeInforme: async (ruta, t) => writeFileSync(ruta, t),

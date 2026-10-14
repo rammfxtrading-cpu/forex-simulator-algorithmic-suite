@@ -11,6 +11,9 @@
  *     reintento es idempotente (lo ya subido se comprueba por sha);
  *   · cerrojo puesto: no sube nada; puntero cambiado desde la planificacion:
  *     no publica; subida del puntero incierta: se conserva el cerrojo.
+ *   · E2R3-01: el cerrojo es una fila de public.mercado_cerrojo (puerto cerrojo,
+ *     aqui pruebas/cerrojo-falso.mjs, con el registro comun al del almacen); justo
+ *     antes del puntero se comprueba que sigue siendo nuestro.
  * verifica({ almacen, texto, velasDe, diasAceptadosDe }): solo lectura; cada
  * trozo con su sha, la cadena de manifiestos, la cobertura, ningun hueco de
  * mas de 15 min sin aceptar, el ancla de aceptaciones, los datos dia a dia y
@@ -18,6 +21,7 @@
  */
 import { brotliDecompressSync } from 'zlib'
 import { titulo, oraculo, fin, importa } from './lib.mjs'
+import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 const PV = await importa('lib/mercado/publica-v1.mjs')
 const VV = await importa('lib/mercado/verifica-v1.mjs')
 const A = await importa('lib/mercado/aceptaciones.mjs')
@@ -37,12 +41,13 @@ function velas(desde, hasta, { faltan = [], px = () => 1.1 } = {}) {
   }
   return out
 }
-// el almacen en memoria; fallos: { sube: (ruta, n) => Error | null, lee: (ruta, bytes) => bytes }
-function almacen(fallos = {}) {
+// el almacen en memoria; fallos: { sube: (ruta, n) => Error | null, lee: (ruta, bytes) => bytes };
+// cer: su cerrojo (public.mercado_cerrojo en memoria), con el mismo registro
+function almacen(fallos = {}, fallosCerrojo = {}) {
   const o = new Map(), registro = []
   let n = 0
   return {
-    o, registro,
+    o, registro, cer: cerrojoEnMemoria({ fallos: fallosCerrojo, registro }),
     async lee(ruta) { registro.push(['lee', ruta]); const b = o.get(ruta); return b == null ? null : (fallos.lee ? fallos.lee(ruta, Buffer.from(b)) : Buffer.from(b)) },
     async sube(ruta, bytes, { upsert = false } = {}) {
       n++; const e = fallos.sube?.(ruta, n); if (e) throw e
@@ -59,66 +64,69 @@ const texto1 = linea(ac())
 const planEU = (vs = datos1, anterior = null, texto = texto1) => P.planificaPar({ par: 'EURUSD', velas: vs, texto, anterior, diasAceptados: new Map() })
 const planGB = (vs = velas('2026-03-01', '2026-03-06', { px: () => 1.3 }), anterior = null) => P.planificaPar({ par: 'GBPUSD', velas: vs, texto: texto1, anterior, diasAceptados: new Map() })
 const corre = async f => { try { return await f() } catch (e) { return { error: `${e?.name}: ${e?.message}` } } }
-const sinCerrojo = a => !a.o.has('v1/_cerrojo.json')
+const CER = 'mercado/v1'
+const sinCerrojo = a => !a.cer.filas.has(CER)
+const conCerrojo = a => ({ almacen: a, cerrojo: a.cer })
 
 titulo('1 · primera publicacion de dos pares')
 const a1 = almacen()
-const r1 = await corre(() => PV.publica({ almacen: a1, planes: [planEU(), planGB()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+const r1 = await corre(() => PV.publica({ cerrojo: a1.cer, almacen: a1, planes: [planEU(), planGB()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
 const pun1 = a1.o.has('v1/actual.json') ? JSON.parse(a1.o.get('v1/actual.json')) : null
 oraculo('PUBS', 'publicado: el puntero apunta a v1.1 de los dos pares con su huella y la ruta de su manifiesto', r1.estado === 'publicado' && pun1?.esquema === 'mercado-puntero@1' && pun1.pares.EURUSD?.version === 'v1.1' && pun1.pares.GBPUSD?.huella === planGB().manifiesto.huella && pun1.pares.EURUSD.ruta === `v1/EURUSD/manifiestos/v1.1.${pun1.pares.EURUSD.huella}.json`, JSON.stringify(r1).slice(0, 300))
 const rutaMar = PV.rutaTrozo('EURUSD', '2026-03-03', planEU().manifiesto.dias.find(d => d.dia === '2026-03-03').sha256)
 oraculo('PUBS', 'los trozos en v1/<PAR>/<AAAA>/<MM>/<DD>.<sha>.bin.br, en brotli, y su sha es el del binario', /^v1\/EURUSD\/2026\/03\/03\.[0-9a-f]{64}\.bin\.br$/.test(rutaMar) && a1.o.has(rutaMar) && B.huella(brotliDecompressSync(a1.o.get(rutaMar))) === rutaMar.split('.')[1])
 const subidas = a1.registro.filter(x => x[0] === 'sube').map(x => x[1])
 const iP = subidas.indexOf('v1/actual.json'), iM = subidas.map((x, i) => (/manifiestos/.test(x) ? i : -1)).filter(i => i >= 0)
-oraculo('PUBS', 'orden: el cerrojo el primero, los trozos antes que los manifiestos y el puntero el ultimo de todos', subidas[0] === 'v1/_cerrojo.json' && iP === subidas.length - 1 && iM.length === 2 && Math.min(...iM) > subidas.findLastIndex(x => /\.bin\.br$/.test(x)), subidas.join(' · ').slice(0, 300))
-oraculo('PUBS', 'cada trozo y cada manifiesto se relee despues de subirlo, y el puntero tambien; el cerrojo se suelta', a1.registro.filter(x => x[0] === 'lee' && /\.bin\.br$/.test(x[1])).length >= 8 && a1.registro.at(-1)[0] === 'borra' && sinCerrojo(a1))
-const r1b = await PV.publica({ almacen: a1, planes: [planEU(datos1, await PV.manifiestoVigente(a1, 'EURUSD')), planGB(undefined, await PV.manifiestoVigente(a1, 'GBPUSD'))], dueno: 'prueba', ahora: '2026-10-14T10:05:00Z' })
+oraculo('PUBS', 'orden: el cerrojo el primero, los trozos antes que los manifiestos y el puntero el ultimo de todos', a1.registro[0]?.[0] === 'adquiere' && iP === subidas.length - 1 && iM.length === 2 && Math.min(...iM) > subidas.findLastIndex(x => /\.bin\.br$/.test(x)), subidas.join(' · ').slice(0, 300))
+oraculo('PUBS', 'cada trozo y cada manifiesto se relee despues de subirlo, y el puntero tambien; el cerrojo se suelta', a1.registro.filter(x => x[0] === 'lee' && /\.bin\.br$/.test(x[1])).length >= 8 && a1.registro.at(-1)[0] === 'suelta' && sinCerrojo(a1))
+const r1b = await PV.publica({ cerrojo: a1.cer, almacen: a1, planes: [planEU(datos1, await PV.manifiestoVigente(a1, 'EURUSD')), planGB(undefined, await PV.manifiestoVigente(a1, 'GBPUSD'))], dueno: 'prueba', ahora: '2026-10-14T10:05:00Z' })
 oraculo('PUBS', 'sin datos nuevos: «nada», sin tocar el puntero ni poner el cerrojo', r1b.estado === 'nada' && JSON.stringify(JSON.parse(a1.o.get('v1/actual.json'))) === JSON.stringify(pun1) && sinCerrojo(a1))
 
 titulo('2 · continuacion: solo lo nuevo; el manifiesto anterior queda')
 const datos2 = velas('2026-03-01', '2026-03-10', { faltan: [['2026-03-03T10:01Z', '2026-03-03T10:21Z']] })
 const v11 = await PV.manifiestoVigente(a1, 'EURUSD')
 const antes2 = new Set(a1.o.keys())
-const r2 = await PV.publica({ almacen: a1, planes: [planEU(datos2, v11)], dueno: 'prueba', ahora: '2026-10-15T10:00:00Z' })
+const r2 = await PV.publica({ cerrojo: a1.cer, almacen: a1, planes: [planEU(datos2, v11)], dueno: 'prueba', ahora: '2026-10-15T10:00:00Z' })
 const pun2 = JSON.parse(a1.o.get('v1/actual.json'))
 const nuevas = [...a1.o.keys()].filter(k => !antes2.has(k))
 oraculo('PUBS', 'v1.2 de EURUSD en el puntero; GBPUSD sigue en v1.1; suben solo los 3 trozos nuevos y su manifiesto', r2.estado === 'publicado' && pun2.pares.EURUSD.version === 'v1.2' && pun2.pares.GBPUSD.version === 'v1.1' && nuevas.filter(k => /\.bin\.br$/.test(k)).length === 3 && nuevas.filter(k => /manifiestos/.test(k)).length === 1 && a1.o.has(pun1.pares.EURUSD.ruta), nuevas.join(' · '))
 oraculo('PUBS', 'el manifiesto nuevo continua al anterior (anterior = su huella)', MF.esContinuacion(v11, await PV.manifiestoVigente(a1, 'EURUSD')) === null && (await PV.manifiestoVigente(a1, 'EURUSD')).anterior === v11.huella)
 
 titulo('3 · fallos: el puntero anterior sigue valiendo')
-const aC = almacen(); aC.o.set('v1/_cerrojo.json', Buffer.from(JSON.stringify({ dueno: 'otro', desde: '2026-10-14T09:00:00Z' })))
-const rC = await corre(() => PV.publica({ almacen: aC, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
-oraculo('PUBS', 'cerrojo puesto por otro: error que dice quien y desde cuando; no sube nada y no toca su cerrojo', /otro/.test(rC.error ?? '') && /2026-10-14T09:00/.test(rC.error) && aC.o.size === 1, JSON.stringify(rC))
+const aC = almacen(); aC.cer.pon(CER, { dueno: '0f0e0d0c-0b0a-4908-8706-050403020100', descripcion: 'mercado-v1-publica', desde: '2026-10-14T09:00:00Z' })
+const rC = await corre(() => PV.publica({ cerrojo: aC.cer, almacen: aC, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+oraculo('PUBS', 'cerrojo puesto por otro: error que dice quien y desde cuando; no sube nada y no toca su cerrojo', /0f0e0d0c-0b0a-4908-8706-050403020100/.test(rC.error ?? '') && /2026-10-14T09:00/.test(rC.error) && aC.o.size === 0 && aC.cer.filas.get(CER)?.dueno === '0f0e0d0c-0b0a-4908-8706-050403020100', JSON.stringify(rC))
 const aF = almacen({ sube: (ruta, n) => (n === 4 ? new Error('red caida') : null) })
-const rF = await corre(() => PV.publica({ almacen: aF, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+const rF = await corre(() => PV.publica({ cerrojo: aF.cer, almacen: aF, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
 oraculo('PUBS', 'falla la subida del 3.er trozo: error, sin puntero ni manifiesto, y el cerrojo suelto', !!rF.error && !aF.o.has('v1/actual.json') && ![...aF.o.keys()].some(k => /manifiestos/.test(k)) && sinCerrojo(aF), JSON.stringify(rF))
 const aOk = almacen(); for (const [k, v] of aF.o) aOk.o.set(k, v)
-const rF2 = await PV.publica({ almacen: aOk, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:10:00Z' })
+const rF2 = await PV.publica({ cerrojo: aOk.cer, almacen: aOk, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:10:00Z' })
 // el reintento, con un almacen que ya no falla y lo que dejo el intento fallido
 oraculo('PUBS', 'el reintento es idempotente: los trozos que ya estaban se comprueban por sha y se publica', rF2.estado === 'publicado' && JSON.parse(aOk.o.get('v1/actual.json')).pares.EURUSD.version === 'v1.1')
 const aD = almacen(); aD.o.set(rutaMar, Buffer.from('basura'))
-const rD = await corre(() => PV.publica({ almacen: aD, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+const rD = await corre(() => PV.publica({ cerrojo: aD.cer, almacen: aD, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
 oraculo('PUBS', 'un objeto con el nombre de un trozo y otro contenido: error, sin puntero', /distinto|sha/.test(rD.error ?? '') && !aD.o.has('v1/actual.json') && sinCerrojo(aD), JSON.stringify(rD))
 const aL = almacen({ lee: (ruta, b) => (/03\.[0-9a-f]+\.bin\.br$/.test(ruta) ? Buffer.from('cambiado') : b) })
-const rL = await corre(() => PV.publica({ almacen: aL, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+const rL = await corre(() => PV.publica({ cerrojo: aL.cer, almacen: aL, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
 oraculo('PUBS', 'la relectura de un trozo no da su sha: error antes del puntero', !!rL.error && !aL.o.has('v1/actual.json'), JSON.stringify(rL))
-const aP = almacen(); await PV.publica({ almacen: aP, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' })
+const aP = almacen(); await PV.publica({ cerrojo: aP.cer, almacen: aP, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' })
 const viejo = planEU(datos2, null)
-const rP = await corre(() => PV.publica({ almacen: aP, planes: [viejo], dueno: 'prueba', ahora: '2026-10-14T11:00:00Z' }))
+const rP = await corre(() => PV.publica({ cerrojo: aP.cer, almacen: aP, planes: [viejo], dueno: 'prueba', ahora: '2026-10-14T11:00:00Z' }))
 oraculo('PUBS', 'el puntero cambio desde la planificacion (el plan no parte del vigente): no publica', /puntero/.test(rP.error ?? '') && JSON.parse(aP.o.get('v1/actual.json')).pares.EURUSD.version === 'v1.1' && sinCerrojo(aP), JSON.stringify(rP))
 const aI = almacen({ sube: ruta => (ruta === 'v1/actual.json' ? new Error('sin respuesta') : null) })
-const rI = await corre(() => PV.publica({ almacen: aI, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
-oraculo('PUBS', 'la subida del puntero falla sin respuesta: «incierto» y el cerrojo se CONSERVA (lo suelta una persona)', /incierto/.test(rI.error ?? '') && aI.o.has('v1/_cerrojo.json'), JSON.stringify(rI))
+const rI = await corre(() => PV.publica({ cerrojo: aI.cer, almacen: aI, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+oraculo('PUBS', 'la subida del puntero falla sin respuesta: «incierto» y el cerrojo se CONSERVA (lo suelta una persona)', /incierto/.test(rI.error ?? '') && aI.cer.filas.has(CER), JSON.stringify(rI))
 // BF-03 del diario: la subida del cerrojo sin respuesta. Si quedo puesto y es el nuestro, se sigue; si no se puede saber, no
-const aK = almacen()
-const subeK = aK.sube.bind(aK)
-aK.sube = async (ruta, bytes, o) => { if (ruta === 'v1/_cerrojo.json' && !aK.o.has(ruta)) { aK.o.set(ruta, Buffer.from(bytes)); throw new Error('sin respuesta') } return subeK(ruta, bytes, o) }
-const rK = await corre(() => PV.publica({ almacen: aK, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+const aK = almacen({}, { adquiere: () => 'perdida' })
+const rK = await corre(() => PV.publica({ cerrojo: aK.cer, almacen: aK, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
 oraculo('PUBS', 'cerrojo subido pero sin respuesta: se mira, es el nuestro y se publica', rK.estado === 'publicado' && sinCerrojo(aK), JSON.stringify(rK))
-const aK2 = almacen(); aK2.sube = async () => { throw new Error('sin respuesta') }
-const rK2 = await corre(() => PV.publica({ almacen: aK2, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
-oraculo('PUBS', 'cerrojo sin respuesta y sin quedar puesto: error «no se pudo poner el cerrojo», nada subido', /cerrojo/.test(rK2.error ?? '') && aK2.o.size === 0, JSON.stringify(rK2))
-oraculo('PUBS', 'un plan en incidente no se publica: error con el incidente', /incidente/.test((await corre(() => PV.publica({ almacen: almacen(), planes: [{ ...planEU(), estado: 'incidente', incidente: 'x' }], dueno: 'prueba', ahora: 'x' }))).error ?? ''))
+let nK2 = 0
+const aK2 = almacen({}, { adquiere: () => (nK2++ === 0 ? 'tarde' : undefined) })
+const rK2 = await corre(() => PV.publica({ cerrojo: aK2.cer, almacen: aK2, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+oraculo('PUBS', 'cerrojo sin respuesta y sin quedar puesto: error «no se pudo poner el cerrojo», nada subido', /no se pudo poner el cerrojo/.test(rK2.error ?? '') && aK2.o.size === 0, JSON.stringify(rK2))
+aK2.cer.terminaTardias()
+oraculo('E2R3-01', 'y si ese INSERT llega tarde: queda un cerrojo de una ejecucion que se rindio; el siguiente publicador no publica (falla cerrado: lo libera una persona)', aK2.cer.filas.has(CER) && /cerrojo puesto/.test((await corre(() => PV.publica({ cerrojo: aK2.cer, almacen: aK2, planes: [planEU()], dueno: 'prueba', ahora: 'x' }))).error ?? '') && aK2.o.size === 0)
+oraculo('PUBS', 'un plan en incidente no se publica: error con el incidente', /incidente/.test((await corre(() => PV.publica({ ...conCerrojo(almacen()), planes: [{ ...planEU(), estado: 'incidente', incidente: 'x' }], dueno: 'prueba', ahora: 'x' }))).error ?? ''))
 
 titulo('4 · el verificador (solo lectura)')
 const datosDe = { EURUSD: datos2, GBPUSD: velas('2026-03-01', '2026-03-06', { px: () => 1.3 }) }
@@ -177,41 +185,38 @@ for (const [que, lee] of [
   const subeE = aE.sube.bind(aE), leeE = aE.lee.bind(aE)
   aE.sube = async (ruta, bytes, o) => { const r = await subeE(ruta, bytes, o); if (ruta === 'v1/actual.json') escrito = true; return r }
   aE.lee = async ruta => (ruta === 'v1/actual.json' && escrito ? lee() : leeE(ruta))
-  const { e } = await atrapa(() => PV.publica({ almacen: aE, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+  const { e } = await atrapa(() => PV.publica({ cerrojo: aE.cer, almacen: aE, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
   oraculo('E2-02', `${que}: «incierto», e.incierto, el cerrojo se CONSERVA y el mensaje dice como reconciliar, con el id`,
-    /^incierto/.test(e?.message ?? '') && e.incierto === true && aE.o.has('v1/_cerrojo.json') && /Reconciliar/.test(e.message) && /liberar-cerrojo/.test(e.message) && e.message.includes(e.id) && JSON.parse(aE.o.get('v1/_cerrojo.json')).id === e.id && !FUGA.test(e.message), e?.message)
+    /^incierto/.test(e?.message ?? '') && e.incierto === true && aE.cer.filas.has(CER) && /Reconciliar/.test(e.message) && /liberar-cerrojo/.test(e.message) && e.message.includes(e.id) && aE.cer.filas.get(CER).dueno === e.id && !FUGA.test(e.message), e?.message)
 }
 const aAntes = almacen({ lee: (ruta, b) => (/manifiestos/.test(ruta) ? (() => { throw new Error('503 antes del puntero') })() : b) })
-const { e: eAntes } = await atrapa(() => PV.publica({ almacen: aAntes, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+const { e: eAntes } = await atrapa(() => PV.publica({ cerrojo: aAntes.cer, almacen: aAntes, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
 oraculo('E2-02', 'un fallo ANTES del intento del puntero no es incierto: el cerrojo se suelta y no hay puntero', !!eAntes && !eAntes.incierto && sinCerrojo(aAntes) && !aAntes.o.has('v1/actual.json'), eAntes?.message)
 // E2-03: un UUID aleatorio por ejecucion, el mismo al ponerlo, releerlo y soltarlo
 const ids = []
 for (let i = 0; i < 2; i++) {
-  const aU = almacen(); const subeU = aU.sube.bind(aU)
-  aU.sube = async (ruta, bytes, o) => { if (ruta === 'v1/_cerrojo.json') ids.push(JSON.parse(bytes.toString()).id); return subeU(ruta, bytes, o) }
-  const r = await PV.publica({ almacen: aU, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' })
-  ids.push(r.id)
+  const aU = almacen()
+  const r = await PV.publica({ cerrojo: aU.cer, almacen: aU, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' })
+  ids.push(aU.registro.find(x => x[0] === 'adquiere')?.[2], r.id)
 }
 oraculo('E2-03', 'sin id dado: cada ejecucion pone un UUID v4 distinto y lo devuelve; la ficha lleva id, dueno (descripcion) y desde', ids.length === 4 && ids[0] === ids[1] && ids[2] === ids[3] && ids[0] !== ids[2] && ids.every(x => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(x)), ids.join(' '))
 const aZ = almacen(); const subeZ = aZ.sube.bind(aZ)
-const OTRO = JSON.stringify({ id: '11111111-2222-4333-8444-555555555555', dueno: 'mercado-v1-publica', desde: '2026-10-14T10:00:00Z' })
-aZ.sube = async (ruta, bytes, o) => { const r = await subeZ(ruta, bytes, o); if (ruta === 'v1/actual.json') aZ.o.set('v1/_cerrojo.json', Buffer.from(OTRO)); return r }
-const rZ = await PV.publica({ almacen: aZ, planes: [planEU()], dueno: 'mercado-v1-publica', ahora: '2026-10-14T10:00:00Z' })
-oraculo('E2-03', 'al soltar, solo se borra el cerrojo con NUESTRO id: si al final hay otro (mismo dueño y fecha), se deja', rZ.estado === 'publicado' && aZ.o.get('v1/_cerrojo.json')?.toString() === OTRO)
-oraculo('E2-03', 'un id que no es un UUID: error, nada subido', /UUID/.test((await atrapa(() => PV.publica({ almacen: almacen(), planes: [planEU()], dueno: 'prueba', ahora: 'x', id: 'mercado-v1-publica 2026' }))).e?.message ?? ''))
+const OTRO = { dueno: '11111111-2222-4333-8444-555555555555', descripcion: 'mercado-v1-publica', desde: '2026-10-14T10:00:00Z' }
+aZ.sube = async (ruta, bytes, o) => { const r = await subeZ(ruta, bytes, o); if (ruta === 'v1/actual.json') aZ.cer.filas.set(CER, { ...OTRO }); return r }
+const rZ = await PV.publica({ cerrojo: aZ.cer, almacen: aZ, planes: [planEU()], dueno: 'mercado-v1-publica', ahora: '2026-10-14T10:00:00Z' })
+oraculo('E2-03', 'al soltar, solo se borra el cerrojo con NUESTRO id: si al final hay otro (mismo dueño y fecha), se deja', rZ.estado === 'publicado' && JSON.stringify(aZ.cer.filas.get(CER)) === JSON.stringify(OTRO))
+oraculo('E2-03', 'un id que no es un UUID: error, nada subido', /UUID/.test((await atrapa(() => PV.publica({ ...conCerrojo(almacen()), planes: [planEU()], dueno: 'prueba', ahora: 'x', id: 'mercado-v1-publica 2026' }))).e?.message ?? ''))
 // al soltar el cerrojo tras publicar bien: si no se puede (leerlo o borrarlo falla), se dice; no se tapa el resultado
-// (releerlo falla AL SOLTARLO, ya con el puntero: la relectura de despues de tomarlo, E2R2-03, es otra)
-let hayPuntero = () => false
-for (const [que, falla] of [['releerlo', { lee: (ruta, b) => (ruta === 'v1/_cerrojo.json' && hayPuntero() ? (() => { throw new Error('503') })() : b) }], ['borrarlo', null]]) {
-  const aS = almacen(falla ?? {}); hayPuntero = () => aS.o.has('v1/actual.json')
-  if (!falla) aS.borra = async () => { throw new Error('500 https://proyecto.supabase.co/?apikey=FUGA123') }
-  const { r, e } = await atrapa(() => PV.publica({ almacen: aS, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+// (E2R3-01: soltar es el DELETE condicional; que falle, o que su respuesta se agote)
+for (const [que, falla] of [['el DELETE falla', () => new Error('500 https://proyecto.supabase.co/?apikey=FUGA123')], ['la respuesta del DELETE se agota', () => 'tarde']]) {
+  const aS = almacen({}, { suelta: falla })
+  const { r, e } = await atrapa(() => PV.publica({ cerrojo: aS.cer, almacen: aS, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
   oraculo('E2-03', `publicado y no se pudo soltar el cerrojo (${que}): «publicado» con cerrojoSuelto false; el puntero esta`, !e && r?.estado === 'publicado' && r.cerrojoSuelto === false && aS.o.has('v1/actual.json'), e?.message ?? JSON.stringify({ estado: r?.estado, cerrojoSuelto: r?.cerrojoSuelto }))
 }
-const aN = almacen(); const rN = await PV.publica({ almacen: aN, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' })
+const aN = almacen(); const rN = await PV.publica({ cerrojo: aN.cer, almacen: aN, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' })
 oraculo('E2-03', 'publicado y soltado: cerrojoSuelto true', rN.cerrojoSuelto === true && sinCerrojo(aN))
-const aE2 = almacen({ sube: (ruta, n) => (n === 4 ? new Error('red caida') : null) }); aE2.borra = async () => { throw new Error('500 al borrar') }
-const { e: eE2 } = await atrapa(() => PV.publica({ almacen: aE2, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
+const aE2 = almacen({ sube: (ruta, n) => (n === 4 ? new Error('red caida') : null) }, { suelta: () => new Error('500 al borrar') })
+const { e: eE2 } = await atrapa(() => PV.publica({ cerrojo: aE2.cer, almacen: aE2, planes: [planEU()], dueno: 'prueba', ahora: '2026-10-14T10:00:00Z' }))
 oraculo('E2-03', 'un fallo antes del puntero y ademas el cerrojo no se puede borrar: sale el error ORIGINAL y dice que el cerrojo sigue', /subir/.test(eE2?.message ?? '') && /cerrojo .*sigue puesto/.test(eE2.message), eE2?.message)
 // E2-04: lo ajeno no llega a los mensajes
 const conPuntero = cuerpo => { const a = almacen(); a.o.set('v1/actual.json', Buffer.from(cuerpo)); return a }
@@ -225,13 +230,13 @@ for (const [que, cuerpo] of [['no es JSON', 'FUGA123'], ['JSON con campos ajenos
   const eM = (await atrapa(() => PV.leeManifiesto(aM, rutaM))).e
   oraculo('E2-04', `manifiesto que ${que}: codigo propio y sin el contenido`, /json_ilegible|manifiesto_invalido/.test(eM?.message) && !FUGA.test(eM.message), eM?.message)
 }
-for (const [que, cuerpo] of [['no es JSON', 'FUGA123'], ['con campos ajenos', JSON.stringify({ id: 'FUGA123', dueno: 'https://proyecto.supabase.co/?apikey=FUGA123', desde: 'FUGA123' })]]) {
-  const aC2 = almacen(); aC2.o.set('v1/_cerrojo.json', Buffer.from(cuerpo))
-  const eC = (await atrapa(() => PV.publica({ almacen: aC2, planes: [planEU()], dueno: 'prueba', ahora: 'x' }))).e
+for (const [que, fila] of [['con una descripcion ajena', { dueno: '0f0e0d0c-0b0a-4908-8706-050403020100', descripcion: 'FUGA123', desde: '2026-10-14T09:00:00Z' }], ['con campos ajenos', { dueno: 'FUGA123', descripcion: 'https://proyecto.supabase.co/?apikey=FUGA123', desde: 'FUGA123' }]]) {
+  const aC2 = almacen(); aC2.cer.pon(CER, fila)
+  const eC = (await atrapa(() => PV.publica({ cerrojo: aC2.cer, almacen: aC2, planes: [planEU()], dueno: 'prueba', ahora: 'x' }))).e
   oraculo('E2-04', `cerrojo ajeno que ${que}: lo dice sin enseñar su contenido`, /cerrojo puesto/.test(eC?.message) && !FUGA.test(eC.message), eC?.message)
 }
 const aX2 = almacen({ lee: (ruta, b) => (/\.bin\.br$/.test(ruta) ? (() => { throw Object.assign(new Error('fallo https://proyecto.supabase.co/storage/v1?apikey=FUGA123'), { name: 'StorageUnknownError' }) })() : b) })
-const eX2 = (await atrapa(() => PV.publica({ almacen: aX2, planes: [planEU()], dueno: 'prueba', ahora: 'x' }))).e
+const eX2 = (await atrapa(() => PV.publica({ cerrojo: aX2.cer, almacen: aX2, planes: [planEU()], dueno: 'prueba', ahora: 'x' }))).e
 oraculo('E2-04', 'un error ajeno del almacen (con URL y clave en su texto): sale solo su clase y codigo', /StorageUnknownError otro/.test(eX2?.message) && eX2.propio === true && !FUGA.test(eX2.message), eX2?.message)
 const vF = await VV.verifica({ almacen: conPuntero('FUGA123'), texto: '', velasDe: async () => null, diasAceptadosDe: () => new Map() })
 oraculo('E2-04', 'el verificador con un puntero que no es JSON: problema sin el contenido', vF.problemas.some(p => /json_ilegible/.test(p)) && !vF.problemas.some(p => FUGA.test(p)), JSON.stringify(vF.problemas))
