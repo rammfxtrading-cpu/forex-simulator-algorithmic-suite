@@ -26,9 +26,20 @@
  *   5 s14: una sola SELECT, en READ ONLY; antes («NO EXISTE», politicas con su
  *     veredicto y su texto, UUID enmascarados, disparadores) y despues (privado,
  *     trozos por par, puntero, cerrojo); sin nombres de objetos de otros buckets
+ *   6 E2R2-01 (Astra, CTO 14-oct): el operador falso de Astra (public.= que da
+ *     'mercado' = 'forex-data') con una politica INSERT: negativo COMUN a la
+ *     migracion y a s14, con su search_path (public,pg_catalog) y con el de
+ *     siempre; variantes de colacion, conversion, dominio, name y polimorfico;
+ *     un «=» ajeno de otros tipos no molesta; el arbol solo (mutante sin
+ *     contexto) tambien la rechaza
+ *   7 E2R2-02: la precondicion (politicas de escritura aplicables a los roles
+ *     de alumno) para antes de la sonda, con el escenario de la secuencia de
+ *     Astra; la sonda ya no toca filas de otros buckets (disparador por fila);
+ *     lo que no deshace el rollback (por sentencia) lo enseña s14; los limites:
+ *     lock_timeout corta una espera real, y el informe dice los que vio
  */
 import { readFileSync, writeFileSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { spawnSync, spawn } from 'node:child_process'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { BIN, hayPostgres, cluster } from './pg-ensayo.mjs'
@@ -141,9 +152,6 @@ try {
     ['propios', `for select to authenticated using (bucket_id = 'avatares' and owner = auth.uid())`, 'avatares'],
     ['tres terminos', `for select to authenticated using (owner = auth.uid() and bucket_id = 'avatares' and name like 'a%')`, 'avatares'],
     ['subidas', `for insert to authenticated with check (bucket_id = 'avatares' and owner = auth.uid())`, 'avatares'],
-    ['cambios', `for update to authenticated using (bucket_id = 'avatares') with check (bucket_id = 'avatares' and owner = auth.uid())`, 'avatares'],
-    ['todo', `for all to authenticated using (bucket_id = 'avatares')`, 'avatares'],
-    ['borrados', `for delete to authenticated using (bucket_id = 'avatares' and owner = auth.uid())`, 'avatares'],
     ['literal raro', `for select to public using (bucket_id = 'a) AND (b')`, 'a) AND (b'],
     ['restrictiva con bucket', `as restrictive for select to public using (bucket_id = 'avatares')`, 'avatares'],
   ]
@@ -155,6 +163,27 @@ try {
       r.ok && /FIN\|mercado-001 aplicada$/.test(r.out) && q.ok && q.out.includes(`politica|${nombre}|`) && q.out.split('\n').some(l => l.startsWith(`politica|${nombre}|`) && l.endsWith(`reconocida: solo ${bucket}`)),
       `${err1(r)} · s14: ${q.out.split('\n').filter(l => l.includes(nombre)).join(' / ') || q.err}`)
   }
+  // reconocidas por la lista blanca, pero de ESCRITURA y para alumnos: la precondicion de la sonda (E2R2-02) aborta
+  const ESCRITURAS = [
+    ['cambios', `for update to authenticated using (bucket_id = 'avatares') with check (bucket_id = 'avatares' and owner = auth.uid())`, 'avatares'],
+    ['todo', `for all to authenticated using (bucket_id = 'avatares')`, 'avatares'],
+    ['borrados', `for delete to authenticated using (bucket_id = 'avatares' and owner = auth.uid())`, 'avatares'],
+    ['borrados-public', `for delete to public using (bucket_id = 'avatares')`, 'avatares'],
+    ['por-pertenencia', `for update to alumnos using (bucket_id = 'avatares')`, 'avatares'],
+  ]
+  for (const [nombre, def, bucket] of ESCRITURAS) {
+    const d = monta(SUPA + `do $r$ begin if not exists (select 1 from pg_roles where rolname = 'alumnos') then create role alumnos nologin; end if; end $r$; grant alumnos to authenticated;` + `create policy "${nombre}" on storage.objects ${def};`)
+    const a = estado(d)
+    const r = pg.psql(M1, d)
+    const q = s14(d)
+    oraculo('E2R2-02', `escritura ${nombre}: s14 la reconoce (solo ${bucket}) y la lista en «escritura»; mercado-001 aborta con la precondicion, nombrandola, y nada cambia`,
+      !r.ok && /mercado-001: politicas de ESCRITURA en storage.objects aplicables/.test(r.err) && r.err.includes(nombre) && estado(d) === a
+      && q.ok && q.out.split('\n').some(l => l.startsWith(`politica|${nombre}|`) && l.endsWith(`reconocida: solo ${bucket}`)) && q.out.includes(`escritura|${nombre}|`),
+      `${err1(r)} · s14: ${q.out.split('\n').filter(l => l.includes(nombre)).join(' / ') || q.err}`)
+  }
+  const dSel = monta(SUPA + `create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data'); create policy "solo servicio" on storage.objects for all to service_role using (bucket_id = 'avatares');`)
+  const rSel = pg.psql(M1, dSel), qSel = s14(dSel)
+  oraculo('E2R2-02', 'una politica de escritura solo para service_role no es de alumnos: aplica; s14 «escritura | (ninguna)»', rSel.ok && /FIN\|mercado-001 aplicada$/.test(rSel.out) && qSel.ok && /escritura\|\(ninguna\)\|ninguna politica UPDATE\/DELETE\/ALL/.test(qSel.out), err1(rSel) || qSel.out)
   const bloque = t => { const a = t.indexOf('-- >>> clasificador'), b = t.indexOf('-- <<< clasificador'); return a >= 0 && b > a ? t.slice(a, b) : null }
   oraculo('E2-01', 'el bloque clasificador es identico, byte a byte, en mercado-001 y en s14', bloque(M1) !== null && bloque(M1) === bloque(S14))
 
@@ -162,8 +191,6 @@ try {
   const ABIERTAS = [
     ['astra-is-false', `for select to public using ((bucket_id = 'forex-data') is false)`, /anon SELECT; authenticated SELECT;/],
     ['astra-case', `for select to public using (case when bucket_id = 'forex-data' then true else true end)`, /anon SELECT; authenticated SELECT;/],
-    ['update-abierto', `for update to anon using (true)`, /anon UPDATE;/],
-    ['delete-abierto', `for delete to authenticated using (true)`, /authenticated DELETE;/],
     ['del-dueño', `for select to authenticated using (owner = auth.uid())`, /authenticated SELECT;/],
     ['del-dueño-texto', `for select to authenticated using (owner_id = (auth.uid())::text)`, /authenticated SELECT;/],
   ]
@@ -172,6 +199,12 @@ try {
     const a = estado(d)
     const r = pg.psql(M1sinCapa1, d)
     oraculo('E2-01', `sonda: ${nombre} → aborta «la sonda ALCANZA» con el rol y la orden; nada cambia (ni el centinela)`, !r.ok && /la sonda ALCANZA el bucket mercado/.test(r.err) && quien.test(r.err) && estado(d) === a, err1(r))
+  }
+  for (const [nombre, def] of [['update-abierto', `for update to anon using (true)`], ['delete-abierto', `for delete to authenticated using (true)`]]) {
+    const d = monta(SUPA + `create policy "${nombre}" on storage.objects ${def};`)
+    const a = estado(d)
+    const r = pg.psql(M1sinCapa1, d)
+    oraculo('E2R2-02', `sin capa 1: ${nombre} lo para la precondicion ANTES de la sonda (no se ejecuta nada sobre filas); nada cambia`, !r.ok && /politicas de ESCRITURA/.test(r.err) && r.err.includes(nombre) && estado(d) === a, err1(r))
   }
   const dTrig = monta(SUPA + `create function storage.protege() returns trigger language plpgsql as $f$ begin raise exception using errcode = '42501', message = 'Direct deletion from storage tables is not allowed'; end $f$;
 create trigger protege_borrado before delete on storage.objects for each statement execute function storage.protege();
@@ -190,6 +223,98 @@ create policy "lectura forex" on storage.objects for select to public using (buc
   const dPgx2 = monta(SUPA + PGX + `create policy "astra-case" on storage.objects for select to public using (case when bucket_id = 'forex-data' then true else true end);`)
   const rPgx2 = comoPgx(M1sinCapa1, dPgx2)
   oraculo('E2-01', 'como pgx y sin capa 1: la sonda alcanza y aborta (SET LOCAL ROLE funciona sin superusuario)', !rPgx2.ok && /la sonda ALCANZA/.test(rPgx2.err), err1(rPgx2))
+
+  titulo('6 · E2R2-01: la identidad del operador (negativo comun a la migracion y a s14)')
+  // el operador de Astra (sql-adversario.mjs) tal cual
+  const OP_ASTRA = `create function public.igual(text,text) returns boolean language sql immutable as $$ select ($1 operator(pg_catalog.=) $2) or ($1 operator(pg_catalog.=) 'mercado' and $2 operator(pg_catalog.=) 'forex-data') $$; create operator public.= (leftarg=text,rightarg=text,function=public.igual);`
+  const POL_ASTRA = `set search_path=public,pg_catalog; create policy escrita on storage.objects for insert to authenticated with check(bucket_id = 'forex-data'); reset search_path;`
+  for (const [contexto, prefijo] of [['con su search_path (public,pg_catalog)', 'set search_path=public,pg_catalog;\n'], ['con el search_path de siempre', '']]) {
+    const d = monta(SUPA + OP_ASTRA + POL_ASTRA)
+    const a = estado(d)
+    const r = pg.psql(prefijo + M1, d)
+    const q = pg.psql(`begin read only;\n${prefijo}${S14}\nrollback;`, d)
+    const entra = pg.psql(`set search_path=public,pg_catalog; set role authenticated; insert into storage.objects(bucket_id,name) values('mercado','v1/falso');`, d)
+    oraculo('E2R2-01', `operador propio INSERT debe ser rechazado (${contexto}): mercado-001 aborta «no se puede acreditar», nombra el operador, y no crea el bucket`,
+      !r.ok && /no se puede acreditar la lista blanca/.test(r.err) && /operador = fuera de pg_catalog que acepta texto: public\.=\(text,text\)/.test(r.err) && estado(d) === a && !entra.ok,
+      JSON.stringify({ aplica: r.ok, error: err1(r), insertAuthenticated: entra.ok }))
+    oraculo('E2R2-01', `s14 (${contexto}): «contexto | NO ACREDITADO» y la politica NO RECONOCIDA`,
+      q.ok && /contexto\|lista blanca\|NO ACREDITADO: .*public\.=\(text,text\)/.test(q.out) && /politica\|escrita\|INSERT · PERMISSIVE · \{authenticated\} · NO RECONOCIDA/.test(q.out) && !/politica\|escrita\|.*reconocida: solo/.test(q.out),
+      q.out.split('\n').filter(l => /contexto|escrita/.test(l)).join(' / ') || q.err)
+  }
+  const VARIANTES = [
+    // [nombre, montaje, que tiene que decir el error]
+    ['operador-sin-politicas', OP_ASTRA, /operador = fuera de pg_catalog/],
+    ['dominio', `create domain public.dt as text; create function public.dteq(public.dt, public.dt) returns boolean language sql immutable as $$ select true $$; create operator public.= (leftarg=public.dt, rightarg=public.dt, function=public.dteq); create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');`, /operador = fuera de pg_catalog que acepta texto: public\.=\((public\.)?dt,(public\.)?dt\)/],
+    ['name', `create function public.neq(name, name) returns boolean language sql immutable as $$ select true $$; create operator public.= (leftarg=name, rightarg=name, function=public.neq);`, /public\.=\(name,name\)/],
+    ['varchar-text', `create function public.vteq(varchar, text) returns boolean language sql immutable as $$ select true $$; create operator public.= (leftarg=varchar, rightarg=text, function=public.vteq);`, /public\.=\(character varying,text\)/],
+    ['polimorfico', `create function public.peq(anyelement, anyelement) returns boolean language sql immutable as $$ select true $$; create operator public.= (leftarg=anyelement, rightarg=anyelement, function=public.peq);`, /public\.=\(anyelement,anyelement\)/],
+    ['otro-esquema', `create schema raro; create function raro.igual(text,text) returns boolean language sql immutable as $$ select true $$; create operator raro.= (leftarg=text, rightarg=text, function=raro.igual);`, /raro\.=\(text,text\)/],
+    ['colacion-C', `alter table storage.objects alter column bucket_id type text collate "C"; create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');`, /bucket_id no es text con la colacion por defecto/],
+    ['colacion-no-determinista', `create collation public.ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false); alter table storage.objects alter column bucket_id type text collate public.ci; create policy "mayusculas" on storage.objects for select to public using (bucket_id = 'MERCADO');`, /bucket_id no es text con la colacion por defecto/],
+  ]
+  for (const [nombre, montaje, dice] of VARIANTES) {
+    const d = monta(SUPA + montaje)
+    const a = estado(d)
+    const r = pg.psql(M1, d)
+    const q = s14(d)
+    oraculo('E2R2-01', `variante ${nombre}: mercado-001 aborta sin acreditar y nada cambia; s14 «NO ACREDITADO»`, !r.ok && /no se puede acreditar/.test(r.err) && dice.test(r.err) && estado(d) === a && q.ok && /contexto\|lista blanca\|NO ACREDITADO/.test(q.out), `${err1(r)} · s14: ${q.out.split('\n').filter(l => l.startsWith('contexto')).join(' / ') || q.err}`)
+  }
+  const CONV = [
+    ['conversion-varchar', `for select to public using (bucket_id = ('forex-data'::varchar)::text)`],
+    ['conversion-columna', `for select to public using (bucket_id::varchar = 'forex-data')`],
+    ['operador-calificado-ajeno', `for select to public using (bucket_id operator(pg_catalog.~~) 'forex-data')`],
+  ]
+  for (const [nombre, def] of CONV) {
+    const d = monta(`create policy "${nombre}" on storage.objects ${def};`)
+    const r = pg.psql(M1, d), q = s14(d)
+    oraculo('E2R2-01', `conversion ${nombre}: NO RECONOCIDA en los dos`, !r.ok && /NO RECONOCIDAS/.test(r.err) && r.err.includes(nombre) && q.ok && new RegExp(`politica\\|${nombre}\\|.*NO RECONOCIDA`).test(q.out), err1(r))
+  }
+  const dCal = monta(SUPA + `create policy "calificada" on storage.objects for select to public using (bucket_id operator(pg_catalog.=) 'forex-data');`)
+  const rCal = pg.psql(M1, dCal), qCal = s14(dCal)
+  oraculo('E2R2-01', 'positivo: la igualdad escrita como OPERATOR(pg_catalog.=) es la de siempre: aplica y s14 la reconoce', rCal.ok && /FIN\|mercado-001 aplicada$/.test(rCal.out) && qCal.ok && /politica\|calificada\|.*reconocida: solo forex-data$/m.test(qCal.out), err1(rCal) || qCal.out)
+  const dPunto = monta(SUPA + `create function public.ptigual(point, point) returns boolean language sql immutable as $$ select $1 ~= $2 $$; create operator public.= (leftarg=point, rightarg=point, function=public.ptigual); create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');`)
+  const rPunto = pg.psql(M1, dPunto)
+  oraculo('E2R2-01', 'control: un «=» ajeno de otros tipos (point) no impide aplicar', rPunto.ok && /FIN\|mercado-001 aplicada$/.test(rPunto.out), err1(rPunto))
+  const dHostil = monta(SUPA + `create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');`)
+  const qHostil = pg.psql(`begin read only;\nset local search_path = public, pg_catalog;\n${S14}\nrollback;`, dHostil)
+  oraculo('E2R2-01', 's14 corrida con un search_path que no empieza por pg_catalog: «NO ACREDITADO» (no se fia de su propio texto)', qHostil.ok && /contexto\|lista blanca\|NO ACREDITADO: el search_path \(public,pg_catalog\) no empieza por pg_catalog/.test(qHostil.out) && /politica\|lectura forex\|.*NO RECONOCIDA \(contexto no acreditado\)/.test(qHostil.out), qHostil.out || qHostil.err)
+  const rHostil = pg.psql('set search_path = public, pg_catalog;\n' + M1, dHostil)
+  oraculo('E2R2-01', 'mercado-001 con ese search_path: fija el suyo y aplica', rHostil.ok && /FIN\|mercado-001 aplicada$/.test(rHostil.out), err1(rHostil))
+  // el arbol solo: mutante sin el search_path fijo y sin la lista de operadores ajenos
+  const M1soloArbol = M1.replace("perform pg_catalog.set_config('search_path', 'pg_catalog, pg_temp', true);", "perform pg_catalog.set_config('search_path', 'public, pg_catalog', true);")
+    .replace(/\n    \(select 'operador = fuera de pg_catalog que acepta texto: '[\s\S]*?having count\(\*\) > 0\),/, '')
+    .replace(/case when \(select s\.n from pg_catalog\.unnest[\s\S]*?no empieza por pg_catalog' end,/, "null,")
+  ver('el mutante «solo arbol» quita exactamente el contexto fijo, la lista de operadores y la comprobacion del search_path', M1soloArbol !== M1 && !/operador = fuera de pg_catalog/.test(M1soloArbol) && !/no empieza por pg_catalog/.test(M1soloArbol) && M1soloArbol.includes("'public, pg_catalog', true"))
+  const dArbol = monta(SUPA + OP_ASTRA + POL_ASTRA)
+  const rArbol = pg.psql(M1soloArbol, dArbol)
+  oraculo('E2R2-01', 'con el contexto y la lista anulados (mutante), el arbol sigue rechazando la politica de Astra (su :opno no es de pg_catalog)', !rArbol.ok && /NO RECONOCIDAS/.test(rArbol.err) && rArbol.err.includes('escrita'), err1(rArbol))
+
+  titulo('7 · E2R2-02: la sonda no toca otros buckets; limites')
+  // el escenario de Astra: politica ALL reconocida de forex-data y un disparador por fila con una secuencia
+  const SECUENCIA = `create sequence public.efectos; create function public.efecto() returns trigger language plpgsql security definer as $$ begin perform nextval('public.efectos'); return case when TG_OP='DELETE' then OLD else NEW end; end $$;`
+  const dSeq = monta(SUPA + SECUENCIA + `create trigger efecto before update or delete on storage.objects for each row execute function public.efecto(); create policy otros on storage.objects for all to public using (bucket_id = 'forex-data') with check(bucket_id='forex-data'); insert into storage.objects(bucket_id,name,metadata) values('forex-data','sintetico','{"original":true}');`)
+  const seq = d => pg.psql('select last_value || \'|\' || is_called from public.efectos;', d).out
+  const antesSeq = seq(dSeq), rSeq = pg.psql(M1, dSeq), despuesSeq = seq(dSeq)
+  oraculo('E2R2-02', 'sonda no debe producir efectos no revertidos en otro bucket (escenario de Astra): la precondicion aborta antes y la secuencia no se mueve', !rSeq.ok && /politicas de ESCRITURA/.test(rSeq.err) && antesSeq === despuesSeq, JSON.stringify({ aplica: rSeq.ok, error: err1(rSeq), antes: antesSeq, despues: despuesSeq }))
+  const dFila = monta(SUPA + SECUENCIA + `create trigger efecto before update or delete on storage.objects for each row execute function public.efecto(); create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data'); insert into storage.objects(bucket_id,name,metadata) values('forex-data','sintetico','{"original":true}');`)
+  const antesFila = seq(dFila), rFila = pg.psql(M1, dFila), despuesFila = seq(dFila)
+  oraculo('E2R2-02', 'con una lectura de forex-data y un disparador POR FILA: aplica y la secuencia no se mueve (UPDATE y DELETE solo del centinela, que no ven)', rFila.ok && /FIN\|mercado-001 aplicada$/.test(rFila.out) && antesFila === despuesFila && pg.psql(`select metadata::text from storage.objects where name = 'sintetico'`, dFila).out === '{"original": true}', JSON.stringify({ error: err1(rFila), antes: antesFila, despues: despuesFila }))
+  const dSent = monta(SUPA + SECUENCIA + `create trigger efecto_sentencia before update on storage.objects for each statement execute function public.efecto(); create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');`)
+  const qSent = s14(dSent)
+  oraculo('E2R2-02', 's14 enseña el disparador POR SENTENCIA con funcion ajena (lo que el rollback no deshace: el runbook para)', qSent.ok && /disparador\|efecto_sentencia\|BEFORE UPDATE · POR SENTENCIA · public\.efecto · FUNCION AJENA/.test(qSent.out), qSent.out || qSent.err)
+  const antesSent = seq(dSent), rSent = pg.psql(M1, dSent), despuesSent = seq(dSent)
+  oraculo('E2R2-02', 'y si aun asi se aplica, ese efecto queda (documentado en p.12.7.1 corregido: no «nada persiste»)', rSent.ok && antesSent !== despuesSent, `${antesSent} → ${despuesSent} · ${err1(rSent)}`)
+  // limites: el informe los dice; en una sola transaccion (como el editor) valen los SET LOCAL
+  const dLim = monta(SUPA)
+  const rLim = pg.psql(`begin;\n${M1}\ncommit;`, dLim)
+  oraculo('E2R2-02', 'en una sola transaccion (como el editor): el informe dice lock_timeout=5s · statement_timeout=30s', rLim.ok && /limites\|lock_timeout=5s · statement_timeout=30s/.test(rLim.out), err1(rLim) || rLim.out)
+  // lock_timeout de verdad: otra sesion tiene storage.buckets bloqueada 20 s; mercado-001 corta a los 5
+  const dEsp = monta(SUPA)
+  const bloqueo = spawn(path.join(BIN, 'psql'), ['-h', pg.dir, '-p', pg.puerto, '-U', 'postgres', '-X', '-q', '-d', dEsp, '-c', 'begin; lock table storage.buckets in access exclusive mode; select pg_sleep(20); commit;'], { env: { PATH: process.env.PATH } })
+  await new Promise(r => setTimeout(r, 1500))
+  const t0 = Date.now(), rEsp = pg.psql(M1, dEsp), dt = Date.now() - t0
+  bloqueo.kill()
+  oraculo('E2R2-02', `con storage.buckets bloqueada por otra sesion: aborta por lock_timeout en ~5 s, no espera los 20 (${Math.round(dt / 1000)} s)`, !rEsp.ok && /lock timeout/.test(rEsp.err) && dt < 12000, err1(rEsp))
 
   titulo('5 · s14 (solo lectura)')
   const d3 = monta(`create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');
