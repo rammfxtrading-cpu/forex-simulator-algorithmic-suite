@@ -3038,3 +3038,25 @@ La cabecera lleva el texto de j.9, con la corrección de k.1: sim-003 queda supe
    - b) `sim_trades.pnl` (numeric(10,2)) = el neto en céntimos, redondeado al par (`dinero.mjs`);
    - c) `/api/sim/estado` de una sesión v0 → `409 no_es_v1`.
 4. **El umbral de los tramos** (q.6).
+
+### q.9 Autorrevisión adversaria de la etapa 3 (14-oct)
+
+Hecha sobre lo construido: `lib/servidor/*`, los seis endpoints, el cambio del motor (q.5) y sim-004b. Dos hallazgos arreglados y los riesgos que quedan.
+
+**Arreglados (con su prueba, `pruebas/servidor-adaptador.mjs`, en rojo antes):**
+- **AR3-01 (bajo): el SL/TP de un trade cuya posición nace y muere en el mismo comando.**
+  - Un `modificar` que vuelve ejecutable una pendiente la llena con el SL/TP **nuevos** del comando. La rama ejecutable de `cartera.mjs` no emite `orden_modificada`.
+  - El adaptador ponía en el trade los de la orden. Solo se ve si esa posición se cierra en el mismo comando (un breach inmediato), y solo afecta a las columnas de pantalla `sl_price`/`tp_price`; ni a la economía ni a los `*_micro`.
+  - Arreglado: con `modificar` sobre esa orden, mandan los del comando (y `null` quita).
+- **AR3-02 (medio, de operación): la caché de trozos podía crecer a unos 100 MB** (2.000 trozos descomprimidos) dentro de una función de Vercel. Tope por defecto: 300 (`TOPE_CACHE`).
+
+**Riesgos que quedan (para Astra y el CTO):**
+1. **El cálculo sobre una versión que no es la esperada.** El motor calcula solo si la versión leída es la esperada; el CAS de `sim_comando` garantiza el resto. Si la leída es mayor, va un resultado neutro que nunca se puede escribir (la versión no baja). Si es menor, se responde `409 conflicto` sin RPC.
+   - El peor caso de este último: un reintento con la misma clave y una versión esperada **mayor** que la real no recibe su recibo. Un cliente correcto no lo hace (solo conoce versiones que le dio el servidor).
+2. **Hasta aplicar sim-004b**, un `avanzar` que cruce un hueco aceptado del mercado real recibe `422 resultado_invalido` de sim-003, porque el motor emite `hueco_aceptado`. Los endpoints están apagados; sim-004b va antes del corte.
+3. **Los topes del tramo** no cumplen p99 ≤ 10 s en el peor caso (q.6, pregunta abierta).
+4. **`superado` conserva el arrendamiento** hasta que caduca (≤ 60 s). Durante ese tiempo, D-18 puede dar `otra_sesion_activa` al tomar otra sesión. j.8 no dice que se libere y no lo invento.
+5. **La proyección de un reto fallado (breach):** `sim_comando` (sim-003) no escribe `status`/`challenge_*`, así que un reto v1 quemado sigue `active` en la fila; la verdad está en `estado`. D-05 decía que las escribe la RPC. Es de sim-004b o de otra migración: no estaba en lo aprobado.
+6. **`COLUMNAS_SESION`** fija la lista de columnas que pide el cliente. Una columna que se quitara en el futuro rompería la lectura entera. La prueba la contrasta con el catálogo del montaje, no con producción. La s04 que lo demuestre en producción es de Ramón.
+7. **Determinismo:** ningún tope depende del reloj. El 429 de la tasa sí, pero lo decide la RPC con `t_decision`.
+8. **Medidas locales:** ni la red de Supabase ni la de Vercel están medidas (q.6).
