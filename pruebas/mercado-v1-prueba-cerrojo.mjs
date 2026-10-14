@@ -1,6 +1,6 @@
 /**
  * MERCADO V1 · EL CICLO DE PRUEBA DEL CERROJO CONTRA POSTGREST (etapa 2; CTO
- * 14-oct, ronda 5: el primer paso operativo tras mercado-000, antes de publicar
+ * 14-oct, ronda 5: tras mercado-001 y s14 (runbook, paso 3-bis), antes de publicar
  * nada). Escrita antes que el codigo.
  *
  * lib/mercado/prueba-cerrojo-v1.mjs ordenPruebaCerrojo(args, deps):

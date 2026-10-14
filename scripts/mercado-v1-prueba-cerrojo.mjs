@@ -1,6 +1,6 @@
 // MERCADO V1 · EL CICLO DE PRUEBA DEL CERROJO CONTRA POSTGREST (public.mercado_cerrojo).
-// Etapa 2; CTO 14-oct (ronda 5): el primer paso operativo tras mercado-000 y
-// antes de publicar nada (runbook, paso 1-ter). Con el puerto real: INSERT,
+// Etapa 2; CTO 14-oct (ronda 5): tras mercado-001 y s14, antes de publicar
+// nada (runbook, paso 3-bis). Con el puerto real: INSERT,
 // INSERT duplicado (23505), SELECT, DELETE condicional con otro UUID (0 filas),
 // DELETE con el propio (1 fila). Simulacro por defecto. Si algo no cuadra, se
 // para y dice que queda; no libera nada.

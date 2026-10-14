@@ -2801,7 +2801,7 @@ La guarda, en primera aplicación (la creación se deshace entera) y en cada ree
 
 **p.15.2 · E2R4-02: reglas de reescritura.** La guarda de forma rechaza cualquier fila de `pg_rewrite` sobre la tabla. Negativo: la regla `DO INSTEAD NOTHING` de Astra en reejecución, con su control: con la regla, el INSERT de `service_role` «funciona» y no deja fila.
 
-**p.15.3 · El ciclo de prueba contra PostgREST** (`scripts/mercado-v1-prueba-cerrojo.mjs` y `lib/mercado/prueba-cerrojo-v1.mjs`; runbook, paso 1-ter, tras `mercado-000` y antes de publicar nada).
+**p.15.3 · El ciclo de prueba contra PostgREST** (`scripts/mercado-v1-prueba-cerrojo.mjs` y `lib/mercado/prueba-cerrojo-v1.mjs`; runbook, paso 3-bis: tras `mercado-001` y s14, y antes de publicar nada; ver p.15.7).
 - **Qué comprueba:** con el puerto real (`cerrojoDe`), lo que p.14.4.2 suponía sin haberlo visto.
 - **Cómo se ejecuta:** simulacro por defecto; `--ejecuta`; nada con CI.
 - **El ciclo:**
@@ -2820,7 +2820,7 @@ La guarda, en primera aplicación (la creación se deshace entera) y en cada ree
   - la respuesta perdida del primer INSERT;
   - el humo del script, sin `--ejecuta`, que leería claves.
 - **Mutantes:** un paso 2 que acepta cualquier respuesta da 2 rojos; un paso 4 que no mira nada da 1.
-- **Lo que no prueba:** el transporte real. Eso es justo lo que comprueba el paso 1-ter.
+- **Lo que no prueba:** el transporte real. Eso es justo lo que comprueba el paso 3-bis.
 
 **p.15.4 · p.14.1 corregido.** «El vivo no escribe el puntero» solo vale si pierde el cerrojo **antes** de su comprobación previa al puntero. Si lo pierde entre esa comprobación y el PUT, sí puede escribirlo. Esa ventana es el residual ya aceptado: la base y Storage no comparten transacción. Corregidos p.14.1 y la cabecera de `pruebas/mercado-v1-cerrojo.mjs`.
 
@@ -2845,9 +2845,15 @@ p.14.4.3 («no la leen ni la escriben») era cierto solo por los grants directos
    - Así salió a la luz una pertenencia anterior que sobrevivía: `alumnos` de E2R2-02, en `mercado-001-bucket.mjs`. Se quita al empezar la sección 9.
 3. **Dependencia de entorno.** Si en Supabase `service_role`, `anon` o `authenticated` son miembros de algún rol con privilegios en la tabla, `mercado-000` aborta. Falla cerrado y lo lista. La fila `pertenencias` de s14 lo deja ver antes de aplicar.
 4. **El informe y la guarda calculan los efectivos por separado:** el informe corre fuera del DO. Los vigilan los mismos oráculos: limpio, reejecución limpia y abortos.
-5. **El ciclo va antes de `mercado-001`,** como dice el CTO («tras mercado-000»). Si deja un cerrojo de prueba, el liberador no puede escribir su constancia hasta que exista el bucket (paso 2). Falla cerrado. El runbook lo dice.
+5. **El ciclo iba antes de `mercado-001`** («tras mercado-000»). Si dejaba un cerrojo de prueba, el liberador no podía escribir su constancia hasta que existiera el bucket. Lo resuelve p.15.7.
 6. **Contraste contra `f294c70`:**
    - las pruebas nuevas de `mercado-000` dan 18 rojos con el SQL anterior;
    - las de s14, 8 rojos con el s14 anterior.
 
    Evidencias en `revisiones-suite/2026-10-14-mercado-v1-etapa2-r5/`.
+
+**p.15.7 · Decisión del CTO (14-oct): el orden del runbook.** El ciclo de prueba del cerrojo pasa detrás de `mercado-001`. Así, si un cerrojo de prueba se queda colgado, se libera en el acto, porque el liberador ya tiene el bucket para su constancia. El orden:
+
+s14 → `mercado-000` → `mercado-001` → s14 → ciclo de prueba (paso 3-bis) → primera publicación.
+
+Además, si s14 enseña que `anon`, `authenticated` o `service_role` pertenecen a algún rol (la fila `pertenencias` con algo distinto de `-`), el runbook para antes de aplicar nada, y el CTO comprueba qué permisos tiene ese rol.
