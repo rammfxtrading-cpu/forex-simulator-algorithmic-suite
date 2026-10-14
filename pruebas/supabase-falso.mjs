@@ -30,12 +30,13 @@
 //                       contenido servido, como el GET real (apuntaRespuesta)
 //                       (se devuelve un error de transporte, como supabase-js ante
 //                       un fetch roto a la vuelta)
+//   db.rpcExterno(nombre, args) → { data, error }: quien contesta las RPC (la base real del ensayo); null = las de RPCS
 //   db.log            cada operacion: { cliente, tabla, op, payload, filtros }
 import { randomUUID, createHash } from 'node:crypto'
 const quien = new URL(import.meta.url).search.slice(1) || 'prueba'
 export const db = globalThis.__db ??= {}
 export function reset() {
-  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, infoSinTamano: false, infoSinEtag: false, getSinEtag: false, cuerpoFalla: null, log: [], auth: [], oyentesAuth: [] })
+  Object.assign(db, { tablas: {}, tokens: {}, sesion: null, storage: {}, maxFilas: null, falla: null, pausa: null, entrega: null, pierde: null, cascadas: null, trasAplicar: null, clientes: [], metadatos: {}, infoSinMetadatos: false, infoSinTamano: false, infoSinEtag: false, getSinEtag: false, cuerpoFalla: null, rpcExterno: null, log: [], auth: [], oyentesAuth: [] })
 }
 if (!db.tablas) reset()
 const tick = () => new Promise(r => setImmediate(r))
@@ -371,6 +372,8 @@ async function rpc(nombre, args = {}) {
   if (db.pausa) await db.pausa(ctx)
   const err = db.falla && await db.falla(ctx)
   if (err) return { data: null, error: err }
+  // db.rpcExterno(nombre, args): la RPC la contesta otra cosa (etapa 3: la base REAL del ensayo, pruebas/montaje-v1.mjs)
+  if (db.rpcExterno) { const r = await db.rpcExterno(nombre, args); if (db.pierde && await db.pierde(ctx)) return { data: null, error: { message: 'TypeError: Failed to fetch', code: '', details: null, hint: null }, status: 0 }; return r }
   if (!Object.hasOwn(RPCS, nombre)) return { data: null, error: { code: 'PGRST202', message: 'Could not find the function public.' + nombre } }
   const crudo = RPCS[nombre](args)
   if (crudo && !Array.isArray(crudo)) {
