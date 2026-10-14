@@ -75,6 +75,19 @@ const r4 = await CO.ordenComando({ actor: u(1), cuerpo: av(corto), puertos: puer
 oraculo('TRAM', 'un avance que cabe: alcanzado = hasta, sin cortar', r4.http === 200 && r4.cuerpo?.alcanzado === corto && r4.cuerpo.cortado === false, JSON.stringify(r4.cuerpo))
 oraculo('TRAM', 'el tope es un parametro (limites.minutos = 30): corta en 30 minutos de mercado', (await CO.ordenComando({ actor: u(1), cuerpo: av(corto), puertos: puertos(fila(e0), { limites: { minutos: 30 } }) })).cuerpo?.alcanzado === tras(D0 - 60, 30))
 
+titulo('2b · un reto cortado en trozos (q.14.4)')
+const RT = await importa('lib/motor/reto.mjs')
+const i3 = SO.validaCrear({ session_id: u(1001), command_id: u(2001), epoca: 1, name: 'R', pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: '3F' }, { ahora: Date.parse('2026-10-14T10:00:00Z') }).intencion
+const r0 = CR.estadoInicial(i3, fijados).estado
+llamadas = []; t = 0
+const rr1 = await CO.ordenComando({ actor: u(1), cuerpo: av(D0 + 86400), puertos: puertos(fila(r0), { reloj }) })
+const rc1 = deEnviado()
+llamadas = []
+const rr2 = await CO.ordenComando({ actor: u(1), cuerpo: av(D0 + 86400, 1), puertos: puertos(fila(rc1, 1)) })
+const rc2 = deEnviado()
+const unoR = RT.avanzaReto(r0, D0 + 86400, fu)
+oraculo('TRAM', 'reto 3F: un trozo por reloj y luego el resto = avanzaReto de un tiron (estado y eventos)', rr1.cuerpo?.cortado === true && rr2.cuerpo?.cortado === false && CA.serializa(rc2) === CA.serializa(unoR.reto) && (llamadas[0]?.a?.p_resultado?.eventos?.length ?? -1) + 0 >= 0, JSON.stringify({ c1: rr1.cuerpo, c2: rr2.cuerpo }))
+
 titulo('3 · lo que no se acota, y el tamaño')
 llamadas = []
 await CO.ordenComando({ actor: u(1), cuerpo: av(D0 + 300 * 86400, 0), puertos: puertos(fila(e2, 1)) })

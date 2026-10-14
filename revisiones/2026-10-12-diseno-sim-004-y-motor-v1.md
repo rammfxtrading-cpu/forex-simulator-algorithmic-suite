@@ -3167,3 +3167,23 @@ Hecha sobre lo construido: `lib/servidor/*`, los seis endpoints, el cambio del m
    - Va **antes de cualquier despliegue que pueda encender los endpoints**: sin ella, un avance que cruce un hueco aceptado recibe 422, y no hay completado de 1F/3F.
 4. **Desplegar el código de la etapa 3 con los endpoints APAGADOS**: sin `SIM_V1_ENDPOINTS`, todo responde 503, como en la etapa 1.
 5. **Etapa 5 (la ventana de corte, c.7):** sim-004 y, después, `SIM_V1_ENDPOINTS=encendido` y redespliegue.
+
+### q.14 Autorrevisión adversaria de la segunda ronda de la etapa 3 (14-oct)
+
+Sobre `4235196` (la suite), `a8e40a4` (el rendimiento), `5ea4e9d` (los tramos), `bdfb902` (fase y s15) y MCV-01.
+
+1. **La comparación inclusiva solo en la suite.** Es mi lectura de la decisión (c): la pregunta era solo sobre 1F/3F, y FTMO y la práctica tienen oráculos aprobados de «exacto: no incumple». Si el CTO la quería para todos, cambian A29, A32, A33 y la equivalencia con lo aprobado. **Pendiente de su confirmación.**
+2. **La quema de un par con USD como base** (USDJPY, USDCHF, USDCAD) convierte con el bid del punto sin empujar: es `convDe`, la tasa del P&L de ese cierre (MCV, parte 1). Con el empuje, el precio de salida y el de conversión del mismo par difieren en 5 ticks. Es coherente con «una sola tasa», pero merece una línea del CTO o de Astra.
+3. **El rendimiento:**
+   - la memoria de `flotantePos_µ` es un `WeakMap` por objeto posición, válido mientras el objeto no muta sin cambiar su clave. La clave incluye todo lo que entra en el cálculo (salida, tasa, lotes, cerrado exacto y redondeado);
+   - `clona` supone un estado de JSON con BigInt. Si un día el estado lleva un `Map` o una `Date`, `clona` los rompería sin avisar.
+   - Los cubre la equivalencia de 200 escenarios y la tanda, no una guarda en el código.
+4. **Los tramos no son deterministas** (el reloj): lo dice q.12. Además:
+   - el corte por trozos de un reto (`avanzaReto` con fuentes, sucesivo) descansa en paso = salto del reto (C6-05). La prueba de tramos solo encadenaba una práctica: **añadido** un oráculo de un reto 3F cortado por reloj y continuado, igual que `avanzaReto` de un tirón (`pruebas/servidor-tramos.mjs`, 2b). Ese oráculo no tiene rojo previo: añade cobertura sobre un código que ya era correcto;
+   - «minuto de mercado» cuenta los festivos como abiertos: el máximo de 2.400 es una cota de trabajo, no de calendario.
+5. **`fase.mjs`:**
+   - el inicio de la hija sale de `superada.en` (`vela` o `t`). Si la fase se supera en un cierre por comando, `en.t` es el cursor + 60, y la hija empieza un minuto después de esa hora del motor;
+   - la hija fija el mercado vigente: si entre las dos fases se publicó una versión que **no** continúa la de la madre (un incidente), la hija toma la nueva sin avisar. La madre no se toca, como mandó el CTO;
+   - con sim-003 sola (la de producción), solo funciona 2F 1→2. El completado y 3F necesitan sim-004b, como ya dice el runbook (q.13).
+6. **s15:** su lista y `COLUMNAS_SESION` están atadas por una prueba. Si alguien cambia una sin la otra, la tanda se pone en rojo; pero en producción solo vale si Ramón la corre antes del despliegue (q.13, paso 1).
+7. **Las medidas:** todas locales. El presupuesto de 6 s corta en Vercel si el motor va más lento; nadie ha medido Vercel.
