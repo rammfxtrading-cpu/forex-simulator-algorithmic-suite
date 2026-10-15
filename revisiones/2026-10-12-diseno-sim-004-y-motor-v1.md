@@ -3583,3 +3583,8 @@ En `revisiones-suite/2026-10-15-sim-etapa3-runbook.md` (el repo no guarda los ru
   - 401 o 405: el interruptor está encendido. 404: el despliegue no lleva la etapa 3. 500 u otro cuerpo: PARAR.
 - **5.4, Ramón, el cliente:** el dashboard, analytics y una sesión cargan como siempre, sin errores ni el aviso de pausa; si no, PARAR.
 - ⚠️ **Sigue abierto:** qué se integra en `main` y cómo, porque la etapa 3 va encima de la 2, que no está en `main`. El paso empieza con la orden del CTO sobre el commit.
+
+#### q.17.9 El runbook de la etapa 3 se cierra en el paso 5 (CTO, 15-oct)
+
+- **Fuera el antiguo paso 6 (el corte).** El runbook lo dice al final: el corte (mantenimiento → sim-004 → s08 → encender v1) es la etapa 5, con su propio runbook.
+- **Le faltan sim-004 (la etapa 4) y el cliente v1 (d4–d8).**
