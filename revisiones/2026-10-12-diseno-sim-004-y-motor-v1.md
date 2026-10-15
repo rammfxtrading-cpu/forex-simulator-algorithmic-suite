@@ -3495,3 +3495,47 @@ Cada desvío corre dentro de una transacción que se deshace, contra la s16 y co
   - **el corte:** es la etapa 5, y sim-004 (la etapa 4) no está escrito.
 
 **La familia de FORCE** (`pruebas/s16-catalogo-sim004b.mjs` §5): RLS forzada en cada una de las 14 tablas. La s16 dice DIFIEREN y sim-004b aborta en las 14. Es cobertura de lo que ya exigía `7ba487f` (que tenía negativos solo en `sim_eventos` y `user_tool_config`), así que no tiene rojo previo.
+
+#### q.17.5 El revisor adversario de `d20dcef`: H1–H5
+
+**H1 (media), arreglado.** La s16 solo replicaba la sección 4 de sim-004b. Ahora mide también las secciones 0–3, copiadas literales de `sql/sim-004b-contrato-v1.sql` (la prueba comprueba la copia):
+- **`requisito`:** PostgreSQL ≥ 17 y los roles anon, authenticated y service_role (sección 0). Las funciones de sim-003 y de la preparatoria ya las medían las filas `funcion`.
+- **`sim004b_estado`:** las dos restricciones que cambia (definición vieja o nueva y validada) y los tres cuerpos que pone (sha256).
+  - «Sin aplicar» (2, 0, 0) y «aplicada» (0, 2, 3) son lo esperado.
+  - Cualquier otra cosa es la rama «A MEDIAS» de sim-004b: DIFIERE.
+- **`restriccion` y `indice`:** las **25** restricciones y los **10** índices únicos de sim-003 que compara su sección 3, al pie de la letra (sin el prefijo `public.`). Eran 25, no 24.
+- **`funcion_sustituida`:** las tres RPC que sustituye (`sim_comando`, `sim_tomar_escritor`, `sim_avanzar_fase`).
+  - El EXECUTE siempre: anon, authenticated y PUBLIC no; service_role sí. CREATE OR REPLACE conserva los permisos.
+  - SECURITY DEFINER y el search_path vacío, **solo con sim-004b ya aplicada.** Antes, su CREATE OR REPLACE los vuelve a fijar y sim-004b no aborta: medirlos sería pedir «más» que sim-004b.
+
+**H2 (baja), arreglado.** Una de las cuatro secuencias que no existe (o renombrada) no la exige sim-004b, que filtra por `to_regclass`. La s16 la da ahora por «coincide», con la nota.
+
+**H3, la familia en las dos direcciones** (`pruebas/s16-catalogo-sim004b.mjs` §6 y §7). Para cada desvío: «la s16 dice DIFIEREN» si y solo si «sim-004b aborta».
+- **42 que sim-004b rechaza:**
+  - las 25 restricciones quitadas;
+  - los 2 índices únicos que no sostienen una restricción;
+  - las dos restricciones alteradas y el estado mixto;
+  - en las 3 RPC, EXECUTE a anon, a authenticated y a PUBLIC, y sin EXECUTE de service_role.
+- **10 que acepta:** las 4 secuencias renombradas, y otro search_path o SECURITY INVOKER en las 3 RPC (antes de aplicar).
+- **Con sim-004b ya aplicada:** sin desvío, OK y reejecución; con otro search_path, SECURITY INVOKER o EXECUTE a anon en las 3 RPC (9), DIFIEREN y aborto.
+- Incluye los seis casos del script del revisor (`rojos/s16-huecos-revisor.mjs`: 6 en rojo contra `d20dcef` y 0 tras el arreglo).
+
+**Rojo contra `d20dcef`:**
+- el script del revisor: 6;
+- la prueba nueva contra la consulta de `d20dcef`: 7 oráculos (`rojos/s16-secciones-0-3-contra-d20dcef.txt`).
+
+**H4 (documentado, sin arreglo):** `lib/motor/fuente.mjs:222–233`, el `avanza` del motor de un par, no recibió q.17.4 (la detención del terminal ni `sesion_terminada`). Ningún camino del servidor lo usa: las sesiones v1 son siempre cartera.
+
+**H5 (documentado): huecos de cobertura en las pruebas de la detención.**
+- En `tramos-fuentes.mjs`, los cortes en la frontera del mercado desaparecen cuando `uno.det` es un breach (se corta en `frontera` y `frontera − 1` solo si la detención de un tirón tiene frontera).
+- `resumen.detencion` no se compara tramo a tramo en el servidor; solo de un tirón.
+- El oráculo DET no mira **en qué tramo** sale cada detención; solo que todas (sin `sesion_terminada`) sean la de un tirón.
+- `servidor-detencion.mjs` no distingue entre copiar la regla y recalcularla: en ese caso darían lo mismo.
+
+**Lo que intentó el revisor sin resultado:**
+- la propiedad con más cortes (25/25 iguales);
+- un breach y una fase superada en el mismo avance (imposible: el breach prevalece y detiene);
+- un breach seguido de falta de trozo;
+- el sha256 de los ficheros del runbook;
+- FORCE en las 14;
+- las ACL heredadas por pertenencia a un rol.

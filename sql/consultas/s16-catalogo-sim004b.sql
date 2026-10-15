@@ -11,6 +11,11 @@
 -- da por bueno es exactamente lo que exige sim-004b. Acaba en «FIN | s16 | consulta».
 --
 -- Que trae, por este orden (cada fila acaba en «coincide» o en DIFIERE / DE MAS / FALTA):
+--   0 requisito      PostgreSQL >= 17 y los roles anon, authenticated y service_role (seccion 0)
+--   0 sim004b_estado las dos restricciones y los tres cuerpos que cambia sim-004b: «sin aplicar» o
+--                    «aplicada»; si no, A MEDIAS (sim-004b aborta)
+--   0 restriccion    las 25 restricciones de sim-003 que sim-004b compara al pie de la letra (seccion 3)
+--   0 indice         sus 10 indices unicos (seccion 3)
 --   1 rls        las 14 tablas que acredita sim-004b: rls (exigida en 11) y force (false en las 14)
 --   2 politica   las politicas de las 11 tablas protegidas, una por fila
 --   3 funcion    las 17 funciones que sim-004b CONSERVA (y la puerta si esta): lenguaje|SECURITY
@@ -23,6 +28,8 @@
 --   6 acl_receptores las 7 tablas nuevas y sus 4 secuencias: receptores aparte del dueño y de los
 --                    SELECT previstos
 --   7 acl_columna    ACL de columna en las 11 protegidas (ninguna)
+--   3b funcion_sustituida  las 3 RPC que sim-004b sustituye: EXECUTE (anon, authenticated y PUBLIC no;
+--                    service_role si) y, con sim-004b ya aplicada, SECURITY DEFINER y search_path vacio
 --   8 veredicto  «OK» (se puede aplicar sim-004b) o «DIFIEREN n» — NO aplicar sim-004b
 -- Los textos van SIN el prefijo «public.» (el editor tiene public en el search_path y sim-004b
 -- compara con search_path vacio: quitarlo hace la salida igual con los dos).
@@ -165,6 +172,94 @@ tri_med as (
            || '|' || t.tgtype || '|' || t.tgenabled::text, '\mpublic\.', '', 'g') x
     from pg_trigger t join pg_class c on c.oid = t.tgrelid left join pg_constraint k on k.oid = t.tgconstraint
    where c.oid in (select to_regclass('public.' || t) from tablas)),
+-- 0-3 lo que sim-004b exige ANTES de su seccion 4 (revisor de d20dcef, H1; CTO: la s16 mide TODO lo
+-- que sim-004b exige, ni mas ni menos). Las definiciones, COPIADAS de sql/sim-004b-contrato-v1.sql (la
+-- prueba lo comprueba); los textos sin el prefijo «public.» (sim-004b compara con search_path = public).
+requisito(objeto, bien, detalle) as (values
+    ('PostgreSQL >= 17', current_setting('server_version_num')::integer >= 170000, current_setting('server_version')),
+    ('rol anon', exists (select 1 from pg_roles where rolname = 'anon'), 'existe'),
+    ('rol authenticated', exists (select 1 from pg_roles where rolname = 'authenticated'), 'existe'),
+    ('rol service_role', exists (select 1 from pg_roles where rolname = 'service_role'), 'existe')),
+def_dos(conrel, conname, vieja, nueva) as (values
+    ('sim_sessions', 'sim_sessions_terminal_valida', 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text]))))', 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text, ''superado''::text]))))'),
+    ('sim_eventos', 'sim_eventos_tipo_check', 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text])))', 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text, ''hueco_aceptado''::text])))')),
+dos as (
+  select d.conname,
+         (select regexp_replace(pg_get_constraintdef(k.oid), '\mpublic\.', '', 'g') from pg_constraint k
+           where k.conrelid = to_regclass('public.' || d.conrel) and k.conname = d.conname) def,
+         (select k.convalidated from pg_constraint k where k.conrelid = to_regclass('public.' || d.conrel) and k.conname = d.conname) validada,
+         d.vieja, d.nueva
+    from def_dos d),
+sust(firma, sha) as (values
+    ('sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)', '94f4db481cc09a2bc9b5d86512931186d8ec5aa98689bf6dc54bd6418798bc36'),
+    ('sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)', 'f58af2b0e4945d9313ea2c3bb55f4be7c003521be80ed92a5a0a56b5cdc03d48'),
+    ('sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)', '3409a208f5b26211be3406f8d4a93ed074cd1e1a72c6c3eed32f5b2d9c99526b')),
+estado as (
+  select (select count(*) from dos where def = vieja) viejas,
+         (select count(*) from dos where def = nueva and validada) nuevas,
+         (select count(*) from sust s join pg_proc p on p.oid = to_regprocedure('public.' || s.firma)
+           where encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') = s.sha) cuerpos),
+-- las tres RPC que sustituye: EXECUTE siempre (CREATE OR REPLACE conserva los permisos); SECURITY y
+-- search_path solo con sim-004b ya aplicada (antes, su CREATE OR REPLACE los vuelve a fijar)
+fsust as (
+  select s.firma, p.oid,
+         case when p.oid is null then null else
+           'anon=' || has_function_privilege('anon', p.oid, 'EXECUTE') || ' authenticated=' || has_function_privilege('authenticated', p.oid, 'EXECUTE')
+           || ' PUBLIC=' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0)
+           || ' service_role=' || has_function_privilege('service_role', p.oid, 'EXECUTE')
+           || case when (select viejas = 0 and nuevas = 2 and cuerpos = 3 from estado)
+                   then ' definer=' || p.prosecdef || ' search_path_vacio=' || coalesce('search_path=""' = any (p.proconfig), false) else '' end end medido,
+         'anon=false authenticated=false PUBLIC=false service_role=true'
+           || case when (select viejas = 0 and nuevas = 2 and cuerpos = 3 from estado) then ' definer=true search_path_vacio=true' else '' end esperado
+    from sust s left join pg_proc p on p.oid = to_regprocedure('public.' || s.firma)),
+restr_esp(rel, nombre, def) as (values
+    ('sim_alumnos', 'sim_alumnos_pkey', 'PRIMARY KEY (user_id)'),
+    ('sim_alumnos', 'sim_alumnos_user_id_fkey', 'FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'),
+    ('sim_arrendamientos', 'sim_arrendamientos_pkey', 'PRIMARY KEY (session_id)'),
+    ('sim_arrendamientos', 'sim_arrendamientos_session_id_fkey', 'FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE'),
+    ('sim_arrendamientos', 'sim_arrendamientos_cliente_id_check', 'CHECK (((length(cliente_id) >= 1) AND (length(cliente_id) <= 100)))'),
+    ('sim_arrendamientos', 'sim_arrendamientos_testigo_hash_check', 'CHECK ((testigo_hash ~ ''^[0-9a-f]{64}$''::text))'),
+    ('sim_recibos', 'sim_recibos_pkey', 'PRIMARY KEY (id)'),
+    ('sim_recibos', 'sim_recibos_session_id_fkey', 'FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE'),
+    ('sim_recibos', 'sim_recibos_session_command_key', 'UNIQUE (session_id, command_id)'),
+    ('sim_recibos', 'sim_recibos_tipo_check', 'CHECK ((tipo = ANY (ARRAY[''abrir''::text, ''modificar''::text, ''cancelar''::text, ''cerrar''::text, ''avanzar''::text, ''checkpoint''::text, ''crear''::text, ''tomar_escritor''::text, ''avanzar_fase''::text])))'),
+    ('sim_recibos', 'sim_recibos_clase_check', 'CHECK ((clase = ANY (ARRAY[''economico''::text, ''ultimo_avance''::text])))'),
+    ('sim_recibos', 'sim_recibos_clase_tipo', 'CHECK (((clase = ''economico''::text) OR (tipo = ANY (ARRAY[''avanzar''::text, ''checkpoint''::text]))))'),
+    ('sim_recibos', 'sim_recibos_digest_check', 'CHECK ((digest ~ ''^[0-9a-f]{64}$''::text))'),
+    ('sim_recibos', 'sim_recibos_resultado_check', 'CHECK ((resultado = ANY (ARRAY[''aceptado''::text, ''rechazado''::text, ''conflicto''::text])))'),
+    ('sim_eventos', 'sim_eventos_pkey', 'PRIMARY KEY (id)'),
+    ('sim_eventos', 'sim_eventos_session_id_fkey', 'FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE'),
+    ('sim_eventos', 'sim_eventos_session_seq_key', 'UNIQUE (session_id, seq)'),
+    ('sim_eventos', 'sim_eventos_session_command_ordinal_key', 'UNIQUE (session_id, command_id, ordinal)'),
+    ('sim_eventos', 'sim_eventos_seq_check', 'CHECK ((seq >= 1))'),
+    ('sim_eventos', 'sim_eventos_ordinal_check', 'CHECK ((ordinal >= 0))'),
+    ('sim_sessions', 'sim_sessions_user_id_perfil_fkey', 'FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'),
+    ('sim_sessions', 'sim_sessions_v1_coherente', 'CHECK (((motor_version = ANY (ARRAY[0, 1])) AND (epoca >= 0) AND (version >= 0) AND ((motor_version = 0) OR (creada_por_rpc AND (((estado IS NOT NULL) AND (mercado IS NOT NULL)) OR (NOT (terminal IS DISTINCT FROM ''borrada''::text))))) AND ((NOT legado) OR (motor_version = 0))))'),
+    ('sim_trades', 'sim_trades_evento_id_fkey', 'FOREIGN KEY (evento_id) REFERENCES sim_eventos(id) ON DELETE CASCADE'),
+    ('sim_trades', 'sim_trades_evento_id_key', 'UNIQUE (evento_id)'),
+    ('sim_trades', 'sim_trades_v1_coherente', 'CHECK ((((motor_version = 0) AND (evento_id IS NULL)) OR ((motor_version = 1) AND (evento_id IS NOT NULL) AND (bruto_micro IS NOT NULL) AND (neto_micro IS NOT NULL) AND (comision_micro IS NOT NULL) AND (spread_micro IS NOT NULL) AND (swap_micro IS NOT NULL) AND (ambigua IS NOT NULL))))')),
+restr as (
+  select e.rel, e.nombre, e.def esperado,
+         (select regexp_replace(pg_get_constraintdef(k.oid), '\mpublic\.', '', 'g') || case when k.convalidated then '' else ' (NO VALIDADA)' end
+            from pg_constraint k where k.conrelid = to_regclass('public.' || e.rel) and k.conname = e.nombre) medido
+    from restr_esp e),
+idx_esp(nombre, def) as (values
+    ('sim_alumnos_pkey', 'CREATE UNIQUE INDEX sim_alumnos_pkey ON public.sim_alumnos USING btree (user_id)'),
+    ('sim_arrendamientos_pkey', 'CREATE UNIQUE INDEX sim_arrendamientos_pkey ON public.sim_arrendamientos USING btree (session_id)'),
+    ('sim_recibos_pkey', 'CREATE UNIQUE INDEX sim_recibos_pkey ON public.sim_recibos USING btree (id)'),
+    ('sim_recibos_session_command_key', 'CREATE UNIQUE INDEX sim_recibos_session_command_key ON public.sim_recibos USING btree (session_id, command_id)'),
+    ('sim_recibos_ultimo_avance_key', 'CREATE UNIQUE INDEX sim_recibos_ultimo_avance_key ON public.sim_recibos USING btree (session_id) WHERE (clase = ''ultimo_avance''::text)'),
+    ('sim_eventos_pkey', 'CREATE UNIQUE INDEX sim_eventos_pkey ON public.sim_eventos USING btree (id)'),
+    ('sim_eventos_session_seq_key', 'CREATE UNIQUE INDEX sim_eventos_session_seq_key ON public.sim_eventos USING btree (session_id, seq)'),
+    ('sim_eventos_session_command_ordinal_key', 'CREATE UNIQUE INDEX sim_eventos_session_command_ordinal_key ON public.sim_eventos USING btree (session_id, command_id, ordinal)'),
+    ('sim_trades_evento_id_key', 'CREATE UNIQUE INDEX sim_trades_evento_id_key ON public.sim_trades USING btree (evento_id)'),
+    ('sim_sessions_una_hija_v1_key', 'CREATE UNIQUE INDEX sim_sessions_una_hija_v1_key ON public.sim_sessions USING btree (challenge_parent_id) WHERE ((motor_version = 1) AND (challenge_parent_id IS NOT NULL))')),
+idx as (
+  select e.nombre, regexp_replace(e.def, '\mpublic\.', '', 'g') esperado,
+         (select regexp_replace(pg_get_indexdef(i.indexrelid), '\mpublic\.', '', 'g')
+                 || case when i.indisunique then '' else ' (NO UNICO)' end || case when i.indisvalid then '' else ' (NO VALIDO)' end
+            from pg_index i where i.indexrelid = to_regclass('public.' || e.nombre)) medido
+    from idx_esp e),
 -- 5 las ACL de tabla, con la MISMA regla que sim-004b (su seccion 4.3; CTO 15-oct, ronda 2: la s16 mide
 -- todo lo que sim-004b exige). En las 11 protegidas, la matriz EFECTIVA de los siete privilegios para
 -- PUBLIC, anon, authenticated y service_role (en las cuatro de s04, la medida del 10-oct; no la ACL cruda,
@@ -217,13 +312,35 @@ filas as (
   union all select 4, x, 'disparador', x, 'DE MAS' from (select x from tri_med except all select x from tri_e) d
   union all select 4, x, 'disparador', x, 'FALTA' from (select x from tri_e except all select x from tri_med) d
   union all
+  select 0.1, r.objeto, 'requisito', r.objeto, r.detalle || ' · ' || case when r.bien then 'coincide' else 'DIFIERE' end from requisito r
+  union all
+  select 0.2, '', 'sim004b_estado', 'las 2 restricciones y los 3 cuerpos que cambia',
+         'restricciones viejas ' || e.viejas || ', nuevas ' || e.nuevas || ' de 2; cuerpos de sim-004b ' || e.cuerpos || ' de 3 · '
+         || case when e.viejas = 2 and e.nuevas = 0 and e.cuerpos = 0 then 'sin aplicar · coincide'
+                 when e.viejas = 0 and e.nuevas = 2 and e.cuerpos = 3 then 'aplicada · coincide'
+                 else 'A MEDIAS o alterada · DIFIERE' end
+    from estado e
+  union all
+  select 0.3, r.nombre, 'restriccion', r.rel || '.' || r.nombre,
+         coalesce(r.medido, 'NO EXISTE') || ' · ' || case when r.medido is not distinct from r.esperado then 'coincide' else 'DIFIERE (sim-004b espera ' || r.esperado || ')' end
+    from restr r
+  union all
+  select 0.4, i.nombre, 'indice', i.nombre,
+         coalesce(i.medido, 'NO EXISTE') || ' · ' || case when i.medido is not distinct from i.esperado then 'coincide' else 'DIFIERE (sim-004b espera ' || i.esperado || ')' end
+    from idx i
+  union all
+  select 3.5, f.firma, 'funcion_sustituida', f.firma,
+         coalesce(f.medido, 'NO EXISTE') || ' · ' || case when f.medido is not distinct from f.esperado then 'coincide' else 'DIFIERE (sim-004b espera ' || f.esperado || ')' end
+    from fsust f
+  union all
   select 5, a.t, 'acl_tabla', a.t,
          coalesce(a.medido, 'NO EXISTE') || ' · '
          || case when a.medido is not distinct from a.esperado then 'coincide' else 'DIFIERE (sim-004b espera ' || a.esperado || ')' end
     from acl_m a
   union all
   select 6, r.o, 'acl_receptores', r.o,
-         case when r.oid is null then 'NO EXISTE · DIFIERE' when r.de_mas is null then 'ninguno de mas · coincide'
+         case when r.oid is null and r.o like '%\_seq' then 'no existe (sim-004b no exige las secuencias, solo sus receptores si estan) · coincide'
+              when r.oid is null then 'NO EXISTE · DIFIERE' when r.de_mas is null then 'ninguno de mas · coincide'
               else 'de mas: ' || r.de_mas || ' · DIFIERE' end
     from acl_r r
   union all
@@ -235,7 +352,7 @@ select seccion, objeto, detalle from (
   select o, o2, seccion, objeto, detalle from filas
   union all
   select 8, '', 'veredicto', case when n = 0 then 'OK' else 'DIFIEREN ' || n end,
-         case when n = 0 then 'lo que acredita sim-004b (rls, force, politicas, funciones, disparadores y ACL de tabla) coincide: se puede aplicar'
+         case when n = 0 then 'lo que exige sim-004b (requisitos, estado, restricciones, indices, rls, force, politicas, funciones, disparadores y ACL de tabla) coincide: se puede aplicar'
               else 'NO aplicar sim-004b: revisar las filas DIFIERE / DE MAS / FALTA y parar (decide el CTO)' end
     from malas
   union all
