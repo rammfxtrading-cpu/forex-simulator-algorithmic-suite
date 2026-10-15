@@ -46,26 +46,46 @@ const fu = await ME.creaLector({ almacen: alm, cache: ME.creaCache() }).fuentes(
 const unTiron = (e, h) => CA.avanza(e, h, fu, { desde: D0 })
 // el minuto en que se cumplen k minutos de mercado despues de t
 const tras = (t, k) => { for (let x = t + 60; ; x += 60) if (!minutoCerrado(x) && --k === 0) return x }
+// E3-02: una practica con posiciones (TP y SL a pocos ticks) y una pendiente, para que el tramo
+// cortado tenga eventos y trades que comparar (sin posiciones, 2.400 minutos no dan ninguno)
+const M = await importa('lib/motor/motor.mjs')
+let ep = CA.avanza(e0, D0, fu, { desde: D0 }).estado
+const cerca = (par, k) => M.precioTexto(par, ep.cotizaciones[par].bid + BigInt(k))
+const abre = [
+  { par: 'EURUSD', lado: 'BUY', orden: 'mercado', tp: cerca('EURUSD', 8) },
+  { par: 'USDJPY', lado: 'SELL', orden: 'mercado', tp: cerca('USDJPY', -8) },
+  { par: 'GBPUSD', lado: 'BUY', orden: 'mercado', sl: cerca('GBPUSD', -6) },
+  { par: 'AUDUSD', lado: 'BUY', orden: 'limit', precio: cerca('AUDUSD', -4), tp: cerca('AUDUSD', 4) },
+]
+const aceptadas = abre.map(o => { const x = CA.aplica(ep, { tipo: 'abrir', lotes: '1', ...o, ...(o.orden === 'mercado' ? { cotizadoEn: ep.reloj.cursor } : {}) }, {}); ep = x.estado; return x.resultado })
+ver('control: la practica con posiciones abre las tres y la pendiente', aceptadas.every(r => r === 'aceptado'), JSON.stringify(aceptadas))
 
 titulo('1 · el maximo de minutos de mercado (sin prisa de reloj)')
 llamadas = []
 const lejos = D0 + 20 * 86400
-const r1 = await CO.ordenComando({ actor: u(1), cuerpo: av(lejos), puertos: puertos(fila(e0)) })
+const r1 = await CO.ordenComando({ actor: u(1), cuerpo: av(lejos), puertos: puertos(fila(ep)) })
 const tope = CO.LIMITES?.minutos
-const b1 = tope ? tras(D0 - 60, tope) : null
+const b1 = tope ? tras(D0, tope) : null
 oraculo('TRAM', `20 dias pedidos: un solo tramo, cortado en ${tope} minutos de mercado; la respuesta dice alcanzado y cortado`, r1.http === 200 && llamadas.length === 1 && r1.cuerpo?.cortado === true && r1.cuerpo.alcanzado === b1 && enviado()?.resumen?.alcanzado === b1, JSON.stringify({ c: r1.cuerpo, b1 }))
-const ref1 = unTiron(e0, b1)
-oraculo('TRAM', 'el tramo cortado es EXACTAMENTE avanzar de un tiron hasta donde llego (estado y eventos)', b1 != null && CA.serializa(deEnviado()) === CA.serializa(ref1.estado) && enviado()?.eventos?.length === ref1.eventos.length, `${enviado()?.eventos?.length} / ${ref1.eventos.length}`)
+const ref1 = unTiron(ep, b1)
+// E3-02 (Astra 15-oct): los eventos COMPLETOS (tipo, instante y datos) y los trades, no su numero.
+// La referencia pasa por el mismo adaptador (resultadoDe) con los eventos del motor de un tiron.
+const adaptado = (antes, ref, h) => CO.resultadoDe({ tipo: 'avanzar', comando: { tipo: 'avanzar', hasta: h, motivo: 'play' }, antes, despues: ref.estado ?? ref.reto, eventos: ref.eventos })
+const sinOrd = xs => JSON.stringify((xs ?? []).map(({ ordinal, ...x }) => x))
+const mismos = (enviados, ref) => sinOrd(enviados?.eventos) === sinOrd(ref.eventos) && sinOrd(enviados?.trades) === sinOrd(ref.trades)
+const a1 = adaptado(ep, ref1, b1)
+ver('control: la comparacion completa ve un cambio de orden y un dato cambiado (no es una comparacion de longitudes)', a1.eventos.length > 1 && !mismos({ ...a1, eventos: [...a1.eventos].reverse() }, a1) && !mismos({ ...a1, eventos: a1.eventos.map((x, i) => (i ? x : { ...x, t_mercado: x.t_mercado + 60 })) }, a1), String(a1.eventos.length))
+oraculo('TRAM', 'el tramo cortado es EXACTAMENTE avanzar de un tiron hasta donde llego (estado, y eventos y trades completos)', b1 != null && CA.serializa(deEnviado()) === CA.serializa(ref1.estado) && mismos(enviado(), a1), `${enviado()?.eventos?.length} / ${ref1.eventos.length}`)
 oraculo('TRAM', 'los limites por defecto: 2.400 minutos de mercado, 6 s, 4 MB; sin tope de dias', CO.LIMITES?.minutos === 2400 && CO.LIMITES?.ms === 6000 && CO.LIMITES?.bytes === 4 * 1048576 && !('tramo' in (CO.LIMITES ?? {})), JSON.stringify(CO.LIMITES))
 
 titulo('2 · el presupuesto de reloj: se corta entre trozos, nunca a medias')
 llamadas = []
 let t = 0
 const reloj = () => { const x = t; t += 7000; return x }          // el primer trozo ya agota los 6 s
-const r2 = await CO.ordenComando({ actor: u(1), cuerpo: av(lejos), puertos: puertos(fila(e0), { reloj }) })
-const b2 = tras(D0 - 60, 60)
+const r2 = await CO.ordenComando({ actor: u(1), cuerpo: av(lejos), puertos: puertos(fila(ep), { reloj }) })
+const b2 = tras(D0, 60)
 oraculo('TRAM', 'el reloj se agota tras el primer trozo: alcanzado = 60 minutos de mercado, cortado; un solo tramo a la RPC', r2.http === 200 && llamadas.length === 1 && r2.cuerpo?.alcanzado === b2 && r2.cuerpo.cortado === true, JSON.stringify(r2.cuerpo))
-const ref2 = unTiron(e0, b2)
+const ref2 = unTiron(ep, b2)
 oraculo('TRAM', 'y es exactamente el avance de un tiron hasta ahi', CA.serializa(deEnviado()) === CA.serializa(ref2.estado), '')
 const e2 = deEnviado()
 llamadas = []
@@ -84,11 +104,16 @@ const r0 = CR.estadoInicial(i3, fijados).estado
 llamadas = []; t = 0
 const rr1 = await CO.ordenComando({ actor: u(1), cuerpo: av(D0 + 86400), puertos: puertos(fila(r0), { reloj }) })
 const rc1 = deEnviado()
+const primerR = enviado()
 llamadas = []
 const rr2 = await CO.ordenComando({ actor: u(1), cuerpo: av(D0 + 86400, 1), puertos: puertos(fila(rc1, 1)) })
 const rc2 = deEnviado()
 const unoR = RT.avanzaReto(r0, D0 + 86400, fu)
-oraculo('TRAM', 'reto 3F: un trozo por reloj y luego el resto = avanzaReto de un tiron (estado y eventos)', rr1.cuerpo?.cortado === true && rr2.cuerpo?.cortado === false && CA.serializa(rc2) === CA.serializa(unoR.reto) && (llamadas[0]?.a?.p_resultado?.eventos?.length ?? -1) + 0 >= 0, JSON.stringify({ c1: rr1.cuerpo, c2: rr2.cuerpo }))
+// E3-02: los eventos y trades de los dos tramos, seguidos, = los de avanzaReto de un tiron (completos)
+const aR = adaptado(r0, unoR, D0 + 86400)
+const enviadosR = { eventos: [...(primerR?.eventos ?? []), ...(llamadas[0]?.a?.p_resultado?.eventos ?? [])], trades: [...(primerR?.trades ?? []), ...(llamadas[0]?.a?.p_resultado?.trades ?? [])] }
+ver('control: el reto de un tiron tiene eventos que comparar', aR.eventos.length > 0, String(aR.eventos.length))
+oraculo('TRAM', 'reto 3F: un trozo por reloj y luego el resto = avanzaReto de un tiron (estado, y eventos y trades completos de los dos tramos)', rr1.cuerpo?.cortado === true && rr2.cuerpo?.cortado === false && CA.serializa(rc2) === CA.serializa(unoR.reto) && mismos(enviadosR, aR), JSON.stringify({ c1: rr1.cuerpo, c2: rr2.cuerpo, n: [enviadosR.eventos.length, aR.eventos.length] }))
 
 titulo('3 · lo que no se acota, y el tamaño')
 llamadas = []
