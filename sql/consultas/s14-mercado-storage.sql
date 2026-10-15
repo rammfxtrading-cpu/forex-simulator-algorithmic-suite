@@ -22,6 +22,11 @@
 --                 que empieza por pg_catalog, ningun operador «=» ajeno que
 --                 acepte texto, texteq, bucket_id text con la colacion por
 --                 defecto. Si no: «NO ACREDITADO: …» y mercado-001 abortaria
+--   1 columnas-bucket  (CTO 15-oct, s14d) el valor por defecto de type y de
+--                 versioning_status y los valores del enum storage.buckettype:
+--                 «acreditado (s14d, 15-oct)» si son los medidos
+--                 ('STANDARD'::storage.buckettype, 'DISABLED'::text,
+--                 STANDARD,ANALYTICS,VECTOR); si no, «NO ACREDITADO …: PARAR»
 --   1 cerrojo     public.mercado_cerrojo (E2R3-01, sql/mercado-000-cerrojo.sql):
 --                 si existe, su RLS, politicas, disparadores, reglas, permisos
 --                 directos y EFECTIVOS (E2R4-01: con herencia y pertenencias,
@@ -312,6 +317,21 @@ select seccion, objeto, detalle from (
     from storage.buckets b
   union all
   select 1, 1, 'bucket', 'mercado', 'NO EXISTE' where not exists (select 1 from storage.buckets where id = 'mercado' or name = 'mercado')
+  union all
+  -- CTO 15-oct (s14d): los valores por defecto de type y versioning_status y el enum storage.buckettype, como los
+  -- midio la s14d. mercado-001 no fija esas columnas: si cambian, NO ACREDITADO y PARAR
+  select 1, 1, 'columnas-bucket', e.columna,
+         'por defecto ' || coalesce((select pg_catalog.pg_get_expr(d.adbin, d.adrelid) from pg_catalog.pg_attribute a join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+                                     where a.attrelid = pg_catalog.to_regclass('storage.buckets') and a.attname = e.columna and not a.attisdropped), '(ninguno)')
+         || case when (select pg_catalog.pg_get_expr(d.adbin, d.adrelid) from pg_catalog.pg_attribute a join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+                        where a.attrelid = pg_catalog.to_regclass('storage.buckets') and a.attname = e.columna and not a.attisdropped) is not distinct from e.medido
+                 then ' · acreditado (s14d, 15-oct)' else ' · NO ACREDITADO (s14d: ' || e.medido || '): PARAR' end
+    from (values ('type', '''STANDARD''::storage.buckettype'), ('versioning_status', '''DISABLED''::text')) e(columna, medido)
+  union all
+  select 1, 1, 'columnas-bucket', 'storage.buckettype',
+         coalesce((select pg_catalog.string_agg(v.enumlabel::text, ',' order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')), '(no es un enum o no existe)')
+         || case when (select pg_catalog.string_agg(v.enumlabel::text, ',' order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')) is not distinct from 'STANDARD,ANALYTICS,VECTOR'
+                 then ' · acreditado (s14d, 15-oct)' else ' · NO ACREDITADO (s14d: STANDARD,ANALYTICS,VECTOR): PARAR' end
   union all
   -- E2R3-01: el cerrojo del publicador, en la base (sql/mercado-000-cerrojo.sql)
   select 1, 2, 'cerrojo', 'public.mercado_cerrojo',

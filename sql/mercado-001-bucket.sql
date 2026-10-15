@@ -91,6 +91,12 @@
 --     es el mismo texto que en s14 (la prueba lo compara byte a byte). Los
 --     disparadores que NO estan en la lista no abortan aqui: los para s14
 --     (PARAR) y, en storage.objects, la sonda («no concluyente»).
+--   · POSTCONDICION (CTO 15-oct, con la s14d): type y versioning_status tienen
+--     valor por defecto ('STANDARD' y 'DISABLED'), asi que el INSERT no los
+--     fija; despues del INSERT se lee la fila creada y tiene que tener
+--     type = 'STANDARD', versioning_status = 'DISABLED' y las dos columnas de
+--     ciclo de vida a NULL. Si no: «el bucket creado no es el esperado (…)» y
+--     aborta todo. s14 acredita esos dos valores por defecto y el enum.
 --     LO QUE EL ROLLBACK NO DESHACE (E2R2-02): el INSERT del centinela y las
 --     ordenes de la sonda disparan los disparadores de storage.objects (por
 --     fila, los del centinela; por sentencia, todos los de UPDATE y DELETE);
@@ -140,6 +146,7 @@ declare
   ajuste_inicio text;
   ajuste_previo text;
   no_acreditados text;
+  creada jsonb;
 begin
   -- E2R2-01: contexto de resolucion fijo antes de inspeccionar nada; E2R2-02: esperas acotadas
   perform pg_catalog.set_config('search_path', 'pg_catalog, pg_temp', true);
@@ -370,6 +377,16 @@ select * from veredictos) v
     end if;
   else
     insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('mercado', 'mercado', false, 5242880, null);
+    -- POSTCONDICION (CTO 15-oct, con la s14d): type y versioning_status no se fijan (tienen valor por defecto,
+    -- 'STANDARD' y 'DISABLED'); la fila creada tiene que tenerlos, y el ciclo de vida a NULL. Por jsonb: una columna
+    -- que no existiera da NULL y aborta con este mensaje, no con otro
+    select pg_catalog.to_jsonb(x) into creada from storage.buckets x where x.id = 'mercado';
+    if creada ->> 'type' is distinct from 'STANDARD' or creada ->> 'versioning_status' is distinct from 'DISABLED'
+       or not (creada ? 'lifecycle_configuration' and creada ? 'lifecycle_configuration_generation')
+       or creada -> 'lifecycle_configuration' is distinct from 'null'::jsonb or creada -> 'lifecycle_configuration_generation' is distinct from 'null'::jsonb then
+      raise exception 'mercado-001: el bucket creado no es el esperado (type=%, versioning_status=%, lifecycle_configuration=%, lifecycle_configuration_generation=%): se esperaba type=STANDARD, versioning_status=DISABLED (los valores por defecto de la s14d del 15-oct) y el ciclo de vida a NULL; no se crea nada',
+        coalesce(creada ->> 'type', 'NULL'), coalesce(creada ->> 'versioning_status', 'NULL'), coalesce(creada ->> 'lifecycle_configuration', 'NULL'), coalesce(creada ->> 'lifecycle_configuration_generation', 'NULL');
+    end if;
   end if;
 
   -- CAPA 2: sonda con un centinela que se deshace
@@ -473,6 +490,11 @@ select seccion, detalle from (
   select 1 o, 'bucket' seccion, b.id || ' · public=' || b.public || ' · file_size_limit=' || coalesce(b.file_size_limit::text, '-')
          || ' · allowed_mime_types=' || coalesce(b.allowed_mime_types::text, '-') detalle
     from storage.buckets b where b.id = 'mercado'
+  union all
+  -- CTO 15-oct: lo que la postcondicion exige (despues del INSERT); aqui, lo que tiene la fila
+  select 1, 'postcondicion', 'bucket mercado · type=' || coalesce(j ->> 'type', 'NULL') || ' · versioning_status=' || coalesce(j ->> 'versioning_status', 'NULL')
+         || ' · lifecycle_configuration=' || coalesce(j ->> 'lifecycle_configuration', 'NULL') || ' · lifecycle_configuration_generation=' || coalesce(j ->> 'lifecycle_configuration_generation', 'NULL')
+    from (select to_jsonb(b) j from storage.buckets b where b.id = 'mercado') y
   union all
   select 2, 'rls', 'storage.objects · rls=' || c.relrowsecurity from pg_class c where c.oid = 'storage.objects'::regclass
   union all

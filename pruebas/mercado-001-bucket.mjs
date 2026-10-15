@@ -624,6 +624,37 @@ create function public.length(text) returns integer language plpgsql as $x$ begi
     }
   }
 
+  titulo('12 · type y versioning_status (CTO 15-oct, con la s14d): postcondicion en mercado-001 y acreditacion en s14')
+  {
+    const d0 = monta(SUPA)
+    const q0 = s14(d0)
+    const fila = (q, o) => q.out.split('\n').find(l => l.startsWith(`columnas-bucket|${o}|`))
+    oraculo('TYPE', 's14 con los valores de la s14d: type, versioning_status y el enum «acreditado (s14d, 15-oct)»', q0.ok
+      && fila(q0, 'type') === "columnas-bucket|type|por defecto 'STANDARD'::storage.buckettype · acreditado (s14d, 15-oct)"
+      && fila(q0, 'versioning_status') === "columnas-bucket|versioning_status|por defecto 'DISABLED'::text · acreditado (s14d, 15-oct)"
+      && fila(q0, 'storage.buckettype') === 'columnas-bucket|storage.buckettype|STANDARD,ANALYTICS,VECTOR · acreditado (s14d, 15-oct)', q0.out.split('\n').filter(l => l.startsWith('columnas-bucket|')).join(' / ') || q0.err)
+    oraculo('TYPE', 'mercado-001 no fija type ni versioning_status (tienen el valor por defecto medido): el INSERT no los nombra', /insert into storage\.buckets \(id, name, public, file_size_limit, allowed_mime_types\) values/.test(M1) && !/insert into storage\.buckets \([^)]*\b(type|versioning_status)\b/.test(M1))
+    const r0 = pg.psql(M1, d0)
+    oraculo('TYPE', 'mercado-001 aplica y el informe dice la postcondicion (type, versioning_status, ciclo de vida)', r0.ok && /^postcondicion\|bucket mercado · type=STANDARD · versioning_status=DISABLED · lifecycle_configuration=NULL · lifecycle_configuration_generation=NULL$/m.test(r0.out), r0.err || r0.out)
+    const CASOS = [
+      ['el valor por defecto de type cambiado (ANALYTICS)', `alter table storage.buckets alter column type set default 'ANALYTICS';`, ['type'], /type=ANALYTICS/],
+      ['otro valor por defecto de versioning_status (ENABLED)', `alter table storage.buckets alter column versioning_status set default 'ENABLED';`, ['versioning_status'], /versioning_status=ENABLED/],
+      ['el enum sin STANDARD (y type por defecto ANALYTICS)', `alter table storage.buckets drop column type; drop type storage.buckettype; create type storage.buckettype as enum ('ANALYTICS', 'VECTOR');
+alter table storage.buckets add column type storage.buckettype not null default 'ANALYTICS';`, ['type', 'storage.buckettype'], /type=ANALYTICS/],
+      ['una columna de ciclo de vida con valor por defecto', `alter table storage.buckets alter column lifecycle_configuration set default '{}'::jsonb;`, [], /lifecycle_configuration=\{\}/],
+    ]
+    for (const [nombre, extra, malos, dice] of CASOS) {
+      const d = monta(SUPA + extra)
+      if (malos.length) {
+        const q = s14(d)
+        oraculo('TYPE', `s14: ${nombre} → ${malos.join(', ')} «NO ACREDITADO … PARAR»`, q.ok && malos.every(o => / · NO ACREDITADO \(s14d: .*\): PARAR$/.test(fila(q, o) || '')) && ['type', 'versioning_status', 'storage.buckettype'].filter(o => !malos.includes(o)).every(o => / · acreditado \(s14d, 15-oct\)$/.test(fila(q, o) || '')), q.out.split('\n').filter(l => l.startsWith('columnas-bucket|')).join(' / ') || q.err)
+      }
+      const a = estado(d)
+      const r = pg.psql(M1, d)
+      oraculo('TYPE', `mercado-001: ${nombre} → aborta por la postcondicion, dice lo que encontro, y nada cambia`, !r.ok && /mercado-001: el bucket creado no es el esperado/.test(r.err) && dice.test(r.err) && estado(d) === a, err1(r))
+    }
+  }
+
   oraculo('S14', 'una sola SELECT: sin escrituras ni EXECUTE (fuera comentarios)', (() => { const sin = S14.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''"); return !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|perform|call|do)\b/i.test(sin) && (sin.match(/;/g) || []).length === 1 })())
 } finally { pg.cierra() }
 fin()
