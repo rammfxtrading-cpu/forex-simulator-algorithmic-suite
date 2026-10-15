@@ -3097,4 +3097,32 @@ Astra r8 (`revisiones-suite/2026-10-15-astra-mercado-v1-etapa2-r8.md`): **NO**. 
 - Los dos controles rotos son del mutante, cuya línea cambia.
 - Los 6 rojos de E2-01/E2R2-02/E2R3-02/E2R3-03/PD-04 vienen del mutante, que con el SQL viejo no se aplica.
 
-**p.19.5 · E2R8-01 (disparadores internos): PARADO.** La regla del CTO admite solo internos de `pg_catalog` de la familia `RI_FKey_*`, «con la tabla y la restricción esperadas». Pero los internos de `storage.buckets` y `storage.objects` **no se han medido nunca en producción**: s14b, s14c y s14 los excluyen. Pregunta al CTO: medirlos antes con una consulta de solo lectura (s14e) y acreditar la lista exacta, o admitirlos por coherencia con `pg_constraint` sin lista cerrada.
+**p.19.5 · Revisor adversario interno sobre `d4c9532`** (un subagente que no escribió el código). Lo que encontró, ya arreglado:
+- **R9-01 (medio): nadie comprobaba que la columna `type` fuera DE tipo `storage.buckettype`.** Con `type text not null default 'STANDARD'::storage.buckettype`, `pg_get_expr` imprime el mismo valor por defecto, así que s14 lo acreditaba todo y `mercado-001` aplicaba.
+  - Lo mismo pasaba con un dominio sobre el enum (con `CHECK` o sin él).
+  - Con otro enum en `public`, s14 paraba por el valor por defecto, pero `mercado-001` aplicaba.
+
+  **Arreglo:** el `atttypid` de la columna tiene que ser `to_regtype('storage.buckettype')`, con `operator(pg_catalog.=)`. Es la misma expresión en s14 (fila nueva `columnas-bucket | type (su tipo) | …`) y en `mercado-001` (antes del INSERT y del enum: «la columna type de storage.buckets no es del tipo storage.buckettype (es …)»).
+
+  **Familia:** text con el mismo valor por defecto, varchar, el dominio sobre el enum con `CHECK` y sin él, otro enum en `public` y otro en `storage` con las mismas etiquetas.
+- **R9-02 (bajo, pruebas): «antes del INSERT» no se medía.** Un mutante con la guarda del enum tras el INSERT dejaba la prueba en verde.
+
+  **Arreglo:** una columna testigo en `storage.buckets` con `default nextval(...)`. No es un disparador, así que no toca la lista. Cualquier INSERT la consume, y la secuencia no se deshace con el aborto. Los oráculos de `mercado-001` de presencia, enum y tipo exigen el testigo sin consumir, y un control construye el mutante del revisor y comprueba que el testigo lo caza.
+- **R9-03 (informativo):** el control del mutante de lista abierta con un disparador que falta exige ya el mensaje «(difiere: falta)».
+- **Además:** `::pg_catalog.text` en las expresiones del enum. El revisor vio que el `::text` sin calificar dependía del search_path; no daba un falso verde, pero ya no depende.
+
+**Rojo previo:** la prueba nueva contra el SQL de `d4c9532` da 15 rojos y 0 controles rotos (`rojos/mercado-001-bucket-revisor-contra-d4c9532.txt`).
+
+**Lo que intentó el revisor sin encontrar nada:**
+- **Enum:** reordenar, añadir, quitar o renombrar etiquetas; la coma dentro de una etiqueta; un enum vacío; un dominio con ese nombre; un `=` ajeno de `text[]`; un tipo con el mismo nombre en otro esquema o en `pg_temp`; y un dominio `public.text` con colación no determinista (s14 entera falla y `mercado-001` aborta).
+- **Presencia:**
+  - uno de los siete marcado `tgisinternal`: sale FALTA, lo que cierra la variante de E2R8-01 sobre un acreditado;
+  - uno desactivado;
+  - el mismo nombre movido a la otra tabla;
+  - `storage.buckets` renombrada y recreada con LIKE;
+  - `storage.buckets` convertida en vista.
+
+  No caben duplicados. El resumen cuenta bien, y `M1listaAbierta` no enmascara nada.
+- **Fuera de alcance, anotado:** los disparadores en particiones (si `storage.buckets` fuera particionada) y las reglas (`pg_rewrite`) en `storage.buckets`, que equivalen a un disparador adicional que no ve ninguna guarda.
+
+**p.19.6 · E2R8-01 (disparadores internos): PARADO.** La regla del CTO admite solo internos de `pg_catalog` de la familia `RI_FKey_*`, «con la tabla y la restricción esperadas». Pero los internos de `storage.buckets` y `storage.objects` **no se han medido nunca en producción**: s14b, s14c y s14 los excluyen. Pregunta al CTO: medirlos antes con una consulta de solo lectura (s14e) y acreditar la lista exacta, o admitirlos por coherencia con `pg_constraint` sin lista cerrada.

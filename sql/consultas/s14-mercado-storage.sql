@@ -338,12 +338,19 @@ select seccion, objeto, detalle from (
                  then ' · acreditado (s14d, 15-oct)' else ' · NO ACREDITADO (s14d: ' || e.medido || '): PARAR' end
     from (values ('type', '''STANDARD''::storage.buckettype'), ('versioning_status', '''DISABLED''::text')) e(columna, medido)
   union all
+  -- R9-01 (revisor interno, ronda 9): la columna type tiene que ser DE ese tipo, storage.buckettype (no text, ni un
+  -- dominio sobre el enum, ni otro enum), como la midio la s14d; la misma expresion que en mercado-001
+  select 1, 1, 'columnas-bucket', 'type (su tipo)',
+         coalesce((select pg_catalog.format_type(a.atttypid, a.atttypmod) from pg_catalog.pg_attribute a where a.attrelid = pg_catalog.to_regclass('storage.buckets') and a.attname = 'type' and not a.attisdropped), '(no existe)')
+         || case when coalesce((select a.atttypid from pg_catalog.pg_attribute a where a.attrelid = pg_catalog.to_regclass('storage.buckets') and a.attname = 'type' and not a.attisdropped) operator(pg_catalog.=) pg_catalog.to_regtype('storage.buckettype'), false)
+                 then ' · acreditado (s14d, 15-oct)' else ' · NO ACREDITADO (s14d: storage.buckettype): PARAR' end
+  union all
   -- E2R8-02 (Astra r8, CTO 15-oct): el ARRAY EXACTO de etiquetas en el orden de enumsortorder, comparado con el
   -- operador de pg_catalog (no con uno ajeno de text[]); la misma expresion que en mercado-001. Se enseña como array
   -- (las etiquetas con coma o comillas salen entre comillas): «STANDARD» + «ANALYTICS,VECTOR» ya no se confunde con tres
   select 1, 1, 'columnas-bucket', 'storage.buckettype',
-         coalesce((select pg_catalog.array_agg(v.enumlabel::text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype'))::text, '(no es un enum o no existe)')
-         || case when coalesce((select pg_catalog.array_agg(v.enumlabel::text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')) operator(pg_catalog.=) array['STANDARD', 'ANALYTICS', 'VECTOR']::text[], false)
+         coalesce((select pg_catalog.array_agg(v.enumlabel::pg_catalog.text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype'))::pg_catalog.text, '(no es un enum o no existe)')
+         || case when coalesce((select pg_catalog.array_agg(v.enumlabel::pg_catalog.text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')) operator(pg_catalog.=) array['STANDARD', 'ANALYTICS', 'VECTOR']::pg_catalog.text[], false)
                  then ' · acreditado (s14d, 15-oct)' else ' · NO ACREDITADO (s14d: {STANDARD,ANALYTICS,VECTOR}): PARAR' end
   union all
   -- E2R3-01: el cerrojo del publicador, en la base (sql/mercado-000-cerrojo.sql)

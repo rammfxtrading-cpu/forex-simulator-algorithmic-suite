@@ -381,11 +381,17 @@ select f.tabla, f.nombre, 'falta' from faltan f) v;
   if no_acreditados is not null then
     raise exception 'mercado-001: disparadores de storage NO ACREDITADOS: %. Su ficha, en s14; re-acreditar con el CTO; no se crea nada', no_acreditados;
   end if;
+  -- R9-01 (revisor interno, ronda 9): la columna type tiene que ser DE ese tipo (no text, ni un dominio, ni otro enum);
+  -- la misma expresion que en s14. Antes del INSERT
+  if not coalesce((select a.atttypid from pg_catalog.pg_attribute a where a.attrelid = pg_catalog.to_regclass('storage.buckets') and a.attname = 'type' and not a.attisdropped) operator(pg_catalog.=) pg_catalog.to_regtype('storage.buckettype'), false) then
+    raise exception 'mercado-001: la columna type de storage.buckets no es del tipo storage.buckettype (es %): la s14d (15-oct) midio storage.buckettype; no se crea nada',
+      coalesce((select pg_catalog.format_type(a.atttypid, a.atttypmod) from pg_catalog.pg_attribute a where a.attrelid = pg_catalog.to_regclass('storage.buckets') and a.attname = 'type' and not a.attisdropped), '(no existe)');
+  end if;
   -- E2R8-02 (Astra r8, CTO 15-oct): el enum storage.buckettype tiene que ser EXACTAMENTE el de la s14d, el array de
   -- etiquetas en el orden de enumsortorder; la misma expresion que en s14. Antes del INSERT: si no, no se crea nada
-  if not coalesce((select pg_catalog.array_agg(v.enumlabel::text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')) operator(pg_catalog.=) array['STANDARD', 'ANALYTICS', 'VECTOR']::text[], false) then
+  if not coalesce((select pg_catalog.array_agg(v.enumlabel::pg_catalog.text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')) operator(pg_catalog.=) array['STANDARD', 'ANALYTICS', 'VECTOR']::pg_catalog.text[], false) then
     raise exception 'mercado-001: el enum storage.buckettype no es el acreditado: %; la s14d (15-oct) midio {STANDARD,ANALYTICS,VECTOR}; no se crea nada',
-      coalesce((select pg_catalog.array_agg(v.enumlabel::text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype'))::text, '(no es un enum o no existe)');
+      coalesce((select pg_catalog.array_agg(v.enumlabel::pg_catalog.text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype'))::pg_catalog.text, '(no es un enum o no existe)');
   end if;
 
   select * into b from storage.buckets where id = 'mercado' or name = 'mercado' limit 1;

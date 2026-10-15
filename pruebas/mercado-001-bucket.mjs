@@ -701,6 +701,19 @@ create function storage.ajena() returns trigger language plpgsql as $x$ begin pe
   {
     // ── presencia exacta: ni uno menos. Familia: cada uno de los siete borrado (generada de la lista), pares borrados
     // elegidos con semilla fija (SEMILLA_PRESENCIA) y uno renombrado (falta el suyo y sobra otro)
+    // R9-02 (revisor interno): «antes del INSERT» se mide, no se supone. Una columna testigo en storage.buckets con
+    // valor por defecto nextval(): cualquier INSERT del bucket la consume, y la secuencia no se deshace con el aborto
+    // (no es un disparador: no toca la lista acreditada). El ADD COLUMN ya la consume con las filas que hay (forex-data):
+    // se compara con el valor tras el montaje, que se lee antes de ejecutar mercado-001
+    const TESTIGO = `\ncreate sequence public.testigo_insert; alter table storage.buckets add column testigo bigint default nextval('public.testigo_insert');`
+    const testigo = d => pg.psql(`select last_value || ':' || is_called from public.testigo_insert`, d).out
+    const marcas = new Map()
+    const montaT = extra => { const d = monta(SUPA + TESTIGO + extra); marcas.set(d, testigo(d)); return d }
+    const sinInsert = d => /^\d+:(true|false)$/.test(marcas.get(d) || '') && testigo(d) === marcas.get(d)
+    {
+      const d = montaT('')
+      ver('control: el testigo se consume con el INSERT de mercado-001 (aplica en el montaje limpio)', pg.psql(M1, d).ok && !sinInsert(d))
+    }
     const SIETE = [['objects', 'protect_objects_delete'], ['objects', 'update_objects_updated_at'], ['buckets', 'enforce_bucket_name_length_trigger'],
       ['buckets', 'protect_bucket_control_insert'], ['buckets', 'protect_bucket_control_update'], ['buckets', 'protect_bucket_control_update_role'], ['buckets', 'protect_buckets_delete']]
     const cual = ([t, n]) => (t === 'objects' ? n : `buckets.${n}`)
@@ -716,7 +729,7 @@ create function storage.ajena() returns trigger language plpgsql as $x$ begin pe
     ]
     ver(`control: la familia de presencia tiene los siete sueltos, ${pares.length} pares distintos y el renombrado`, familia.length === 7 + 4 + 1)
     for (const [nombre, quitados, extra, sobran] of familia) {
-      const d = monta(SUPA + extra)
+      const d = montaT(extra)
       const q = s14(d)
       const lineas = q.out.split('\n').filter(x => x.startsWith('disparador|'))
       const filasFalta = quitados.every(x => lineas.includes(`disparador|${cual(x)}|FALTA: no esta en storage.${x[0]} · NO ACREDITADO (difiere: falta)`))
@@ -728,14 +741,15 @@ create function storage.ajena() returns trigger language plpgsql as $x$ begin pe
       const conProtect = quitados.some(x => x[1] === 'protect_objects_delete')
       const dice = conProtect ? /mercado-001: falta el disparador protect_objects_delete/.test(r.err)
         : /mercado-001: disparadores de storage NO ACREDITADOS/.test(r.err) && quitados.every(x => r.err.includes(`${cual(x)} (difiere: falta)`)) && sobran.every(x => r.err.includes(x))
-      oraculo('PRESENCIA', `mercado-001: ${nombre} → aborta antes del INSERT ${conProtect ? '(la guarda de protect_objects_delete, que va antes)' : 'nombrandolo «(difiere: falta)»'} y nada cambia`, !r.ok && dice && estado(d) === a, err1(r))
+      oraculo('PRESENCIA', `mercado-001: ${nombre} → aborta antes del INSERT (el testigo sin consumir) ${conProtect ? '(la guarda de protect_objects_delete, que va antes)' : 'nombrandolo «(difiere: falta)»'} y nada cambia`, !r.ok && dice && sinInsert(d) && estado(d) === a, err1(r))
     }
     {
       // el escenario literal de Astra r8: en ed96d3e s14 decia «storage.buckets: 4 · sin acreditar: 0» y mercado-001 aplicaba
       const d = monta(SUPA + `drop trigger enforce_bucket_name_length_trigger on storage.buckets;`)
       const q = s14(d)
       oraculo('PRESENCIA', 'Astra r8: con enforce_bucket_name_length_trigger borrado, el resumen ya no dice «sin acreditar: 0»: «storage.buckets: 4 · sin acreditar: 1 … PARAR»', q.ok && /^disparador\|\(resumen\)\|storage\.objects: 2 \(1 por sentencia\) · storage\.buckets: 4 · sin acreditar: 1: .*PARAR/m.test(q.out) && !/sin acreditar: 0/.test(q.out), q.out.split('\n').filter(x => x.startsWith('disparador|(resumen)')).join(' / '))
-      ver('control: el mutante de lista abierta sigue abortando por un disparador que falta (la presencia no depende de en_lista)', !pg.psql(M1listaAbierta, monta(SUPA + `drop trigger enforce_bucket_name_length_trigger on storage.buckets;`)).ok)
+      const rM = pg.psql(M1listaAbierta, monta(SUPA + `drop trigger enforce_bucket_name_length_trigger on storage.buckets;`))
+      ver('control: el mutante de lista abierta sigue abortando por un disparador que falta, con «(difiere: falta)» (la presencia no depende de en_lista; R9-03)', !rM.ok && rM.err.includes('buckets.enforce_bucket_name_length_trigger (difiere: falta)'), err1(rM))
     }
 
     // ── E2R8-02: el enum por su array exacto. Familia: el caso de Astra, reordenadas, una añadida, una quitada, una
@@ -767,13 +781,51 @@ alter table storage.buckets add column type storage.buckettype not null default 
     ver(`control: el generador (semilla ${SEMILLA_ENUM}) da 16 variantes distintas del acreditado, y alguna con etiquetas que se concatenan como las tres`, generados.length === 16 && generados.some(g => g.join(',') === 'STANDARD,ANALYTICS,VECTOR' || g.some(x => x.includes(','))))
     const casosEnum = [...FIJOS.map(([nombre, extra, visto]) => [nombre, extra, visto]), ...generados.map(et => [`generado ${JSON.stringify(et)}`, enumCon(et), null])]
     for (const [nombre, extra, visto] of casosEnum) {
-      const d = monta(SUPA + extra)
+      const d = montaT(extra)
       const qq = s14(d)
       const f = qq.out.split('\n').find(l => l.startsWith('columnas-bucket|storage.buckettype|')) || ''
       oraculo('E2R8-02', `s14: ${nombre} → «NO ACREDITADO (s14d: {STANDARD,ANALYTICS,VECTOR}): PARAR»${visto ? ` enseñando ${visto}` : ''}`, qq.ok && f.endsWith(' · NO ACREDITADO (s14d: {STANDARD,ANALYTICS,VECTOR}): PARAR') && (!visto || f === `columnas-bucket|storage.buckettype|${visto} · NO ACREDITADO (s14d: {STANDARD,ANALYTICS,VECTOR}): PARAR`), f || qq.err)
       const a = estado(d)
       const r = pg.psql(M1, d)
-      oraculo('E2R8-02', `mercado-001: ${nombre} → aborta antes del INSERT «el enum storage.buckettype no es el acreditado» y nada cambia`, !r.ok && /mercado-001: el enum storage\.buckettype no es el acreditado: /.test(r.err) && (!visto || r.err.includes(`no es el acreditado: ${visto};`)) && estado(d) === a, err1(r))
+      oraculo('E2R8-02', `mercado-001: ${nombre} → aborta antes del INSERT (el testigo sin consumir) «el enum storage.buckettype no es el acreditado» y nada cambia`, !r.ok && /mercado-001: el enum storage\.buckettype no es el acreditado: /.test(r.err) && (!visto || r.err.includes(`no es el acreditado: ${visto};`)) && sinInsert(d) && estado(d) === a, err1(r))
+    }
+    {
+      // R9-02: el mutante del revisor, la guarda del enum movida a DESPUES del INSERT, aborta con el mismo mensaje y deja
+      // el mismo estado final; solo el testigo lo distingue
+      const ini = M1.indexOf('  -- E2R8-02 (Astra r8, CTO 15-oct): el enum storage.buckettype tiene que ser EXACTAMENTE')
+      const fin_ = M1.indexOf('  end if;\n', ini) + '  end if;\n'.length
+      const guarda = M1.slice(ini, fin_)
+      const sinGuarda = M1.slice(0, ini) + M1.slice(fin_)
+      const ancla = "    insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('mercado', 'mercado', false, 5242880, null);\n"
+      const M1enumTrasInsert = sinGuarda.replace(ancla, ancla + guarda)
+      const d = montaT(enumCon(['STANDARD', 'ANALYTICS,VECTOR']))
+      const rM = pg.psql(M1enumTrasInsert, d)
+      ver('control: el mutante «guarda del enum tras el INSERT» se construye (una guarda movida) y aborta igual, pero el testigo SI se consume: el oraculo lo caza', ini > 0 && M1enumTrasInsert !== M1 && M1enumTrasInsert.length === M1.length && !rM.ok && /no es el acreditado/.test(rM.err) && !sinInsert(d), err1(rM))
+    }
+    // R9-01 (revisor interno): la columna type tiene que ser DE storage.buckettype. Familia: text con el mismo valor por
+    // defecto (H1), varchar, un dominio sobre el enum con CHECK (H1b) y sin el, otro enum en public (H1c) y otro en storage
+    const colTipo = (decl, antes = '') => `${antes}\nalter table storage.buckets drop column type; alter table storage.buckets add column type ${decl};`
+    const TIPOS = [
+      ['text con el valor por defecto \'STANDARD\'::storage.buckettype (H1)', colTipo(`text not null default 'STANDARD'::storage.buckettype`), 'text'],
+      ['varchar', colTipo(`varchar(20) not null default 'STANDARD'`), 'character varying(20)'],
+      ['un dominio sobre el enum con CHECK (H1b)', colTipo(`storage.bt_dom not null default 'STANDARD'`, `create domain storage.bt_dom as storage.buckettype check (value <> 'VECTOR');`), 'storage.bt_dom'],
+      ['un dominio sobre el enum sin CHECK', colTipo(`storage.bt_dom not null default 'STANDARD'`, `create domain storage.bt_dom as storage.buckettype;`), 'storage.bt_dom'],
+      ['otro enum en public (H1c)', colTipo(`public.buckettype not null default 'STANDARD'`, `create type public.buckettype as enum ('STANDARD', 'PUBLICO');`), 'buckettype', 'public.buckettype'],
+      ['otro enum en storage con las mismas etiquetas', colTipo(`storage.otro_tipo not null default 'STANDARD'`, `create type storage.otro_tipo as enum ('STANDARD', 'ANALYTICS', 'VECTOR');`), 'storage.otro_tipo'],
+    ]
+    // s14 corre con el search_path del editor (public sin calificar); mercado-001 con pg_catalog, pg_temp (calificado)
+    for (const [nombre, extra, visto, vistoM = visto] of TIPOS) {
+      const d = montaT(extra)
+      const qq = s14(d)
+      const f = qq.out.split('\n').find(l => l.startsWith('columnas-bucket|type (su tipo)|')) || ''
+      oraculo('R9-01', `s14: la columna type es ${nombre} → «type (su tipo) | ${visto} · NO ACREDITADO (s14d: storage.buckettype): PARAR»`, qq.ok && f === `columnas-bucket|type (su tipo)|${visto} · NO ACREDITADO (s14d: storage.buckettype): PARAR`, f || qq.err)
+      const a = estado(d)
+      const r = pg.psql(M1, d)
+      oraculo('R9-01', `mercado-001: la columna type es ${nombre} → aborta antes del INSERT (el testigo sin consumir) «la columna type … no es del tipo storage.buckettype» y nada cambia`, !r.ok && r.err.includes(`mercado-001: la columna type de storage.buckets no es del tipo storage.buckettype (es ${vistoM})`) && sinInsert(d) && estado(d) === a, err1(r))
+    }
+    {
+      const qq = s14(monta(SUPA))
+      oraculo('R9-01', 'con la columna medida: «type (su tipo) | storage.buckettype · acreditado (s14d, 15-oct)»', /^columnas-bucket\|type \(su tipo\)\|storage\.buckettype · acreditado \(s14d, 15-oct\)$/m.test(qq.out), qq.out.split('\n').filter(l => l.startsWith('columnas-bucket|')).join(' / ') || qq.err)
     }
     {
       // un operador «=» ajeno para text[] (siempre verdadero) en public: la comparacion usa el de pg_catalog
@@ -791,8 +843,10 @@ create operator public.= (leftarg = text[], rightarg = text[], function = public
       const qq = s14(d)
       oraculo('E2R8-02', 'limite: el mismo orden con otros enumsortorder (10, 20, 30) da el mismo array y se acredita; mercado-001 aplica', qq.ok && /^columnas-bucket\|storage\.buckettype\|\{STANDARD,ANALYTICS,VECTOR\} · acreditado \(s14d, 15-oct\)$/m.test(qq.out) && pg.psql(M1, d).ok, qq.out.split('\n').find(l => l.startsWith('columnas-bucket|storage.buckettype')) || qq.err)
     }
-    const expr = t => (t.match(/coalesce\(\(select pg_catalog\.array_agg\(v\.enumlabel::text order by v\.enumsortorder\)[^\n]*?operator\(pg_catalog\.=\) array\['STANDARD', 'ANALYTICS', 'VECTOR'\]::text\[\], false\)/g) || [])
+    const expr = t => (t.match(/coalesce\(\(select pg_catalog\.array_agg\(v\.enumlabel::pg_catalog\.text order by v\.enumsortorder\)[^\n]*?operator\(pg_catalog\.=\) array\['STANDARD', 'ANALYTICS', 'VECTOR'\]::pg_catalog\.text\[\], false\)/g) || [])
     oraculo('E2R8-02', 'la comparacion del enum es el mismo texto en s14 y en mercado-001 (una vez en cada uno)', expr(S14).length === 1 && expr(M1).length === 1 && expr(S14)[0] === expr(M1)[0])
+    const exprT = t => (t.match(/coalesce\(\(select a\.atttypid from pg_catalog\.pg_attribute a where a\.attrelid = pg_catalog\.to_regclass\('storage\.buckets'\) and a\.attname = 'type' and not a\.attisdropped\) operator\(pg_catalog\.=\) pg_catalog\.to_regtype\('storage\.buckettype'\), false\)/g) || [])
+    oraculo('R9-01', 'la comprobacion del tipo de la columna es el mismo texto en s14 y en mercado-001 (una vez en cada uno)', exprT(S14).length === 1 && exprT(M1).length === 1)
   }
 
   oraculo('S14', 'una sola SELECT: sin escrituras ni EXECUTE (fuera comentarios)', (() => { const sin = S14.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''"); return !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|perform|call|do)\b/i.test(sin) && (sin.match(/;/g) || []).length === 1 })())
