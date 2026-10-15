@@ -260,18 +260,21 @@ function deUnTiron(esc, mutante = null) { const p = partida(esc); return avanza(
 function enTramos(esc, cortes, mutante = null) {
   const p = partida(esc)
   let e = p.e, ev = [], det = null
+  const dets = []
   for (const [k, h] of [...cortes, esc.v.FIN].entries()) {
     const x = avanza(p.practica, e, h, esc, { mutante, tramoK: k })
-    ev.push(...x.ev); det = x.det
+    ev.push(...x.ev); det = x.det; dets.push(x.det)
     e = CA.deserializa(CA.serializa(x.e))
     if (mutante === 'reinicia' && !p.practica) e = { ...e, ultimo_reset: RT.medianocheAnterior(esc.v.T0) }
   }
-  return { e, ev, det }
+  return { e, ev, det, dets }
 }
-// el contrato de q.15: estado final y eventos byte a byte. La detencion que devuelve el ultimo avance
-// NO entra: un reto ya terminado (breach antes de la frontera) la devuelve de un tiron y no en tramos
-// (avanzaReto de un reto terminado sale sin mirar el mercado). Es una pregunta abierta (q.16), no
-// una regla de esta prueba: se cuenta y se imprime aparte.
+// el contrato de q.15: estado final y eventos byte a byte. Y la DETENCION (CTO 15-oct, q.17.4): la
+// respuesta informa de lo que paro ESA llamada. Un breach o una fase superada en la llamada → su
+// detencion { motivo, en } (y regla, copiada del evento, en un breach), aunque despues falte mercado;
+// una llamada sobre una sesion ya terminada (reto o practica) no calcula y devuelve
+// { motivo: 'sesion_terminada' }. En la propiedad: las detenciones de todos los tramos, quitando las de
+// sesion_terminada, son cada una la del avance de un tiron (y no hay ninguna si y solo si de un tiron no hay).
 const igual = (a, b) => tx(a.e) === tx(b.e) && tx(a.ev) === tx(b.ev)
 // el servidor: calcula() de un tiron y en tramos, cada tramo sobre el estado guardado del anterior
 async function servidor(esc, cortes) {
@@ -288,6 +291,9 @@ const MINIMOS = { breach: 10, sltp: 40, medianoche: 40, fase: 8, hueco: 20, huec
 const n = Object.fromEntries(Object.keys(MINIMOS).map(k => [k, 0]))
 const escenarios = Array.from({ length: N }, (_, k) => escenario(k))
 let iguales = 0, igualesServidor = 0, servidorIgualMotor = 0
+let detIguales = 0, formaBien = 0, nTerminadas = 0, terminadasBien = 0, detServidor = 0
+const nTerminal = { breach: 0, fase_superada: 0, practica: 0 }
+const formaMal = []
 const distintos = [], distintosServidor = [], detDistinta = []
 const cortesDe = [], unos = []
 const ECONOMICOS = new Set(['fill', 'cierre', 'breach', 'reset_diario', 'fase_superada', 'orden_cancelada'])
@@ -313,20 +319,54 @@ for (const [k, esc] of escenarios.entries()) {
   if (finD.length) n.fin++
   if (uno.ev.some(x => x.tipo === 'reset_diario' && momento(x.en) === MEDIANOCHE_CEST)) n.hora++
   const tr = enTramos(esc, cortes)
-  if (tx(uno.det) !== tx(tr.det)) detDistinta.push(`#${k} ${esc.grupo} ${esc.tipo}${esc.fase || ''} ${uno.e.estado ?? ''}`)
+  // la detencion (q.17.4)
+  const quedan = tr.dets.filter(d => d && d.motivo !== 'sesion_terminada')
+  if (quedan.every(d => tx(d) === tx(uno.det)) && (uno.det == null) === (quedan.length === 0)) detIguales++
+  else detDistinta.push(`#${k} ${esc.grupo} ${esc.tipo}${esc.fase || ''}: de un tiron ${tx(uno.det)} · tramos ${tx(tr.dets.filter(Boolean))}`)
+  const b0 = uno.ev.find(x => x.tipo === 'breach'), f0 = uno.ev.find(x => x.tipo === 'fase_superada')
+  const terminal = b0 ? { motivo: 'breach', en: momento(b0.en), regla: b0.regla } : f0 ? { motivo: 'fase_superada', en: momento(f0.en) } : null
+  if (terminal) { nTerminal[terminal.motivo]++; if (esc.tipo === 'practica') nTerminal.practica++; if (tx(uno.det) === tx(terminal)) formaBien++; else formaMal.push(`#${k} ${tx(uno.det)} ≠ ${tx(terminal)}`) }
+  if (terminal && esc.v.FIN > terminal.en) {
+    // una llamada mas sobre la sesion ya terminada: no calcula, sesion_terminada
+    const p = partida(esc)
+    const otra = avanza(p.practica, uno.e, esc.v.FIN + 3600, esc)
+    nTerminadas++
+    if (tx(otra.det) === tx({ motivo: 'sesion_terminada' }) && otra.ev.length === 0 && tx(otra.e) === tx(uno.e)) terminadasBien++
+  }
   if (igual(uno, tr)) iguales++
   else distintos.push(`#${k} ${esc.grupo} ${esc.tipo}${esc.fase || ''} ${esc.pares.join('+')}`)
   const sv = await servidor(esc, cortes)
   if (sv.igual) igualesServidor++
   else distintosServidor.push(`#${k} ${esc.grupo} ${esc.tipo}${esc.fase || ''} ${esc.pares.join('+')}`)
   if (JSON.stringify(sv.uno.estado) === CA.serializa(uno.e) && JSON.stringify(sv.uno.eventos.map(x => x.tipo)) === JSON.stringify(uno.ev.map(x => x.tipo))) servidorIgualMotor++
+  if (JSON.stringify(sv.uno.resumen?.detencion ?? null) === JSON.stringify(uno.det ?? null)) detServidor++
 }
-console.log(`  nota (pregunta abierta, q.16): la detencion del ultimo avance difiere en ${detDistinta.length} escenarios: ${detDistinta.join(' · ')}`)
+ver(`control: hay llamadas con breach (${nTerminal.breach}), con fase superada (${nTerminal.fase_superada}) y practicas quemadas (${nTerminal.practica})`, nTerminal.breach >= 10 && nTerminal.fase_superada >= 8 && nTerminal.practica >= 3)
+ver(`control: hay sesiones terminadas a las que se vuelve a llamar (${nTerminadas})`, nTerminadas >= 10)
+oraculo('DET', `las detenciones de los tramos (sin las de sesion_terminada) = la del avance de un tiron, en los ${N}`, detIguales === N, `${detIguales}/${N} · ${detDistinta.slice(0, 4).join(' || ')}`)
+oraculo('DET', `la forma: el breach → { motivo: 'breach', en, regla } (regla copiada del evento) y la fase superada → { motivo: 'fase_superada', en }, aunque despues falte mercado (${formaBien}/${nTerminal.breach + nTerminal.fase_superada})`, formaBien === nTerminal.breach + nTerminal.fase_superada, formaMal.slice(0, 4).join(' · '))
+oraculo('DET', `una llamada sobre una sesion ya terminada (reto o practica): no calcula y devuelve { motivo: 'sesion_terminada' } (${terminadasBien}/${nTerminadas})`, terminadasBien === nTerminadas, '')
+oraculo('DET', `el servidor (calcula): resumen.detencion es, tal cual, la del motor de un tiron, en los ${N}`, detServidor === N, `${detServidor}/${N}`)
 console.log('  ' + Object.entries(n).map(([k, x]) => `${k} ${x} (min ${MINIMOS[k]})`).join(' · '))
 for (const [k, x] of Object.entries(n)) ver(`control: grupo «${k}» ejercitado en ${x} escenarios (minimo ${MINIMOS[k]})`, x >= MINIMOS[k])
 oraculo('E3-02', `motor con fuentes: de un tiron = en tramos, estado final y eventos byte a byte, en los ${N}`, iguales === N, `${iguales}/${N} · ${distintos.slice(0, 8).join(' · ')}`)
 oraculo('E3-02', `servidor (calcula, almacen real): de un tiron = en tramos, estado, eventos y trades byte a byte, en los ${N}`, igualesServidor === N, `${igualesServidor}/${N} · ${distintosServidor.slice(0, 8).join(' · ')}`)
 oraculo('E3-02', `el servidor de un tiron = el motor de un tiron (estado y secuencia de eventos), en los ${N}`, servidorIgualMotor === N, `${servidorIgualMotor}/${N}`)
+
+titulo('#75 y #87 (el rojo de 541904c) y su equivalente en practica')
+for (const k of [75, 87]) {
+  for (const practica of [false, true]) {
+    const esc = practica ? { ...escenarios[k], tipo: 'practica', fase: 0 } : escenarios[k]
+    const uno = deUnTiron(esc)
+    const b = uno.ev.find(x => x.tipo === 'breach')
+    const cortes = [...new Set([...cortesDe[k], ...(b ? [momento(b.en)] : [])])].sort((a, c) => a - c)
+    const tr = enTramos(esc, cortes)
+    const quedan = tr.dets.filter(d => d && d.motivo !== 'sesion_terminada')
+    const terminadas = tr.dets.filter(d => d?.motivo === 'sesion_terminada').length
+    ver(`control: #${k}${practica ? ' en practica' : ''} hace breach (en ${b ? new Date(momento(b.en) * 1000).toISOString().slice(11, 16) : '-'}) y despues le falta el mercado`, !!b && esc.grupo === 'trozo', tx(uno.det))
+    oraculo('DET', `#${k}${practica ? ' en practica' : ''}: de un tiron { motivo: breach, en, regla }; en tramos el del breach y despues sesion_terminada (${terminadas})`, !!b && tx(uno.det) === tx({ motivo: 'breach', en: momento(b.en), regla: b.regla }) && quedan.length > 0 && quedan.every(d => tx(d) === tx(uno.det)) && terminadas > 0, `${tx(uno.det)} · ${tx(tr.dets.filter(Boolean))}`.slice(0, 300))
+  }
+}
 
 titulo('los mutantes: la propiedad los caza')
 for (const [mut, que] of [['pierde', 'un tramo que pierde el minuto siguiente al corte'], ['reinicia', 'un corte que reinicia el ultimo reset'], ['marcas', 'las marcas delante de todos los eventos del avance (79f39a2)']]) {

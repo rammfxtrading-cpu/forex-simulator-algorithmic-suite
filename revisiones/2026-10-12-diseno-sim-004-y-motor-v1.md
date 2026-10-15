@@ -3448,3 +3448,39 @@ Hoy el motor no tiene ninguna detención de breach ni de fase superada. Sin deci
 Cada desvío corre dentro de una transacción que se deshace, contra la s16 y contra sim-004b. En los 96, la s16 dice DIFIEREN **y** sim-004b aborta. Control: tras la familia, la base sigue intacta. Además, las 23 filas de ACL salen «coincide» en el montaje.
 
 **Rojo contra `1619b21`:** 2 oráculos. En los 96 desvíos la s16 decía OK mientras sim-004b abortaba, y no había filas de ACL.
+
+#### q.17.4 La detención: { motivo, en } y, en un breach, regla (decisión del CTO; cierra q.16.7)
+
+**Decisión del CTO:**
+- motivo ∈ `breach` | `fase_superada` | `sesion_terminada` (`reto_terminado` se renombra a `sesion_terminada`, que vale también para la práctica);
+- `en` es el minuto del evento;
+- `regla` se **copia** del evento de breach del motor, nunca se recalcula;
+- se guarda tal cual en `resumen.detencion` del recibo.
+- **Práctica:** la misma regla. Un breach la termina y lo informa la llamada en que ocurre; las llamadas siguientes no calculan y devuelven `{ motivo: 'sesion_terminada' }`.
+- Las detenciones que ya existían (falta de trozo, fin de datos…) no cambian de forma.
+
+**Hecho:**
+- **`lib/motor/reto.mjs`:**
+  - `avanzaReto`, por sus dos caminos (un par y cartera): si el reto termina en la llamada, su detención es la del terminal (`terminalDe`: el primer breach del avance, `{ motivo: 'breach', en, regla }`, y si no, la fase superada, `{ motivo: 'fase_superada', en }`), aunque después falte mercado;
+  - sobre un reto ya terminado, `{ motivo: 'sesion_terminada' }` (`TERMINADA`), sin calcular.
+- **`lib/motor/cartera.mjs` (`avanza`, la práctica con fuentes):** lo mismo con el breach; sobre una práctica ya quemada, `sesion_terminada`.
+- **`lib/servidor/comando.mjs`:** `resumen.detencion` guarda la detención entera (antes, solo el motivo).
+  - En jsonb las claves se reordenan; los valores son los mismos.
+
+**Familia y pruebas:**
+- **`pruebas/motor/tramos-fuentes.mjs`** (la propiedad de 180 escenarios, semilla `20261015`), que ahora **juzga** la detención:
+  - las de todos los tramos (sin las de `sesion_terminada`) = la del avance de un tirón: **180/180**;
+  - la forma exacta en las 54 llamadas con un terminal (24 breach, 30 fase superada, 7 prácticas quemadas);
+  - una llamada más sobre cada sesión terminada → `sesion_terminada` (54/54);
+  - el servidor (`calcula`): `resumen.detencion` = la del motor de un tirón (180/180);
+  - **#75 y #87** y sus equivalentes en **práctica** (los mismos escenarios como práctica, con breach a las 22:03 y a las 22:01): de un tirón, la del breach; en tramos, la del breach y después `sesion_terminada`.
+- **`pruebas/servidor-detencion.mjs`**, contra `sim_comando` real:
+  - un 1F que se quema: el recibo guarda `{ motivo: 'breach', en: minuto 30, regla: 'perdida_diaria' }`, que es la regla del evento guardado en `sim_eventos`;
+  - el avance siguiente: recibo con `sesion_terminada`, sin eventos y sin versión nueva.
+  - La práctica del servidor no tiene límites (crear no los pone), así que no se quema; su regla la prueba el motor.
+
+**Rojo contra `21525c6`:**
+- `tramos-fuentes`: 8 oráculos (178/180, la forma 0/54, `sesion_terminada` 0/54, el servidor 150/180, y #75/#87 con sus prácticas);
+- `servidor-detencion`: 2.
+
+⚠️ **Lo que NO renombro (pregunta):** el rechazo de un **comando** (`abrir`, `cerrar`…) sobre un reto terminado sigue siendo `reto_terminado` (`aplicaReto`), y el de la práctica, `sesion_en_breach` / `objetivo_alcanzado` (`cartera.aplica`). Son motivos de rechazo de comandos, no detenciones de un avance. La decisión del CTO habla de la detención. **¿Se renombran también esos rechazos a `sesion_terminada`?**
