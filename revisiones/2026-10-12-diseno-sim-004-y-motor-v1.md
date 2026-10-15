@@ -3206,3 +3206,176 @@ Sobre `4235196` (la suite), `a8e40a4` (el rendimiento), `5ea4e9d` (los tramos), 
   - un corte que reinicia el último reset: 159.
 - Con el código actual sale verde: no hay hallazgo.
 - La prueba ejerce el motor con velas en listas. El bucle de tramos del servidor (`comando.mjs`) llama a las mismas funciones (`avanzaReto`, `CA.avanza`) con las fuentes del mercado, y eso lo cubre `pruebas/servidor-tramos.mjs` (práctica y reto 3F).
+
+> ⚠️ **Corrección de q.15 (15-oct, Astra E3-02):** la última frase no era cierta. `servidor-tramos.mjs` comparaba la longitud de los eventos (línea 56) y una condición que siempre se cumple (línea 89), y la propiedad solo ejercía listas de velas. Con fuentes reales y un hueco aceptado posterior a un cierre, de un tirón y en tramos salían eventos en otro orden. Ver q.16.2.
+
+### q.16 · Etapa 3, ronda 2: E3-01, E3-02, E3-03 y MCV2-01 (Astra 15-oct; decisiones del CTO)
+
+**Dictámenes de Astra (15-oct):** el motor de la ronda 2, **SÍ** con MCV2-01 (bajo). La etapa 3, **SÍ solo apagada** (condicionada a s15) y **NO para encender**, por E3-01, E3-02 y E3-03 (medios). Decisiones del CTO (15-oct), literales en el encargo.
+
+Rango **`79f39a2..` HEAD** de la rama `etapa3-simulador`. Sin push, sin Supabase y sin datos reales. Cada hallazgo, con su prueba permanente **en rojo antes del código**: los logs están en `revisiones-suite/2026-10-15-sim-etapa3-r2/rojos/`.
+
+| Commit | Qué |
+|---|---|
+| `e772327` | E3-01: el ACK del comando sale solo del recibo |
+| `e58536d` | E3-02: la marca de `hueco_aceptado` en su instante; propiedad con fuentes reales |
+| `6ce99b0` | E3-03: sim-004b acredita el catálogo del que depende |
+| `0f4a084` | MCV2-01: dos contratos en el instrumento de equivalencia |
+| `53ba0b2` | E3-03: control de procedencia de los cuerpos acreditados |
+| (este) | q.16 y la autorrevisión |
+
+#### q.16.1 E3-01: el ACK sale del recibo (`lib/servidor/comando.mjs`)
+
+**Decisión del CTO:** el ACK de comando y de fase (`alcanzado`, `cortado` y el resumen) se construye **solo** desde el recibo que confirma la RPC, nuevo o repetido. Nunca se mezcla con el cálculo local. En 409/429 no se añade progreso calculado.
+
+**Hecho:**
+- `alcanzado` y `cortado` salen de `datos.recibo.resumen`, y solo si la RPC responde `ok: true`. Con un error (409, 429…), la respuesta de la RPC tal cual, sin progreso.
+- `fase.mjs` ya devolvía la respuesta de `sim_avanzar_fase` sin añadir nada; ahora lo comprueba una prueba.
+- El doble de `sim_comando` de `servidor-tramos.mjs` devuelve ahora el recibo, como la RPC real: antes sus oráculos de `alcanzado` vivían del cálculo local.
+
+**Prueba permanente:** `pruebas/servidor-ack.mjs`, contra `sim_comando` real en el ensayo:
+- A: el intercalado de Astra, con dos relojes (el lento confirma 00:59 cortado; el rápido calculó 02:00);
+- B: el mismo, al revés;
+- C: 409 `comando_caducado` de un avance calculado;
+- D: 429 `demasiados_avances`;
+- E: el ACK de fase, tal cual (nuevo, repetido y error).
+
+**Rojo contra `79f39a2`:** 5 oráculos (A ×2, B, C, D). E ya estaba en verde: es cobertura, sin rojo previo.
+
+#### q.16.2 E3-02: la marca en su instante (`lib/motor/fuente.mjs`, `cartera.mjs`, `reto.mjs`)
+
+**El fallo:** las marcas de `hueco_aceptado` se ponían delante de todos los eventos del avance. La frontera de un tramo decidía dónde caían: de un tirón salía `[hueco@10:21, cierre@10:01]` y en tramos `[cierre@10:01, hueco@10:21]`.
+
+**Hecho:** `intercalaMarcas(marcas, eventos)` (`fuente.mjs`) coloca cada marca en su instante dentro de la secuencia. Lo usan los cuatro caminos que marcan:
+- el motor de un par (`fuente.avanza`);
+- la cartera (`cartera.avanza`);
+- el reto de un par;
+- el reto sobre la cartera.
+
+**El desempate (escrito aquí, como pidió el CTO):**
+- **Instante** de un evento: `en.vela ?? en.t` (el mismo que `t_mercado` en `sim_eventos`). El de una marca: el primer minuto del hueco (`en.t`).
+- **A igual instante, la marca va ANTES que los eventos económicos de ese instante.** Describe cómo se valora el minuto que empieza: el par, plano desde ahí.
+- **Entre marcas**, el orden de `marcaHuecos`: instante y después par.
+- **Los eventos del motor no se reordenan entre sí:** ya vienen en orden de instante (los resets de medianoche, antes de las velas de ese minuto; `fin_de_datos`, al final).
+- **Es estable frente a cualquier corte:** una marca de instante X y los eventos del minuto X caen siempre en el mismo tramo (los dos se confirman con `hasta ≥ X`), también a mitad de minuto, en un terminal (hasta su instante) y en una detención (antes de la frontera).
+- La regla contraria (la marca después) sería igual de estable. Es una convención: si el CTO la prefiere al revés, cambian una comparación de `intercalaMarcas` y el oráculo del desempate.
+
+**Pruebas:**
+- **`pruebas/motor/tramos-fuentes.mjs`** (nueva, permanente; 17 oráculos):
+  - el caso de Astra, con binarios, manifiestos y fuentes reales, por los cuatro caminos del motor y por `calcula()` (cartera y reto) con el almacén real. Compara de un tirón y en tramos, el orden por instante y el enlace trade → evento por ordinal;
+  - el desempate: marca y TP en el mismo minuto, con cortes a las 10:00:30, 10:01 y 10:01:30;
+  - **la propiedad de q.15 extendida a fuentes reales:** 180 escenarios (semilla `20261015`) en seis **grupos obligatorios**: base, fase superada, hueco aceptado, falta de trozo, fin de datos y cambio de hora.
+- **Los grupos de la propiedad:**
+  - la falta de trozo, en sus dos formas: no está en el almacén (`trozo_no_disponible`) o no está en el manifiesto con el día siguiente publicado (`sin trozo`);
+  - el cambio de hora: del viernes 27-mar al domingo 29-mar, con el cierre del fin de semana y la medianoche de Praga del lunes 30 ya en CEST, a las 22:00 UTC.
+- **Contadores mínimos** (si uno no llega, control roto): breach 10, SL/TP 40, medianoche 40, fase superada 8, hueco 20, hueco posterior a un evento económico (el caso de Astra) 5, trozo del almacén 6, trozo del manifiesto 6, fin de datos 15, cambio de hora 15. Hoy salen 24, 151, 126, 30, 26, 23, 15, 15, 27 y 23.
+- **Qué se compara:**
+  - el motor (estado final y eventos byte a byte);
+  - el servidor (`calcula`, de un tirón y en tramos sobre el estado guardado: estado, eventos y trades sin el ordinal, que es por comando);
+  - y el servidor de un tirón contra el motor de un tirón.
+- **Mutantes:** pierde el minuto siguiente al corte (84 escenarios), reinicia el reset (126) y **la marca al principio (lo de `79f39a2`): 23**.
+- **`servidor-tramos.mjs` (líneas 56 y 89):** compara los eventos y trades **completos**:
+  - la referencia pasa por el mismo adaptador (`resultadoDe`);
+  - lleva un control positivo: el comparador ve un cambio de orden y un dato cambiado;
+  - y la práctica tiene ahora posiciones, porque sin ellas los 2.400 minutos daban **cero** eventos y la comparación de longitudes era 0 = 0.
+
+**Rojo contra `79f39a2`:** `tramos-fuentes`, 15 oráculos. `servidor-tramos` reforzado sale verde contra `79f39a2`: su mercado no tiene huecos aceptados. Es refuerzo, sin rojo previo; el rojo del servidor con huecos lo da `tramos-fuentes`.
+
+**Datos guardados:** no hay eventos v1 en producción (q.5), así que nada que migrar.
+
+⚠️ **Pregunta abierta para el CTO (no la decido): la detención de un reto ya terminado.** En 2 de los 180 escenarios, un reto que hace breach (22:10 o 22:15) antes de una falta de trozo (00:00):
+- **de un tirón**, `avanzaReto` devuelve la detención del tramo (`no_valorable`, frontera 00:00), aunque el reto terminó antes;
+- **en tramos**, los avances posteriores al breach salen sin mirar el mercado y devuelven `detencion: null`.
+
+Estado y eventos son idénticos; solo cambia el campo `detencion` de la respuesta. En el servidor, eso va a `resumen.detencion` del recibo.
+- q.15 no incluye la detención en el contrato, así que la propiedad la cuenta e imprime aparte (nota) y no la juzga.
+- **¿Un reto terminado debe devolver `detencion: null` siempre** (y entonces se cambia `avanzaReto` de un tirón), **o la detención del tramo aunque haya terminado antes?**
+
+#### q.16.3 E3-03: lo que sim-004b acredita (`sql/sim-004b-contrato-v1.sql`, sección 4)
+
+**Decisión del CTO:** en la primera aplicación y en la reejecución, sim-004b acredita:
+- RLS activado en todas las tablas protegidas, y forzado donde el diseño lo pida;
+- las políticas exactas;
+- las ACL;
+- las funciones que conserva y los disparadores de los que depende, por definición o md5 y atributos.
+
+Cualquier desvío aborta sin aplicar.
+
+**Hecho:** una sección 4 al final del bloque DO. El DO es una transacción, así que si una comprobación revienta («sim-004b: …»), no queda nada: tampoco lo que la sección 1 acababa de aplicar. Es el patrón que funciona en el editor de Supabase (DO + `raise exception`).
+
+| Qué | Cómo | De dónde sale lo esperado |
+|---|---|---|
+| **RLS activa** en las **11 tablas protegidas** | `relrowsecurity` | las cuatro de sim-003 (`sim_alumnos`, `sim_arrendamientos`, `sim_recibos`, `sim_eventos`), las tres de la preparatoria (`sim_escrituras_v0`, `…_marcas`, `sim_servicio`) y las cuatro de E1R3-01 (`sim_sessions`, `sim_trades`, `session_drawings`, `session_chart_config`) |
+| **Políticas exactas** de esas 11, ni una de más ni de menos | nombre, permisiva/restrictiva, comando, roles, USING y WITH CHECK (`pg_policies` con search_path vacío) | las dos de sim-003, la de la preparatoria y sus seis RESTRICTIVE (los ficheros); las cuatro de s04 (**medidas**, 10-oct) |
+| **ACL de tabla** | la matriz **efectiva** de los siete privilegios para PUBLIC, anon, authenticated y service_role en las 11 | las cuatro de s04: la **medida** del 10-oct (sim-003 y la preparatoria no la tocan); las siete nuevas: SELECT solo de authenticated y service_role en `sim_recibos`, `sim_eventos` y `sim_servicio` (los ficheros) |
+| | en las siete nuevas y sus cuatro secuencias, **ningún receptor** aparte del dueño y de esos SELECT, con cualquier privilegio | los ficheros (REVOKE ALL) |
+| | **ninguna ACL de columna** en las 11 | s11 (13-oct, **medida**: 0 en las cuatro de s04) y los ficheros |
+| **20 funciones** (y la puerta si está) | `sha256(prosrc)` y atributos: lenguaje, SECURITY, volatilidad, proconfig, dueño = el ejecutor (`current_user`), receptores de EXECUTE | las 9 de sim-003 y las 10 de la preparatoria: los ficheros **ejecutados tal cual** (sha256 del fichero en `APLICADOS.md`; un control de la prueba lo ata); las tres que sustituye sim-004b, las suyas; `enforce_sim_session_limit` (el disparador del cupo de `sim_sessions`, del que depende `sim_crear_sesion`): el cuerpo **medido** en s04 (10-oct), definer, `search_path=public`, EXECUTE a PUBLIC/anon/authenticated/service_role; la puerta (`sim-004a-puerta.sql`), si está: estado 2 |
+| **Disparadores**, el inventario exacto | definición completa (`pg_get_triggerdef`), tipo y si está activo, en las 11 tablas y en `sim_drawing_templates`, `user_chart_config` y `user_tool_config` (las borra `sim_borrar_alumno`) | el inventario de la preparatoria (estado 1, o 2 con la puerta) y, en las demás, solo los de sus FK (los de s04 y sim-003) |
+
+**Prueba permanente:** `pruebas/sim-004b.mjs` §5, con **19 desvíos**, cada uno en una base nueva. Cada uno tiene que abortar con «sim-004b: …» y dejar el catálogo idéntico (la foto md5):
+- **los de Astra**: RLS apagada en `sim_eventos` (en la primera aplicación y en la reejecución) y un cuerpo ajeno en `sim_borrar_alumno` (en las dos);
+- **una política alterada** (`sim_eventos_select_propios` con `USING true`, en las dos);
+- otra RESTRICTIVE con otros roles;
+- una política de más;
+- RLS apagada en `sim_sessions`;
+- tres ACL de más: de tabla nueva, de tabla de s04 y de columna;
+- un disparador desactivado y otro de más;
+- el cuerpo del cupo cambiado;
+- tres atributos con el mismo cuerpo: search_path, SECURITY y dueño;
+- un EXECUTE de más.
+
+**Controles:**
+- con la puerta aplicada (estado 2), sim-004b aplica y se reejecuta;
+- con una puerta de otro cuerpo, aborta;
+- el sha256 del cupo sale del CSV de s04;
+- sim-003 y la preparatoria del montaje son los ficheros ejecutados en producción.
+
+**Rojo contra `79f39a2`:** 16 oráculos. Tres ya los paraba la sección 3 de antes: la política de `sim_eventos` y el search_path de `sim_crear_sesion` en sus dos ejecuciones, y el EXECUTE de `sim_bloquea_alumno`.
+
+**Lo que NO acredita (preguntas y límites; no los invento):**
+1. ⚠️ **RLS forzada (`relforcerowsecurity`): no se comprueba.**
+   - El diseño no la pide en ninguna tabla: sim-003, la preparatoria y E1R3-01 solo exigen `relrowsecurity`.
+   - El ensayo tiene `force=false` en todas, pero eso no es una medida de producción.
+   - **Pregunta para el CTO:** ¿sim-004b debe exigir `relforcerowsecurity` en alguna tabla (¿cuáles?), o exigir que sea `false` en todas?
+2. **Los cuerpos de sim-003 y de la preparatoria no están medidos en producción.**
+   - El informe de sim-003 del 12-oct da definer, config y EXECUTE, no el cuerpo.
+   - Sus sha256 se derivan de los ficheros ejecutados tal cual. Si producción tuviera otro cuerpo, sim-004b aborta: falla seguro y no aplica.
+   - **Si el CTO lo quiere medido antes**, hace falta una consulta de solo lectura nueva con el sha256 de esos cuerpos (no escrita).
+3. **El privilegio MAINTAIN** (PostgreSQL 17) de las cuatro tablas de s04 no lo midió s04 (su lista son los siete clásicos). Por eso en esas cuatro la comprobación es la matriz de los siete y no la ACL cruda. En las siete nuevas, sí la ACL cruda: REVOKE ALL.
+4. **El dueño = el ejecutor:** el mismo criterio que E2R5-01 en el mercado. En producción, sim-003, la preparatoria y el cupo son de `postgres` (s04, s06), que es quien ejecuta en el editor. Si sim-004b se ejecutara con otro rol, aborta.
+5. **Fuera de la lista**, porque ninguna RPC ni disparador de los que depende las usa: `is_admin`, `handle_new_user`, `sync_plataformas_activas` (`profiles`), y `sim_trades_de_sesion`/`_de_usuario` (sim-002, del cliente).
+
+**Runbook (q.13, paso 3):** sin cambios de orden. Si el informe no acaba en `FIN | sim-004b aplicada`, el mensaje «sim-004b: …» dice qué difiere; se para y decide el CTO.
+
+#### q.16.4 MCV2-01: dos contratos en el instrumento de equivalencia (`pruebas/medidas/equivalencia.mjs`)
+
+- **«optimizacion»:** la copia de trabajo contra `4235196` (el último sin optimizar) **con la misma política de ambigüedad**. A la referencia se le aplican con `git apply` los cambios funcionales posteriores del motor que no son la optimización: `36794dd` (MCV-01) y `e58536d` (E3-02, inerte con listas de velas). **200/200**, 747 eventos económicos, 226 cierres y 49 breaches.
+- **«mcv01»:** la regresión de MCV-01 contra `63be57d` (antes del campo `conversion`), quitando **solo** ese campo de los eventos. Va en los tipos que `63be57d` conoce (práctica y FTMO): **123/123**.
+- **Una excepción en un escenario se cuenta aparte y es rojo**, nunca igualdad.
+- **Controles:**
+  - `--sin-parches` da el 164/200 mezclado de Astra;
+  - `--copia a8e40a4` (que aún tiene el fallo) hace que el contrato mcv01 vea 20 diferencias;
+  - `--control-excepcion` sale en rojo.
+- **Prueba permanente** `pruebas/equivalencia-contratos.mjs`, que ahora entra en la tanda (unos 50 s). **Rojo** con el instrumento de `79f39a2` (idéntico en ese commit): 4 oráculos y un control roto (las opciones nuevas no existían).
+
+#### q.16.5 Autorrevisión adversaria de la ronda 2
+
+1. **E3-01, el cliente:**
+   - un 200 sin recibo (no lo da ninguna RPC de sim-003/sim-004b) saldría sin `alcanzado`. La UI tiene que tratar la ausencia como «no sé hasta dónde» y releer el estado (`/api/sim/estado`), nunca suponer el `hasta` pedido;
+   - con un 500 tras el commit (respuesta perdida), el reintento con la misma clave da el repetido con su recibo: coherente.
+2. **E3-02, el desempate es una convención mía** dentro del mandato del CTO de escribirla (q.16.2). No cambia ningún P&L: solo el orden, `seq` y el ordinal del cierre en un avance con marca.
+   - La propiedad con fuentes usa **días parciales declarados como cortos aceptados**, para que la cobertura no los detenga. La maquinaria (binario, manifiesto, fuente, almacén) es la real; la forma del día, no.
+   - El hueco aceptado solo se planta en la ventana de marzo. El cambio de hora no lleva hueco.
+   - **La pregunta de la detención tras un terminal (q.16.2) queda abierta.**
+3. **E3-03:**
+   - la acreditación vive al final del DO: aborta todo, pero el mensaje sale después de haber intentado aplicar. Es lo mismo en efectos, porque el DO es atómico;
+   - **las constantes (20 sha256 y el inventario de disparadores) hay que regenerarlas** si cambian sim-003, la preparatoria o los tres cuerpos de sim-004b. La prueba lo detecta: la aplicación normal aborta;
+   - la puerta se acepta por su sha256, que ya fijaba la preparatoria.
+4. **MCV2-01:** el contrato mcv01 no cubre 1F/3F, que `63be57d` no tiene; los cubre el contrato de optimización. Los 200 escenarios son de 30 minutos (los mismos límites que dijo Astra).
+5. **No tocado:**
+   - el motor fuera de las marcas;
+   - `fase.mjs` (solo su prueba);
+   - s15;
+   - el runbook del mercado;
+   - y la etapa 2.
