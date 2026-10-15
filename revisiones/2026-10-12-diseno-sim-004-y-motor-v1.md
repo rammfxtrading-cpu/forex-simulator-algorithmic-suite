@@ -3572,3 +3572,14 @@ La respuesta a la pregunta de q.17.4 («¿se renombran también esos rechazos?»
     - la pérdida ocurrió;
     - el mismo criterio caza el breach del reto 1F del mismo fichero (control positivo).
 - **Sin rojo previo:** es cobertura de lo que el código ya cumple. No hay código que cambiar, y el rojo posible lo acredita el control positivo.
+
+#### q.17.8 El paso 5 del runbook: el despliegue apagado (CTO, 15-oct)
+
+En `revisiones-suite/2026-10-15-sim-etapa3-runbook.md` (el repo no guarda los runbooks, q.17.3), ahora en el commit `07a53e9`, con el sha256 de la s16 nueva (`9e9b0da0…`) y sus salidas esperadas antes y después de sim-004b (`s16-esperada-con-puerta.txt`, `s16-esperada-tras-sim004b.txt`), regeneradas en el montaje con la puerta.
+- **5.1, Ramón, antes de desplegar:** en Vercel, el proyecto del simulador → Environment Variables. `SIM_V1_ENDPOINTS` **no existe** en ningún entorno, con captura de pantalla. Si existe: PARAR, no se despliega.
+- **5.2, el despliegue:** «Ready» con el commit ordenado; si no, PARAR.
+- **5.3, Claude (ventana 1), después:** las seis rutas (`POST /api/sim/crear`, `/tomar`, `/comando`, `/avanzar-fase`, `/borrar` y `GET /api/sim/estado`), sin sesión. Cada una responde, literal, `{"ok":false,"http":503,"motivo":"mantenimiento"}`, con 503 y `Cache-Control: no-store`.
+  - «Apagado» es el interruptor; la respuesta del código es la de mantenimiento (`lib/servidor/http.mjs`), la misma que en la etapa 1.
+  - 401 o 405: el interruptor está encendido. 404: el despliegue no lleva la etapa 3. 500 u otro cuerpo: PARAR.
+- **5.4, Ramón, el cliente:** el dashboard, analytics y una sesión cargan como siempre, sin errores ni el aviso de pausa; si no, PARAR.
+- ⚠️ **Sigue abierto:** qué se integra en `main` y cómo, porque la etapa 3 va encima de la 2, que no está en `main`. El paso empieza con la orden del CTO sobre el commit.
