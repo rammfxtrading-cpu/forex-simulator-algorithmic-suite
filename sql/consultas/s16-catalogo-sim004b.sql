@@ -18,7 +18,12 @@
 --                del cuerpo, el dueño y la ACL cruda. «dueño=ejecutor»: el dueño es quien corre la
 --                consulta (en el editor, postgres: el mismo que aplicara sim-004b)
 --   4 disparador el inventario exacto de las 14 tablas (estado 1, o 2 con la puerta)
---   5 veredicto  «OK» (se puede aplicar sim-004b) o «DIFIEREN n» — NO aplicar sim-004b
+--   5 acl_tabla      las 11 protegidas: la matriz efectiva de los siete privilegios para PUBLIC,
+--                    anon, authenticated y service_role (lo mismo que exige sim-004b, su 4.3)
+--   6 acl_receptores las 7 tablas nuevas y sus 4 secuencias: receptores aparte del dueño y de los
+--                    SELECT previstos
+--   7 acl_columna    ACL de columna en las 11 protegidas (ninguna)
+--   8 veredicto  «OK» (se puede aplicar sim-004b) o «DIFIEREN n» — NO aplicar sim-004b
 -- Los textos van SIN el prefijo «public.» (el editor tiene public en el search_path y sim-004b
 -- compara con search_path vacio: quitarlo hace la salida igual con los dos).
 -- ============================================================================
@@ -160,6 +165,41 @@ tri_med as (
            || '|' || t.tgtype || '|' || t.tgenabled::text, '\mpublic\.', '', 'g') x
     from pg_trigger t join pg_class c on c.oid = t.tgrelid left join pg_constraint k on k.oid = t.tgconstraint
    where c.oid in (select to_regclass('public.' || t) from tablas)),
+-- 5 las ACL de tabla, con la MISMA regla que sim-004b (su seccion 4.3; CTO 15-oct, ronda 2: la s16 mide
+-- todo lo que sim-004b exige). En las 11 protegidas, la matriz EFECTIVA de los siete privilegios para
+-- PUBLIC, anon, authenticated y service_role (en las cuatro de s04, la medida del 10-oct; no la ACL cruda,
+-- que s04 no midio con MAINTAIN). En las siete nuevas y sus cuatro secuencias, ningun receptor aparte del
+-- dueño y de los SELECT previstos. Y ninguna ACL de columna en las 11.
+priv(p, n) as (values ('SELECT', 1), ('INSERT', 2), ('UPDATE', 3), ('DELETE', 4), ('TRUNCATE', 5), ('REFERENCES', 6), ('TRIGGER', 7)),
+roles(r, n) as (values ('public', 1), ('anon', 2), ('authenticated', 3), ('service_role', 4)),
+acl_m as (
+  select t.t, c.oid,
+         (select string_agg(ro.r || '=' || coalesce((select string_agg(pr.p, ',' order by pr.n) from priv pr
+                                                     where has_table_privilege(ro.r, c.oid, pr.p)), '-'), ' ' order by ro.n)
+            from roles ro where c.oid is not null) medido,
+         (select string_agg(ro.r || '=' || coalesce((select string_agg(pr.p, ',' order by pr.n) from priv pr
+                                                     where case when t.t in ('sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config')
+                                                                 then ro.r = 'service_role' or (ro.r = 'authenticated' and pr.p in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'))
+                                                               else pr.p = 'SELECT' and ro.r in ('authenticated', 'service_role') and t.t in ('sim_recibos', 'sim_eventos', 'sim_servicio') end), '-'), ' ' order by ro.n)
+            from roles ro) esperado
+    from tablas t left join pg_class c on c.oid = to_regclass('public.' || t.t) where t.protegida),
+nuevas(o) as (values ('sim_alumnos'), ('sim_arrendamientos'), ('sim_recibos'), ('sim_eventos'), ('sim_escrituras_v0'),
+                     ('sim_escrituras_v0_marcas'), ('sim_servicio'), ('sim_recibos_id_seq'), ('sim_eventos_id_seq'),
+                     ('sim_escrituras_v0_id_seq'), ('sim_escrituras_v0_marcas_id_seq')),
+acl_r as (
+  select n.o, c.oid,
+         (select string_agg(case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end || '=' || a.privilege_type, ', '
+                            order by case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end collate "C", a.privilege_type collate "C")
+            from aclexplode(coalesce(c.relacl, acldefault(case when c.relkind = 'S' then 's'::"char" else 'r'::"char" end, c.relowner))) a
+           where a.grantee <> c.relowner
+             and not (a.privilege_type = 'SELECT' and c.relname in ('sim_recibos', 'sim_eventos', 'sim_servicio')
+                      and a.grantee in ('authenticated'::regrole, 'service_role'::regrole))) de_mas
+    from nuevas n left join pg_class c on c.oid = to_regclass('public.' || n.o)),
+acl_c as (
+  select string_agg(regexp_replace(a.attrelid::regclass::text, '\mpublic\.', '', 'g') || '.' || a.attname || ' ' || a.attacl::text, ', '
+                    order by a.attrelid::regclass::text collate "C", a.attname collate "C") de_mas
+    from pg_attribute a
+   where a.attrelid in (select to_regclass('public.' || t) from tablas where protegida) and a.attnum > 0 and coalesce(cardinality(a.attacl), 0) > 0),
 filas as (
   select 1 o, r.t o2, 'rls' seccion, r.t objeto,
          case when r.rls is null then 'NO EXISTE' else 'rls=' || r.rls || ' · force=' || r.forzada end || ' · '
@@ -175,15 +215,29 @@ filas as (
     from fun
   union all select 4, x, 'disparador', x, 'coincide' from (select x from tri_med intersect all select x from tri_e) i
   union all select 4, x, 'disparador', x, 'DE MAS' from (select x from tri_med except all select x from tri_e) d
-  union all select 4, x, 'disparador', x, 'FALTA' from (select x from tri_e except all select x from tri_med) d),
+  union all select 4, x, 'disparador', x, 'FALTA' from (select x from tri_e except all select x from tri_med) d
+  union all
+  select 5, a.t, 'acl_tabla', a.t,
+         coalesce(a.medido, 'NO EXISTE') || ' · '
+         || case when a.medido is not distinct from a.esperado then 'coincide' else 'DIFIERE (sim-004b espera ' || a.esperado || ')' end
+    from acl_m a
+  union all
+  select 6, r.o, 'acl_receptores', r.o,
+         case when r.oid is null then 'NO EXISTE · DIFIERE' when r.de_mas is null then 'ninguno de mas · coincide'
+              else 'de mas: ' || r.de_mas || ' · DIFIERE' end
+    from acl_r r
+  union all
+  select 7, '', 'acl_columna', 'las 11 protegidas',
+         case when c.de_mas is null then 'ninguna · coincide' else 'de mas: ' || c.de_mas || ' · DIFIERE' end
+    from acl_c c),
 malas as (select count(*) n from filas where detalle ~ '(DIFIERE|DE MAS|FALTA)$' or detalle ~ 'DIFIERE \(')
 select seccion, objeto, detalle from (
   select o, o2, seccion, objeto, detalle from filas
   union all
-  select 5, '', 'veredicto', case when n = 0 then 'OK' else 'DIFIEREN ' || n end,
-         case when n = 0 then 'lo que acredita sim-004b (rls, force, politicas, funciones y disparadores) coincide: se puede aplicar'
+  select 8, '', 'veredicto', case when n = 0 then 'OK' else 'DIFIEREN ' || n end,
+         case when n = 0 then 'lo que acredita sim-004b (rls, force, politicas, funciones, disparadores y ACL de tabla) coincide: se puede aplicar'
               else 'NO aplicar sim-004b: revisar las filas DIFIERE / DE MAS / FALTA y parar (decide el CTO)' end
     from malas
   union all
-  select 6, '', 'FIN', 's16', 'consulta'
+  select 9, '', 'FIN', 's16', 'consulta'
 ) x order by o, o2 collate "C", detalle collate "C";

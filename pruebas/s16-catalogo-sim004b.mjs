@@ -37,7 +37,12 @@ try {
   const lineas = r.out.split('\n').filter(Boolean)
   oraculo('S16', 'en READ ONLY y como no superusuario: veredicto OK y acaba en «FIN|s16|consulta»', r.ok && veredicto(r) === 'OK' && lineas.at(-1) === 'FIN|s16|consulta', r.ok ? lineas.filter(l => /DIFIERE|DE MAS|FALTA|veredicto/.test(l)).join(' / ').slice(0, 600) : r.err)
   oraculo('S16', 'la misma salida con el search_path vacio que con el de defecto', r0.ok && r0.out === r.out, r0.ok ? '' : r0.err)
-  oraculo('S16', 'sus filas: 14 rls, 13 politicas, 17 funciones y 63 disparadores, todas «coincide»', lineas.filter(l => l.startsWith('rls|')).length === 14 && lineas.filter(l => l.startsWith('funcion|') && l.endsWith('coincide')).length === 17 && lineas.filter(l => l.startsWith('disparador|') && l.endsWith('coincide')).length === 63 && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63, String((r.out.match(/coincide$/gm) ?? []).length))
+  oraculo('S16', 'sus filas: 14 rls, 13 politicas, 17 funciones y 63 disparadores, todas «coincide»', lineas.filter(l => l.startsWith('rls|')).length === 14 && lineas.filter(l => l.startsWith('funcion|') && l.endsWith('coincide')).length === 17 && lineas.filter(l => l.startsWith('disparador|') && l.endsWith('coincide')).length === 63, String((r.out.match(/coincide$/gm) ?? []).length))
+  // CTO 15-oct (ronda 2): la s16 mide TODO lo que sim-004b exige, tambien las ACL de tabla (su 4.3): la
+  // matriz efectiva de los siete privilegios en las 11 protegidas, los receptores de mas en las 7 nuevas
+  // y sus 4 secuencias, y ninguna ACL de columna en las 11
+  const acl = lineas.filter(l => /^acl_(tabla|receptores|columna)\|/.test(l))
+  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63 + 23, acl.join(' / ').slice(0, 500))
   oraculo('S16', 'y con eso sim-004b aplica', aplica(d).ok)
   const dp = m.base('s16p')
   const pp = m.comoEjecutor(dp, PUERTA)
@@ -71,5 +76,32 @@ try {
   m.uno(dq, "create or replace function public.sim_escrituras_v0_puerta() returns trigger language plpgsql volatile security invoker set search_path = '' as $$ begin return coalesce(new, old); end $$")
   const vq = veredicto(corre(dq)), aq = aplica(dq)
   oraculo('S16', 'una puerta de otro cuerpo: la s16 dice DIFIEREN y sim-004b aborta', /^DIFIEREN/.test(vq) && !aq.ok, `s16 ${vq} · sim-004b ${aq.ok ? 'APLICA' : 'aborta'}`)
+
+  titulo('4 · la familia de las ACL de tabla: cada tabla y cada privilegio (CTO 15-oct, ronda 2)')
+  // Cada desvio, en UNA base (la del montaje), dentro de una transaccion que se deshace: el desvio + la
+  // s16, y el desvio + sim-004b. Exhaustiva, sin azar: las 11 protegidas × los 7 privilegios concedidos a
+  // anon (77); en las 4 de s04, un privilegio ESPERADO quitado (authenticated pierde DELETE; 4); USAGE a
+  // anon en cada una de las 4 secuencias (4); y una ACL de columna (SELECT de la primera columna a anon)
+  // en cada una de las 11 (11). Total 96: en todos, la s16 dice DIFIEREN y sim-004b aborta.
+  const PROTEGIDAS = ['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config']
+  const S04 = ['sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config']
+  const SECUENCIAS = ['sim_recibos_id_seq', 'sim_eventos_id_seq', 'sim_escrituras_v0_id_seq', 'sim_escrituras_v0_marcas_id_seq']
+  const PRIV = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']
+  const familia = [
+    ...PROTEGIDAS.flatMap(t => PRIV.map(p => [`${p} a anon en ${t}`, `grant ${p} on public.${t} to anon`])),
+    ...S04.map(t => [`authenticated sin DELETE en ${t}`, `revoke delete on public.${t} from authenticated`]),
+    ...SECUENCIAS.map(q => [`USAGE a anon en ${q}`, `grant usage on sequence public.${q} to anon`]),
+    ...PROTEGIDAS.map(t => [`ACL de columna en ${t}`, `do $c$ begin execute format('grant select (%I) on public.${t} to anon', (select attname from pg_attribute where attrelid = 'public.${t}'::regclass and attnum = 1)); end $c$`]),
+  ]
+  ver(`control: la familia tiene 96 desvios (${familia.length})`, familia.length === 96)
+  const fam = m.base('s16f')
+  const fallan = []
+  for (const [que, sql] of familia) {
+    const rs = m.comoEjecutor(fam, `begin;\n${sql};\n${S16 ?? 'select 1/0;'}\nrollback;`)
+    const ra = m.comoEjecutor(fam, `begin;\n${sql};\n${S4B}\nrollback;`)
+    if (!(rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)) && !ra.ok && /sim-004b: /.test(ra.err))) fallan.push(`${que}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${ra.ok ? 'APLICA' : 'aborta'}`)
+  }
+  ver('control: tras la familia la base sigue intacta (veredicto OK y sim-004b aplica en una transaccion)', veredicto(corre(fam)) === 'OK' && m.comoEjecutor(fam, `begin;\n${S4B}\nrollback;`).ok)
+  oraculo('S16', `los 96 desvios de ACL de tabla: la s16 dice DIFIEREN y sim-004b aborta en todos`, fallan.length === 0, `${fallan.length} fallan: ${fallan.slice(0, 6).join(' · ')}`)
 } finally { m.cierra() }
 fin()

@@ -3422,3 +3422,29 @@ Hoy el motor no tiene ninguna detención de breach ni de fase superada. Sin deci
 1. **La forma:** ¿`{ motivo: 'breach' }` y `{ motivo: 'fase_superada' }`, solo el motivo, como `reto_terminado`? ¿O con `en`, la regla, etc.? Va a `resumen.detencion` del recibo (hoy, solo el motivo).
 2. **La práctica (cartera sin reto):** un breach también la termina. ¿Aplica la misma regla, y entonces qué devuelve una llamada sobre una práctica ya quemada? ¿O es solo para el reto, como dice «reto ya terminado»?
 
+
+### q.17 · Etapa 3, ronda 2 bis: decisiones del CTO del 15-oct (FORCE, s16 con ACL, runbook, detención)
+
+#### q.17.1 FORCE, confirmado
+
+**Decisión del CTO:** correcta la lectura de las 14 tablas. sim-004b exige `relforcerowsecurity = false` en las 14 que acredita: las 11 protegidas y las tres de las que solo acredita disparadores. Ya estaba hecho en `7ba487f`, con negativos FORCE en `sim_eventos` (en las dos ejecuciones) y en `user_tool_config`.
+
+#### q.17.2 s16 con las ACL de tabla
+
+**Regla del CTO:** la s16 mide **todo** lo que sim-004b exige, ni más ni menos. En las cuatro tablas de s04, donde sim-004b compara la matriz de los siete privilegios y no la ACL cruda, la s16 mide lo mismo.
+
+**Hecho** (`sql/consultas/s16-catalogo-sim004b.sql`): tres secciones nuevas, con la misma regla que la 4.3 de sim-004b.
+- **`acl_tabla`** (una fila por cada una de las 11 protegidas): la matriz efectiva de los siete privilegios para PUBLIC, anon, authenticated y service_role (`has_table_privilege`). Si no es la esperada, «DIFIERE (sim-004b espera …)».
+- **`acl_receptores`** (las 7 tablas nuevas y sus 4 secuencias): los receptores aparte del dueño y de los SELECT previstos; lo esperado es «ninguno de mas».
+- **`acl_columna`** (una fila): las ACL de columna en las 11 protegidas; lo esperado es «ninguna».
+- El veredicto cuenta también estas filas.
+
+**Prueba** (`pruebas/s16-catalogo-sim004b.mjs`, §4), con la familia **exhaustiva** de desvíos (sin azar), 96 en total:
+- las 11 protegidas × los 7 privilegios concedidos a anon (77);
+- en las 4 de s04, un privilegio esperado quitado (DELETE de authenticated; 4);
+- USAGE a anon en cada secuencia (4);
+- una ACL de columna en cada tabla (11).
+
+Cada desvío corre dentro de una transacción que se deshace, contra la s16 y contra sim-004b. En los 96, la s16 dice DIFIEREN **y** sim-004b aborta. Control: tras la familia, la base sigue intacta. Además, las 23 filas de ACL salen «coincide» en el montaje.
+
+**Rojo contra `1619b21`:** 2 oráculos. En los 96 desvíos la s16 decía OK mientras sim-004b abortaba, y no había filas de ACL.
