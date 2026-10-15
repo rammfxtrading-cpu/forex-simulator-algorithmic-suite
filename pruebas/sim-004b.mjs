@@ -241,6 +241,10 @@ try {
     ['un atributo: sim_cierre_v0 SECURITY DEFINER (mismo cuerpo), reejecucion', d => m.uno(d, 'alter function public.sim_cierre_v0(uuid,numeric,bigint,jsonb) security definer'), false],
     ['un atributo: sim_error de otro dueño (mismo cuerpo), reejecucion', d => m.uno(d, 'alter function public.sim_error(integer,text,jsonb) owner to service_role'), false],
     ['EXECUTE de mas: sim_bloquea_alumno para service_role, reejecucion', d => m.uno(d, 'grant execute on function public.sim_bloquea_alumno(uuid) to service_role'), false],
+    // CTO 15-oct (q.16.6): relforcerowsecurity = false en todas las tablas que acredita
+    ['RLS FORZADA en sim_eventos, primera aplicacion', d => m.uno(d, 'alter table public.sim_eventos force row level security'), true],
+    ['RLS FORZADA en sim_eventos, reejecucion', d => m.uno(d, 'alter table public.sim_eventos force row level security'), false],
+    ['RLS FORZADA en user_tool_config (solo se le acreditan los disparadores), reejecucion', d => m.uno(d, 'alter table public.user_tool_config force row level security'), false],
   ]
   for (const [que, altera, antes] of casos) {
     const r = desvio(que, altera, { antes })

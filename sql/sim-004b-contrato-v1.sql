@@ -56,8 +56,8 @@
 --     produccion medido en s04 y la puerta si esta) por el sha256 del cuerpo y sus atributos:
 --     lenguaje, SECURITY, volatilidad, proconfig, dueño (el ejecutor) y EXECUTE;
 --   · el inventario exacto de disparadores de las tablas que escriben las RPC.
---   Cualquier desvio: «sim-004b: …» y no queda nada. NO comprueba RLS FORZADA (relforcerowsecurity):
---   el diseño no la pide en ninguna tabla (pregunta abierta, q.16).
+--   · RLS NO forzada (relforcerowsecurity = false) en las 14 tablas que acredita (CTO 15-oct, q.16.6).
+--   Cualquier desvio: «sim-004b: …» y no queda nada.
 --
 -- Ensayado en PostgreSQL 17 local: s04 literal + sim-002 + sim-003 + preparatoria, con un
 -- ejecutor como el de s06 (pruebas/sim-004b.mjs). No prueba el editor de Supabase.
@@ -745,6 +745,14 @@ BEGIN
    WHERE NOT coalesce((SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = to_regclass('public.' || t)), false);
   IF v_txt IS NOT NULL THEN
     RAISE EXCEPTION 'sim-004b: RLS apagada (o tabla ausente) en public.%: no se toca nada', v_txt;
+  END IF;
+  -- RLS NO forzada en ninguna tabla que acredita (CTO 15-oct, q.16.6): una FORCE inesperada haria que las
+  -- RPC SECURITY DEFINER del dueño pasaran por RLS y se rompieran
+  SELECT string_agg(c.relname, ', ' ORDER BY c.relname COLLATE "C") INTO v_txt FROM pg_class c
+   WHERE c.oid IN (SELECT to_regclass('public.' || x) FROM unnest(v_protegidas || ARRAY['sim_drawing_templates', 'user_chart_config', 'user_tool_config']) x)
+     AND c.relforcerowsecurity;
+  IF v_txt IS NOT NULL THEN
+    RAISE EXCEPTION 'sim-004b: RLS FORZADA en public.%: no se toca nada', v_txt;
   END IF;
   -- 4.2 las politicas EXACTAS de las tablas protegidas (nombre, permisiva/restrictiva, comando, roles,
   -- USING y WITH CHECK), ni una de mas ni de menos; con search_path vacio (nombres completos)
