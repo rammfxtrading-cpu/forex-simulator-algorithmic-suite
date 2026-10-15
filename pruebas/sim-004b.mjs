@@ -201,5 +201,73 @@ try {
   oraculo('S4B', 'sim_borrar_sesion sobre un superado: lapida', eraSuperado && bh?.ok === true && fila(dj, R1)?.terminal === 'borrada', tx(bh))
   const br = (await pu.rpc('sim_borrar_sesion', { p_actor: AL, p_session_id: R3 })).data
   oraculo('S4B', 'la cadena 3F desde la raiz: las tres lapidas (tambien la superado)', br?.ok === true && [R3, H3, N3].every(x => fila(dj, x)?.terminal === 'borrada'), tx({ br, f: [R3, H3, N3].map(x => fila(dj, x)?.terminal) }))
+
+  // ── 5 · E3-03 (Astra 15-oct; CTO): sim-004b ACREDITA el catalogo del que depende, en la primera
+  // aplicacion y en la reejecucion: RLS activa en las tablas protegidas, las politicas exactas, las
+  // ACL, y las funciones que conserva y los disparadores de los que depende por cuerpo (sha256) y
+  // atributos (lenguaje, SECURITY, volatilidad, dueño, proconfig, EXECUTE). Un desvio aborta con
+  // «sim-004b: …» y el catalogo no cambia (diseño q.16).
+  titulo('5 · E3-03: la acreditacion del catalogo (primera aplicacion y reejecucion)')
+  const S4B_ = /^sim-004b: /
+  let nb = 0
+  // altera(d): el desvio plantado; antes: en la primera aplicacion (true) o tras aplicar (false)
+  function desvio(que, altera, { antes, patron = S4B_ } = {}) {
+    const d = m.base(`e3${++nb}`)
+    if (!antes) { const r0 = aplica(d); if (!r0.ok) return { que, ok: false, msg: 'control: la primera aplicacion fallo: ' + err1(r0) } }
+    altera(d)
+    const f0 = foto(d), r = aplica(d)
+    return { que, aborta: !r.ok && patron.test(err1(r)), intacto: foto(d) === f0, msg: r.ok ? 'APLICA (no aborta)' : err1(r) }
+  }
+  const SIN_RLS = d => m.uno(d, 'alter table public.sim_eventos disable row level security')
+  const AJENO = d => m.uno(d, "create or replace function public.sim_borrar_alumno(p_user_id uuid) returns jsonb language plpgsql volatile security definer set search_path='' as $$ begin return jsonb_build_object('ok',true,'http',200,'inventado','cuerpo-no-es-sim003'); end $$")
+  const POLITICA = d => m.uno(d, 'drop policy sim_eventos_select_propios on public.sim_eventos; create policy sim_eventos_select_propios on public.sim_eventos for select to authenticated using (true)')
+  const casos = [
+    ['Astra: RLS apagada en sim_eventos, primera aplicacion', SIN_RLS, true],
+    ['Astra: RLS apagada en sim_eventos, reejecucion', SIN_RLS, false],
+    ['Astra: cuerpo ajeno en sim_borrar_alumno (misma firma, definer, search_path y ACL), reejecucion', AJENO, false],
+    ['cuerpo ajeno en sim_borrar_alumno, primera aplicacion', AJENO, true],
+    ['una politica alterada (sim_eventos_select_propios USING true), primera aplicacion', POLITICA, true],
+    ['una politica alterada (sim_eventos_select_propios USING true), reejecucion', POLITICA, false],
+    ['una RESTRICTIVE de sim_trades con otros roles, reejecucion', d => m.uno(d, `drop policy sim_trades_sesion_propia_insert on public.sim_trades; create policy sim_trades_sesion_propia_insert on public.sim_trades as restrictive for insert to public with check (exists (select 1 from public.sim_sessions s where s.id = sim_trades.session_id and s.user_id = (select auth.uid())))`), false],
+    ['una politica de mas en sim_recibos (anon lee todo), reejecucion', d => m.uno(d, 'create policy sim_recibos_todo on public.sim_recibos for select to anon using (true)'), false],
+    ['RLS apagada en sim_sessions, reejecucion', d => m.uno(d, 'alter table public.sim_sessions disable row level security'), false],
+    ['una ACL de mas: SELECT de sim_alumnos para authenticated, reejecucion', d => m.uno(d, 'grant select on public.sim_alumnos to authenticated'), false],
+    ['una ACL de mas en sim_sessions: TRUNCATE para authenticated, reejecucion', d => m.uno(d, 'grant truncate on public.sim_sessions to authenticated'), false],
+    ['una ACL de columna en sim_trades (UPDATE (pnl) para anon), reejecucion', d => m.uno(d, 'grant update (pnl) on public.sim_trades to anon'), false],
+    ['un disparador de la preparatoria desactivado (sim_sessions_rev_saldo), reejecucion', d => m.uno(d, 'alter table public.sim_sessions disable trigger sim_sessions_rev_saldo'), false],
+    ['un disparador de mas en sim_eventos, reejecucion', d => m.uno(d, 'create trigger x_de_mas before insert on public.sim_eventos for each row execute function public.sim_escrituras_v0_solo_disparador()'), false],
+    ['el cuerpo de enforce_sim_session_limit (el cupo de produccion, s04) cambiado, reejecucion', d => m.uno(d, 'create or replace function public.enforce_sim_session_limit() returns trigger language plpgsql security definer set search_path = public as $$ begin return new; end $$'), false],
+    ['un atributo: sim_crear_sesion con search_path = public (mismo cuerpo), reejecucion', d => m.uno(d, 'alter function public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb) set search_path = public'), false],
+    ['un atributo: sim_cierre_v0 SECURITY DEFINER (mismo cuerpo), reejecucion', d => m.uno(d, 'alter function public.sim_cierre_v0(uuid,numeric,bigint,jsonb) security definer'), false],
+    ['un atributo: sim_error de otro dueño (mismo cuerpo), reejecucion', d => m.uno(d, 'alter function public.sim_error(integer,text,jsonb) owner to service_role'), false],
+    ['EXECUTE de mas: sim_bloquea_alumno para service_role, reejecucion', d => m.uno(d, 'grant execute on function public.sim_bloquea_alumno(uuid) to service_role'), false],
+  ]
+  for (const [que, altera, antes] of casos) {
+    const r = desvio(que, altera, { antes })
+    oraculo('E3-03', `${que}: aborta con «sim-004b: …» y el catalogo no cambia`, r.aborta === true && r.intacto === true, r.msg)
+  }
+  // controles: la puerta (estado 2 de la preparatoria) es un estado valido; la de otro cuerpo, no
+  const PUERTA = lee('sql/sim-004a-puerta.sql')
+  {
+    const d = m.base('e3p1')
+    const p = m.comoEjecutor(d, PUERTA)
+    const r = aplica(d)
+    oraculo('E3-03', 'con la puerta aplicada (estado 2 de la preparatoria): sim-004b aplica y la reejecucion tambien', p.ok && r.ok && aplica(d).ok, p.ok ? (r.ok ? '' : err1(r)) : 'control: la puerta no se aplico: ' + err1(p))
+    const d2 = m.base('e3p2')
+    m.comoEjecutor(d2, PUERTA)
+    m.uno(d2, 'create or replace function public.sim_escrituras_v0_puerta() returns trigger language plpgsql volatile security invoker set search_path = \'\' as $$ begin return coalesce(new, old); end $$')
+    const f0 = foto(d2), r2 = aplica(d2)
+    oraculo('E3-03', 'con una puerta de otro cuerpo: aborta con «sim-004b: …» y el catalogo no cambia', !r2.ok && S4B_.test(err1(r2)) && foto(d2) === f0, r2.ok ? 'APLICA' : err1(r2))
+  }
+  // la constante de enforce_sim_session_limit sale de la definicion MEDIDA en produccion (s04 del 10-oct)
+  {
+    const csv = lee('sql/consultas/salidas/s04-esquema-simulador-2026-10-10.csv')
+    const i = csv.indexOf('CREATE OR REPLACE FUNCTION public.enforce_sim_session_limit()')
+    const a = csv.indexOf('AS $function$', i) + 'AS $function$'.length, b = csv.indexOf('$function$', a)
+    const { createHash } = await import('node:crypto')
+    const sha = createHash('sha256').update(csv.slice(a, b), 'utf8').digest('hex')
+    ver('control: el cuerpo de enforce_sim_session_limit medido en s04 esta en el fichero', i > 0 && b > a, sha)
+    oraculo('E3-03', 'sim-004b acredita enforce_sim_session_limit con el sha256 de su cuerpo MEDIDO en s04 (no inventado)', S4B.includes(sha), sha)
+  }
 } finally { m.cierra() }
 fin()

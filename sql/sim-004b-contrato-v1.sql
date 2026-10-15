@@ -46,6 +46,19 @@
 --   de este fichero), no cambia nada, repite las comprobaciones y da el mismo informe.
 --   A medias (una restriccion si y otra no, un cuerpo distinto): se para sin tocar nada.
 --
+-- LO QUE ACREDITA (E3-03, Astra 15-oct; CTO; diseño q.16), en la primera ejecucion y en la
+-- reejecucion, ademas de lo suyo y de lo de sim-003 que no cambia (seccion 3):
+--   · RLS activa en las 11 tablas protegidas (sim-003, preparatoria y las cuatro de E1R3-01);
+--   · sus politicas EXACTAS (nombre, tipo, comando, roles, USING y WITH CHECK), ni mas ni menos;
+--   · las ACL: la matriz efectiva de tabla; sin receptores de mas en las tablas y secuencias
+--     nuevas; ninguna ACL de columna;
+--   · las 20 funciones que conserva o de las que depende (sim-003, preparatoria, el cupo de
+--     produccion medido en s04 y la puerta si esta) por el sha256 del cuerpo y sus atributos:
+--     lenguaje, SECURITY, volatilidad, proconfig, dueño (el ejecutor) y EXECUTE;
+--   · el inventario exacto de disparadores de las tablas que escriben las RPC.
+--   Cualquier desvio: «sim-004b: …» y no queda nada. NO comprueba RLS FORZADA (relforcerowsecurity):
+--   el diseño no la pide en ninguna tabla (pregunta abierta, q.16).
+--
 -- Ensayado en PostgreSQL 17 local: s04 literal + sim-002 + sim-003 + preparatoria, con un
 -- ejecutor como el de s06 (pruebas/sim-004b.mjs). No prueba el editor de Supabase.
 -- NO APLICADA (CTO 14-oct: se escribe y se prueba en local; no se aplica).
@@ -444,6 +457,123 @@ DECLARE
     ARRAY['sim_sessions_rev_saldo()', 'c209d2326065f55a610319b3207c7b43fdc4ffb5be79302285081b0c5ce18503'],
     ARRAY['sim_trades_rev_saldo()', '94c4e7220af33da3f257dfc4eae01d00acbc412b5417d025636d83f88f74569d'],
     ARRAY['sim_sessions_padre_propio()', '3285b822d279587324951b93f7dd6268c2103bc5ff39f4e11d2e9a85d2623291']];
+  -- ── E3-03 (Astra 15-oct; CTO; diseño q.16): lo que sim-004b ACREDITA del catalogo del que
+  -- depende, en la primera aplicacion y en la reejecucion (seccion 4). Un desvio aborta y no queda
+  -- nada (el DO es una transaccion).
+  v_actual   text;
+  v_esperado text;
+  v_puerta   boolean;
+  -- las tablas protegidas: las cuatro de sim-003, las tres de la preparatoria y las cuatro de E1R3-01
+  v_protegidas text[] := ARRAY['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos',
+                               'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                               'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config'];
+  -- sus secuencias (las de sim-003 y la preparatoria): sin receptores aparte del dueño
+  v_secuencias text[] := ARRAY['sim_recibos_id_seq', 'sim_eventos_id_seq', 'sim_escrituras_v0_id_seq', 'sim_escrituras_v0_marcas_id_seq'];
+  -- la condicion de las RESTRICTIVE de la preparatoria (o.16.7, o.16.9), con TABLA en lugar de la tabla
+  v_pol_cond constant text := E'(EXISTS ( SELECT 1\n   FROM public.sim_sessions s\n  WHERE ((s.id = TABLA.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))';
+  -- las funciones: firma · lenguaje · SECURITY DEFINER · volatilidad · proconfig · sha256 del cuerpo ·
+  -- EXECUTE (receptores aparte del dueño). Dueño: el ejecutor (current_user), el mismo que aplico sim-003
+  -- y la preparatoria (postgres, s06). sim-003: los cuerpos aplicados (1a951ca, APLICADOS.md); los tres
+  -- que sustituye este fichero, los suyos; la preparatoria, los de 4da2df2; enforce_sim_session_limit (el
+  -- disparador del cupo de sim_sessions, del que depende sim_crear_sesion), el MEDIDO en s04 (10-oct:
+  -- sql/consultas/salidas/s04-esquema-simulador-2026-10-10.csv: definer, search_path=public, EXECUTE a
+  -- PUBLIC, anon, authenticated y service_role).
+  v_funcs text[][] := ARRAY[
+    ARRAY['sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)', 'plpgsql', 'true', 'v', 'search_path=""', '0634aba8572b154630175e35f6f4041656ce967608d80060b82baddeded2eace', 'service_role'],
+    ARRAY['sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)', 'plpgsql', 'true', 'v', 'search_path=""', 'f58af2b0e4945d9313ea2c3bb55f4be7c003521be80ed92a5a0a56b5cdc03d48', 'service_role'],
+    ARRAY['sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)', 'plpgsql', 'true', 'v', 'search_path=""', '94f4db481cc09a2bc9b5d86512931186d8ec5aa98689bf6dc54bd6418798bc36', 'service_role'],
+    ARRAY['sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)', 'plpgsql', 'true', 'v', 'search_path=""', '3409a208f5b26211be3406f8d4a93ed074cd1e1a72c6c3eed32f5b2d9c99526b', 'service_role'],
+    ARRAY['sim_borrar_sesion(uuid,uuid)', 'plpgsql', 'true', 'v', 'search_path=""', '210d6d9ef38f483eab2d2a73a773fcd68b49b4e58ac33d813bbf34532426360d', 'service_role'],
+    ARRAY['sim_borrar_legacy(uuid,uuid)', 'plpgsql', 'true', 'v', 'search_path=""', '699be648cae457b5339a5f94d80bbe30f03f5952fb7dbeb9dadc79f3bce114f5', 'service_role'],
+    ARRAY['sim_borrar_alumno(uuid)', 'plpgsql', 'true', 'v', 'search_path=""', '99130396d3fc4e301110d7aaf42c70240a80e7ae07d81ae738c1cba63e84cdea', 'service_role'],
+    ARRAY['sim_error(integer,text,jsonb)', 'sql', 'true', 'i', 'search_path=""', 'd549317d65746f847af514cee10c6c31cb6bfd7eb678900af8531e14f01ccdc0', ''],
+    ARRAY['sim_bloquea_alumno(uuid)', 'plpgsql', 'true', 'v', 'search_path=""', '6f0b01b1fb10aedfe788a79dbc6500f23b43c74008f2e41f8062ad7206ffc672', ''],
+    ARRAY['sim_cierre_v0(uuid,numeric,bigint,jsonb)', 'plpgsql', 'false', 'v', 'search_path=""', '3f116e57f9ba0c4ef6b2d1176f0a91997548106ab186b9e3eff9c0f27126d70b', 'authenticated'],
+    ARRAY['sim_escrituras_v0_registra()', 'plpgsql', 'true', 'v', 'search_path=""', 'c47b1970ee48912748434f3161a62062835bfe1ec51af864659164dcddb7a6b4', ''],
+    ARRAY['sim_escrituras_v0_marca_balance()', 'plpgsql', 'true', 'v', 'search_path=""', '894174ce7cbdd7f7ec69af214dd39fcff00ed12e117c48887c44bd0a058c3117', ''],
+    ARRAY['sim_escrituras_v0_inmutable()', 'plpgsql', 'false', 'v', 'search_path=""', '58154aea4b93fa65064079566019ad2e390969860961b6aece7281b8463b48d3', ''],
+    ARRAY['sim_escrituras_v0_solo_disparador()', 'plpgsql', 'false', 'v', 'search_path=""', '6b0f60c5164ea97357a5234501a106b95fcbacfb3362a203b070ad3ca1cb3146', ''],
+    ARRAY['sim_escrituras_v0_parejas(uuid)', 'plpgsql', 'false', 's', 'search_path=""', '287f3eba3f68aa68385b6dd2e82512b9ccea1ed963a8def38382f1fdd6adbf32', ''],
+    ARRAY['sim_escrituras_v0_canonico(uuid)', 'plpgsql', 'false', 's', 'search_path=""', 'a84f48563b8abc6af7731fccee921d9b04231daeccd1bfa8abe81dddee0192b9', ''],
+    ARRAY['sim_sessions_rev_saldo()', 'plpgsql', 'false', 'v', 'search_path=""', 'c209d2326065f55a610319b3207c7b43fdc4ffb5be79302285081b0c5ce18503', ''],
+    ARRAY['sim_trades_rev_saldo()', 'plpgsql', 'true', 'v', 'search_path=""', '94c4e7220af33da3f257dfc4eae01d00acbc412b5417d025636d83f88f74569d', ''],
+    ARRAY['sim_sessions_padre_propio()', 'plpgsql', 'true', 'v', 'search_path=""', '3285b822d279587324951b93f7dd6268c2103bc5ff39f4e11d2e9a85d2623291', ''],
+    ARRAY['enforce_sim_session_limit()', 'plpgsql', 'true', 'v', 'search_path=public', '16cecbd9686b423fa48e75a8a18bfa0a99bff07382c0c5438bc7ba402ae67505', 'PUBLIC,anon,authenticated,service_role']];
+  -- la puerta (sql/sim-004a-puerta.sql), si esta: estado 2 de la preparatoria
+  v_puerta_fn text[] := ARRAY['sim_escrituras_v0_puerta()', 'plpgsql', 'false', 'v', 'search_path=""', 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883', ''];
+  -- los disparadores de las tablas que escriben las RPC y los disparadores (el inventario de la
+  -- preparatoria: estado 1, o 2 con la puerta; y el de las demas tablas, solo los de sus FK)
+  v_trg_hoy text := concat_ws(E'\n',
+    'public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
+    'public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
+    'public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_sessions|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
+    'public.sim_sessions|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_sessions|fk:sim_eventos_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
+    'public.sim_sessions|fk:sim_eventos_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_sessions|fk:sim_recibos_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
+    'public.sim_sessions|fk:sim_recibos_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_setnull_del"()|9|O',
+    'public.sim_sessions|fk:sim_sessions_user_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_sessions|fk:sim_sessions_user_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
+    'public.sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_sessions|trg_enforce_sim_session_limit|CREATE TRIGGER trg_enforce_sim_session_limit BEFORE INSERT ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.enforce_sim_session_limit()|7|O',
+    'public.sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_upd"()|17|O');
+  -- lo que añade este fichero: estado 1
+  v_trg_registro text := concat_ws(E'\n',
+    'public.sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_inmutable()|27|O',
+    'public.sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON public.sim_escrituras_v0_marcas FOR EACH STATEMENT EXECUTE FUNCTION public.sim_escrituras_v0_inmutable()|34|O',
+    'public.sim_escrituras_v0_marcas|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_solo_disparador()|7|O',
+    'public.sim_escrituras_v0|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON public.sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_inmutable()|27|O',
+    'public.sim_escrituras_v0|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON public.sim_escrituras_v0 FOR EACH STATEMENT EXECUTE FUNCTION public.sim_escrituras_v0_inmutable()|34|O',
+    'public.sim_escrituras_v0|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON public.sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_solo_disparador()|7|O',
+    'public.sim_sessions|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
+    'public.sim_sessions|sim_escrituras_v0_b_balance|CREATE TRIGGER sim_escrituras_v0_b_balance AFTER UPDATE OF balance ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_marca_balance()|17|O',
+    'public.sim_sessions|sim_sessions_padre_propio|CREATE TRIGGER sim_sessions_padre_propio BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_padre_propio()|23|O',
+    'public.sim_sessions|sim_sessions_rev_saldo|CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_sessions_rev_saldo()|23|O',
+    'public.sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
+    'public.sim_trades|sim_trades_rev_saldo|CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_trades_rev_saldo()|29|O');
+  -- lo que añade sql/sim-004a-puerta.sql: estado 2
+  v_trg_puerta text := concat_ws(E'\n',
+    'public.sim_sessions|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O',
+    'public.sim_trades|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O');
+  v_trg_otros text := concat_ws(E'\n',
+    'public.session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.session_drawings|fk:session_drawings_session_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.session_drawings|fk:session_drawings_session_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.session_drawings|fk:session_drawings_user_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.session_drawings|fk:session_drawings_user_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_alumnos|fk:sim_alumnos_user_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_alumnos|fk:sim_alumnos_user_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_eventos|fk:sim_eventos_session_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_eventos|fk:sim_eventos_session_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.sim_eventos|fk:sim_trades_evento_id_fkey|"RI_FKey_cascade_del"()|9|O',
+    'public.sim_eventos|fk:sim_trades_evento_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_recibos|fk:sim_recibos_session_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.sim_recibos|fk:sim_recibos_session_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_upd"()|17|O',
+    'public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_ins"()|5|O',
+    'public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_upd"()|17|O');
 BEGIN
   -- ── 0 · lo que se da por hecho ──────────────────────────────────────────
   IF current_setting('server_version_num')::integer < 170000 THEN
@@ -608,6 +738,113 @@ BEGIN
   IF to_regclass('public.sim_servicio') IS NULL OR to_regclass('public.sim_escrituras_v0') IS NULL OR to_regclass('public.sim_escrituras_v0_marcas') IS NULL THEN
     RAISE EXCEPTION 'sim-004b: faltan tablas de la preparatoria';
   END IF;
+  -- ── 4 · E3-03 (Astra 15-oct; CTO; diseño q.16): el catalogo del que depende sim-004b ──────
+  -- Tambien en la reejecucion. Cualquier desvio revienta y el DO entero se deshace: no queda nada.
+  -- 4.1 RLS activa en las tablas protegidas (sin ella, sus politicas existen sin aplicarse)
+  SELECT string_agg(t, ', ' ORDER BY t COLLATE "C") INTO v_txt FROM unnest(v_protegidas) t
+   WHERE NOT coalesce((SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = to_regclass('public.' || t)), false);
+  IF v_txt IS NOT NULL THEN
+    RAISE EXCEPTION 'sim-004b: RLS apagada (o tabla ausente) en public.%: no se toca nada', v_txt;
+  END IF;
+  -- 4.2 las politicas EXACTAS de las tablas protegidas (nombre, permisiva/restrictiva, comando, roles,
+  -- USING y WITH CHECK), ni una de mas ni de menos; con search_path vacio (nombres completos)
+  v_sp := current_setting('search_path');
+  PERFORM set_config('search_path', '', true);
+  SELECT coalesce(string_agg(x, E'\n' ORDER BY x COLLATE "C"), '') INTO v_actual FROM (
+    SELECT p.tablename || '|' || p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|'
+           || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-') AS x
+      FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = ANY (v_protegidas)) s;
+  SELECT string_agg(x, E'\n' ORDER BY x COLLATE "C") INTO v_esperado FROM (
+    SELECT unnest(ARRAY[
+      'sim_recibos|sim_recibos_select_propios|PERMISSIVE|SELECT|{authenticated}|(auth.uid() = user_id)|-',
+      'sim_eventos|sim_eventos_select_propios|PERMISSIVE|SELECT|{authenticated}|(auth.uid() = user_id)|-',
+      'sim_servicio|sim_servicio_lectura|PERMISSIVE|SELECT|{authenticated}|true|-']) AS x
+    UNION ALL   -- las de s04 (10-oct), FOR ALL TO public
+    SELECT t || '|' || n || '|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-'
+      FROM (VALUES ('sim_sessions', 'Users see own sessions'), ('sim_trades', 'Users see own trades'),
+                   ('session_drawings', 'user owns session drawings'), ('session_chart_config', 'user owns session config')) v(t, n)
+    UNION ALL   -- las RESTRICTIVE de la preparatoria
+    SELECT t || '|' || t || '_sesion_propia_insert|RESTRICTIVE|INSERT|{authenticated}|-|' || replace(v_pol_cond, 'TABLA', t)
+      FROM unnest(ARRAY['sim_trades', 'session_drawings', 'session_chart_config']) t
+    UNION ALL
+    SELECT t || '|' || t || '_sesion_propia_update|RESTRICTIVE|UPDATE|{authenticated}|' || replace(v_pol_cond, 'TABLA', t) || '|' || replace(v_pol_cond, 'TABLA', t)
+      FROM unnest(ARRAY['sim_trades', 'session_drawings', 'session_chart_config']) t) s;
+  PERFORM set_config('search_path', v_sp, true);
+  IF v_actual IS DISTINCT FROM v_esperado THEN
+    RAISE EXCEPTION 'sim-004b: las politicas de las tablas protegidas no son las previstas. De mas: [%] · De menos: [%]',
+      (SELECT string_agg(x, ' ; ') FROM (SELECT regexp_split_to_table(v_actual, E'\n') x EXCEPT ALL SELECT regexp_split_to_table(v_esperado, E'\n')) d),
+      (SELECT string_agg(x, ' ; ') FROM (SELECT regexp_split_to_table(v_esperado, E'\n') x EXCEPT ALL SELECT regexp_split_to_table(v_actual, E'\n')) d);
+  END IF;
+  -- 4.3 las ACL. La matriz EFECTIVA de los siete privilegios de tabla para PUBLIC, anon, authenticated y
+  -- service_role: en las cuatro de s04 la medida (10-oct; sim-003 y la preparatoria no la tocan); en las
+  -- siete nuevas, SELECT solo de authenticated y service_role en sim_recibos, sim_eventos y sim_servicio
+  SELECT string_agg(r || ':' || t || ':' || p, ', ' ORDER BY r COLLATE "C", t COLLATE "C", p COLLATE "C") INTO v_txt
+    FROM unnest(ARRAY['public', 'anon', 'authenticated', 'service_role']) r, unnest(v_protegidas) t,
+         unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) p
+   WHERE has_table_privilege(r, 'public.' || t, p) <> CASE
+           WHEN t IN ('sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config')
+             THEN r = 'service_role' OR (r = 'authenticated' AND p IN ('SELECT', 'INSERT', 'UPDATE', 'DELETE'))
+           ELSE p = 'SELECT' AND r IN ('authenticated', 'service_role') AND t IN ('sim_recibos', 'sim_eventos', 'sim_servicio') END;
+  IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004b: privilegios de tabla no previstos (rol:tabla:privilegio): %', v_txt; END IF;
+  -- en las siete nuevas y sus secuencias, ningun receptor aparte del dueño y de esos SELECT (cualquier privilegio)
+  SELECT string_agg(c.relname || ':' || CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END || '=' || a.privilege_type, ', '
+                    ORDER BY c.relname COLLATE "C", a.privilege_type COLLATE "C") INTO v_txt
+    FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault(CASE WHEN c.relkind = 'S' THEN 's'::"char" ELSE 'r'::"char" END, c.relowner))) a
+   WHERE c.oid IN (SELECT to_regclass('public.' || x) FROM unnest(v_protegidas[1:7] || v_secuencias) x)
+     AND a.grantee <> c.relowner
+     AND NOT (a.privilege_type = 'SELECT' AND c.relname IN ('sim_recibos', 'sim_eventos', 'sim_servicio')
+              AND a.grantee IN ('authenticated'::regrole, 'service_role'::regrole));
+  IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004b: receptores de mas en las tablas o secuencias nuevas: %', v_txt; END IF;
+  -- ninguna ACL de columna en las tablas protegidas (s11, 13-oct: 0 en las cuatro de s04)
+  SELECT string_agg(a.attrelid::regclass::text || '.' || a.attname || ' ' || a.attacl::text, ', ') INTO v_txt
+    FROM pg_attribute a
+   WHERE a.attrelid IN (SELECT to_regclass('public.' || x) FROM unnest(v_protegidas) x) AND a.attnum > 0 AND coalesce(cardinality(a.attacl), 0) > 0;
+  IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004b: ACL de columna no prevista: %', v_txt; END IF;
+  -- 4.4 las funciones que conserva y de las que depende: cuerpo (sha256) y atributos, no el nombre
+  v_puerta := to_regprocedure('public.sim_escrituras_v0_puerta()') IS NOT NULL;
+  FOR v_n IN 1 .. array_length(v_funcs, 1) + CASE WHEN v_puerta THEN 1 ELSE 0 END LOOP
+    IF v_n <= array_length(v_funcs, 1) THEN
+      f := v_funcs[v_n][1];
+      v_esperado := concat_ws('|', v_funcs[v_n][2], v_funcs[v_n][3], v_funcs[v_n][4], v_funcs[v_n][5], 'dueño=ejecutor', v_funcs[v_n][6], v_funcs[v_n][7]);
+    ELSE
+      f := v_puerta_fn[1];
+      v_esperado := concat_ws('|', v_puerta_fn[2], v_puerta_fn[3], v_puerta_fn[4], v_puerta_fn[5], 'dueño=ejecutor', v_puerta_fn[6], v_puerta_fn[7]);
+    END IF;
+    v_actual := NULL;
+    SELECT concat_ws('|', l.lanname, p.prosecdef::text, p.provolatile::text, coalesce(array_to_string(p.proconfig, ','), '-'),
+                     CASE WHEN p.proowner = (SELECT r.oid FROM pg_roles r WHERE r.rolname = current_user) THEN 'dueño=ejecutor'
+                          ELSE 'dueño=' || pg_get_userbyid(p.proowner) END,
+                     encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex'),
+                     coalesce((SELECT string_agg(g, ',' ORDER BY g COLLATE "C") FROM (
+                                 SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END AS g
+                                   FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                                  WHERE a.grantee <> p.proowner AND a.privilege_type = 'EXECUTE') e), ''))
+      INTO v_actual
+      FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang WHERE p.oid = to_regprocedure('public.' || f);
+    IF v_actual IS DISTINCT FROM v_esperado THEN
+      RAISE EXCEPTION 'sim-004b: public.% no es la prevista (lenguaje|definer|volatilidad|proconfig|dueño|sha256 del cuerpo|EXECUTE): % · se esperaba %',
+        f, coalesce(v_actual, '(no existe)'), v_esperado;
+    END IF;
+  END LOOP;
+  -- 4.5 los disparadores, el inventario EXACTO (definicion completa, tipo y si esta activo) de las tablas que
+  -- escriben las RPC y los disparadores: el de la preparatoria (estado 1, o 2 con la puerta) y, en las demas,
+  -- solo los de sus FK
+  PERFORM set_config('search_path', '', true);
+  SELECT coalesce(string_agg(x, E'\n' ORDER BY x COLLATE "C"), '') INTO v_actual FROM (
+    SELECT c.oid::regclass::text || '|' ||
+           CASE WHEN t.tgisinternal THEN 'fk:' || k.conname || '|' || t.tgfoid::regprocedure::text
+                ELSE t.tgname || '|' || pg_get_triggerdef(t.oid) END
+           || '|' || t.tgtype || '|' || t.tgenabled::text AS x
+      FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid LEFT JOIN pg_constraint k ON k.oid = t.tgconstraint
+     WHERE c.oid IN (SELECT to_regclass('public.' || x) FROM unnest(v_protegidas || ARRAY['sim_drawing_templates', 'user_chart_config', 'user_tool_config']) x)) s;
+  SELECT string_agg(x, E'\n' ORDER BY x COLLATE "C") INTO v_esperado
+    FROM regexp_split_to_table(concat_ws(E'\n', v_trg_hoy, v_trg_registro, CASE WHEN v_puerta THEN v_trg_puerta END, v_trg_otros), E'\n') x;
+  PERFORM set_config('search_path', v_sp, true);
+  IF v_actual IS DISTINCT FROM v_esperado THEN
+    RAISE EXCEPTION 'sim-004b: los disparadores no son los previstos. De mas: [%] · De menos: [%]',
+      (SELECT string_agg(x, ' ; ') FROM (SELECT regexp_split_to_table(v_actual, E'\n') x EXCEPT ALL SELECT regexp_split_to_table(v_esperado, E'\n')) d),
+      (SELECT string_agg(x, ' ; ') FROM (SELECT regexp_split_to_table(v_esperado, E'\n') x EXCEPT ALL SELECT regexp_split_to_table(v_actual, E'\n')) d);
+  END IF;
 END
 $sim_004b$;
 
@@ -627,6 +864,10 @@ select seccion, detalle from (
     from pg_proc p where p.oid in (to_regprocedure('public.sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)'),
                                    to_regprocedure('public.sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)'),
                                    to_regprocedure('public.sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)'))
+  union all
+  select 3, 'rls', c.relname || ' · rls=' || c.relrowsecurity
+    from pg_class c where c.oid in (select to_regclass('public.' || t) from unnest(array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos',
+      'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config']) t)
   union all
   select 9, 'FIN', 'sim-004b aplicada'
 ) x order by o, detalle;
