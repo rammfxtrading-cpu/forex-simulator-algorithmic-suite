@@ -3163,6 +3163,7 @@ Hecha sobre lo construido: `lib/servidor/*`, los seis endpoints, el cambio del m
 **Orden del runbook de la etapa 3 (i).** No hay runbook propio de la etapa 3; este es el orden, para cuando se escriba:
 1. **s15** (Ramón, solo lectura, en el editor SQL): veredicto «OK». Si falta alguna columna, **no se despliega** el cliente con `COLUMNAS_SESION`.
 2. **El mercado v1** según su runbook (`revisiones-suite/2026-10-14-mercado-v1-runbook.md`): `mercado-000`, `mercado-001`, s14, el ciclo de prueba y la primera publicación. Los endpoints leen el bucket `mercado`; sin el puntero, `crear` responde 503.
+3. **s16** (Ramón, solo lectura, en el editor SQL; **después de la puerta** de la etapa 1 y **antes de sim-004b**; CTO 15-oct, q.16.6): `sql/consultas/s16-catalogo-sim004b.sql`. Veredicto «OK». Si dice «DIFIEREN n», **no se aplica sim-004b**: se para y decide el CTO con las filas DIFIERE / DE MAS / FALTA.
 3. **sim-004b** (en el editor SQL, entera, de una vez; con el sí de Astra y del CTO): el informe acaba en «FIN | sim-004b aplicada». Desde ahí, **sim-003 no se vuelve a ejecutar**: anotarlo en `sql/APLICADOS.md` con la firma literal.
    - Va **antes de cualquier despliegue que pueda encender los endpoints**: sin ella, un avance que cruce un hueco aceptado recibe 422, y no hay completado de 1F/3F.
 4. **Desplegar el código de la etapa 3 con los endpoints APAGADOS**: sin `SIM_V1_ENDPOINTS`, todo responde 503, como en la etapa 1.
@@ -3379,3 +3380,45 @@ Cualquier desvío aborta sin aplicar.
    - s15;
    - el runbook del mercado;
    - y la etapa 2.
+
+#### q.16.6 Decisiones del CTO sobre la ronda 2 (15-oct)
+
+1. **RLS forzada:** sim-004b exige `relforcerowsecurity = false` en **todas** las tablas que acredita: las 11 protegidas y las tres de las que solo acredita disparadores (`sim_drawing_templates`, `user_chart_config`, `user_tool_config`). Una FORCE inesperada haría que las RPC SECURITY DEFINER del dueño pasaran por RLS y se rompieran. Cualquier diferencia aborta. **Hecho** en `7ba487f`; negativos FORCE en `sim_eventos` (en las dos ejecuciones) y en `user_tool_config`, 3 en rojo contra `541904c`. Esto cierra el punto 1 de «lo que NO acredita» de q.16.3.
+2. **La detención** (la pregunta de q.16.2). La regla del CTO: la respuesta informa de lo que paró **esa** llamada.
+   - El tramo en el que ocurre el breach (o la fase superada) devuelve esa detención.
+   - Una llamada sobre un reto ya terminado no calcula y devuelve `detencion: { motivo: 'reto_terminado' }`.
+   - En la propiedad, las detenciones de todos los tramos, quitando las `reto_terminado`, coinciden con la del avance de un tirón.
+
+   **Rojo antes del código, hecho:** `revisiones-suite/2026-10-15-sim-etapa3-r2/rojos/detencion-contra-541904c.txt` (script `detencion-rojo.mjs`). Salen 178/180, y los dos que fallan son exactamente #75 y #87; además 0 de 47 retos terminados devuelven `reto_terminado`.
+
+   ⚠️ **PARADO, sin código:** la especificación no decide la forma de la detención de un breach o de una fase superada. Pregunta en q.16.7.
+3. **Los cuerpos se miden antes de aplicar: la s16.** `sql/consultas/s16-catalogo-sim004b.sql` (`d84bc0c`): una sola SELECT, en READ ONLY y como no superusuario, que acaba en «FIN | s16 | consulta». Trae:
+   - `rls` y `force` de las 14 tablas;
+   - las políticas de las 11 protegidas;
+   - las 17 funciones que sim-004b conserva, y la puerta si está: lenguaje, SECURITY, volatilidad, proconfig, dueño, sha256 y md5 del cuerpo, EXECUTE y la ACL cruda;
+   - el inventario de disparadores.
+
+   Cada fila dice «coincide» o DIFIERE / DE MAS / FALTA, y al final va un veredicto.
+   - Los textos van sin el prefijo `public.`, así que la salida es la misma con el search_path del editor y con el vacío.
+   - **La prueba** (`pruebas/s16-catalogo-sim004b.mjs`) comprueba cuatro cosas:
+     - sus sha256 son, uno a uno, los que sim-004b exige;
+     - en el montaje y con la puerta, el veredicto es OK y sim-004b aplica;
+     - 14 desvíos dan «DIFIEREN» en la s16 **y** abortan sim-004b;
+     - la salida es idéntica con los dos search_path.
+
+     Sin la consulta, 19 en rojo.
+   - **Límite:** la s16 no mide las ACL de tabla, que sim-004b sí acredita. El CTO pidió para la s16 RLS, políticas y disparadores de las tablas, y las ACL solo de las funciones.
+   - **No se ha corrido en producción.** Va en el orden de q.13, paso 3, después de la puerta y antes de sim-004b.
+4. **La salida de s15 en producción** (Ramón, 15-oct): `sql/consultas/salidas/s15-columnas-sesion-2026-10-15.csv` (`0af0544`). Veredicto OK, las 24 columnas; sobran `escritor` y `estado`.
+5. **El desempate de E3-02 queda como decisión del CTO:** a igual instante, la marca va antes que los eventos económicos; entre marcas, por instante y luego por par (q.16.2).
+
+#### q.16.7 Parada: la forma de la detención de un breach o de una fase superada (pregunta para el CTO)
+
+La regla de q.16.6.2 dice que el tramo del breach o de la fase superada «devuelve esa detención». La única lectura que hace cumplir la propiedad en #75 y #87 es esta:
+- **de un tirón**, la llamada devuelve la del breach, no la falta de trozo de las 00:00;
+- **en tramos**, el tramo del breach devuelve la del breach, y los siguientes, `reto_terminado`.
+
+Hoy el motor no tiene ninguna detención de breach ni de fase superada. Sin decidir esto no escribo código:
+1. **La forma:** ¿`{ motivo: 'breach' }` y `{ motivo: 'fase_superada' }`, solo el motivo, como `reto_terminado`? ¿O con `en`, la regla, etc.? Va a `resumen.detencion` del recibo (hoy, solo el motivo).
+2. **La práctica (cartera sin reto):** un breach también la termina. ¿Aplica la misma regla, y entonces qué devuelve una llamada sobre una práctica ya quemada? ¿O es solo para el reto, como dice «reto ya terminado»?
+
