@@ -57,7 +57,7 @@ import path from 'node:path'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { BIN, hayPostgres, cluster } from './pg-ensayo.mjs'
 import { PRODUCCION } from './estado-s04.mjs'
-import { PROTECT_DELETE, UPDATE_UPDATED_AT, DISPARADORES_OBJETOS, COMPRUEBA_MD5, MD5_ESPERADO, ENFORCE_BUCKET_NAME_LENGTH, PROTECT_BUCKET_CONTROL_COLUMNS, ENFORCE_BUCKET_LIFECYCLE_SERVICE_ROLE, COLUMNAS_CICLO, DISPARADORES_BUCKETS, COMPRUEBA_MD5_BUCKETS, MD5_BUCKETS_ESPERADO } from './storage-supabase.mjs'
+import { PROTECT_DELETE, UPDATE_UPDATED_AT, DISPARADORES_OBJETOS, COMPRUEBA_MD5, MD5_ESPERADO, ENFORCE_BUCKET_NAME_LENGTH, PROTECT_BUCKET_CONTROL_COLUMNS, ENFORCE_BUCKET_LIFECYCLE_SERVICE_ROLE, COLUMNAS_CICLO, TIPO_Y_VERSIONADO, DISPARADORES_BUCKETS, COMPRUEBA_MD5_BUCKETS, MD5_BUCKETS_ESPERADO } from './storage-supabase.mjs'
 if (!hayPostgres()) { ver(`PostgreSQL 17 en ${BIN}: NO hay, la prueba no se ha ejecutado`, false); fin() }
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const M1 = lee('sql/mercado-001-bucket.sql')
@@ -66,8 +66,8 @@ const pg = cluster()
 const REALES = `alter table storage.objects add column metadata jsonb, add column updated_at timestamptz default now(), add column owner uuid, add column owner_id text;`
 // CTO 14-oct (s14b, s14c): los disparadores de Supabase en storage.objects (2) y storage.buckets (5), con sus funciones
 // byte a byte. mercado-001 exige protect_objects_delete; sin el, ver la seccion 10. Las columnas NOT NULL type y
-// versioning_status de storage.buckets y los valores por defecto, PENDIENTES de la s14d (no se inventan)
-const STORAGE_SUPABASE = `${PROTECT_DELETE}\n${UPDATE_UPDATED_AT}\n${DISPARADORES_OBJETOS}\n${COLUMNAS_CICLO}\n${ENFORCE_BUCKET_NAME_LENGTH}\n${PROTECT_BUCKET_CONTROL_COLUMNS}\n${ENFORCE_BUCKET_LIFECYCLE_SERVICE_ROLE}\n${DISPARADORES_BUCKETS}`
+// versioning_status de storage.buckets, con el enum y los valores por defecto de la s14d (15-oct)
+const STORAGE_SUPABASE = `${PROTECT_DELETE}\n${UPDATE_UPDATED_AT}\n${DISPARADORES_OBJETOS}\n${TIPO_Y_VERSIONADO}\n${COLUMNAS_CICLO}\n${ENFORCE_BUCKET_NAME_LENGTH}\n${PROTECT_BUCKET_CONTROL_COLUMNS}\n${ENFORCE_BUCKET_LIFECYCLE_SERVICE_ROLE}\n${DISPARADORES_BUCKETS}`
 // los grants de Supabase sobre storage a anon y authenticated (condicion del escenario)
 const SUPA = `grant usage on schema storage to anon, authenticated; grant all on storage.objects, storage.buckets to anon, authenticated;`
 // el postgres de produccion segun s06: no superusuario, bypassrls, miembro de anon y authenticated
@@ -109,6 +109,12 @@ try {
   const despues = estado(d1)
   oraculo('M001', 'aplica: el informe dice el bucket privado de 5 MB, la RLS, la sonda y acaba en FIN', r1.ok && /bucket\|mercado · public=false · file_size_limit=5242880 · allowed_mime_types=-/.test(r1.out) && /rls\|storage.objects · rls=true/.test(r1.out) && /sonda\|anon y authenticated no alcanzan/.test(r1.out) && /objetos en mercado\|0/.test(r1.out) && /FIN\|mercado-001 aplicada$/.test(r1.out), r1.err || r1.out)
   oraculo('M001', 'storage.buckets: forex-data igual y mercado privado, 5 MB, sin tipos MIME; ni politicas ni grants nuevos; ningun objeto (el centinela no queda)', despues.split('\n')[0] === 'forex-data:true:-:-,mercado:false:5242880:-' && despues.split('\n').slice(1).join('|') === antes.split('\n').slice(1).join('|'), `${antes} → ${despues}`)
+  // s14d (15-oct): el montaje tiene type y versioning_status como en produccion, y el bucket que crea mercado-001 (sin fijarlos) sale con sus valores por defecto
+  const S14D_PROD = lee('sql/consultas/salidas/s14d-columnas-buckets-2026-10-15.csv').split('\n').filter(l => /^(columna,storage\.buckets\.(type|versioning_status|lifecycle_configuration|lifecycle_configuration_generation),|enum,)/.test(l)).map(l => l.replace(/,"?/g, '|').replace(/"$/, ''))
+  const s14dMontaje = pg.psql(`begin read only;\n${lee('sql/consultas/s14d-columnas-buckets.sql')}\nrollback;`, d1).out.split('\n').filter(l => /^(columna\|storage\.buckets\.(type|versioning_status|lifecycle_configuration|lifecycle_configuration_generation)\||enum\|)/.test(l))
+  ver('control: la s14d del montaje da, para type, versioning_status, ciclo de vida y el enum, las filas literales de produccion', S14D_PROD.length === 8 && s14dMontaje.join('\n') === S14D_PROD.join('\n'), `${s14dMontaje.join(' / ')} ≠ ${S14D_PROD.join(' / ')}`)
+  const tipo = pg.psql(`select type || ':' || versioning_status from storage.buckets where id = 'mercado'`, d1).out
+  oraculo('M001', 's14d: el bucket mercado sale con type STANDARD y versioning_status DISABLED (los valores por defecto medidos)', tipo === 'STANDARD:DISABLED', tipo)
   const r1b = pg.psql(M1, d1)
   oraculo('M001', 'segunda ejecucion: termina bien, dice que ya estaba y no cambia nada', r1b.ok && /ya existe con esta forma/.test(r1b.err) && estado(d1) === despues, r1b.err)
   oraculo('M001', 'el SQL no crea ni cambia politicas ni grants (fuera comentarios)', !/\b(create|alter|drop)\s+policy\b|\bgrant\b|\brevoke\b/i.test(M1.replace(/--.*$/gm, '')))

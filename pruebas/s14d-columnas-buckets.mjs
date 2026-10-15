@@ -2,9 +2,10 @@
  * S14d (LAS COLUMNAS DE STORAGE.BUCKETS Y SUS VALORES POR DEFECTO) · ENSAYO EN
  * POSTGRESQL 17 LOCAL (etapa 2; CTO 14-oct, tras la s14c).
  *
- * ⚠️ El montaje INVENTA el tipo storage.buckettype y los valores por defecto de
- *    type y versioning_status: no se conocen (la s14d existe para verlos). Aqui
- *    solo se prueba que la consulta enseña lo que dice, sin escribir nada.
+ * El montaje lleva el tipo storage.buckettype y los valores por defecto de type y
+ *    versioning_status como los midio la s14d en produccion (15-oct,
+ *    pruebas/storage-supabase.mjs); el resto de storage.buckets es el minimo del
+ *    ensayo. Aqui se prueba que la consulta enseña lo que dice, sin escribir nada.
  *
  *   1 en READ ONLY: corre, acaba en FIN y la base no cambia (foto con control);
  *     tambien fuera de READ ONLY y como un no superusuario
@@ -18,15 +19,13 @@ import { writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, fuente } from './lib.mjs'
 import { BIN, hayPostgres, cluster, STUB } from './pg-ensayo.mjs'
+import { TIPO_Y_VERSIONADO, COLUMNAS_CICLO } from './storage-supabase.mjs'
 if (!hayPostgres()) { ver(`PostgreSQL 17 en ${BIN}: NO hay, la prueba no se ha ejecutado`, false); fin() }
 const S14D = fuente('sql/consultas/s14d-columnas-buckets.sql')
 const pg = cluster()
 
-// INVENTADO (ver la cabecera)
-const COLUMNAS = `create type storage.buckettype as enum ('STANDARD', 'ANALYTICS');
-alter table storage.buckets add column type storage.buckettype not null default 'STANDARD',
-  add column versioning_status text not null default 'Unversioned',
-  add column lifecycle_configuration jsonb, add column lifecycle_configuration_generation uuid;`
+// medido en la s14d (ver la cabecera)
+const COLUMNAS = `${TIPO_Y_VERSIONADO}\n${COLUMNAS_CICLO}`
 
 let n = 0
 const monta = (extra = '') => {
@@ -54,7 +53,7 @@ try {
   const antes = foto(d)
   ver('control: la foto ve un cambio (un valor por defecto cambiado y repuesto)', (() => {
     pg.psql(`alter table storage.buckets alter column versioning_status set default 'x'`, d); const x = foto(d) !== antes
-    pg.psql(`alter table storage.buckets alter column versioning_status set default 'Unversioned'`, d); return x && foto(d) === antes
+    pg.psql(`alter table storage.buckets alter column versioning_status set default 'DISABLED'`, d); return x && foto(d) === antes
   })())
   const r = s14d(d)
   oraculo('S14d', 'corre dentro de una transaccion READ ONLY y acaba en «FIN | s14d | consulta»', r.ok && filas(r).at(-1) === 'FIN|s14d|consulta', r.err || filas(r).at(-1))
@@ -72,14 +71,14 @@ try {
 
   titulo('2 · las columnas')
   oraculo('S14d', 'type: el enum, NOT NULL y su valor por defecto tal cual', fila(r, 'columna', 'storage.buckets.type') === `columna|storage.buckets.type|storage.buckettype · NOT NULL · por defecto: 'STANDARD'::storage.buckettype`, fila(r, 'columna', 'storage.buckets.type'))
-  oraculo('S14d', 'versioning_status: text, NOT NULL, por defecto', fila(r, 'columna', 'storage.buckets.versioning_status') === `columna|storage.buckets.versioning_status|text · NOT NULL · por defecto: 'Unversioned'::text`)
+  oraculo('S14d', 'versioning_status: text, NOT NULL, por defecto', fila(r, 'columna', 'storage.buckets.versioning_status') === `columna|storage.buckets.versioning_status|text · NOT NULL · por defecto: 'DISABLED'::text`)
   oraculo('S14d', 'las de ciclo de vida: admiten NULL, sin valor por defecto', fila(r, 'columna', 'storage.buckets.lifecycle_configuration') === 'columna|storage.buckets.lifecycle_configuration|jsonb · admite NULL · por defecto: (ninguno)' && fila(r, 'columna', 'storage.buckets.lifecycle_configuration_generation') === 'columna|storage.buckets.lifecycle_configuration_generation|uuid · admite NULL · por defecto: (ninguno)')
   oraculo('S14d', 'id: NOT NULL sin valor por defecto, y lo dice; el resumen la nombra (y solo a ella)', /^columna\|storage\.buckets\.id\|text · NOT NULL · por defecto: \(ninguno\) · NOT NULL SIN valor por defecto: un INSERT que no la rellene falla$/m.test(r.out) && fila(r, 'columna', '(resumen)') === 'columna|(resumen)|9 columnas · NOT NULL sin valor por defecto: id', fila(r, 'columna', '(resumen)'))
   const dSin = monta(COLUMNAS + `\nalter table storage.buckets alter column versioning_status drop default;`)
   oraculo('S14d', 'versioning_status NOT NULL sin valor por defecto: el resumen la nombra', fila(s14d(dSin), 'columna', '(resumen)') === 'columna|(resumen)|9 columnas · NOT NULL sin valor por defecto: id, versioning_status')
 
   titulo('3 · el enum')
-  oraculo('S14d', 'storage.buckettype: sus valores en orden', fila(r, 'enum', 'storage.buckettype') === 'enum|storage.buckettype|enum con 2 valores' && fila(r, 'enum', 'storage.buckettype 01') === 'enum|storage.buckettype 01|STANDARD' && fila(r, 'enum', 'storage.buckettype 02') === 'enum|storage.buckettype 02|ANALYTICS', filas(r).filter(l => l.startsWith('enum')).join(' / '))
+  oraculo('S14d', 'storage.buckettype: sus valores en orden', fila(r, 'enum', 'storage.buckettype') === 'enum|storage.buckettype|enum con 3 valores' && fila(r, 'enum', 'storage.buckettype 01') === 'enum|storage.buckettype 01|STANDARD' && fila(r, 'enum', 'storage.buckettype 02') === 'enum|storage.buckettype 02|ANALYTICS' && fila(r, 'enum', 'storage.buckettype 03') === 'enum|storage.buckettype 03|VECTOR', filas(r).filter(l => l.startsWith('enum')).join(' / '))
   const r0 = s14d(monta())
   oraculo('S14d', 'sin el tipo: «NO EXISTE» y corre igual hasta FIN', r0.ok && fila(r0, 'enum', 'storage.buckettype') === 'enum|storage.buckettype|NO EXISTE' && filas(r0).at(-1) === 'FIN|s14d|consulta', r0.err || r0.out)
   const rD = s14d(monta(`create domain storage.buckettype as text;`))

@@ -116,9 +116,12 @@ export const MD5_BUCKETS = {
   protect_bucket_control_columns: '7870415452678f5aa85f91dde952ef12',
   enforce_bucket_lifecycle_service_role: '7691066f4111610b457b74bdead6e80b',
 }
-// las columnas de ciclo de vida que esas funciones leen (s14c: jsonb y uuid, admiten NULL). Sus valores por defecto,
-// y las columnas NOT NULL type y versioning_status, PENDIENTES de la s14d: no se inventan
+// las columnas de ciclo de vida que esas funciones leen (s14c: jsonb y uuid, admiten NULL; s14d: sin valor por defecto)
 export const COLUMNAS_CICLO = `alter table storage.buckets add column if not exists lifecycle_configuration jsonb, add column if not exists lifecycle_configuration_generation uuid;`
+// type y versioning_status, NOT NULL, como los midio la s14d (15-oct: sql/consultas/salidas/s14d-columnas-buckets-2026-10-15.csv):
+// el enum storage.buckettype con sus tres valores en su orden y los dos valores por defecto. protect_bucket_control_columns lee NEW.type
+export const TIPO_Y_VERSIONADO = `create type storage.buckettype as enum ('STANDARD', 'ANALYTICS', 'VECTOR');
+alter table storage.buckets add column type storage.buckettype not null default 'STANDARD', add column versioning_status text not null default 'DISABLED';`
 // los cinco disparadores de storage.buckets, como los enseño la s14b (pg_get_triggerdef)
 export const DISPARADORES_BUCKETS = `create trigger enforce_bucket_name_length_trigger before insert or update of name on storage.buckets for each row execute function storage.enforce_bucket_name_length();
 create trigger protect_bucket_control_insert before insert on storage.buckets for each row execute function storage.protect_bucket_control_columns('service_role');
