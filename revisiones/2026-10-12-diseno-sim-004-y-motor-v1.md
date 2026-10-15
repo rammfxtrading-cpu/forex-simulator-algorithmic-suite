@@ -3539,3 +3539,22 @@ Cada desvío corre dentro de una transacción que se deshace, contra la s16 y co
 - el sha256 de los ficheros del runbook;
 - FORCE en las 14;
 - las ACL heredadas por pertenencia a un rol.
+
+#### q.17.6 Un comando sobre una sesión terminada: `sesion_terminada` con su motivo (CTO, 15-oct)
+
+La respuesta a la pregunta de q.17.4 («¿se renombran también esos rechazos?»): sí.
+- **El rechazo es un solo código, con su motivo:** `{ rechazado: 'sesion_terminada', motivo }`, con `motivo` ∈ `breach` | `fase_superada` | `objetivo_alcanzado`.
+  - **Reto** (`aplicaReto`): `breach` o `fase_superada`, según el estado terminal. Un estado desconocido lanza un error, en vez de adivinar.
+  - El reset de la hora del comando que quema el reto da `breach` y conserva sus eventos.
+  - **Práctica** (`cartera.aplica` y `motor.aplica`): `breach` u `objetivo_alcanzado`.
+- **Desaparecen** `reto_terminado` y `sesion_en_breach`. `objetivo_alcanzado` deja de ser un código y queda solo como motivo.
+- **Sin choque con el cliente ni con las RPC:**
+  - ningún fichero de `pages/` ni `components/` compara esos códigos;
+  - `sim_comando` guarda `motivo` como texto libre (sim-003 y sim-004b solo exigen que haya motivo si y solo si hay rechazo).
+- **Prueba:** `pruebas/motor/sesion-terminada.mjs`.
+  - El reto quemado por el reset y el ya quemado, el superado, y la práctica en breach y en objetivo (cartera y un par).
+  - Un negativo: ningún código viejo en `lib/`, `pages/`, `components/`, `sql/` ni en las pruebas, con control positivo del detector.
+  - Rojo contra `37eaf9a`: 8 de 8 (`rojos/sesion-terminada-contra-37eaf9a.txt`).
+- ⚠️ **Lo que no decide la especificación (pregunta):** el servidor (`resultadoDe`) guarda en el recibo `motivo: 'sesion_terminada'`, pero no el motivo del terminal. Tampoco guardaba los extras de otros rechazos, como la `cotizacion` de `precio_cambiado`.
+  - ¿Va el motivo del terminal en el recibo, por ejemplo en `resumen`, y con qué nombre?
+  - Hasta que se decida, no se inventa: el cliente lo sabe por el estado de la sesión.
