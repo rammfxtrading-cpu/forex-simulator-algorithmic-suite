@@ -259,6 +259,13 @@ try {
     const f0 = foto(d2), r2 = aplica(d2)
     oraculo('E3-03', 'con una puerta de otro cuerpo: aborta con «sim-004b: …» y el catalogo no cambia', !r2.ok && S4B_.test(err1(r2)) && foto(d2) === f0, r2.ok ? 'APLICA' : err1(r2))
   }
+  // los sha256 de los cuerpos de sim-003 y de la preparatoria salen del montaje, que aplica los ficheros
+  // que se ejecutaron en produccion TAL CUAL (sql/APLICADOS.md: sha256 de cada fichero ejecutado)
+  {
+    const { createHash } = await import('node:crypto')
+    const sha = t => createHash('sha256').update(t, 'utf8').digest('hex')
+    ver('control: sim-003 del montaje = el ejecutado en produccion (2a74bcb3…) y la preparatoria = la aplicada (06071799…)', sha(S3) === '2a74bcb3ee62722fb8633a188445d30471b4653875f2ce1b00d206434bf3403f' && sha(PREP) === '060717995e723fdefc043b9cb6fb0f7658943034a3810474adea4a587eb2f6e2', `${sha(S3).slice(0, 8)} · ${sha(PREP).slice(0, 8)}`)
+  }
   // la constante de enforce_sim_session_limit sale de la definicion MEDIDA en produccion (s04 del 10-oct)
   {
     const csv = lee('sql/consultas/salidas/s04-esquema-simulador-2026-10-10.csv')
