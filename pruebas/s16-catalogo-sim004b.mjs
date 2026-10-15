@@ -103,5 +103,19 @@ try {
   }
   ver('control: tras la familia la base sigue intacta (veredicto OK y sim-004b aplica en una transaccion)', veredicto(corre(fam)) === 'OK' && m.comoEjecutor(fam, `begin;\n${S4B}\nrollback;`).ok)
   oraculo('S16', `los 96 desvios de ACL de tabla: la s16 dice DIFIEREN y sim-004b aborta en todos`, fallan.length === 0, `${fallan.length} fallan: ${fallan.slice(0, 6).join(' · ')}`)
+
+  titulo('5 · la familia de FORCE: las 14 tablas (CTO 15-oct, q.17.1)')
+  // RLS FORZADA en cada una de las 14 que acredita sim-004b (las 11 protegidas y las tres de las que solo
+  // acredita disparadores): la s16 dice DIFIEREN y sim-004b aborta. Cobertura de lo que ya exigia 7ba487f
+  // (que tenia negativos solo en sim_eventos y user_tool_config): sin rojo previo.
+  const CATORCE = [...PROTEGIDAS, 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']
+  const fallanF = []
+  for (const t of CATORCE) {
+    const sql = `alter table public.${t} force row level security`
+    const rs = m.comoEjecutor(fam, `begin;\n${sql};\n${S16 ?? 'select 1/0;'}\nrollback;`)
+    const ra = m.comoEjecutor(fam, `begin;\n${sql};\n${S4B}\nrollback;`)
+    if (!(rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)) && !ra.ok && /sim-004b: /.test(ra.err))) fallanF.push(`${t}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${ra.ok ? 'APLICA' : 'aborta'}`)
+  }
+  oraculo('S16', `FORCE en cada una de las 14 tablas: la s16 dice DIFIEREN y sim-004b aborta (${CATORCE.length})`, CATORCE.length === 14 && fallanF.length === 0, fallanF.join(' · '))
 } finally { m.cierra() }
 fin()

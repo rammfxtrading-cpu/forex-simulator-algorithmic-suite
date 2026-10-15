@@ -3484,3 +3484,14 @@ Cada desvío corre dentro de una transacción que se deshace, contra la s16 y co
 - `servidor-detencion`: 2.
 
 ⚠️ **Lo que NO renombro (pregunta):** el rechazo de un **comando** (`abrir`, `cerrar`…) sobre un reto terminado sigue siendo `reto_terminado` (`aplicaReto`), y el de la práctica, `sesion_en_breach` / `objetivo_alcanzado` (`cartera.aplica`). Son motivos de rechazo de comandos, no detenciones de un avance. La decisión del CTO habla de la detención. **¿Se renombran también esos rechazos a `sesion_terminada`?**
+
+#### q.17.3 El runbook de la etapa 3, y la familia de FORCE
+
+**El runbook:** `revisiones-suite/2026-10-15-sim-etapa3-runbook.md`, con sus salidas esperadas en `revisiones-suite/2026-10-15-sim-etapa3-runbook/`. El repo no guarda copia de los runbooks en `revisiones/`; viven en `revisiones-suite`, como los de la etapa 1 y del mercado.
+- Orden: s15 (hecha, OK el 15-oct) → mercado v1 (su runbook) → s16 → sim-004b → despliegue apagado → corte. Todo después de la puerta del viernes 16 (s10 de las 19:30 o más tarde con A = 0, y el sí de Ramón).
+- Las filas literales esperadas (la s16 con la puerta y el informe de sim-004b) salen del montaje. El informe de sim-004b es igual en la primera aplicación, en la reejecución, con puerta y sin ella. La s16 sigue en OK después de sim-004b.
+- ⚠️ **Dos pasos parados**, con sus preguntas en el runbook:
+  - **el despliegue apagado:** qué rama y en qué orden se integra en `main`, porque la etapa 3 va encima de la 2, que no está en `main`; quién comprueba la variable en Vercel; y la comprobación del cliente;
+  - **el corte:** es la etapa 5, y sim-004 (la etapa 4) no está escrito.
+
+**La familia de FORCE** (`pruebas/s16-catalogo-sim004b.mjs` §5): RLS forzada en cada una de las 14 tablas. La s16 dice DIFIEREN y sim-004b aborta en las 14. Es cobertura de lo que ya exigía `7ba487f` (que tenía negativos solo en `sim_eventos` y `user_tool_config`), así que no tiene rojo previo.
