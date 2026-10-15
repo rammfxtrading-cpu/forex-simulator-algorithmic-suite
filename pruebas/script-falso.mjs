@@ -14,6 +14,7 @@
 import Module, { createRequire } from 'node:module'
 import fs from 'node:fs'
 import os from 'node:os'
+import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as proveedorFalso from './proveedor-falso.mjs'
@@ -32,8 +33,48 @@ const FINAL = /=== ✓ TODO OK|=== ⚠️ ATENCION|^Done\.$|^Fatal/
 //                        use tiene que fallar (control «termino, no por timeout»)
 // Cada ejecucion, para el control final de las pruebas: ninguna por timeout.
 export const ejecucionesScripts = []
+// H06, la repeticion por carga (CTO 15-oct). El control vigila TIEMPO DE RELOJ: un script que no termina
+// (p. ej. esperando una promesa que nunca se resuelve) no gasta CPU, asi que con process.cpuUsage el
+// limite no saltaria nunca y el control no cazaria el cuelgue. Por eso no se mide CPU. Con la maquina
+// cargada, un script sano puede pasar de los 20 s: controlH06 repite la prueba ENTERA una sola vez, en un
+// proceso nuevo, SOLO si la carga media de 1 minuto supera el numero de nucleos, y lo dice en la salida.
+// El limite no cambia. Solo para la prueba del control (pruebas/h06-repeticion.mjs), y siempre con aviso:
+//   H06_ESPERA_PLANTADA=1  ningun script termina: el d05 «lento de verdad»
+//   H06_LIMITE_MS=<ms>     un limite mas corto (solo mas corto), para que esa prueba no tarde minutos
+//   H06_CARGA_FORZADA=<n>  la carga que ve controlH06, en vez de os.loadavg()
+const LIMITE_MS = 20000
+const ARGV_INICIAL = [...process.argv], CWD_INICIAL = process.cwd()
+const limitePorDefecto = () => {
+  const x = Number(process.env.H06_LIMITE_MS)
+  return Number.isFinite(x) && x > 0 && x < LIMITE_MS ? x : LIMITE_MS
+}
+let avisado = false
+const avisaH06 = () => {
+  if (avisado) return; avisado = true
+  if (process.env.H06_ESPERA_PLANTADA === '1') console.log('H06: ESPERA PLANTADA (prueba del control): ningun script termina')
+  if (limitePorDefecto() !== LIMITE_MS) console.log(`H06: limite de la prueba del control: ${limitePorDefecto()} ms (el normal, ${LIMITE_MS} ms)`)
+}
+export function controlH06(ver) {
+  const porTimeout = ejecucionesScripts.filter(e => e.terminoPor === 'timeout')
+  const repeticion = process.env.H06_REPETICION === '1'
+  if (porTimeout.length && !repeticion) {
+    const forzada = Number(process.env.H06_CARGA_FORZADA)
+    const carga = process.env.H06_CARGA_FORZADA && Number.isFinite(forzada) ? forzada : os.loadavg()[0]
+    const nucleos = os.cpus().length
+    if (carga > nucleos) {
+      console.log(`H06: ${porTimeout.length} script(s) por timeout con la carga media de 1 min ${carga.toFixed(2)} > ${nucleos} nucleos: se repite la prueba entera UNA vez, en un proceso nuevo, y vale la repeticion`)
+      const r = spawnSync(process.execPath, [...process.execArgv, ...ARGV_INICIAL.slice(1)], { cwd: CWD_INICIAL, stdio: 'inherit', env: { ...process.env, H06_REPETICION: '1' } })
+      process.exit(r.status ?? 1)
+    }
+    console.log(`H06: ${porTimeout.length} script(s) por timeout con la carga media de 1 min ${carga.toFixed(2)} <= ${nucleos} nucleos: no se repite`)
+  }
+  if (repeticion) console.log('H06: esta es la REPETICION por carga (la unica): su resultado es el que vale')
+  ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && porTimeout.length === 0, JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))
+}
 export class SalidaDeScript extends Error { constructor(c) { super(`process.exit(${c})`); this.salidaDeScript = true; this.codigo = c } }
-export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 20000, reloj = null } = {}) {
+export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = limitePorDefecto(), reloj = null } = {}) {
+  avisaH06()
+  const plantada = process.env.H06_ESPERA_PLANTADA === '1'
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'simscript-'))
   fs.writeFileSync(path.join(tmp, '.env.local'), 'NEXT_PUBLIC_SUPABASE_URL=https://falso.supabase.co\nSUPABASE_SERVICE_ROLE_KEY=falsa\n')
   const salida = [], envLeidos = [], envTodos = [], esperas = []
@@ -118,8 +159,8 @@ export async function correScript(rel, { ahora, argv = [], env = {}, limiteMs = 
     const req = createRequire(path.join(REPO, 'package.json'))
     delete req.cache[req.resolve(path.join(REPO, rel))]
     try { req(path.join(REPO, rel)) } catch (e) { if (!e?.salidaDeScript) throw e }
-    await Promise.race([final, new Promise(r => orig.st(r, limiteMs))])
-    if (!terminoPor) terminoPor = 'timeout'
+    await Promise.race([plantada ? new Promise(() => {}) : final, new Promise(r => orig.st(r, limiteMs))])
+    if (!terminoPor || plantada) { terminoPor = 'timeout'; codigo = null }
     else if (terminoPor === 'final') codigo = process.exitCode ?? 0
     ejecucionesScripts.push({ rel, terminoPor, codigo })
     return { salida, envLeidos, envTodos, codigo, terminoPor, exitCode: codigo, tmp, esperas }
