@@ -3041,3 +3041,17 @@ La s14c de producción (`sql/consultas/salidas/s14c-disparadores-buckets-2026-10
   1. La postcondición se aplica solo cuando `mercado-001` inserta, como dijo el CTO. Si el bucket ya existía con la forma comprobada (segunda ejecución), su `type` y su `versioning_status` no se exigen: el informe los enseña y s14 los acredita como valor por defecto, no como valor de la fila. Exigirlos también ahí es una línea; queda para el CTO.
   2. `pg_get_expr` califica el tipo según el `search_path` de quien ejecuta. En el editor, con el `search_path` de la s14d, sale `'STANDARD'::storage.buckettype`. Con `storage` en el `search_path` saldría sin calificar y la fila diría NO ACREDITADO: es una falla cerrada.
   3. La rama «sin valor por defecto, o distinto de STANDARD → fijarlo» no está en el código porque no es el caso medido. Si cambiara, s14 para antes y, si no, la postcondición aborta.
+
+**p.18.8 · Decisiones del CTO sobre la autorrevisión (15-oct).**
+1. **`tgenabled = 'A'` que aborta (p.18.6, 1):** aceptado.
+2. **Disparadores fuera de la lista (p.18.6, 2):** `mercado-001` también aborta, igual que s14 manda PARAR: es fallar cerrado. El filtro del aborto pasa de `v.en_lista and not v.acreditado` a `not v.acreditado`. Mensaje: «disparadores de storage NO ACREDITADOS: <cuál> (difiere: no esta en la lista acreditada)», antes del INSERT, así que su función no llega a correr.
+   - Las pruebas de la defensa propia de la sonda frente a esos disparadores (E2-01, E2R2-02, E2R3-02/03, PD-04) siguen, pero con el mutante `M1listaAbierta`: una sola línea, con su control. Con el SQL real esa defensa queda detrás de la guarda nueva.
+   - Negativos (sección 13): un BEFORE INSERT nuevo en `storage.buckets`, otro en `storage.objects` y uno nuevo pero desactivado. Una secuencia demuestra que su función no corre.
+3. **La postcondición se exige siempre**, también si el bucket ya existía (reejecución). Va después del `if` del bucket y su mensaje es «el bucket mercado no es el esperado (…)».
+   - Negativos (sección 13): reejecución con el bucket ya creado y `type` cambiado a ANALYTICS, o `versioning_status` a ENABLED, o el ciclo de vida puesto.
+   - Positivo: la reejecución con el bucket intacto, con su fila `postcondicion`.
+
+**Rojo previo:** con el SQL de `cb8bb10`, 10 rojos y 1 control roto.
+- Rojos genuinos: los 3 de fuera de la lista y los 3 de la reejecución.
+- Por el mensaje renombrado: 4 de la sección 12.
+- Control roto: el mutante de lista abierta, que no existe en el SQL viejo.

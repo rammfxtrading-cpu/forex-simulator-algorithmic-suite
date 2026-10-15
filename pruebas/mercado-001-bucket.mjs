@@ -97,10 +97,15 @@ const err1 = r => (r.err.split('\n').find(l => /ERROR/.test(l)) || r.err.split('
 // la capa 1 anulada: el mutante de prueba que deja ver la capa 2 sola
 const RAISE_CAPA1 = /raise exception 'mercado-001: politicas de storage\.objects NO RECONOCIDAS[^']*', malas;/
 const M1sinCapa1 = M1.replace(RAISE_CAPA1, 'null;')
+// CTO 15-oct: mercado-001 aborta tambien por un disparador que no esta en la lista acreditada. Las pruebas de la
+// defensa PROPIA de la sonda frente a esos disparadores (E2-01, E2R2-02, E2R3-02/03, PD-04) usan este mutante, que
+// abre la lista (solo abortan los de la lista que difieren); el real los para antes (seccion 13)
+const M1listaAbierta = M1.replace('   where not v.acreditado;', '   where v.en_lista and not v.acreditado;')
 
 try {
   pg.arranca()
   ver('el mutante sin capa 1 cambia exactamente el raise de la lista blanca', M1sinCapa1 !== M1 && M1sinCapa1.length < M1.length && !/NO RECONOCIDAS \(podrian/.test(M1sinCapa1))
+  ver('el mutante de lista abierta cambia exactamente una linea del SQL', M1listaAbierta !== M1 && M1listaAbierta.split('\n').filter((l, k) => l !== M1.split('\n')[k]).length === 1)
 
   titulo('1 · limpio: crea el bucket privado; segunda ejecucion, nada')
   const d1 = monta(SUPA)
@@ -233,7 +238,7 @@ try {
   const dTrig = monta(SUPA + `create function storage.protege() returns trigger language plpgsql as $f$ begin raise exception using errcode = '42501', message = 'Direct deletion from storage tables is not allowed'; end $f$;
 create trigger protege_borrado before delete on storage.objects for each statement execute function storage.protege();
 create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');`)
-  const aT = estado(dTrig), rT = pg.psql(M1, dTrig)
+  const aT = estado(dTrig), rT = pg.psql(M1listaAbierta, dTrig)
   oraculo('E2-01', 'un disparador POR SENTENCIA en DELETE que no lee el ajuste (42501 con el mensaje de protect_delete): «sonda no concluyente», nada cambia', !rT.ok && /sonda no concluyente/.test(rT.err) && /DELETE: 42501 con el mensaje de protect_delete \(Direct deletion/.test(rT.err) && estado(dTrig) === aT, err1(rT))
   const qT = s14(dTrig)
   oraculo('S14', 's14 lista ese disparador como BEFORE DELETE · POR SENTENCIA', qT.ok && /disparador\|protege_borrado\|BEFORE DELETE · POR SENTENCIA · storage.protege/.test(qT.out), qT.out || qT.err)
@@ -321,12 +326,12 @@ create policy "lectura forex" on storage.objects for select to public using (buc
   const antesSeq = seq(dSeq), rSeq = pg.psql(M1, dSeq), despuesSeq = seq(dSeq)
   oraculo('E2R2-02', 'sonda no debe producir efectos no revertidos en otro bucket (escenario de Astra): la precondicion aborta antes y la secuencia no se mueve', !rSeq.ok && /politicas de ESCRITURA/.test(rSeq.err) && antesSeq === despuesSeq, JSON.stringify({ aplica: rSeq.ok, error: err1(rSeq), antes: antesSeq, despues: despuesSeq }))
   const dFila = monta(SUPA + SECUENCIA + `create trigger efecto before update or delete on storage.objects for each row execute function public.efecto(); create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data'); insert into storage.objects(bucket_id,name,metadata) values('forex-data','sintetico','{"original":true}');`)
-  const antesFila = seq(dFila), rFila = pg.psql(M1, dFila), despuesFila = seq(dFila)
+  const antesFila = seq(dFila), rFila = pg.psql(M1listaAbierta, dFila), despuesFila = seq(dFila)
   oraculo('E2R2-02', 'con una lectura de forex-data y un disparador POR FILA: aplica y la secuencia no se mueve (UPDATE y DELETE solo del centinela, que no ven)', rFila.ok && /FIN\|mercado-001 aplicada$/.test(rFila.out) && antesFila === despuesFila && pg.psql(`select metadata::text from storage.objects where name = 'sintetico'`, dFila).out === '{"original": true}', JSON.stringify({ error: err1(rFila), antes: antesFila, despues: despuesFila }))
   const dSent = monta(SUPA + SECUENCIA + `create trigger efecto_sentencia before update on storage.objects for each statement execute function public.efecto(); create policy "lectura forex" on storage.objects for select to public using (bucket_id = 'forex-data');`)
   const qSent = s14(dSent)
   oraculo('E2R2-02', 's14 enseña el disparador POR SENTENCIA con funcion ajena (lo que el rollback no deshace: el runbook para)', qSent.ok && /disparador\|efecto_sentencia\|BEFORE UPDATE · POR SENTENCIA · public\.efecto · FUNCION AJENA/.test(qSent.out), qSent.out || qSent.err)
-  const antesSent = seq(dSent), rSent = pg.psql(M1, dSent), despuesSent = seq(dSent)
+  const antesSent = seq(dSent), rSent = pg.psql(M1listaAbierta, dSent), despuesSent = seq(dSent)
   oraculo('E2R2-02', 'y si aun asi se aplica, ese efecto queda (documentado en p.12.7.1 corregido: no «nada persiste»)', rSent.ok && antesSent !== despuesSent, `${antesSent} → ${despuesSent} · ${err1(rSent)}`)
   // limites: el informe los dice; en una sola transaccion (como el editor) valen los SET LOCAL
   const dLim = monta(SUPA)
@@ -348,11 +353,11 @@ create policy "lectura forex" on storage.objects for select to public using (buc
   ver('control: sin sombreado, s14 enseña el disparador', visible.ok && visible.out.includes('efecto_insert'), visible.err)
   oraculo('E2R3-02', 's14 no oculta disparador por pg_temp (los catalogos van calificados con pg_catalog)', oculto.ok && oculto.out.includes('disparador|efecto_insert|'), oculto.out.split('\n').filter(x => /disparador|contexto/.test(x)).join(' / ') || oculto.err)
   oraculo('E2R3-02', 'y con un esquema temporal delante de pg_catalog, el contexto NO queda acreditado', oculto.ok && /contexto\|lista blanca\|NO ACREDITADO: el search_path \(pg_temp_\d+,pg_catalog,public\) no empieza por pg_catalog/.test(oculto.out), oculto.out.split('\n').filter(x => /contexto/.test(x)).join(' / '))
-  const rTemp = pg.psql('create temp table pg_trigger as select * from pg_catalog.pg_trigger where false; set search_path=pg_temp,pg_catalog,public;\n' + M1, dS)
+  const rTemp = pg.psql('create temp table pg_trigger as select * from pg_catalog.pg_trigger where false; set search_path=pg_temp,pg_catalog,public;\n' + M1listaAbierta, dS)
   oraculo('E2R3-02', 'mercado-001 en esa misma sesion fija su contexto (pg_catalog, pg_temp) y no se deja engañar: aplica igual que sin la tabla temporal', rTemp.ok && /FIN\|mercado-001 aplicada$/.test(rTemp.out), err1(rTemp))
   oraculo('E2R3-03', 's14: el AFTER INSERT por sentencia sale como POR SENTENCIA, con su lenguaje y el md5 de su cuerpo, y el resumen manda PARAR hasta que el CTO lo acredite', /disparador\|efecto_insert\|AFTER INSERT · POR SENTENCIA · storage\.efecto_insert · funcion de storage · plpgsql · SECURITY INVOKER · dueño=postgres · proconfig=- · volatilidad=v · md5 del cuerpo [0-9a-f]{12}/.test(visible.out) && /disparador\|efecto_insert\|.* · NO ACREDITADO \(difiere: no esta en la lista acreditada\)$/m.test(visible.out) && /disparador\|\(resumen\)\|storage\.objects: 3 \(2 por sentencia\) · storage\.buckets: 5 · sin acreditar: 1: .*PARAR hasta que el CTO acredite/.test(visible.out), visible.out.split('\n').filter(x => /disparador/.test(x)).join(' / '))
   const dS2 = monta(`create sequence public.efecto_insert; create function storage.efecto_insert() returns trigger language plpgsql as $$ begin perform nextval('public.efecto_insert'); return null; end $$; create trigger efecto_insert after insert on storage.objects for each statement execute function storage.efecto_insert();`)
-  const efecto = pg.psql('begin;\n' + M1 + '\ncommit;\nselect last_value || \'|\' || is_called from public.efecto_insert;', dS2)
+  const efecto = pg.psql('begin;\n' + M1listaAbierta + '\ncommit;\nselect last_value || \'|\' || is_called from public.efecto_insert;', dS2)
   oraculo('E2R3-03', 'lo que documenta p.13.2: el INSERT del centinela dispara el INSERT por sentencia, y su efecto no transaccional queda tras el rollback', efecto.ok && efecto.out.split('\n').at(-1) === '1|true', efecto.out.split('\n').at(-1) || efecto.err)
   const dNo = monta('', { sinStorage: true })
   const qNo = s14(dNo)
@@ -486,7 +491,7 @@ create policy "ve-${rol}" on storage.objects for select to ${rol} using (bucket_
     // a) la sonda falla a mitad: un segundo disparador por sentencia que revienta DESPUES de protect_delete (con el ajuste puesto)
     const dF = monta(SUPA + `create function storage.zz_revienta() returns trigger language plpgsql as $f$ begin raise exception 'revienta a mitad del DELETE'; end $f$;
 create trigger zz_revienta before delete on storage.objects for each statement execute function storage.zz_revienta();`)
-    const sF = sesion(`begin;\n${M1}` + DESPUES, dF)
+    const sF = sesion(`begin;\n${M1listaAbierta}` + DESPUES, dF)
     oraculo('PD-04', 'si el DELETE de la sonda revienta a mitad (con el ajuste puesto): mercado-001 aborta «no concluyente», y en la MISMA sesion el ajuste no es true y protect_delete vuelve a bloquear', /sonda no concluyente: anon DELETE: P0001 revienta a mitad del DELETE/.test(sF.err) && /^ajuste=«»$/m.test(sF.out) && /Direct deletion from storage tables is not allowed/.test(sF.err.split('revienta a mitad').at(-1)), JSON.stringify(sF))
     // b) la sonda aborta porque alcanza (politica abierta): igual
     const dA = monta(SUPA + `create policy "borra-anon" on storage.objects for delete to anon using (bucket_id = 'mercado'); create policy "ve-anon" on storage.objects for select to anon using (bucket_id = 'mercado');`)
@@ -651,8 +656,43 @@ alter table storage.buckets add column type storage.buckettype not null default 
       }
       const a = estado(d)
       const r = pg.psql(M1, d)
-      oraculo('TYPE', `mercado-001: ${nombre} → aborta por la postcondicion, dice lo que encontro, y nada cambia`, !r.ok && /mercado-001: el bucket creado no es el esperado/.test(r.err) && dice.test(r.err) && estado(d) === a, err1(r))
+      oraculo('TYPE', `mercado-001: ${nombre} → aborta por la postcondicion, dice lo que encontro, y nada cambia`, !r.ok && /mercado-001: el bucket mercado no es el esperado/.test(r.err) && dice.test(r.err) && estado(d) === a, err1(r))
     }
+  }
+
+  titulo('13 · CTO 15-oct: disparadores fuera de la lista abortan; la postcondicion tambien en la reejecucion')
+  {
+    // 2) un disparador que no esta en la lista: mercado-001 aborta ANTES del INSERT, como s14 manda PARAR
+    const EFECTO = `create sequence public.efecto_ajeno;
+create function storage.ajena() returns trigger language plpgsql as $x$ begin perform nextval('public.efecto_ajeno'); return new; end $x$;`
+    for (const [nombre, extra, cual] of [
+      ['un BEFORE INSERT nuevo en storage.buckets', `${EFECTO}\ncreate trigger ajeno_buckets before insert on storage.buckets for each row execute function storage.ajena();`, 'buckets.ajeno_buckets'],
+      ['un BEFORE INSERT nuevo en storage.objects', `${EFECTO}\ncreate trigger ajeno_objects before insert on storage.objects for each row execute function storage.ajena();`, 'ajeno_objects'],
+      ['uno nuevo desactivado en storage.buckets', `${EFECTO}\ncreate trigger ajeno_buckets before insert on storage.buckets for each row execute function storage.ajena(); alter table storage.buckets disable trigger ajeno_buckets;`, 'buckets.ajeno_buckets'],
+    ]) {
+      const d = monta(SUPA + extra)
+      const a = estado(d)
+      const r = pg.psql(M1, d)
+      const e = pg.psql(`select last_value || ':' || is_called from public.efecto_ajeno`, d).out
+      oraculo('FUERA-LISTA', `${nombre}: mercado-001 aborta «NO ACREDITADOS: ${cual} (difiere: no esta en la lista acreditada)», antes del INSERT (su funcion no corre) y nada cambia`, !r.ok && r.err.includes(`disparadores de storage NO ACREDITADOS: ${cual} (difiere: no esta en la lista acreditada)`) && e === '1:false' && estado(d) === a, `${err1(r)} · ${e}`)
+    }
+    // 3) la postcondicion tambien cuando el bucket ya existia (reejecucion)
+    for (const [nombre, cambio, dice] of [
+      ['type cambiado a ANALYTICS', `update storage.buckets set type = 'ANALYTICS' where id = 'mercado';`, /type=ANALYTICS/],
+      ['versioning_status ENABLED', `update storage.buckets set versioning_status = 'ENABLED' where id = 'mercado';`, /versioning_status=ENABLED/],
+      ['ciclo de vida puesto', `set session_replication_role = replica; update storage.buckets set lifecycle_configuration = '{"reglas":[]}'::jsonb, lifecycle_configuration_generation = gen_random_uuid() where id = 'mercado'; reset session_replication_role;`, /lifecycle_configuration=\{"reglas": \[\]\}/],
+    ]) {
+      const d = monta(SUPA)
+      const r1 = pg.psql(M1, d)
+      const c = pg.psql(cambio, d)
+      const a = estado(d)
+      const r2 = pg.psql(M1, d)
+      oraculo('POST-REEJ', `reejecucion con el bucket mercado ya creado y ${nombre}: aborta «el bucket … no es el esperado» con lo que encontro, y nada cambia`, r1.ok && c.ok && !r2.ok && /mercado-001: el bucket mercado no es el esperado/.test(r2.err) && dice.test(r2.err) && estado(d) === a, `${c.err} · ${err1(r2)}`)
+    }
+    const dOk = monta(SUPA)
+    pg.psql(M1, dOk)
+    const rOk = pg.psql(M1, dOk)
+    oraculo('POST-REEJ', 'reejecucion con el bucket intacto: termina bien («ya existe con esta forma») y la fila postcondicion dice STANDARD/DISABLED/NULL', rOk.ok && /ya existe con esta forma/.test(rOk.err) && /^postcondicion\|bucket mercado · type=STANDARD · versioning_status=DISABLED · lifecycle_configuration=NULL · lifecycle_configuration_generation=NULL$/m.test(rOk.out), rOk.err || rOk.out)
   }
 
   oraculo('S14', 'una sola SELECT: sin escrituras ni EXECUTE (fuera comentarios)', (() => { const sin = S14.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''"); return !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|perform|call|do)\b/i.test(sin) && (sin.match(/;/g) || []).length === 1 })())

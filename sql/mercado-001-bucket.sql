@@ -88,14 +88,16 @@
 --     (lenguaje, SECURITY INVOKER, dueño, proconfig completo con su
 --     search_path, volatilidad y firma). Si no, aborta: «disparadores de
 --     storage NO ACREDITADOS: <cual> (difiere: <que>)». El bloque «acreditados»
---     es el mismo texto que en s14 (la prueba lo compara byte a byte). Los
---     disparadores que NO estan en la lista no abortan aqui: los para s14
---     (PARAR) y, en storage.objects, la sonda («no concluyente»).
+--     es el mismo texto que en s14 (la prueba lo compara byte a byte). Un
+--     disparador que NO esta en la lista tambien aborta (CTO 15-oct: fallar
+--     cerrado, igual que s14 manda PARAR): «(difiere: no esta en la lista
+--     acreditada)».
 --   · POSTCONDICION (CTO 15-oct, con la s14d): type y versioning_status tienen
 --     valor por defecto ('STANDARD' y 'DISABLED'), asi que el INSERT no los
---     fija; despues del INSERT se lee la fila creada y tiene que tener
+--     fija; despues del INSERT, y tambien si el bucket ya existia (CTO
+--     15-oct: la reejecucion), se lee la fila y tiene que tener
 --     type = 'STANDARD', versioning_status = 'DISABLED' y las dos columnas de
---     ciclo de vida a NULL. Si no: «el bucket creado no es el esperado (…)» y
+--     ciclo de vida a NULL. Si no: «el bucket mercado no es el esperado (…)» y
 --     aborta todo. s14 acredita esos dos valores por defecto y el enum.
 --     LO QUE EL ROLLBACK NO DESHACE (E2R2-02): el INSERT del centinela y las
 --     ordenes de la sonda disparan los disparadores de storage.objects (por
@@ -361,7 +363,7 @@ veredictos as (
 )
 -- <<< acreditados
 select * from veredictos) v
-   where v.en_lista and not v.acreditado;
+   where not v.acreditado;
   if no_acreditados is not null then
     raise exception 'mercado-001: disparadores de storage NO ACREDITADOS: %. Su ficha, en s14; re-acreditar con el CTO; no se crea nada', no_acreditados;
   end if;
@@ -377,16 +379,16 @@ select * from veredictos) v
     end if;
   else
     insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('mercado', 'mercado', false, 5242880, null);
-    -- POSTCONDICION (CTO 15-oct, con la s14d): type y versioning_status no se fijan (tienen valor por defecto,
-    -- 'STANDARD' y 'DISABLED'); la fila creada tiene que tenerlos, y el ciclo de vida a NULL. Por jsonb: una columna
-    -- que no existiera da NULL y aborta con este mensaje, no con otro
-    select pg_catalog.to_jsonb(x) into creada from storage.buckets x where x.id = 'mercado';
-    if creada ->> 'type' is distinct from 'STANDARD' or creada ->> 'versioning_status' is distinct from 'DISABLED'
-       or not (creada ? 'lifecycle_configuration' and creada ? 'lifecycle_configuration_generation')
-       or creada -> 'lifecycle_configuration' is distinct from 'null'::jsonb or creada -> 'lifecycle_configuration_generation' is distinct from 'null'::jsonb then
-      raise exception 'mercado-001: el bucket creado no es el esperado (type=%, versioning_status=%, lifecycle_configuration=%, lifecycle_configuration_generation=%): se esperaba type=STANDARD, versioning_status=DISABLED (los valores por defecto de la s14d del 15-oct) y el ciclo de vida a NULL; no se crea nada',
-        coalesce(creada ->> 'type', 'NULL'), coalesce(creada ->> 'versioning_status', 'NULL'), coalesce(creada ->> 'lifecycle_configuration', 'NULL'), coalesce(creada ->> 'lifecycle_configuration_generation', 'NULL');
-    end if;
+  end if;
+  -- POSTCONDICION (CTO 15-oct, con la s14d; SIEMPRE, tambien si el bucket ya existia): type y versioning_status no se fijan (tienen valor por defecto,
+  -- 'STANDARD' y 'DISABLED'); la fila, creada o ya existente, tiene que tenerlos, y el ciclo de vida a NULL. Por jsonb: una columna
+  -- que no existiera da NULL y aborta con este mensaje, no con otro
+  select pg_catalog.to_jsonb(x) into creada from storage.buckets x where x.id = 'mercado';
+  if creada ->> 'type' is distinct from 'STANDARD' or creada ->> 'versioning_status' is distinct from 'DISABLED'
+     or not (creada ? 'lifecycle_configuration' and creada ? 'lifecycle_configuration_generation')
+     or creada -> 'lifecycle_configuration' is distinct from 'null'::jsonb or creada -> 'lifecycle_configuration_generation' is distinct from 'null'::jsonb then
+    raise exception 'mercado-001: el bucket mercado no es el esperado (type=%, versioning_status=%, lifecycle_configuration=%, lifecycle_configuration_generation=%): se esperaba type=STANDARD, versioning_status=DISABLED (los valores por defecto de la s14d del 15-oct) y el ciclo de vida a NULL; no se crea nada',
+      coalesce(creada ->> 'type', 'NULL'), coalesce(creada ->> 'versioning_status', 'NULL'), coalesce(creada ->> 'lifecycle_configuration', 'NULL'), coalesce(creada ->> 'lifecycle_configuration_generation', 'NULL');
   end if;
 
   -- CAPA 2: sonda con un centinela que se deshace
