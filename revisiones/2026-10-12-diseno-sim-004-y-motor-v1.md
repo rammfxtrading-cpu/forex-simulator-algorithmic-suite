@@ -3558,3 +3558,17 @@ La respuesta a la pregunta de q.17.4 («¿se renombran también esos rechazos?»
 - ⚠️ **Lo que no decide la especificación (pregunta):** el servidor (`resultadoDe`) guarda en el recibo `motivo: 'sesion_terminada'`, pero no el motivo del terminal. Tampoco guardaba los extras de otros rechazos, como la `cotizacion` de `precio_cambiado`.
   - ¿Va el motivo del terminal en el recibo, por ejemplo en `resumen`, y con qué nombre?
   - Hasta que se decida, no se inventa: el cliente lo sabe por el estado de la sesión.
+
+#### q.17.7 La práctica del servidor no tiene límites (CTO, 15-oct)
+
+- **La regla:** una práctica creada por `/api/sim/crear` (sin `challenge_type`) **no tiene límites**. `crear` no se los pone (`limites: []`), así que **ninguna pérdida la detiene por breach**. Su terminal es el fin de los datos; con posiciones abiertas, la equity puede bajar sin detención.
+- **La regla de q.17.4 sigue valiendo** para una práctica **con** límites, la del motor (breach → detención del breach → `sesion_terminada`). El servidor de la etapa 3 no crea ninguna.
+- **El oráculo del servidor** (`pruebas/servidor-detencion.mjs`, contra `sim_comando` real):
+  - una práctica abre 80 lotes de EURUSD y avanza por la caída de 1.000 ticks en cuatro avances (m29, m30, m31 y m120);
+  - la equity baja a 19.520 de 100.000;
+  - ningún recibo trae una detención de breach, no hay ningún evento `breach` y la sesión sigue `activo`.
+  - **Controles:**
+    - la práctica no tiene límites;
+    - la pérdida ocurrió;
+    - el mismo criterio caza el breach del reto 1F del mismo fichero (control positivo).
+- **Sin rojo previo:** es cobertura de lo que el código ya cumple. No hay código que cambiar, y el rojo posible lo acredita el control positivo.

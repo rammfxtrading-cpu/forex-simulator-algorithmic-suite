@@ -8,8 +8,9 @@
  *     una recalculada); y el ACK sale de ese recibo;
  *   · el avance siguiente no calcula: recibo con resumen.detencion { motivo: 'sesion_terminada' }, sin
  *     eventos y sin version nueva.
- * (La practica del servidor no tiene limites: crear no se los pone, asi que no se quema. Su regla, la
- * misma que la del reto, la prueba el motor: pruebas/motor/tramos-fuentes.mjs.)
+ * La practica del servidor no tiene limites: crear no se los pone, asi que no se quema (CTO 15-oct,
+ * q.17.7): una practica de 80 lotes que pierde el 80 % no devuelve ninguna detencion de breach. (Una
+ * practica CON limites, la del motor, sigue la regla del reto: pruebas/motor/tramos-fuentes.mjs.)
  */
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
@@ -70,5 +71,34 @@ try {
   const t2 = await ordena(cmd({ tipo: 'avanzar', version_esperada: v1, testigo, hasta: m(60), motivo: 'play' }))
   const r2 = JSON.parse(pg.uno(d, `select resumen::text from public.sim_recibos where session_id = ${L(u(1001))} and command_id = ${L(t2.cuerpo?.recibo?.command_id ?? u(0))}`) || 'null')
   oraculo('DETS', 'no calcula: recibo con resumen.detencion { motivo: sesion_terminada }, sin eventos y sin version nueva', t2.http === 200 && tx(r2?.detencion) === tx({ motivo: 'sesion_terminada' }) && r2?.eventos === 0 && version() === v1, tx({ t2: t2.http, r2 }))
+
+  // CTO 15-oct (diseño q.17.7): la practica no tiene limites; ninguna perdida la detiene por breach
+  titulo('la practica sin limites: ninguna perdida la detiene')
+  const P1 = u(1002)
+  let k = 7000
+  const pcmd = o => ({ session_id: P1, command_id: u(++k), epoca: 1, cliente_id: 'p', ...o })
+  const pversion = () => Number(pg.uno(d, `select version from public.sim_sessions where id = ${L(P1)}`))
+  ver('control: practica creada (sin challenge_type)', (await CR.ordenCrear({ actor: AL, cuerpo: { session_id: P1, command_id: u(2002), epoca: 1, name: 'P', pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: null }, puertos: pu })).http === 201)
+  const pt = (await TO.ordenTomar({ actor: AL, cuerpo: { session_id: P1, command_id: u(3002), epoca: 1, cliente_id: 'p', forzar: true }, puertos: pu })).cuerpo?.testigo
+  sinTasa()
+  const p1 = await ordena(pcmd({ tipo: 'avanzar', version_esperada: pversion(), testigo: pt, hasta: m(10), motivo: 'paso' }))
+  const pab = await ordena(pcmd({ tipo: 'abrir', version_esperada: pversion(), testigo: pt, par: 'EURUSD', lado: 'BUY', orden: 'mercado', lotes: '80', cotizadoEn: m(10) }))
+  ver('control: avanzar y abrir 80 lotes (la caida de 1.000 ticks pierde 80.000 de 100.000)', p1.http === 200 && pab.http === 200, tx({ p1: p1.http, ab: pab.cuerpo?.motivo }))
+  const est0 = JSON.parse(pg.uno(d, `select estado::text from public.sim_sessions where id = ${L(P1)}`))
+  ver('control: la practica no tiene limites', Array.isArray(est0?.limites) && est0.limites.length === 0, tx(est0?.limites))
+  const dets = []
+  for (const hasta of [m(29), m(30), m(31), m(120)]) {
+    sinTasa()
+    const r = await ordena(pcmd({ tipo: 'avanzar', version_esperada: pversion(), testigo: pt, hasta, motivo: 'play' }))
+    const rs = JSON.parse(pg.uno(d, `select resumen::text from public.sim_recibos where session_id = ${L(P1)} and command_id = ${L(r.cuerpo?.recibo?.command_id ?? u(0))}`) || 'null')
+    dets.push({ http: r.http, det: rs?.detencion ?? null })
+  }
+  const est1 = JSON.parse(pg.uno(d, `select estado::text from public.sim_sessions where id = ${L(P1)}`))
+  const nb = Number(pg.uno(d, `select count(*) from public.sim_eventos where session_id = ${L(P1)} and tipo = 'breach'`))
+  const CA = await importa('lib/motor/cartera.mjs')
+  const eq = est1 ? CA.equity_µ(CA.deserializa(JSON.stringify(est1))) : null
+  ver('control: la perdida ocurrio (posicion abierta, cursor pasado la caida, equity ≤ 20.001 de 100.000)', est1?.posiciones?.length === 1 && est1?.reloj?.cursor >= m(120) && eq != null && eq <= 20_001_000_000n, tx({ pos: est1?.posiciones?.length, cursor: est1?.reloj?.cursor, eq: String(eq) }))
+  ver('control positivo: el mismo criterio caza el breach del reto de arriba', resumen?.detencion?.motivo === 'breach', tx(resumen?.detencion))
+  oraculo('DETS', 'practica sin limites: cuatro avances por la caida, ninguna detencion de breach, sin evento breach y la sesion activa', dets.every(x => x.http === 200 && x.det?.motivo !== 'breach') && nb === 0 && est1?.estado === 'activo', tx({ dets, nb, estado: est1?.estado }))
 } finally { pg.cierra() }
 fin()
