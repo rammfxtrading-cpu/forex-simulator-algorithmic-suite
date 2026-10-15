@@ -34,7 +34,9 @@ const e0 = CR.estadoInicial(i, fijados).estado
 const fila = (estado, version = 0) => ({ id: u(1001), user_id: u(1), motor_version: 1, legado: false, terminal: null, version, epoca: 1, date_from: '2025-01-06', estado: JSON.parse(CA.serializa(estado)) })
 const D0 = U('2025-01-06T00:00:00Z')
 let llamadas = []
-const puertos = (f, extra = {}) => ({ almacen: alm, leeSesion: async () => f, rpc: async (n, a) => { llamadas.push({ n, bytes: Buffer.byteLength(JSON.stringify(a), 'utf8'), a }); return { data: { ok: true, http: 200, version: 1 }, error: null } }, ...extra })
+// el doble de sim_comando confirma como la real: su recibo guarda el resumen enviado (E3-01: el ACK
+// sale de ahi, no del calculo)
+const puertos = (f, extra = {}) => ({ almacen: alm, leeSesion: async () => f, rpc: async (n, a) => { llamadas.push({ n, bytes: Buffer.byteLength(JSON.stringify(a), 'utf8'), a }); return { data: { ok: true, http: 200, version: 1, recibo: { resumen: a.p_resultado?.resumen ?? null } }, error: null } }, ...extra })
 let n = 3000
 const av = (hasta, version = 0) => ({ session_id: u(1001), command_id: u(++n), tipo: 'avanzar', epoca: 1, version_esperada: version, cliente_id: 'p', testigo: 'a'.repeat(64), hasta, motivo: 'play' })
 const enviado = () => llamadas.at(-1)?.a?.p_resultado
