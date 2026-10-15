@@ -99,6 +99,12 @@
 --     type = 'STANDARD', versioning_status = 'DISABLED' y las dos columnas de
 --     ciclo de vida a NULL. Si no: «el bucket mercado no es el esperado (…)» y
 --     aborta todo. s14 acredita esos dos valores por defecto y el enum.
+--   · PRESENCIA EXACTA (CTO 15-oct, tras Astra r8): uno de los siete de la
+--     lista que falte tambien aborta, «(difiere: falta)».
+--   · ENUM (E2R8-02, CTO 15-oct): antes del INSERT, el array EXACTO de
+--     etiquetas de storage.buckettype en el orden de enumsortorder tiene que
+--     ser {STANDARD,ANALYTICS,VECTOR} (s14d); si no, aborta: «el enum
+--     storage.buckettype no es el acreditado: …». La misma expresion que s14.
 --     LO QUE EL ROLLBACK NO DESHACE (E2R2-02): el INSERT del centinela y las
 --     ordenes de la sonda disparan los disparadores de storage.objects (por
 --     fila, los del centinela; por sentencia, todos los de UPDATE y DELETE);
@@ -360,12 +366,26 @@ veredictos as (
                        case when d.volatilidad is distinct from a.volatilidad then 'volatilidad' end,
                        case when d.firma is distinct from a.firma then 'firma' end) end difiere
       from fichas d left join acreditados a on a.tabla = d.tabla and a.nombre = d.nombre) x
+),
+-- presencia exacta (CTO 15-oct, tras Astra r8): un disparador de la lista que NO esta en su tabla tambien es NO
+-- ACREDITADO (difiere: falta). El conjunto tiene que ser exactamente el acreditado: ni uno mas (veredictos) ni uno menos
+faltan as (
+  select a.tabla, a.nombre from acreditados a
+   where not exists (select 1 from fichas d where d.tabla = a.tabla and d.nombre = a.nombre)
 )
 -- <<< acreditados
-select * from veredictos) v
-   where not v.acreditado;
+select v.tabla, v.nombre, v.difiere from veredictos v
+   where not v.acreditado
+ union all
+select f.tabla, f.nombre, 'falta' from faltan f) v;
   if no_acreditados is not null then
     raise exception 'mercado-001: disparadores de storage NO ACREDITADOS: %. Su ficha, en s14; re-acreditar con el CTO; no se crea nada', no_acreditados;
+  end if;
+  -- E2R8-02 (Astra r8, CTO 15-oct): el enum storage.buckettype tiene que ser EXACTAMENTE el de la s14d, el array de
+  -- etiquetas en el orden de enumsortorder; la misma expresion que en s14. Antes del INSERT: si no, no se crea nada
+  if not coalesce((select pg_catalog.array_agg(v.enumlabel::text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')) operator(pg_catalog.=) array['STANDARD', 'ANALYTICS', 'VECTOR']::text[], false) then
+    raise exception 'mercado-001: el enum storage.buckettype no es el acreditado: %; la s14d (15-oct) midio {STANDARD,ANALYTICS,VECTOR}; no se crea nada',
+      coalesce((select pg_catalog.array_agg(v.enumlabel::text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype'))::text, '(no es un enum o no existe)');
   end if;
 
   select * into b from storage.buckets where id = 'mercado' or name = 'mercado' limit 1;
@@ -381,8 +401,9 @@ select * from veredictos) v
     insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('mercado', 'mercado', false, 5242880, null);
   end if;
   -- POSTCONDICION (CTO 15-oct, con la s14d; SIEMPRE, tambien si el bucket ya existia): type y versioning_status no se fijan (tienen valor por defecto,
-  -- 'STANDARD' y 'DISABLED'); la fila, creada o ya existente, tiene que tenerlos, y el ciclo de vida a NULL. Por jsonb: una columna
-  -- que no existiera da NULL y aborta con este mensaje, no con otro
+  -- 'STANDARD' y 'DISABLED'); la fila, creada o ya existente, tiene que tenerlos, y el ciclo de vida a NULL. Por jsonb: si falta una
+  -- columna, falta su clave y se aborta aqui. Pero puede abortar ANTES, en el INSERT, dentro de un disparador acreditado que lee NEW
+  -- («record "new" has no field …», Astra r8): falla cerrado igual, con otro mensaje; este comentario no promete cual
   select pg_catalog.to_jsonb(x) into creada from storage.buckets x where x.id = 'mercado';
   if creada ->> 'type' is distinct from 'STANDARD' or creada ->> 'versioning_status' is distinct from 'DISABLED'
      or not (creada ? 'lifecycle_configuration' and creada ? 'lifecycle_configuration_generation')

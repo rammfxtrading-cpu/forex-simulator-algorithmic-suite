@@ -25,8 +25,9 @@
 --   1 columnas-bucket  (CTO 15-oct, s14d) el valor por defecto de type y de
 --                 versioning_status y los valores del enum storage.buckettype:
 --                 «acreditado (s14d, 15-oct)» si son los medidos
---                 ('STANDARD'::storage.buckettype, 'DISABLED'::text,
---                 STANDARD,ANALYTICS,VECTOR); si no, «NO ACREDITADO …: PARAR»
+--                 ('STANDARD'::storage.buckettype, 'DISABLED'::text, y el
+--                 array EXACTO {STANDARD,ANALYTICS,VECTOR} en el orden de
+--                 enumsortorder, E2R8-02); si no, «NO ACREDITADO …: PARAR»
 --   1 cerrojo     public.mercado_cerrojo (E2R3-01, sql/mercado-000-cerrojo.sql):
 --                 si existe, su RLS, politicas, disparadores, reglas, permisos
 --                 directos y EFECTIVOS (E2R4-01: con herencia y pertenencias,
@@ -58,6 +59,9 @@
 --                 enseña); si no, «NO ACREDITADO (difiere: …)». El bloque es el
 --                 mismo texto que en mercado-001, que aborta con lo mismo. De las funciones no acreditadas
 --                 de storage.buckets sale el cuerpo linea a linea («cuerpo»).
+--                 PRESENCIA EXACTA (CTO 15-oct, tras Astra r8): uno de la
+--                 lista que no esta sale «FALTA: … NO ACREDITADO (difiere:
+--                 falta)» y cuenta como sin acreditar (sin ninguno, los siete).
 --                 El resumen cuenta los dos sitios y los sin acreditar: PARAR
 --   3 politica    cada politica de storage.objects: orden, PERMISSIVE o
 --                 RESTRICTIVE, roles y veredicto con la MISMA lista blanca
@@ -237,6 +241,12 @@ veredictos as (
                        case when d.volatilidad is distinct from a.volatilidad then 'volatilidad' end,
                        case when d.firma is distinct from a.firma then 'firma' end) end difiere
       from fichas d left join acreditados a on a.tabla = d.tabla and a.nombre = d.nombre) x
+),
+-- presencia exacta (CTO 15-oct, tras Astra r8): un disparador de la lista que NO esta en su tabla tambien es NO
+-- ACREDITADO (difiere: falta). El conjunto tiene que ser exactamente el acreditado: ni uno mas (veredictos) ni uno menos
+faltan as (
+  select a.tabla, a.nombre from acreditados a
+   where not exists (select 1 from fichas d where d.tabla = a.tabla and d.nombre = a.nombre)
 )
 -- <<< acreditados
 , m as (
@@ -328,10 +338,13 @@ select seccion, objeto, detalle from (
                  then ' · acreditado (s14d, 15-oct)' else ' · NO ACREDITADO (s14d: ' || e.medido || '): PARAR' end
     from (values ('type', '''STANDARD''::storage.buckettype'), ('versioning_status', '''DISABLED''::text')) e(columna, medido)
   union all
+  -- E2R8-02 (Astra r8, CTO 15-oct): el ARRAY EXACTO de etiquetas en el orden de enumsortorder, comparado con el
+  -- operador de pg_catalog (no con uno ajeno de text[]); la misma expresion que en mercado-001. Se enseña como array
+  -- (las etiquetas con coma o comillas salen entre comillas): «STANDARD» + «ANALYTICS,VECTOR» ya no se confunde con tres
   select 1, 1, 'columnas-bucket', 'storage.buckettype',
-         coalesce((select pg_catalog.string_agg(v.enumlabel::text, ',' order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')), '(no es un enum o no existe)')
-         || case when (select pg_catalog.string_agg(v.enumlabel::text, ',' order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')) is not distinct from 'STANDARD,ANALYTICS,VECTOR'
-                 then ' · acreditado (s14d, 15-oct)' else ' · NO ACREDITADO (s14d: STANDARD,ANALYTICS,VECTOR): PARAR' end
+         coalesce((select pg_catalog.array_agg(v.enumlabel::text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype'))::text, '(no es un enum o no existe)')
+         || case when coalesce((select pg_catalog.array_agg(v.enumlabel::text order by v.enumsortorder) from pg_catalog.pg_enum v where v.enumtypid = pg_catalog.to_regtype('storage.buckettype')) operator(pg_catalog.=) array['STANDARD', 'ANALYTICS', 'VECTOR']::text[], false)
+                 then ' · acreditado (s14d, 15-oct)' else ' · NO ACREDITADO (s14d: {STANDARD,ANALYTICS,VECTOR}): PARAR' end
   union all
   -- E2R3-01: el cerrojo del publicador, en la base (sql/mercado-000-cerrojo.sql)
   select 1, 2, 'cerrojo', 'public.mercado_cerrojo',
@@ -406,6 +419,11 @@ select seccion, objeto, detalle from (
          || case when v.acreditado then ' · acreditado (CTO 14-oct)' else ' · NO ACREDITADO (difiere: ' || v.difiere || ')' end
     from veredictos v
   union all
+  -- presencia exacta (CTO 15-oct, tras Astra r8): uno de la lista que no esta en su tabla
+  select 2, 2, 'disparador', case when f.tabla = 'objects' then f.nombre else 'buckets.' || f.nombre end,
+         'FALTA: no esta en storage.' || f.tabla || ' · NO ACREDITADO (difiere: falta)'
+    from faltan f
+  union all
   -- el cuerpo de cada funcion NO acreditada que dispara un disparador de storage.buckets (CTO 14-oct), linea a linea
   select 2, 3, 'cuerpo', x.fn || ' ' || pg_catalog.lpad(c.i::text, 3, '0'), c.linea
     from (select distinct n.nspname || '.' || f.proname fn, f.prosrc
@@ -415,14 +433,13 @@ select seccion, objeto, detalle from (
          pg_catalog.regexp_split_to_table(coalesce(x.prosrc, ''), E'\n') with ordinality c(linea, i)
   union all
   select 2, 2, 'disparador', '(resumen)',
-         case when count(*) = 0 then 'ninguno en storage.objects ni en storage.buckets'
-              else 'storage.objects: ' || count(*) filter (where v.tgrelid = pg_catalog.to_regclass('storage.objects'))
-                   || ' (' || count(*) filter (where v.tgrelid = pg_catalog.to_regclass('storage.objects') and v.tgtype & 1 = 0) || ' por sentencia)'
-                   || ' · storage.buckets: ' || count(*) filter (where v.tgrelid = pg_catalog.to_regclass('storage.buckets'))
-                   || ' · sin acreditar: ' || count(*) filter (where not v.acreditado)
-                   || case when count(*) filter (where not v.acreditado) > 0
-                           then ': la sonda y el INSERT del bucket de mercado-001 los disparan; PARAR hasta que el CTO acredite cada uno como estandar de Supabase y sin efectos externos'
-                           else ': todos acreditados por el CTO (s14b y s14c, 14-oct)' end end
+         'storage.objects: ' || count(*) filter (where v.tgrelid = pg_catalog.to_regclass('storage.objects'))
+         || ' (' || count(*) filter (where v.tgrelid = pg_catalog.to_regclass('storage.objects') and v.tgtype & 1 = 0) || ' por sentencia)'
+         || ' · storage.buckets: ' || count(*) filter (where v.tgrelid = pg_catalog.to_regclass('storage.buckets'))
+         || ' · sin acreditar: ' || (count(*) filter (where not v.acreditado) + (select count(*) from faltan))
+         || case when count(*) filter (where not v.acreditado) + (select count(*) from faltan) > 0
+                 then ': la sonda y el INSERT del bucket de mercado-001 los disparan; PARAR hasta que el CTO acredite cada uno como estandar de Supabase y sin efectos externos'
+                 else ': todos acreditados por el CTO (s14b y s14c, 14-oct)' end
     from veredictos v
   union all
   select 3, 1, 'politica', v.policyname, v.cmd || ' · ' || v.permissive || ' · ' || v.roles || ' · '

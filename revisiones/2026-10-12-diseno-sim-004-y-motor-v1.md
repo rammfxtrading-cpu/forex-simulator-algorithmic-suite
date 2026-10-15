@@ -3055,3 +3055,46 @@ La s14c de producción (`sql/consultas/salidas/s14c-disparadores-buckets-2026-10
 - Rojos genuinos: los 3 de fuera de la lista y los 3 de la reejecución.
 - Por el mensaje renombrado: 4 de la sección 12.
 - Control roto: el mutante de lista abierta, que no existe en el SQL viejo.
+
+### p.19 · Etapa 2, ronda 9: Astra r8 (E2R8-01, E2R8-02) y la presencia exacta (15-oct)
+
+Astra r8 (`revisiones-suite/2026-10-15-astra-mercado-v1-etapa2-r8.md`): **NO**. E2R7-01 queda cerrado en sus dos reproducciones (174 oráculos), pero hay dos falsos «acreditado». Decisiones del CTO (15-oct), con el método nuevo: cada arreglo con su familia (generada o con semilla fija y anotada) y un revisor adversario interno, que no ha escrito el código, antes del encargo.
+
+**p.19.1 · E2R8-02, el enum ambiguo.** Hasta ahora s14 comparaba `string_agg(enumlabel, ',')` con `'STANDARD,ANALYTICS,VECTOR'`, así que dos etiquetas, `STANDARD` y `ANALYTICS,VECTOR`, se acreditaban como las tres.
+- Ahora se compara el **array exacto** `array_agg(enumlabel::text ORDER BY enumsortorder)` con `array['STANDARD', 'ANALYTICS', 'VECTOR']::text[]`, y se hace **con el operador de pg_catalog** (`operator(pg_catalog.=)`). Un `=` ajeno de `text[]` en `public` ganaría por tipo exacto a `anyarray = anyarray` aunque pg_catalog vaya delante en el search_path.
+- **En s14:** la fila `columnas-bucket | storage.buckettype` enseña el array (`{STANDARD,ANALYTICS,VECTOR}`; una etiqueta con coma o comillas sale entre comillas) y dice «acreditado (s14d, 15-oct)» o «NO ACREDITADO (s14d: {STANDARD,ANALYTICS,VECTOR}): PARAR».
+- **En `mercado-001`:** la misma expresión, byte a byte (una prueba lo compara), **antes del INSERT**. Si no coincide, aborta: «el enum storage.buckettype no es el acreditado: <array>; …». El caso de la sección 12 «enum sin STANDARD» aborta ahora por el enum y no por la postcondición.
+- **Límite (pregunta al CTO):** las mismas etiquetas en el mismo orden con otros números de `enumsortorder` (por ejemplo 10, 20, 30) dan el mismo array y se acreditan. Lo fija una prueba. Si el CTO quiere que esos números paren también, hay que medirlos, porque la s14d no los midió.
+
+**p.19.2 · Presencia exacta (CTO 15-oct, tras el informe de Astra).** El conjunto de disparadores de `storage.buckets` y `storage.objects` tiene que ser **exactamente** el acreditado.
+- Ni uno más: eso ya lo cubría `veredictos` desde `ed96d3e`.
+- **Ni uno menos:** el bloque compartido añade el CTE `faltan`, con los de la lista que no están en su tabla.
+  - En s14, cada uno sale como «FALTA: no esta en storage.<tabla> · NO ACREDITADO (difiere: falta)» y cuenta en «sin acreditar», así que el resumen manda PARAR. Sin ninguno faltan los siete, y ya no existe el resumen «ninguno».
+  - En `mercado-001`, el aborto antes del INSERT los nombra con «(difiere: falta)». Si el que falta es `protect_objects_delete`, aborta antes su guarda propia.
+- **El caso de Astra** (`enforce_bucket_name_length_trigger` borrado, «buckets: 4 · sin acreditar: 0» y `mercado-001` aplicaba) ahora da «storage.buckets: 4 · sin acreditar: 1 … PARAR» y aborta.
+- **El mutante `M1listaAbierta`** (solo el filtro `en_lista`) sigue abortando por uno que falta. Hay un control para ello.
+
+**p.19.3 · El comentario de la postcondición** (`mercado-001`, Astra r8): ya no promete el mensaje. Al retirar una columna de ciclo de vida se puede abortar antes, en el INSERT, dentro de un disparador acreditado que lee NEW («record "new" has no field …»). Falla cerrado igual.
+
+**p.19.4 · Familias (`pruebas/mercado-001-bucket.mjs`, sección 14).**
+- **Presencia:** cada uno de los siete borrado, generado de la lista; 4 pares borrados elegidos con la semilla fija `20261015`; uno renombrado (falta el suyo y sobra otro); y el escenario literal de Astra. Cada caso se comprueba en s14 (fila FALTA y resumen) y en `mercado-001` (aborto y nada cambia).
+- **Enum:**
+  - el caso de Astra;
+  - reordenadas;
+  - una añadida (ADD VALUE);
+  - una quitada;
+  - una renombrada (RENAME VALUE);
+  - el orden numérico cambiado (`enumsortorder` de VECTOR a 0.5, que reordena);
+  - un dominio en vez de un enum;
+  - **16 variantes generadas con la semilla fija `20261016`**, con un pozo de etiquetas que incluye minúsculas, espacios, comas, comillas, llaves y `NULL`;
+  - el `=` ajeno de `text[]`.
+
+  Todas dan PARAR en s14 y aborto en `mercado-001`. Hay además el límite del orden numérico igual, y la comparación del texto idéntico en los dos ficheros.
+
+**Rojo previo:** la prueba nueva contra el SQL de `ed96d3e` da **82 rojos y 2 controles rotos** (`revisiones-suite/2026-10-15-mercado-v1-etapa2-r9/rojos/`).
+- Los genuinos son los de presencia (salvo los de `protect_objects_delete` en `mercado-001`, que ya paraba su guarda) y los de E2R8-02.
+- Por formato: la fila del enum, y el resumen «ninguno», que ahora es PARAR.
+- Los dos controles rotos son del mutante, cuya línea cambia.
+- Los 6 rojos de E2-01/E2R2-02/E2R3-02/E2R3-03/PD-04 vienen del mutante, que con el SQL viejo no se aplica.
+
+**p.19.5 · E2R8-01 (disparadores internos): PARADO.** La regla del CTO admite solo internos de `pg_catalog` de la familia `RI_FKey_*`, «con la tabla y la restricción esperadas». Pero los internos de `storage.buckets` y `storage.objects` **no se han medido nunca en producción**: s14b, s14c y s14 los excluyen. Pregunta al CTO: medirlos antes con una consulta de solo lectura (s14e) y acreditar la lista exacta, o admitirlos por coherencia con `pg_constraint` sin lista cerrada.
