@@ -130,3 +130,17 @@ create trigger protect_bucket_control_update_role after update of lifecycle_conf
 create trigger protect_buckets_delete before delete on storage.buckets for each statement execute function storage.protect_delete();`
 export const COMPRUEBA_MD5_BUCKETS = `select string_agg(proname || '=' || md5(prosrc), ',' order by proname) from pg_proc where pronamespace = 'storage'::regnamespace and proname in ('enforce_bucket_name_length', 'protect_bucket_control_columns', 'enforce_bucket_lifecycle_service_role')`
 export const MD5_BUCKETS_ESPERADO = Object.entries(MD5_BUCKETS).sort(([a], [b]) => a < b ? -1 : 1).map(([k, v]) => `${k}=${v}`).join(',')
+
+// E2R7-01: el dueño medido de las cinco funciones (s14b y s14c: supabase_storage_admin). En el montaje las crea el
+// superusuario del ensayo; aqui pasan a ese rol, como en produccion (crear funciones con otro dueño no cambia prosrc)
+export const DUENO_STORAGE = `do $r$ begin if not exists (select 1 from pg_roles where rolname = 'supabase_storage_admin') then create role supabase_storage_admin nologin; end if; end $r$;
+alter function storage.protect_delete() owner to supabase_storage_admin;
+alter function storage.update_updated_at_column() owner to supabase_storage_admin;
+alter function storage.enforce_bucket_name_length() owner to supabase_storage_admin;
+alter function storage.protect_bucket_control_columns() owner to supabase_storage_admin;
+alter function storage.enforce_bucket_lifecycle_service_role() owner to supabase_storage_admin;`
+// la ficha de cada una en el montaje, con la forma de la s14b/s14c («plpgsql · SECURITY INVOKER · dueño=… · proconfig=… · volatilidad=…»)
+export const FICHAS_MONTAJE = `select string_agg(p.proname || ': ' || l.lanname || ' · SECURITY ' || case when p.prosecdef then 'DEFINER' else 'INVOKER' end || ' · dueño=' || pg_get_userbyid(p.proowner)
+  || ' · proconfig=' || coalesce(array_to_string(p.proconfig, ','), '-') || ' · volatilidad=' || p.provolatile::text, E'\n' order by p.proname)
+  from pg_proc p join pg_language l on l.oid = p.prolang where p.pronamespace = 'storage'::regnamespace
+   and p.proname in ('protect_delete', 'update_updated_at_column', 'enforce_bucket_name_length', 'protect_bucket_control_columns', 'enforce_bucket_lifecycle_service_role')`

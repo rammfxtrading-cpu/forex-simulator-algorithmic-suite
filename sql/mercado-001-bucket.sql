@@ -80,6 +80,17 @@
 --     informe lo dice en la fila «protect_delete». (En PostgreSQL el ajuste, ya
 --     fijado en la sesion, vuelve a '' y no a NULL: por eso la prueba es
 --     funcional y no del valor.)
+--   · E2R7-01 (Astra r7, CTO 15-oct): ANTES de insertar el bucket (su INSERT
+--     dispara los de storage.buckets) y antes de la sonda, cada disparador de
+--     la lista acreditada (los dos de storage.objects y los cinco de
+--     storage.buckets) tiene que coincidir en TODO con su ficha: definicion,
+--     habilitado 'O', md5 completo y el contexto de la funcion a la que apunta
+--     (lenguaje, SECURITY INVOKER, dueño, proconfig completo con su
+--     search_path, volatilidad y firma). Si no, aborta: «disparadores de
+--     storage NO ACREDITADOS: <cual> (difiere: <que>)». El bloque «acreditados»
+--     es el mismo texto que en s14 (la prueba lo compara byte a byte). Los
+--     disparadores que NO estan en la lista no abortan aqui: los para s14
+--     (PARAR) y, en storage.objects, la sonda («no concluyente»).
 --     LO QUE EL ROLLBACK NO DESHACE (E2R2-02): el INSERT del centinela y las
 --     ordenes de la sonda disparan los disparadores de storage.objects (por
 --     fila, los del centinela; por sentencia, todos los de UPDATE y DELETE);
@@ -128,6 +139,7 @@ declare
   dudas text := '';
   ajuste_inicio text;
   ajuste_previo text;
+  no_acreditados text;
 begin
   -- E2R2-01: contexto de resolucion fijo antes de inspeccionar nada; E2R2-02: esperas acotadas
   perform pg_catalog.set_config('search_path', 'pg_catalog, pg_temp', true);
@@ -269,6 +281,84 @@ select (select c.problemas from ctx c) problemas,
     raise exception 'mercado-001: politicas de ESCRITURA en storage.objects aplicables a anon, authenticated o public: %. La sonda no se ejecuta sobre otros buckets; no se crea nada; decide el CTO', de_escritura;
   end if;
 
+  -- protect_delete (CTO 14-oct): el disparador de Supabase tiene que estar, con su forma y habilitado
+  if not exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace
+                  where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'protect_objects_delete' and not t.tgisinternal
+                    and t.tgenabled in ('O', 'A') and n.nspname = 'storage' and f.proname = 'protect_delete'
+                    and t.tgtype & 1 = 0 and t.tgtype & 2 = 2 and t.tgtype & 8 = 8) then
+    raise exception 'mercado-001: falta el disparador protect_objects_delete de Supabase en storage.objects (BEFORE DELETE por sentencia, storage.protect_delete) o esta desactivado: la sonda no seria la del Storage medido; no se crea nada; decide el CTO';
+  end if;
+  -- CTO 14-oct (3b): la funcion de ese disparador tiene que ser la ACREDITADA, por su md5 completo (s14b)
+  if (select pg_catalog.md5(coalesce(f.prosrc, '')) from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid
+       where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'protect_objects_delete' and not t.tgisinternal)
+     is distinct from '998d324ea2b1abc49351e8c2367b5796' then
+    raise exception 'mercado-001: protect_delete ha cambiado: re-acreditar (su md5 no es el de la s14b del 14-oct); no se crea nada';
+  end if;
+  -- E2R7-01 (Astra r7, CTO 15-oct): ANTES de tocar storage.buckets (su INSERT dispara cinco de ellos), cada disparador
+  -- de la lista acreditada tiene que coincidir en todo con su ficha: definicion, habilitado, md5 y el contexto de la
+  -- funcion (lenguaje, SECURITY, dueño, proconfig, volatilidad, firma). El bloque es el mismo texto que en s14
+  select string_agg(case when v.tabla = 'objects' then v.nombre else 'buckets.' || v.nombre end || ' (difiere: ' || v.difiere || ')', ', ' order by v.tabla, v.nombre)
+    into no_acreditados
+    from (with
+-- >>> acreditados (identico en sql/mercado-001-bucket.sql y sql/consultas/s14-mercado-storage.sql)
+-- Los disparadores que el CTO ha acreditado (14-oct, s14b y s14c de produccion: estandar de Supabase y sin efectos
+-- externos), cada uno con la FICHA COMPLETA de la funcion a la que apunta (tgfoid, no por nombre): md5 COMPLETO del
+-- cuerpo y, E2R7-01 (Astra r7, CTO 15-oct), lenguaje, SECURITY INVOKER/DEFINER, dueño, proconfig completo (search_path
+-- incluido), volatilidad y la firma con sus argumentos y lo que devuelve. Un disparador de la lista con cualquier
+-- diferencia (o no habilitado 'O') es NO ACREDITADO, con lo que difiere: s14 manda PARAR y mercado-001 aborta.
+acreditados (tabla, nombre, definicion, md5, lenguaje, seguridad, dueno, proconfig, volatilidad, firma) as (values
+  ('objects'::text, 'protect_objects_delete'::text, 'CREATE TRIGGER protect_objects_delete BEFORE DELETE ON storage.objects FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()'::text, '998d324ea2b1abc49351e8c2367b5796'::text,
+   'plpgsql'::text, 'INVOKER'::text, 'supabase_storage_admin'::text, '-'::text, 'v'::text, 'storage.protect_delete() returns trigger'::text),
+  ('objects', 'update_objects_updated_at', 'CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()', '7596e66a7698d5a6b5129c5ce9b24c5f',
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.update_updated_at_column() returns trigger'),
+  -- los cinco de storage.buckets (CTO 14-oct, s14c)
+  ('buckets', 'enforce_bucket_name_length_trigger', 'CREATE TRIGGER enforce_bucket_name_length_trigger BEFORE INSERT OR UPDATE OF name ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_name_length()', 'bd3d77a2603f7f344035a81def5502fa',
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.enforce_bucket_name_length() returns trigger'),
+  ('buckets', 'protect_bucket_control_insert', 'CREATE TRIGGER protect_bucket_control_insert BEFORE INSERT ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns(''service_role'')', '7870415452678f5aa85f91dde952ef12',
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.protect_bucket_control_columns() returns trigger'),
+  ('buckets', 'protect_bucket_control_update', 'CREATE TRIGGER protect_bucket_control_update BEFORE UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns()', '7870415452678f5aa85f91dde952ef12',
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.protect_bucket_control_columns() returns trigger'),
+  ('buckets', 'protect_bucket_control_update_role', 'CREATE TRIGGER protect_bucket_control_update_role AFTER UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_lifecycle_service_role(''service_role'')', '7691066f4111610b457b74bdead6e80b',
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.enforce_bucket_lifecycle_service_role() returns trigger'),
+  ('buckets', 'protect_buckets_delete', 'CREATE TRIGGER protect_buckets_delete BEFORE DELETE ON storage.buckets FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()', '998d324ea2b1abc49351e8c2367b5796',
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.protect_delete() returns trigger')
+),
+-- cada disparador de storage.objects y storage.buckets con la ficha de SU funcion (la de tgfoid)
+fichas as (
+  select r.relname::text tabla, t.tgname::text nombre, t.tgrelid, t.tgtype, t.tgenabled::text habilitado,
+         n.nspname::text esquema, f.proname::text funcion, f.prosrc,
+         pg_catalog.pg_get_triggerdef(t.oid) definicion, pg_catalog.md5(coalesce(f.prosrc, '')) md5,
+         l.lanname::text lenguaje, case when f.prosecdef then 'DEFINER' else 'INVOKER' end seguridad,
+         pg_catalog.pg_get_userbyid(f.proowner)::text dueno, coalesce(f.proconfig::text, '-') proconfig, f.provolatile::text volatilidad,
+         n.nspname || '.' || f.proname || '(' || pg_catalog.pg_get_function_identity_arguments(f.oid) || ') returns ' || pg_catalog.pg_get_function_result(f.oid) firma
+    from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid
+         join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
+   where t.tgrelid in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets')) and not t.tgisinternal
+),
+-- el veredicto: «difiere» es '' solo si el disparador esta en la lista y coincide en todo
+veredictos as (
+  select x.*, (x.difiere = '') acreditado from (
+    select d.*, a.tabla is not null en_lista,
+           case when a.tabla is null then 'no esta en la lista acreditada'
+                else pg_catalog.concat_ws(', ',
+                       case when d.definicion is distinct from a.definicion then 'definicion' end,
+                       case when d.habilitado is distinct from 'O' then 'habilitado' end,
+                       case when d.md5 is distinct from a.md5 then 'md5' end,
+                       case when d.lenguaje is distinct from a.lenguaje then 'lenguaje' end,
+                       case when d.seguridad is distinct from a.seguridad then 'seguridad' end,
+                       case when d.dueno is distinct from a.dueno then 'dueño' end,
+                       case when d.proconfig is distinct from a.proconfig then 'proconfig' end,
+                       case when d.volatilidad is distinct from a.volatilidad then 'volatilidad' end,
+                       case when d.firma is distinct from a.firma then 'firma' end) end difiere
+      from fichas d left join acreditados a on a.tabla = d.tabla and a.nombre = d.nombre) x
+)
+-- <<< acreditados
+select * from veredictos) v
+   where v.en_lista and not v.acreditado;
+  if no_acreditados is not null then
+    raise exception 'mercado-001: disparadores de storage NO ACREDITADOS: %. Su ficha, en s14; re-acreditar con el CTO; no se crea nada', no_acreditados;
+  end if;
+
   select * into b from storage.buckets where id = 'mercado' or name = 'mercado' limit 1;
   if found then
     if b.id = 'mercado' and b.name = 'mercado' and b.public = false and b.file_size_limit = 5242880 and b.allowed_mime_types is null
@@ -283,19 +373,6 @@ select (select c.problemas from ctx c) problemas,
   end if;
 
   -- CAPA 2: sonda con un centinela que se deshace
-  -- protect_delete (CTO 14-oct): el disparador de Supabase tiene que estar, con su forma y habilitado
-  if not exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace
-                  where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'protect_objects_delete' and not t.tgisinternal
-                    and t.tgenabled in ('O', 'A') and n.nspname = 'storage' and f.proname = 'protect_delete'
-                    and t.tgtype & 1 = 0 and t.tgtype & 2 = 2 and t.tgtype & 8 = 8) then
-    raise exception 'mercado-001: falta el disparador protect_objects_delete de Supabase en storage.objects (BEFORE DELETE por sentencia, storage.protect_delete) o esta desactivado: la sonda no seria la del Storage medido; no se crea nada; decide el CTO';
-  end if;
-  -- CTO 14-oct (3b): la funcion de ese disparador tiene que ser la ACREDITADA, por su md5 completo (s14b)
-  if (select pg_catalog.md5(coalesce(f.prosrc, '')) from pg_catalog.pg_trigger t join pg_catalog.pg_proc f on f.oid = t.tgfoid
-       where t.tgrelid = 'storage.objects'::regclass and t.tgname = 'protect_objects_delete' and not t.tgisinternal)
-     is distinct from '998d324ea2b1abc49351e8c2367b5796' then
-    raise exception 'mercado-001: protect_delete ha cambiado: re-acreditar (su md5 no es el de la s14b del 14-oct); no se crea nada';
-  end if;
   ajuste_inicio := pg_catalog.current_setting('storage.allow_delete_query', true);
   if ajuste_inicio = 'true' then
     raise exception 'mercado-001: storage.allow_delete_query ya vale true al empezar: protect_delete no protege nada en esta sesion; no se crea nada; decide el CTO';
