@@ -105,6 +105,12 @@
 --     storage.buckets tambien aborta, antes del INSERT: lo acreditado es
 --     ninguna, «regla <nombre> (difiere: regla <evento>: no se acredita
 --     ninguna)». Es el mismo bloque que s14 (CTE «reglas» y «otros»).
+--   · INTERNOS (E2R8-01, CTO 16-oct, con la s14e de produccion): los
+--     disparadores internos de las dos tablas tienen que ser EXACTAMENTE los
+--     ocho RI_FKey_* de las tres FK a storage.buckets(id) (funcion, tabla,
+--     restriccion, tabla relacionada, momento, habilitado 'O'). Uno de mas o
+--     uno de menos aborta antes del INSERT: «interno <funcion> · <restriccion>
+--     (difiere: …)». El mismo bloque que s14.
 --   · ENUM (E2R8-02, CTO 15-oct): antes del INSERT, el array EXACTO de
 --     etiquetas de storage.buckettype en el orden de enumsortorder tiene que
 --     ser {STANDARD,ANALYTICS,VECTOR} (s14d); si no, aborta: «el enum
@@ -387,9 +393,53 @@ reglas as (
     from pg_catalog.pg_rewrite w join pg_catalog.pg_class r on r.oid = w.ev_class
    where w.ev_class in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets'))
 ),
+-- E2R8-01 (Astra r8; CTO 16-oct, con la s14e de produccion): los disparadores INTERNOS de las dos tablas, por lista
+-- EXACTA en las dos direcciones. Los ocho medidos son los de integridad referencial de las tres claves foraneas a
+-- storage.buckets(id): funcion de pg_catalog (lenguaje internal), restriccion (tipo f), tabla relacionada, momento y
+-- ordenes, habilitado 'O'. El nombre (RI_ConstraintTrigger_…) lleva un oid y no se usa. Uno de mas (otra FK, un
+-- disparador marcado interno, otra accion) o uno de menos (una FK quitada): NO ACREDITADO, PARAR y aborto
+internos_acreditados (tabla, funcion, restriccion, relacionada, disparo) as (values
+  ('buckets'::text, 'pg_catalog.RI_FKey_noaction_del'::text, 'objects_bucketId_fkey'::text, 'storage.objects'::text, 'AFTER DELETE · por fila'::text),
+  ('buckets', 'pg_catalog.RI_FKey_noaction_upd', 'objects_bucketId_fkey', 'storage.objects', 'AFTER UPDATE · por fila'),
+  ('buckets', 'pg_catalog.RI_FKey_noaction_del', 's3_multipart_uploads_bucket_id_fkey', 'storage.s3_multipart_uploads', 'AFTER DELETE · por fila'),
+  ('buckets', 'pg_catalog.RI_FKey_noaction_upd', 's3_multipart_uploads_bucket_id_fkey', 'storage.s3_multipart_uploads', 'AFTER UPDATE · por fila'),
+  ('buckets', 'pg_catalog.RI_FKey_noaction_del', 's3_multipart_uploads_parts_bucket_id_fkey', 'storage.s3_multipart_uploads_parts', 'AFTER DELETE · por fila'),
+  ('buckets', 'pg_catalog.RI_FKey_noaction_upd', 's3_multipart_uploads_parts_bucket_id_fkey', 'storage.s3_multipart_uploads_parts', 'AFTER UPDATE · por fila'),
+  ('objects', 'pg_catalog.RI_FKey_check_ins', 'objects_bucketId_fkey', 'storage.buckets', 'AFTER INSERT · por fila'),
+  ('objects', 'pg_catalog.RI_FKey_check_upd', 'objects_bucketId_fkey', 'storage.buckets', 'AFTER UPDATE · por fila')
+),
+internos as (
+  select r.relname::text tabla, n.nspname || '.' || f.proname funcion, coalesce(k.conname::text, '-') restriccion,
+         coalesce(rn.nspname || '.' || rr.relname, '-') relacionada,
+         case when t.tgtype & 2 = 2 then 'BEFORE' when t.tgtype & 64 = 64 then 'INSTEAD OF' else 'AFTER' end || ' '
+         || pg_catalog.concat_ws('/', case when t.tgtype & 4 = 4 then 'INSERT' end, case when t.tgtype & 8 = 8 then 'DELETE' end, case when t.tgtype & 16 = 16 then 'UPDATE' end, case when t.tgtype & 32 = 32 then 'TRUNCATE' end)
+         || ' · ' || case when t.tgtype & 1 = 1 then 'por fila' else 'por sentencia' end disparo,
+         t.tgenabled::text habilitado, l.lanname::text lenguaje, coalesce(k.contype::text, '-') tipo
+    from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid
+         join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
+         left join pg_catalog.pg_constraint k on k.oid = t.tgconstraint
+         left join pg_catalog.pg_class rr on rr.oid = t.tgconstrrelid left join pg_catalog.pg_namespace rn on rn.oid = rr.relnamespace
+   where t.tgrelid in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets')) and t.tgisinternal
+),
+internos_veredicto as (
+  select i.*, exists (select 1 from internos_acreditados a
+                       where a.tabla = i.tabla and a.funcion = i.funcion and a.restriccion = i.restriccion and a.relacionada = i.relacionada
+                         and a.disparo = i.disparo and i.habilitado = 'O' and i.lenguaje = 'internal' and i.tipo = 'f') acreditado
+    from internos i
+),
 -- lo que no es un disparador de la lista y tampoco se acredita: (tabla, objeto, difiere)
 otros as (
   select g.tabla, 'regla ' || g.nombre objeto, 'regla ' || g.detalle || ': no se acredita ninguna' difiere from reglas g
+  union all
+  select i.tabla, 'interno ' || i.funcion || ' · ' || i.restriccion,
+         'interno ' || i.disparo || ' · relacionada=' || i.relacionada || ' · habilitado=' || i.habilitado || ' · lenguaje=' || i.lenguaje
+         || ': no esta en la lista de internos acreditados (s14e, 16-oct)'
+    from internos_veredicto i where not i.acreditado
+  union all
+  select a.tabla, 'interno ' || a.funcion || ' · ' || a.restriccion, 'falta (interno ' || a.disparo || ' de la s14e, 16-oct)'
+    from internos_acreditados a
+   where not exists (select 1 from internos_veredicto i where i.acreditado and i.tabla = a.tabla and i.funcion = a.funcion
+                        and i.restriccion = a.restriccion and i.relacionada = a.relacionada and i.disparo = a.disparo)
 )
 -- <<< acreditados
 select v.tabla, v.nombre, v.difiere from veredictos v

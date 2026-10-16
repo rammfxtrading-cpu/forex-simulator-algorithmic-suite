@@ -1,0 +1,18 @@
+seccion,objeto,detalle
+tabla,storage.buckets,relkind=r · particion=false · hijas=0
+tabla,storage.objects,relkind=r · particion=false · hijas=0
+externos,storage.buckets,5 no internos · 6 internos
+externos,storage.objects,2 no internos · 2 internos
+interno,storage.buckets · pg_catalog.RI_FKey_noaction_del · objects_bucketId_fkey,AFTER DELETE · por fila · habilitado=O · lenguaje=internal · restriccion=objects_bucketId_fkey (f) · tabla relacionada=storage.objects · nombre=RI_ConstraintTrigger_a_17380
+interno,storage.buckets · pg_catalog.RI_FKey_noaction_del · s3_multipart_uploads_bucket_id_fkey,AFTER DELETE · por fila · habilitado=O · lenguaje=internal · restriccion=s3_multipart_uploads_bucket_id_fkey (f) · tabla relacionada=storage.s3_multipart_uploads · nombre=RI_ConstraintTrigger_a_17427
+interno,storage.buckets · pg_catalog.RI_FKey_noaction_del · s3_multipart_uploads_parts_bucket_id_fkey,AFTER DELETE · por fila · habilitado=O · lenguaje=internal · restriccion=s3_multipart_uploads_parts_bucket_id_fkey (f) · tabla relacionada=storage.s3_multipart_uploads_parts · nombre=RI_ConstraintTrigger_a_17447
+interno,storage.buckets · pg_catalog.RI_FKey_noaction_upd · objects_bucketId_fkey,AFTER UPDATE · por fila · habilitado=O · lenguaje=internal · restriccion=objects_bucketId_fkey (f) · tabla relacionada=storage.objects · nombre=RI_ConstraintTrigger_a_17381
+interno,storage.buckets · pg_catalog.RI_FKey_noaction_upd · s3_multipart_uploads_bucket_id_fkey,AFTER UPDATE · por fila · habilitado=O · lenguaje=internal · restriccion=s3_multipart_uploads_bucket_id_fkey (f) · tabla relacionada=storage.s3_multipart_uploads · nombre=RI_ConstraintTrigger_a_17428
+interno,storage.buckets · pg_catalog.RI_FKey_noaction_upd · s3_multipart_uploads_parts_bucket_id_fkey,AFTER UPDATE · por fila · habilitado=O · lenguaje=internal · restriccion=s3_multipart_uploads_parts_bucket_id_fkey (f) · tabla relacionada=storage.s3_multipart_uploads_parts · nombre=RI_ConstraintTrigger_a_17448
+interno,storage.objects · pg_catalog.RI_FKey_check_ins · objects_bucketId_fkey,AFTER INSERT · por fila · habilitado=O · lenguaje=internal · restriccion=objects_bucketId_fkey (f) · tabla relacionada=storage.buckets · nombre=RI_ConstraintTrigger_c_17382
+interno,storage.objects · pg_catalog.RI_FKey_check_upd · objects_bucketId_fkey,AFTER UPDATE · por fila · habilitado=O · lenguaje=internal · restriccion=objects_bucketId_fkey (f) · tabla relacionada=storage.buckets · nombre=RI_ConstraintTrigger_c_17383
+fk,objects_bucketId_fkey,storage.objects (bucket_id) → storage.buckets (id) · on delete=a · on update=a · diferible=false · validada=true
+fk,s3_multipart_uploads_bucket_id_fkey,storage.s3_multipart_uploads (bucket_id) → storage.buckets (id) · on delete=a · on update=a · diferible=false · validada=true
+fk,s3_multipart_uploads_parts_bucket_id_fkey,storage.s3_multipart_uploads_parts (bucket_id) → storage.buckets (id) · on delete=a · on update=a · diferible=false · validada=true
+regla,(resumen),0 reglas
+FIN,s14e,consulta

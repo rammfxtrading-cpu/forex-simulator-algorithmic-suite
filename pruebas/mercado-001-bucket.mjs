@@ -63,7 +63,12 @@ const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const M1 = lee('sql/mercado-001-bucket.sql')
 const S14 = lee('sql/consultas/s14-mercado-storage.sql')
 const pg = cluster()
-const REALES = `alter table storage.objects add column metadata jsonb, add column updated_at timestamptz default now(), add column owner uuid, add column owner_id text;`
+// E2R8-01 (s14e de produccion, 16-oct): la FK de objects se llama objects_bucketId_fkey, y hay otras dos FK a
+// storage.buckets(id), desde storage.s3_multipart_uploads y storage.s3_multipart_uploads_parts: ocho internos RI_FKey_*
+const REALES = `alter table storage.objects add column metadata jsonb, add column updated_at timestamptz default now(), add column owner uuid, add column owner_id text;
+alter table storage.objects rename constraint objects_bucket_id_fkey to "objects_bucketId_fkey";
+create table storage.s3_multipart_uploads (id text primary key, bucket_id text not null references storage.buckets(id));
+create table storage.s3_multipart_uploads_parts (id uuid primary key default gen_random_uuid(), upload_id text not null, bucket_id text not null references storage.buckets(id));`
 // CTO 14-oct (s14b, s14c): los disparadores de Supabase en storage.objects (2) y storage.buckets (5), con sus funciones
 // byte a byte. mercado-001 exige protect_objects_delete; sin el, ver la seccion 10. Las columnas NOT NULL type y
 // versioning_status de storage.buckets, con el enum y los valores por defecto de la s14d (15-oct)
@@ -887,6 +892,65 @@ create operator public.= (leftarg = text[], rightarg = text[], function = public
       }
       const exprR = t => (t.match(/from pg_catalog\.pg_rewrite w join pg_catalog\.pg_class r on r\.oid = w\.ev_class\n   where w\.ev_class in \(pg_catalog\.to_regclass\('storage\.objects'\), pg_catalog\.to_regclass\('storage\.buckets'\)\)/g) || [])
       oraculo('REGLAS', 'la lectura de las reglas esta dentro del bloque compartido (una vez en cada fichero)', exprR(S14).length === 1 && exprR(M1).length === 1)
+    }
+
+    titulo('16 · E2R8-01 (Astra r8; CTO 16-oct, s14e): los disparadores internos, por lista exacta en las dos direcciones')
+    {
+      // control: el montaje tiene los internos de produccion. La s14e (la misma consulta que corrio Ramon) sobre el
+      // montaje da, quitando el nombre (lleva un oid), las mismas filas «interno» y «fk» que la salida literal del 16-oct
+      const S14E = lee('sql/consultas/s14e-internos-storage.sql')
+      const sinOid = l => l.replace(/ · nombre=RI_ConstraintTrigger_[ac]_\d+$/, '')
+      const literal = lee('sql/consultas/salidas/s14e-internos-storage-2026-10-16.csv').split('\n').filter(l => /^(interno|fk|regla|externos|tabla),/.test(l))
+        .map(l => { const m = /^([^,]+),([^,]+),(.*)$/.exec(l); return sinOid(`${m[1]}|${m[2]}|${m[3].replace(/^"|"$/g, '')}`) }).sort()
+      const enMontaje = pg.psql(`begin read only;\n${S14E}\nrollback;`, monta(SUPA)).out.split('\n').filter(l => /^(interno|fk|regla|externos|tabla)\|/.test(l)).map(sinOid).sort()
+      ver(`control: el montaje reproduce la s14e de produccion (${literal.length} filas: tablas, recuentos, 8 internos, 3 FK y 0 reglas), sin el oid del nombre`, literal.length === 16 && JSON.stringify(enMontaje) === JSON.stringify(literal), enMontaje.filter(x => !literal.includes(x)).concat(literal.filter(x => !enMontaje.includes(x)).map(x => 'falta: ' + x)).join(' / '))
+      {
+        const qq = s14(monta(SUPA))
+        const acr = qq.out.split('\n').filter(l => /^disparador\|(buckets\.)?interno pg_catalog\.RI_FKey_\w+ · \w+\|.* · acreditado \(s14e, 16-oct\)$/.test(l))
+        oraculo('INTERNOS', 'positivo: los ocho internos «acreditado (s14e, 16-oct)», «(internos)» 2 + 6, 8 de 8, y el resumen sin acreditar 0', qq.ok && acr.length === 8 && /^disparador\|\(internos\)\|storage\.objects: 2 · storage\.buckets: 6 · acreditados: 8 de 8: la lista exacta de la s14e \(CTO 16-oct\)$/m.test(qq.out) && /sin acreditar: 0: todos acreditados/.test(qq.out), qq.out.split('\n').filter(l => /interno|\(internos\)|\(resumen\)/.test(l)).join(' / ') || qq.err)
+      }
+      // la familia: cada FK quitada (uno de menos), una FK de mas, otra accion, la FK renombrada, un interno
+      // desactivado, y los dos escenarios de Astra r8 (un disparador propio marcado interno; un acreditado marcado
+      // interno). El efecto de un disparador propio es una secuencia (no se deshace)
+      const desactiva = (t, fn) => `do $d$ begin execute pg_catalog.format('alter table storage.${t} disable trigger %I', (select tgname from pg_catalog.pg_trigger where tgrelid = 'storage.${t}'::regclass and tgisinternal and tgfoid = 'pg_catalog."${fn}"'::regproc order by tgname limit 1)); end $d$;`
+      const EXTRA = `
+create function storage.extra_interna() returns trigger language plpgsql as $f$ begin perform nextval('public.astra_efecto'); return new; end $f$;
+create trigger extra_interna before insert on storage.buckets for each row execute function storage.extra_interna();
+update pg_catalog.pg_trigger set tgisinternal = true where tgname = 'extra_interna';`
+      const familia = [
+        // [nombre, extra, cuantos sin acreditar (internos + otros), lo que tiene que nombrar mercado-001]
+        ['objects_bucketId_fkey quitada (4 de menos)', `alter table storage.objects drop constraint "objects_bucketId_fkey";`, 4, ['interno pg_catalog.RI_FKey_check_ins · objects_bucketId_fkey (difiere: falta', 'buckets.interno pg_catalog.RI_FKey_noaction_del · objects_bucketId_fkey (difiere: falta']],
+        ['s3_multipart_uploads_bucket_id_fkey quitada (2 de menos)', `alter table storage.s3_multipart_uploads drop constraint s3_multipart_uploads_bucket_id_fkey;`, 2, ['buckets.interno pg_catalog.RI_FKey_noaction_upd · s3_multipart_uploads_bucket_id_fkey (difiere: falta']],
+        ['s3_multipart_uploads_parts_bucket_id_fkey quitada (2 de menos)', `alter table storage.s3_multipart_uploads_parts drop constraint s3_multipart_uploads_parts_bucket_id_fkey;`, 2, ['buckets.interno pg_catalog.RI_FKey_noaction_del · s3_multipart_uploads_parts_bucket_id_fkey (difiere: falta']],
+        ['una FK de mas a storage.buckets (public.ajena, ON DELETE CASCADE: 2 de mas)', `create table public.ajena (id serial primary key, b text references storage.buckets(id) on delete cascade);`, 2, ['buckets.interno pg_catalog.RI_FKey_cascade_del · ajena_b_fkey (difiere: interno AFTER DELETE · por fila · relacionada=public.ajena']],
+        ['objects_bucketId_fkey con ON DELETE CASCADE (otra funcion: 1 de mas y 1 de menos)', `alter table storage.objects drop constraint "objects_bucketId_fkey", add constraint "objects_bucketId_fkey" foreign key (bucket_id) references storage.buckets(id) on delete cascade;`, 2, ['buckets.interno pg_catalog.RI_FKey_cascade_del · objects_bucketId_fkey (difiere: interno', 'buckets.interno pg_catalog.RI_FKey_noaction_del · objects_bucketId_fkey (difiere: falta']],
+        ['objects_bucketId_fkey renombrada (4 de mas y 4 de menos)', `alter table storage.objects rename constraint "objects_bucketId_fkey" to objects_bucket_id_fkey;`, 8, ['interno pg_catalog.RI_FKey_check_ins · objects_bucket_id_fkey (difiere: interno', 'interno pg_catalog.RI_FKey_check_ins · objects_bucketId_fkey (difiere: falta']],
+        ['un interno de buckets desactivado (habilitado=D: 1 de mas y 1 de menos)', desactiva('buckets', 'RI_FKey_noaction_upd'), 2, ['habilitado=D']],
+        ['Astra r8: un BEFORE INSERT propio con efecto, marcado interno', EXTRA, 1, ['buckets.interno storage.extra_interna · - (difiere: interno BEFORE INSERT · por fila · relacionada=- · habilitado=O · lenguaje=plpgsql']],
+        ['Astra r8 (variante): enforce_bucket_name_length_trigger marcado interno', `update pg_catalog.pg_trigger set tgisinternal = true where tgname = 'enforce_bucket_name_length_trigger';`, 2, ['buckets.enforce_bucket_name_length_trigger (difiere: falta)', 'buckets.interno storage.enforce_bucket_name_length · - (difiere: interno']],
+      ]
+      ver('control: la familia de internos tiene 3 FK quitadas, una de mas, otra accion, la renombrada, un interno desactivado y los dos de Astra r8', familia.length === 9)
+      const efecto = d => pg.psql(`select last_value || ':' || is_called from public.astra_efecto`, d).out
+      for (const [nombre, extra, k, dice] of familia) {
+        const d = montaT(`create sequence public.astra_efecto;\n${extra}`)
+        const e0 = efecto(d)
+        const qq = s14(d)
+        const lineas = qq.out.split('\n').filter(x => x.startsWith('disparador|'))
+        const noAcr = lineas.filter(l => / · NO ACREDITADO \(difiere: /.test(l))
+        oraculo('INTERNOS', `s14: ${nombre} → ${k} sin acreditar, «(internos)» PARAR y el resumen PARAR`, qq.ok && noAcr.length === k && new RegExp(`^disparador\\|\\(resumen\\)\\|.* · sin acreditar: ${k}: .*PARAR`, 'm').test(qq.out) && /^disparador\|\(internos\)\|.*: NO ACREDITADOS \(lista exacta de la s14e\); PARAR$/m.test(qq.out), noAcr.concat(lineas.filter(l => /\((internos|resumen)\)/.test(l))).join(' / ') || qq.err)
+        const a = estado(d)
+        const r = pg.psql(M1, d)
+        oraculo('INTERNOS', `mercado-001: ${nombre} → aborta antes del INSERT (testigo y efecto sin consumir) nombrandolo, y nada cambia`, !r.ok && /mercado-001: disparadores de storage NO ACREDITADOS: /.test(r.err) && dice.every(x => r.err.includes(x)) && sinInsert(d) && efecto(d) === e0 && estado(d) === a, err1(r))
+      }
+      {
+        // LIMITE declarado: lo acreditado de cada interno es funcion, tabla, restriccion, tabla relacionada, momento y
+        // habilitado (CTO 16-oct: «funcion, tabla y restriccion»). Que la FK sea diferible no cambia nada de eso
+        const d = monta(SUPA + `alter table storage.objects alter constraint "objects_bucketId_fkey" deferrable initially deferred;`)
+        const qq = s14(d)
+        oraculo('INTERNOS', 'limite: objects_bucketId_fkey diferible (misma funcion, tabla, restriccion y momento) se acredita y mercado-001 aplica', qq.ok && /acreditados: 8 de 8: la lista exacta/.test(qq.out) && pg.psql(M1, d).ok, qq.out.split('\n').find(l => l.includes('(internos)')) || qq.err)
+      }
+      const exprI = t => (t.match(/internos_acreditados \(tabla, funcion, restriccion, relacionada, disparo\) as \(values/g) || [])
+      oraculo('INTERNOS', 'la lista de internos esta dentro del bloque compartido (una vez en cada fichero)', exprI(S14).length === 1 && exprI(M1).length === 1)
     }
   }
 
