@@ -25,6 +25,18 @@ const PV = await importa('lib/mercado/publica-v1.mjs')
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
 const CR = await importa('lib/servidor/crear.mjs'), TO = await importa('lib/servidor/tomar.mjs'), SO = await importa('lib/servidor/sobre.mjs'), CO = await importa('lib/servidor/comando.mjs'), FA = await importa('lib/servidor/fase.mjs')
 const CA = await importa('lib/motor/cartera.mjs')
+// R3E3-01 (revisor interno): el camino LARGO de f252152 (antes del retorno temprano), sacado del repositorio a una
+// carpeta temporal, para comparar campo a campo con el mercado bueno
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
+const VIEJO = 'f252152'
+const dirViejo = mkdtempSync(path.join(tmpdir(), 'comando-viejo-'))
+for (const f of execFileSync('git', ['-C', REPO, 'ls-tree', '-r', '--name-only', VIEJO, 'lib/'], { encoding: 'utf8' }).split('\n').filter(f => /\.(mjs|js)$/.test(f))) {
+  mkdirSync(path.join(dirViejo, path.dirname(f)), { recursive: true }); writeFileSync(path.join(dirViejo, f), execFileSync('git', ['-C', REPO, 'show', `${VIEJO}:${f}`]))
+}
+const COviejo = await import(pathToFileURL(path.join(dirViejo, 'lib/servidor/comando.mjs')).href)
 const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const U = iso => Date.parse(iso) / 1000
 const M0 = U('2025-01-06T00:00:00Z'), m = k => M0 + 60 * k
@@ -89,6 +101,19 @@ try {
     const lt = lecturas
     testigos[k] = (await TO.ordenTomar({ actor: AL, cuerpo: { session_id: id, command_id: u(++n), epoca: 1, cliente_id: 'p', forzar: true }, puertos: pu })).cuerpo?.testigo
     ver(`control: ${nombre}: tomada otra vez, sin leer mercado`, !!testigos[k] && lecturas === lt, String(lecturas - lt))
+    {
+      // R3E3-01: el retorno temprano (mercado caido) da el MISMO resultado, campo a campo, que el camino largo de
+      // f252152 con el mercado bueno; y el horizonte confirmado (alcanzado, cortado) es el del estado guardado
+      const fila = await leeSesion(id)
+      const intencion = { tipo: 'avanzar', carga: { hasta: m(60), motivo: 'play' } }
+      const l0 = lecturas
+      const nuevo = await CO.calcula({ fila, intencion, puertos: { almacen: caido } })
+      const largo = await COviejo.calcula({ fila, intencion, puertos: { almacen: mercado } })
+      const e = CA.deserializa(JSON.stringify(fila.estado))
+      const esperado = e.esquema === 'reto@1' ? e.horizonte : e.reloj.cursor
+      oraculo('TERM', `${nombre} · avanzar: el retorno temprano (sin leer mercado) es, campo a campo, el camino largo de ${VIEJO} con el mercado bueno; alcanzado = ${e.esquema === 'reto@1' ? 'el horizonte' : 'el cursor'} guardado y cortado = alcanzado < hasta`,
+        lecturas === l0 && tx(nuevo) === tx(largo) && nuevo.resumen.alcanzado === esperado && nuevo.resumen.cortado === (esperado < m(60)), tx({ lecturas: lecturas - l0, iguales: tx(nuevo) === tx(largo), alc: nuevo.resumen.alcanzado, esperado, cortado: nuevo.resumen.cortado }))
+    }
     for (const tipo of Object.keys(CARGAS)) {
       sinTasa()
       const v0 = version(id), l0 = lecturas
@@ -98,7 +123,9 @@ try {
       const espera = tipo === 'avanzar' ? { resultado: 'aceptado', motivo: null, det: { motivo: 'sesion_terminada' }, causa }
         : tipo === 'checkpoint' ? { resultado: 'aceptado', motivo: null, det: null, causa: undefined }
           : { resultado: 'rechazado', motivo: 'sesion_terminada', det: null, causa }
-      const ok = r.http === 200 && lecturas === l0 && g?.resultado === espera.resultado && g?.motivo === espera.motivo && tx(g?.resumen?.detencion ?? null) === tx(espera.det) && g?.resumen?.causa === espera.causa
+      const alc = (() => { const e = estadoDe(id); return e.esquema === 'reto@1' ? e.horizonte : e.reloj.cursor })()
+      const ok = r.http === 200 && lecturas === l0 && g?.resultado === espera.resultado
+        && (tipo !== 'avanzar' || (g?.resumen?.alcanzado === alc && g?.resumen?.cortado === (alc < m(60)) && r.cuerpo?.alcanzado === alc && r.cuerpo?.cortado === (alc < m(60)))) && g?.motivo === espera.motivo && tx(g?.resumen?.detencion ?? null) === tx(espera.det) && g?.resumen?.causa === espera.causa
         && (tipo !== 'avanzar' || (g?.resumen?.eventos === 0 && version(id) === v0))
       oraculo('TERM', `${nombre} · ${tipo}: 200, cero lecturas de mercado, recibo ${espera.resultado}${espera.motivo ? ' ' + espera.motivo : ''}${espera.det ? ' con detencion sesion_terminada' : ''}${espera.causa ? ' y causa ' + espera.causa : ', sin causa'}`, ok, tx({ http: r.http, motivo: r.cuerpo?.motivo, lecturas: lecturas - l0, g }))
       sinTasa()
@@ -112,5 +139,5 @@ try {
     oraculo('TERM', `${nombre} · avanzar-fase (sin hija): ${k === 1001 ? '409 fase_no_superada' : k === 1002 ? '200 completado (la ultima fase)' : 'no es un reto: la RPC lo rechaza'}, cero lecturas de mercado`, esperaFase && lecturas === l0, tx({ http: f.http, motivo: f.cuerpo?.motivo, lecturas: lecturas - l0 }))
   }
   ver(`control: el almacen caido falla de verdad si se lee (lecturas contadas: ${lecturas})`, await caido.lee('v1/actual.json').then(() => false, e => /caido/.test(e.message)))
-} finally { pg.cierra() }
+} finally { pg.cierra(); rmSync(dirViejo, { recursive: true, force: true }) }
 fin()

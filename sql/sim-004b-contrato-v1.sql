@@ -824,7 +824,9 @@ BEGIN
                           ELSE 'dueño=' || pg_get_userbyid(p.proowner) END,
                      encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex'),
                      coalesce((SELECT string_agg(g, ',' ORDER BY g COLLATE "C") FROM (
-                                 SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END AS g
+                                 -- R3E3-03 (revisor interno): la opcion de concesion tambien cuenta
+                                 SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END
+                                        || CASE WHEN a.is_grantable THEN ' (con opcion de concesion)' ELSE '' END AS g
                                    FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
                                   WHERE a.grantee <> p.proowner AND a.privilege_type = 'EXECUTE') e), ''),
                      -- E3R2-01 (Astra r2; CTO 16-oct): TODOS los atributos de pg_proc que cambian la ejecucion (STRICT,
@@ -839,6 +841,15 @@ BEGIN
         f, coalesce(v_actual, '(no existe)'), v_esperado;
     END IF;
   END LOOP;
+  -- R3E3-04 (revisor interno): ninguna otra funcion de public con el nombre de una acreditada (una sobrecarga
+  -- cambia que resuelven las llamadas por nombre, de PostgREST o internas)
+  SELECT string_agg(p.oid::regprocedure::text, ', ' ORDER BY p.oid::regprocedure::text COLLATE "C") INTO v_txt
+    FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.proname IN (SELECT split_part(x, '(', 1) FROM unnest(ARRAY(SELECT v_funcs[i][1] FROM generate_subscripts(v_funcs, 1) i) || v_puerta_fn[1]) x)
+     AND p.oid NOT IN (SELECT to_regprocedure('public.' || x) FROM unnest(ARRAY(SELECT v_funcs[i][1] FROM generate_subscripts(v_funcs, 1) i) || v_puerta_fn[1]) x
+                        WHERE to_regprocedure('public.' || x) IS NOT NULL);
+  IF v_txt IS NOT NULL THEN RAISE EXCEPTION 'sim-004b: funciones de public con el nombre de una acreditada y otra firma: %', v_txt; END IF;
   -- 4.5 los disparadores, el inventario EXACTO (definicion completa, tipo y si esta activo) de las tablas que
   -- escriben las RPC y los disparadores: el de la preparatoria (estado 1, o 2 con la puerta) y, en las demas,
   -- solo los de sus FK

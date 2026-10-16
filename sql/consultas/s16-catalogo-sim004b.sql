@@ -91,7 +91,9 @@ fun as (
                                 else 'dueño=' || pg_get_userbyid(p.proowner) end,
                            encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex'),
                            coalesce((select string_agg(g, ',' order by g collate "C") from (
-                                       select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end g
+                                       -- R3E3-03 (revisor interno): la opcion de concesion tambien cuenta
+                                       select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end
+                                              || case when a.is_grantable then ' (con opcion de concesion)' else '' end g
                                          from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
                                         where a.grantee <> p.proowner and a.privilege_type = 'EXECUTE') x), ''),
                            -- E3R2-01 (Astra r2; CTO 16-oct): todos los atributos de pg_proc y el md5 de pg_get_functiondef (la misma expresion que sim-004b)
@@ -209,11 +211,16 @@ fsust as (
            'anon=' || has_function_privilege('anon', p.oid, 'EXECUTE') || ' authenticated=' || has_function_privilege('authenticated', p.oid, 'EXECUTE')
            || ' PUBLIC=' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0)
            || ' service_role=' || has_function_privilege('service_role', p.oid, 'EXECUTE')
+           -- R3E3-03: los receptores de EXECUTE, con su opcion de concesion (CREATE OR REPLACE conserva la ACL)
+           || ' receptores=' || coalesce((select string_agg(case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end
+                                                           || case when a.is_grantable then ' (con opcion de concesion)' else '' end, ',' order by a.grantee::regrole::text collate "C")
+                                          from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                                         where a.grantee <> p.proowner and a.privilege_type = 'EXECUTE'), '')
            || case when (select viejas = 0 and nuevas = 2 and cuerpos = 3 from estado)
                    then ' definer=' || p.prosecdef || ' search_path_vacio=' || coalesce('search_path=""' = any (p.proconfig), false)
                         -- E3R2-01: con sim-004b aplicada, todos sus atributos (antes, su CREATE OR REPLACE los vuelve a fijar)
                         || ' atributos=' || concat_ws('|', 'strict=' || p.proisstrict::text, 'leakproof=' || p.proleakproof::text, 'parallel=' || p.proparallel::text, 'kind=' || p.prokind::text, 'retset=' || p.proretset::text, 'ret=' || format_type(p.prorettype, NULL), 'args=' || coalesce((SELECT string_agg(format_type(u.t, NULL), ',' ORDER BY u.n) FROM unnest(p.proargtypes::oid[]) WITH ORDINALITY u(t, n)), ''), 'modes=' || coalesce(p.proargmodes::text, '-'), 'names=' || coalesce(array_to_string(p.proargnames, ','), '-'), 'defaults=' || coalesce(pg_get_expr(p.proargdefaults, 0), '-'), 'ndefaults=' || p.pronargdefaults::text, 'cost=' || p.procost::text, 'rows=' || p.prorows::text, 'def=' || md5(pg_get_functiondef(p.oid))) else '' end end medido,
-         'anon=false authenticated=false PUBLIC=false service_role=true'
+         'anon=false authenticated=false PUBLIC=false service_role=true receptores=service_role'
            || case when (select viejas = 0 and nuevas = 2 and cuerpos = 3 from estado) then ' definer=true search_path_vacio=true atributos=' || s.atr else '' end esperado
     from sust s left join pg_proc p on p.oid = to_regprocedure('public.' || s.firma)),
 restr_esp(rel, nombre, def) as (values
@@ -336,6 +343,16 @@ filas as (
   select 3.5, f.firma, 'funcion_sustituida', f.firma,
          coalesce(f.medido, 'NO EXISTE') || ' · ' || case when f.medido is not distinct from f.esperado then 'coincide' else 'DIFIERE (sim-004b espera ' || f.esperado || ')' end
     from fsust f
+  union all
+  -- R3E3-04 (revisor interno): ninguna otra funcion de public con el nombre de una acreditada (una sobrecarga
+  -- cambia que resuelven las llamadas por nombre)
+  select 3.6, 'public', 'homonimos', 'public',
+         coalesce((select 'de mas: ' || string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text collate "C") || ' · DIFIERE'
+                     from pg_proc p
+                    where p.pronamespace = 'public'::regnamespace
+                      and p.proname in (select split_part(firma, '(', 1) from fun_esp union select split_part(firma, '(', 1) from sust)
+                      and p.oid not in (select to_regprocedure('public.' || firma) from fun_esp where to_regprocedure('public.' || firma) is not null
+                                        union select to_regprocedure('public.' || firma) from sust where to_regprocedure('public.' || firma) is not null)), 'ninguno · coincide')
   union all
   select 5, a.t, 'acl_tabla', a.t,
          coalesce(a.medido, 'NO EXISTE') || ' · '

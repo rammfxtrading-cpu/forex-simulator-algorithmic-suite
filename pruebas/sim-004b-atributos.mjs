@@ -104,5 +104,27 @@ try {
     const r = aplica(d)
     oraculo('ATR', `${nombre} (${cuando === 'despues' ? 'reejecucion' : 'primera aplicacion'}): s16 DIFIERE en ${nom} y veredicto DIFIEREN; sim-004b aborta nombrandola y nada cambia`, q.ok && /DIFIERE/.test(fila) && /^veredicto\|DIFIEREN/m.test(q.out) && !r.ok && /^sim-004b: /.test(err1(r)) && err1(r).includes(`public.${nom}(`) && foto(d) === a, `${fila.slice(0, 120)} · ${err1(r).slice(0, 160)}`)
   }
+
+  titulo('R3E3-03 y R3E3-04 (revisor interno): EXECUTE con opcion de concesion, y homonimos')
+  for (const [nombre, fn, mutante, cuando, fila] of [
+    ['EXECUTE con opcion de concesion a service_role (una conservada)', 'sim_borrar_sesion(uuid,uuid)', 'grant execute on function public.sim_borrar_sesion(uuid,uuid) to service_role with grant option;', 'antes', 'funcion'],
+    ['EXECUTE con opcion de concesion a service_role (una sustituida, con sim-004b aplicada)', FASE, `grant execute on function public.${FASE} to service_role with grant option;`, 'despues', 'funcion_sustituida'],
+    ['un homonimo: sim_error(integer,text), otra firma', 'sim_error(integer,text)', "create function public.sim_error(integer, text) returns jsonb language sql security definer set search_path = '' as $x$ select '{}'::jsonb $x$;", 'antes', 'homonimos'],
+    ['un homonimo de una sustituida: sim_comando con otra firma, con sim-004b aplicada', 'sim_comando(text)', "create function public.sim_comando(p_actor text) returns jsonb language sql as $x$ select '{}'::jsonb $x$;", 'despues', 'homonimos'],
+  ]) {
+    const d = nueva(cuando === 'despues')
+    const mu = m.pg.psql(mutante, d)
+    if (!mu.ok) { oraculo('ATR', `${nombre}: el mutante se aplica`, false, err1(mu)); continue }
+    const nom = fn.split('(')[0]
+    const q = s16(d)
+    const linea = q.out.split('\n').find(l => fila === 'homonimos' ? l.startsWith('homonimos|') : new RegExp(`^${fila}\\|${nom}\\(`).test(l)) || ''
+    const a = foto(d)
+    const r = aplica(d)
+    oraculo('ATR', `${nombre}: s16 DIFIERE (${fila}) y veredicto DIFIEREN; sim-004b aborta nombrandola y nada cambia`, q.ok && /DIFIERE/.test(linea) && (fila !== 'homonimos' || linea.includes(fn)) && /^veredicto\|DIFIEREN/m.test(q.out) && !r.ok && /^sim-004b: /.test(err1(r)) && err1(r).includes(fila === 'homonimos' ? fn : `public.${nom}(`) && foto(d) === a, `${linea.slice(0, 160)} · ${err1(r).slice(0, 160)}`)
+  }
+  {
+    const q = s16(nueva(false))
+    ver('control: sin homonimos, la fila «homonimos» dice ninguno · coincide', /^homonimos\|public\|ninguno · coincide$/m.test(q.out), (q.out.split('\n').find(l => l.startsWith('homonimos')) || q.err).slice(0, 160))
+  }
 } finally { m.cierra() }
 fin()
