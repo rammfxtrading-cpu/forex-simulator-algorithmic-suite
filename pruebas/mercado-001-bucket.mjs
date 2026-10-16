@@ -572,7 +572,7 @@ begin
 end;
 $f$;`)
     const qB = s14(dB)
-    oraculo('S14-CTO', 's14: una funcion de buckets con el cuerpo cambiado → su disparador NO ACREDITADO, los demas acreditados, y el resumen manda PARAR', qB.ok && /^disparador\|buckets\.enforce_bucket_name_length_trigger\|BEFORE INSERT\/UPDATE · por fila · storage\.enforce_bucket_name_length · funcion de storage · plpgsql · SECURITY INVOKER · dueño=supabase_storage_admin · proconfig=- · volatilidad=v · md5 del cuerpo [0-9a-f]{12} · NO ACREDITADO \(difiere: md5\)$/m.test(qB.out) && (qB.out.match(/^disparador\|buckets\.[a-z_]+\|.* · acreditado \(CTO 14-oct\)$/mg) || []).length === 4 && /^disparador\|\(resumen\)\|storage\.objects: 2 \(1 por sentencia\) · storage\.buckets: 5 · sin acreditar: 1: la sonda y el INSERT del bucket de mercado-001 los disparan; PARAR hasta que el CTO acredite/m.test(qB.out), qB.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || qB.err)
+    oraculo('S14-CTO', 's14: una funcion de buckets con el cuerpo cambiado → su disparador NO ACREDITADO, los demas acreditados, y el resumen manda PARAR', qB.ok && /^disparador\|buckets\.enforce_bucket_name_length_trigger\|BEFORE INSERT\/UPDATE · por fila · storage\.enforce_bucket_name_length · funcion de storage · plpgsql · SECURITY INVOKER · dueño=supabase_storage_admin · proconfig=- · volatilidad=v · md5 del cuerpo [0-9a-f]{12} · NO ACREDITADO \(difiere: md5, atributos\)$/m.test(qB.out) && (qB.out.match(/^disparador\|buckets\.[a-z_]+\|.* · acreditado \(CTO 14-oct\)$/mg) || []).length === 4 && /^disparador\|\(resumen\)\|storage\.objects: 2 \(1 por sentencia\) · storage\.buckets: 5 · sin acreditar: 1: la sonda y el INSERT del bucket de mercado-001 los disparan; PARAR hasta que el CTO acredite/m.test(qB.out), qB.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || qB.err)
     const cuerpo = qB.out.split('\n').filter(x => x.startsWith('cuerpo|storage.enforce_bucket_name_length ')).map(x => x.split('|').slice(2).join('|'))
     const md5B = pg.psql(`select md5(prosrc) from pg_proc where proname = 'enforce_bucket_name_length'`, dB).out
     oraculo('S14-CTO', 's14: el cuerpo de la funcion no acreditada, linea a linea, reconstruye prosrc byte a byte; las acreditadas no sacan cuerpo', cuerpo.length > 2 && createHash('md5').update(cuerpo.join('\n')).digest('hex') === md5B && qB.out.split('\n').filter(x => x.startsWith('cuerpo|')).every(x => x.startsWith('cuerpo|storage.enforce_bucket_name_length ')), `${cuerpo.length} lineas · ${md5B}`)
@@ -585,7 +585,7 @@ $f$;`)
       ['otra definicion (BEFORE UPDATE OF name)', `drop trigger update_objects_updated_at on storage.objects; create trigger update_objects_updated_at before update of name on storage.objects for each row execute function storage.update_updated_at_column();`],
     ]) {
       const q = s14(monta(extra))
-      oraculo('S14-CTO', `s14: ${nombre} → NO ACREDITADO y PARAR`, q.ok && /^disparador\|(protect_objects_delete|update_objects_updated_at)\|.* · NO ACREDITADO \(difiere: (md5|habilitado|definicion)\)$/m.test(q.out) && new RegExp(`^disparador\\|\\(resumen\\)\\|.*sin acreditar: ${cuantos ?? 1}: .*PARAR`, 'm').test(q.out), q.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || q.err)
+      oraculo('S14-CTO', `s14: ${nombre} → NO ACREDITADO y PARAR`, q.ok && /^disparador\|(protect_objects_delete|update_objects_updated_at)\|.* · NO ACREDITADO \(difiere: (md5, atributos|habilitado|definicion)\)$/m.test(q.out) && new RegExp(`^disparador\\|\\(resumen\\)\\|.*sin acreditar: ${cuantos ?? 1}: .*PARAR`, 'm').test(q.out), q.out.split('\n').filter(x => /disparador/.test(x)).join(' / ') || q.err)
     }
     const dAl = monta(SUPA + `alter table storage.objects enable always trigger protect_objects_delete;`)
     const aAl = estado(dAl)
@@ -610,13 +610,13 @@ $f$;`)
     const EFECTO = `create sequence public.astra_efecto;
 create function public.length(text) returns integer language plpgsql as $x$ begin perform nextval('public.astra_efecto'); return 7; end $x$;`
     const CASOS = [
-      ['Astra: SET search_path = public, pg_catalog en enforce_bucket_name_length, con un public.length sintetico', `${EFECTO}\nalter function storage.enforce_bucket_name_length() set search_path = public, pg_catalog;`, ['buckets.enforce_bucket_name_length_trigger'], 'proconfig'],
-      ['Astra: SECURITY DEFINER en protect_bucket_control_columns', `alter function storage.protect_bucket_control_columns() security definer;`, ['buckets.protect_bucket_control_insert', 'buckets.protect_bucket_control_update'], 'seguridad'],
+      ['Astra: SET search_path = public, pg_catalog en enforce_bucket_name_length, con un public.length sintetico', `${EFECTO}\nalter function storage.enforce_bucket_name_length() set search_path = public, pg_catalog;`, ['buckets.enforce_bucket_name_length_trigger'], 'proconfig, atributos'],
+      ['Astra: SECURITY DEFINER en protect_bucket_control_columns', `alter function storage.protect_bucket_control_columns() security definer;`, ['buckets.protect_bucket_control_insert', 'buckets.protect_bucket_control_update'], 'seguridad, atributos'],
       ['otro dueño de update_updated_at_column', `alter function storage.update_updated_at_column() owner to postgres;`, ['update_objects_updated_at'], 'dueño'],
-      ['un proconfig añadido sin cambiar el cuerpo (enforce_bucket_lifecycle_service_role, lock_timeout)', `alter function storage.enforce_bucket_lifecycle_service_role() set lock_timeout = '1s';`, ['buckets.protect_bucket_control_update_role'], 'proconfig'],
-      ['un proconfig añadido a una que no tenia (protect_delete, search_path), el cuerpo igual', `alter function storage.protect_delete() set search_path = public, pg_catalog;`, ['protect_objects_delete', 'buckets.protect_buckets_delete'], 'proconfig'],
-      ['otra volatilidad (enforce_bucket_name_length STABLE)', `alter function storage.enforce_bucket_name_length() stable;`, ['buckets.enforce_bucket_name_length_trigger'], 'volatilidad'],
-      ['SECURITY DEFINER en protect_delete (el md5 igual)', `alter function storage.protect_delete() security definer;`, ['protect_objects_delete', 'buckets.protect_buckets_delete'], 'seguridad'],
+      ['un proconfig añadido sin cambiar el cuerpo (enforce_bucket_lifecycle_service_role, lock_timeout)', `alter function storage.enforce_bucket_lifecycle_service_role() set lock_timeout = '1s';`, ['buckets.protect_bucket_control_update_role'], 'proconfig, atributos'],
+      ['un proconfig añadido a una que no tenia (protect_delete, search_path), el cuerpo igual', `alter function storage.protect_delete() set search_path = public, pg_catalog;`, ['protect_objects_delete', 'buckets.protect_buckets_delete'], 'proconfig, atributos'],
+      ['otra volatilidad (enforce_bucket_name_length STABLE)', `alter function storage.enforce_bucket_name_length() stable;`, ['buckets.enforce_bucket_name_length_trigger'], 'volatilidad, atributos'],
+      ['SECURITY DEFINER en protect_delete (el md5 igual)', `alter function storage.protect_delete() security definer;`, ['protect_objects_delete', 'buckets.protect_buckets_delete'], 'seguridad, atributos'],
     ]
     for (const [nombre, extra, cuales, campo] of CASOS) {
       const d = monta(SUPA + extra)
@@ -923,13 +923,41 @@ update pg_catalog.pg_trigger set tgisinternal = true where tgname = 'extra_inter
         ['s3_multipart_uploads_bucket_id_fkey quitada (2 de menos)', `alter table storage.s3_multipart_uploads drop constraint s3_multipart_uploads_bucket_id_fkey;`, 2, ['buckets.interno pg_catalog.RI_FKey_noaction_upd · s3_multipart_uploads_bucket_id_fkey (difiere: falta']],
         ['s3_multipart_uploads_parts_bucket_id_fkey quitada (2 de menos)', `alter table storage.s3_multipart_uploads_parts drop constraint s3_multipart_uploads_parts_bucket_id_fkey;`, 2, ['buckets.interno pg_catalog.RI_FKey_noaction_del · s3_multipart_uploads_parts_bucket_id_fkey (difiere: falta']],
         ['una FK de mas a storage.buckets (public.ajena, ON DELETE CASCADE: 2 de mas)', `create table public.ajena (id serial primary key, b text references storage.buckets(id) on delete cascade);`, 2, ['buckets.interno pg_catalog.RI_FKey_cascade_del · ajena_b_fkey (difiere: interno AFTER DELETE · por fila · relacionada=public.ajena']],
-        ['objects_bucketId_fkey con ON DELETE CASCADE (otra funcion: 1 de mas y 1 de menos)', `alter table storage.objects drop constraint "objects_bucketId_fkey", add constraint "objects_bucketId_fkey" foreign key (bucket_id) references storage.buckets(id) on delete cascade;`, 2, ['buckets.interno pg_catalog.RI_FKey_cascade_del · objects_bucketId_fkey (difiere: interno', 'buckets.interno pg_catalog.RI_FKey_noaction_del · objects_bucketId_fkey (difiere: falta']],
+        ['objects_bucketId_fkey con ON DELETE CASCADE (otra funcion y otra definicion de la FK: 4 de mas y 4 de menos)', `alter table storage.objects drop constraint "objects_bucketId_fkey", add constraint "objects_bucketId_fkey" foreign key (bucket_id) references storage.buckets(id) on delete cascade;`, 8, ['buckets.interno pg_catalog.RI_FKey_cascade_del · objects_bucketId_fkey (difiere: interno', 'buckets.interno pg_catalog.RI_FKey_noaction_del · objects_bucketId_fkey (difiere: falta']],
         ['objects_bucketId_fkey renombrada (4 de mas y 4 de menos)', `alter table storage.objects rename constraint "objects_bucketId_fkey" to objects_bucket_id_fkey;`, 8, ['interno pg_catalog.RI_FKey_check_ins · objects_bucket_id_fkey (difiere: interno', 'interno pg_catalog.RI_FKey_check_ins · objects_bucketId_fkey (difiere: falta']],
         ['un interno de buckets desactivado (habilitado=D: 1 de mas y 1 de menos)', desactiva('buckets', 'RI_FKey_noaction_upd'), 2, ['habilitado=D']],
         ['Astra r8: un BEFORE INSERT propio con efecto, marcado interno', EXTRA, 1, ['buckets.interno storage.extra_interna · - (difiere: interno BEFORE INSERT · por fila · relacionada=- · habilitado=O · lenguaje=plpgsql']],
         ['Astra r8 (variante): enforce_bucket_name_length_trigger marcado interno', `update pg_catalog.pg_trigger set tgisinternal = true where tgname = 'enforce_bucket_name_length_trigger';`, 2, ['buckets.enforce_bucket_name_length_trigger (difiere: falta)', 'buckets.interno storage.enforce_bucket_name_length · - (difiere: interno']],
+        // CTO 16-oct: la FK tal como la midio la s14e (no diferible); antes era un limite declarado
+        ['objects_bucketId_fkey diferible (definicion de la FK: 4 de mas y 4 de menos)', `alter table storage.objects alter constraint "objects_bucketId_fkey" deferrable initially deferred;`, 8, ['interno pg_catalog.RI_FKey_check_ins · objects_bucketId_fkey (difiere: interno AFTER INSERT · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: definicion de la FK']],
+        // R9I-02 (revisor interno): un «||» ajeno (text, name) en public que disfrazaria cascade de noaction en el texto
+        ['R9I-02: CASCADE con un «||» (text, name) ajeno en public que lo disfraza', `alter table storage.objects drop constraint "objects_bucketId_fkey", add constraint "objects_bucketId_fkey" foreign key (bucket_id) references storage.buckets(id) on delete cascade;
+create function public.cat_tn(text, name) returns text language sql immutable as $x$ select replace($1 || $2::text, 'cascade', 'noaction') $x$;
+create operator public.|| (leftarg = text, rightarg = name, function = public.cat_tn);`, 8, ['buckets.interno pg_catalog.RI_FKey_cascade_del · objects_bucketId_fkey (difiere: interno']],
       ]
-      ver('control: la familia de internos tiene 3 FK quitadas, una de mas, otra accion, la renombrada, un interno desactivado y los dos de Astra r8', familia.length === 9)
+      // R9I-01 (revisor interno): GEMELOS. Un RI_FKey_check_* creado a mano como constraint trigger, marcado interno y
+      // colgado de objects_bucketId_fkey (como el de Astra r8, tocando el catalogo). Familia generada: exacto (repetido),
+      // con WHEN de usuario con efecto, con argumentos, con columnas, con otra tabla relacionada y diferible; y el
+      // sustituto (el real borrado del catalogo y el gemelo con WHEN en su sitio)
+      const CUANDO = `create function public.cuando() returns boolean language plpgsql as $f$ begin perform nextval('public.astra_efecto'); return true; end $f$;`
+      const gemelo = ({ momento = 'after insert', desde = 'storage.buckets', cuando = '', fn = 'RI_FKey_check_ins', args = '', dif = '', borra = false } = {}) => `${CUANDO}
+create constraint trigger gemelo ${momento} on storage.objects from ${desde} ${dif} for each row ${cuando} execute function pg_catalog."${fn}"(${args});
+update pg_catalog.pg_trigger set tgisinternal = true, tgconstraint = (select oid from pg_catalog.pg_constraint where conname = 'objects_bucketId_fkey'),
+  tgconstrindid = (select conindid from pg_catalog.pg_constraint where conname = 'objects_bucketId_fkey') where tgname = 'gemelo';
+delete from pg_catalog.pg_constraint where conname = 'gemelo';${borra ? `
+delete from pg_catalog.pg_trigger where tgisinternal and tgrelid = 'storage.objects'::regclass and tgfoid = 'pg_catalog."RI_FKey_check_ins"'::regproc and tgname <> 'gemelo';` : ''}`
+      const CI = 'interno pg_catalog.RI_FKey_check_ins · objects_bucketId_fkey (difiere: '
+      const gemelos = [
+        ['R9I-01: gemelo exacto de RI_FKey_check_ins (repetido)', gemelo(), 1, [`${CI}repetido (2 internos AFTER INSERT · por fila`]],
+        ['R9I-01: gemelo con WHEN de usuario con efecto', gemelo({ cuando: 'when (public.cuando())' }), 1, [`${CI}interno AFTER INSERT · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: WHEN`]],
+        ['R9I-01: gemelo con argumentos', gemelo({ args: `'x'` }), 1, [`${CI}interno AFTER INSERT · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: argumentos`]],
+        ['R9I-01: gemelo de RI_FKey_check_upd con columnas (UPDATE OF bucket_id)', gemelo({ momento: 'after update of bucket_id', fn: 'RI_FKey_check_upd' }), 1, ['interno pg_catalog.RI_FKey_check_upd · objects_bucketId_fkey (difiere: interno AFTER UPDATE · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: columnas']],
+        ['R9I-01: gemelo con otra tabla relacionada (FROM storage.s3_multipart_uploads)', gemelo({ desde: 'storage.s3_multipart_uploads' }), 1, [`${CI}interno AFTER INSERT · por fila · relacionada=storage.s3_multipart_uploads · habilitado=O · lenguaje=internal · forma: tablas de la FK`]],
+        ['R9I-01: gemelo diferible', gemelo({ dif: 'deferrable initially deferred' }), 1, [`${CI}interno AFTER INSERT · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: diferible`]],
+        ['R9I-01: sustituto (el real borrado del catalogo, el gemelo con WHEN en su sitio)', gemelo({ cuando: 'when (public.cuando())', borra: true }), 2, [`${CI}interno AFTER INSERT · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: WHEN`, `${CI}falta (interno AFTER INSERT · por fila`]],
+      ]
+      familia.push(...gemelos)
+      ver('control: la familia de internos tiene 3 FK quitadas, una de mas, otra accion, la renombrada, un interno desactivado, los dos de Astra r8, la diferible, el «||» ajeno y 7 gemelos', familia.length === 9 + 2 + 7)
       const efecto = d => pg.psql(`select last_value || ':' || is_called from public.astra_efecto`, d).out
       for (const [nombre, extra, k, dice] of familia) {
         const d = montaT(`create sequence public.astra_efecto;\n${extra}`)
@@ -942,15 +970,62 @@ update pg_catalog.pg_trigger set tgisinternal = true where tgname = 'extra_inter
         const r = pg.psql(M1, d)
         oraculo('INTERNOS', `mercado-001: ${nombre} → aborta antes del INSERT (testigo y efecto sin consumir) nombrandolo, y nada cambia`, !r.ok && /mercado-001: disparadores de storage NO ACREDITADOS: /.test(r.err) && dice.every(x => r.err.includes(x)) && sinInsert(d) && efecto(d) === e0 && estado(d) === a, err1(r))
       }
-      {
-        // LIMITE declarado: lo acreditado de cada interno es funcion, tabla, restriccion, tabla relacionada, momento y
-        // habilitado (CTO 16-oct: «funcion, tabla y restriccion»). Que la FK sea diferible no cambia nada de eso
-        const d = monta(SUPA + `alter table storage.objects alter constraint "objects_bucketId_fkey" deferrable initially deferred;`)
-        const qq = s14(d)
-        oraculo('INTERNOS', 'limite: objects_bucketId_fkey diferible (misma funcion, tabla, restriccion y momento) se acredita y mercado-001 aplica', qq.ok && /acreditados: 8 de 8: la lista exacta/.test(qq.out) && pg.psql(M1, d).ok, qq.out.split('\n').find(l => l.includes('(internos)')) || qq.err)
-      }
       const exprI = t => (t.match(/internos_acreditados \(tabla, funcion, restriccion, relacionada, disparo\) as \(values/g) || [])
       oraculo('INTERNOS', 'la lista de internos esta dentro del bloque compartido (una vez en cada fichero)', exprI(S14).length === 1 && exprI(M1).length === 1)
+    }
+
+    titulo('17 · CTO 16-oct (la familia de E3R2-01): todos los atributos de pg_proc de las funciones acreditadas y el md5 de pg_get_functiondef')
+    {
+      // Sobre storage.enforce_bucket_name_length (la dispara el INSERT del bucket de mercado-001). Los que una funcion
+      // de disparador no admite por DDL (no tiene argumentos declarados, no devuelve un conjunto) se ponen tocando el
+      // catalogo, como los de Astra r8: se tienen que ver igual. Cada uno: s14 NO ACREDITADO (difiere: atributos) y
+      // PARAR; mercado-001 aborta antes del INSERT (testigo sin consumir) y nada cambia
+      const F = 'storage.enforce_bucket_name_length()'
+      const cat = set => `update pg_catalog.pg_proc set ${set} where oid = '${F}'::regprocedure;`
+      const ATRIB = [
+        ['proisstrict · STRICT', `alter function ${F} strict;`],
+        ['proleakproof · LEAKPROOF', `alter function ${F} leakproof;`],
+        ['proparallel · PARALLEL SAFE', `alter function ${F} parallel safe;`],
+        ['prokind · procedimiento (catalogo)', cat("prokind = 'p'")],
+        ['proretset · devuelve un conjunto (catalogo)', cat('proretset = true')],
+        ['prorettype · devuelve otra cosa (catalogo)', cat("prorettype = 'event_trigger'::regtype")],
+        ['proargtypes · un argumento declarado (catalogo)', cat("pronargs = 1, proargtypes = '25'::oidvector")],
+        ['proargmodes · modos (catalogo)', cat("proargmodes = '{o}', proallargtypes = '{25}'")],
+        ['proargnames · nombres (catalogo, con un argumento declarado para que sea coherente)', cat("pronargs = 1, proargtypes = '25'::oidvector, proargnames = '{x}'")],
+        ['proargdefaults · un valor por defecto (catalogo)', cat("pronargs = 1, proargtypes = '25'::oidvector, pronargdefaults = 1, proargdefaults = (select proargdefaults from pg_catalog.pg_proc where proargdefaults is not null limit 1)")],
+        ['pronargdefaults · el recuento solo (catalogo)', cat('pronargdefaults = 1')],
+        ['provolatile · STABLE', `alter function ${F} stable;`],
+        ['prosecdef · SECURITY DEFINER', `alter function ${F} security definer;`],
+        ['proconfig · SET work_mem', `alter function ${F} set work_mem = '64kB';`],
+        ['procost · COST 7', `alter function ${F} cost 7;`],
+        ['prorows · ROWS 5 (catalogo; ALTER no lo admite sin conjunto)', cat('prorows = 5')],
+        ['solo pg_get_functiondef · SUPPORT (prosupport, catalogo)', cat("prosupport = 'pg_catalog.textlike_support'::regproc")],
+      ]
+      ver('control: la familia de atributos tiene los 16 pedidos y el de solo pg_get_functiondef', ATRIB.length === 17)
+      {
+        // control: el montaje tiene las funciones de produccion con TODOS sus atributos. La s14f (la que corrio Ramon el
+        // 16-oct) sobre el montaje da, fila a fila, la salida literal de produccion
+        const S14F = lee('sql/consultas/s14f-atributos-funciones-storage.sql')
+        const literal = lee('sql/consultas/salidas/s14f-atributos-funciones-storage-2026-10-16.csv').split('\n').filter(l => /^(funcion|resumen),/.test(l))
+          .map(l => { const k = /^([^,]+),([^,]+),(.*)$/.exec(l); return `${k[1]}|${k[2]}|${k[3]}` }).sort()
+        const enMontaje = pg.psql(`begin read only;\n${S14F}\nrollback;`, monta(SUPA)).out.split('\n').filter(l => /^(funcion|resumen)\|/.test(l)).sort()
+        ver(`control: el montaje reproduce la s14f de produccion (${literal.length} filas: las siete funciones con todos sus atributos y el md5 de pg_get_functiondef)`, literal.length === 8 && JSON.stringify(enMontaje) === JSON.stringify(literal), enMontaje.filter(x => !literal.includes(x)).concat(literal.filter(x => !enMontaje.includes(x)).map(x => 'falta: ' + x)).join(' / ').slice(0, 400))
+      }
+      {
+        const qq = s14(monta(SUPA))
+        ver('control: con las funciones medidas, los siete acreditados (atributos incluidos) y el resumen sin acreditar 0', qq.ok && /sin acreditar: 0: todos acreditados/.test(qq.out) && !/difiere: [^)]*atributos/.test(qq.out), qq.out.split('\n').filter(l => /\(resumen\)/.test(l)).join(' / ') || qq.err)
+      }
+      for (const [nombre, mutante] of ATRIB) {
+        const d = montaT(mutante)
+        const qq = s14(d)
+        const fila = qq.out.split('\n').find(l => l.startsWith('disparador|buckets.enforce_bucket_name_length_trigger|')) || ''
+        oraculo('ATRIB', `s14: ${nombre} → enforce_bucket_name_length_trigger NO ACREDITADO (difiere: … atributos) y PARAR`, qq.ok && /NO ACREDITADO \(difiere: [^)]*atributos\)$/.test(fila) && /^disparador\|\(resumen\)\|.* · sin acreditar: [1-9]\d*: .*PARAR/m.test(qq.out), fila.slice(-160) || qq.err.slice(0, 200))
+        const a = estado(d)
+        const r = pg.psql(M1, d)
+        oraculo('ATRIB', `mercado-001: ${nombre} → aborta antes del INSERT (testigo sin consumir) nombrando «atributos», y nada cambia`, !r.ok && /buckets\.enforce_bucket_name_length_trigger \(difiere: [^)]*atributos\)/.test(r.err) && sinInsert(d) && estado(d) === a, err1(r))
+      }
+      const exprA = t => (t.match(/pg_catalog\.concat\('def=', pg_catalog\.md5\(pg_catalog\.pg_get_functiondef\(f\.oid\)\)\)\) atributos/g) || [])
+      oraculo('ATRIB', 'la expresion de los atributos esta dentro del bloque compartido (una vez en cada fichero)', exprA(S14).length === 1 && exprA(M1).length === 1)
     }
   }
 

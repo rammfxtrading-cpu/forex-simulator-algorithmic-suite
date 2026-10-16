@@ -206,22 +206,22 @@ escritura as (
 -- cuerpo y, E2R7-01 (Astra r7, CTO 15-oct), lenguaje, SECURITY INVOKER/DEFINER, dueño, proconfig completo (search_path
 -- incluido), volatilidad y la firma con sus argumentos y lo que devuelve. Un disparador de la lista con cualquier
 -- diferencia (o no habilitado 'O') es NO ACREDITADO, con lo que difiere: s14 manda PARAR y mercado-001 aborta.
-acreditados (tabla, nombre, definicion, md5, lenguaje, seguridad, dueno, proconfig, volatilidad, firma) as (values
+acreditados (tabla, nombre, definicion, md5, lenguaje, seguridad, dueno, proconfig, volatilidad, firma, atributos) as (values
   ('objects'::text, 'protect_objects_delete'::text, 'CREATE TRIGGER protect_objects_delete BEFORE DELETE ON storage.objects FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()'::text, '998d324ea2b1abc49351e8c2367b5796'::text,
-   'plpgsql'::text, 'INVOKER'::text, 'supabase_storage_admin'::text, '-'::text, 'v'::text, 'storage.protect_delete() returns trigger'::text),
+   'plpgsql'::text, 'INVOKER'::text, 'supabase_storage_admin'::text, '-'::text, 'v'::text, 'storage.protect_delete() returns trigger'::text, 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|nargs=0|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=4371ae544fb1ef704f9c5d42265ac324'::text),
   ('objects', 'update_objects_updated_at', 'CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()', '7596e66a7698d5a6b5129c5ce9b24c5f',
-   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.update_updated_at_column() returns trigger'),
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.update_updated_at_column() returns trigger', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|nargs=0|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=bfecc08a6034296258f0c3e10193076c'),
   -- los cinco de storage.buckets (CTO 14-oct, s14c)
   ('buckets', 'enforce_bucket_name_length_trigger', 'CREATE TRIGGER enforce_bucket_name_length_trigger BEFORE INSERT OR UPDATE OF name ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_name_length()', 'bd3d77a2603f7f344035a81def5502fa',
-   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.enforce_bucket_name_length() returns trigger'),
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.enforce_bucket_name_length() returns trigger', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|nargs=0|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=11b3bd509f6b254ec1cd859e712e8c78'),
   ('buckets', 'protect_bucket_control_insert', 'CREATE TRIGGER protect_bucket_control_insert BEFORE INSERT ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns(''service_role'')', '7870415452678f5aa85f91dde952ef12',
-   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.protect_bucket_control_columns() returns trigger'),
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.protect_bucket_control_columns() returns trigger', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|nargs=0|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=7c31ae406e2f6281ead4009fff69fc68'),
   ('buckets', 'protect_bucket_control_update', 'CREATE TRIGGER protect_bucket_control_update BEFORE UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns()', '7870415452678f5aa85f91dde952ef12',
-   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.protect_bucket_control_columns() returns trigger'),
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.protect_bucket_control_columns() returns trigger', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|nargs=0|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=7c31ae406e2f6281ead4009fff69fc68'),
   ('buckets', 'protect_bucket_control_update_role', 'CREATE TRIGGER protect_bucket_control_update_role AFTER UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_lifecycle_service_role(''service_role'')', '7691066f4111610b457b74bdead6e80b',
-   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.enforce_bucket_lifecycle_service_role() returns trigger'),
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '{search_path=pg_catalog}', 'v', 'storage.enforce_bucket_lifecycle_service_role() returns trigger', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|nargs=0|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=b839722d462ea1003fbcf028bd6f6c01'),
   ('buckets', 'protect_buckets_delete', 'CREATE TRIGGER protect_buckets_delete BEFORE DELETE ON storage.buckets FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete()', '998d324ea2b1abc49351e8c2367b5796',
-   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.protect_delete() returns trigger')
+   'plpgsql', 'INVOKER', 'supabase_storage_admin', '-', 'v', 'storage.protect_delete() returns trigger', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|nargs=0|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=4371ae544fb1ef704f9c5d42265ac324')
 ),
 -- cada disparador de storage.objects y storage.buckets con la ficha de SU funcion (la de tgfoid)
 fichas as (
@@ -230,7 +230,10 @@ fichas as (
          pg_catalog.pg_get_triggerdef(t.oid) definicion, pg_catalog.md5(coalesce(f.prosrc, '')) md5,
          l.lanname::text lenguaje, case when f.prosecdef then 'DEFINER' else 'INVOKER' end seguridad,
          pg_catalog.pg_get_userbyid(f.proowner)::text dueno, coalesce(f.proconfig::text, '-') proconfig, f.provolatile::text volatilidad,
-         n.nspname || '.' || f.proname || '(' || pg_catalog.pg_get_function_identity_arguments(f.oid) || ') returns ' || pg_catalog.pg_get_function_result(f.oid) firma
+         n.nspname || '.' || f.proname || '(' || pg_catalog.pg_get_function_identity_arguments(f.oid) || ') returns ' || pg_catalog.pg_get_function_result(f.oid) firma,
+         -- CTO 16-oct (la familia de E3R2-01): TODOS los atributos de pg_proc que cambian la ejecucion y el md5 de
+         -- pg_get_functiondef completo (incluye STRICT, LEAKPROOF, PARALLEL, COST, ROWS y SET); calificado (R9I-02)
+         pg_catalog.concat_ws('|', pg_catalog.concat('strict=', f.proisstrict::pg_catalog.text), pg_catalog.concat('leakproof=', f.proleakproof::pg_catalog.text), pg_catalog.concat('parallel=', f.proparallel::pg_catalog.text), pg_catalog.concat('kind=', f.prokind::pg_catalog.text), pg_catalog.concat('retset=', f.proretset::pg_catalog.text), pg_catalog.concat('ret=', pg_catalog.format_type(f.prorettype, null)), pg_catalog.concat('nargs=', f.pronargs::pg_catalog.text), pg_catalog.concat('modes=', coalesce(f.proargmodes::pg_catalog.text, '-')), pg_catalog.concat('names=', coalesce(f.proargnames::pg_catalog.text, '-')), pg_catalog.concat('defaults=', coalesce(pg_catalog.pg_get_expr(f.proargdefaults, 0), '-')), pg_catalog.concat('ndefaults=', f.pronargdefaults::pg_catalog.text), pg_catalog.concat('cost=', f.procost::pg_catalog.text), pg_catalog.concat('rows=', f.prorows::pg_catalog.text), pg_catalog.concat('def=', pg_catalog.md5(pg_catalog.pg_get_functiondef(f.oid)))) atributos
     from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid
          join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
    where t.tgrelid in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets')) and not t.tgisinternal
@@ -249,7 +252,8 @@ veredictos as (
                        case when d.dueno is distinct from a.dueno then 'dueño' end,
                        case when d.proconfig is distinct from a.proconfig then 'proconfig' end,
                        case when d.volatilidad is distinct from a.volatilidad then 'volatilidad' end,
-                       case when d.firma is distinct from a.firma then 'firma' end) end difiere
+                       case when d.firma is distinct from a.firma then 'firma' end,
+                       case when d.atributos is distinct from a.atributos then 'atributos' end) end difiere
       from fichas d left join acreditados a on a.tabla = d.tabla and a.nombre = d.nombre) x
 ),
 -- presencia exacta (CTO 15-oct, tras Astra r8): un disparador de la lista que NO esta en su tabla tambien es NO
@@ -263,8 +267,8 @@ faltan as (
 -- (una vista tiene la suya, _RETURN). Cualquiera, NO ACREDITADA: s14 manda PARAR y mercado-001 aborta
 reglas as (
   select r.relname::text tabla, w.rulename::text nombre,
-         case w.ev_type when '1' then 'SELECT' when '2' then 'UPDATE' when '3' then 'INSERT' when '4' then 'DELETE' else w.ev_type::text end
-         || case when w.is_instead then ' INSTEAD' else '' end || ' · habilitada=' || w.ev_enabled::text detalle
+         pg_catalog.concat(case w.ev_type when '1' then 'SELECT' when '2' then 'UPDATE' when '3' then 'INSERT' when '4' then 'DELETE' else w.ev_type::text end,
+                           case when w.is_instead then ' INSTEAD' else '' end, ' · habilitada=', w.ev_enabled::text) detalle
     from pg_catalog.pg_rewrite w join pg_catalog.pg_class r on r.oid = w.ev_class
    where w.ev_class in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets'))
 ),
@@ -284,37 +288,72 @@ internos_acreditados (tabla, funcion, restriccion, relacionada, disparo) as (val
   ('objects', 'pg_catalog.RI_FKey_check_upd', 'objects_bucketId_fkey', 'storage.buckets', 'AFTER UPDATE · por fila')
 ),
 internos as (
-  select r.relname::text tabla, n.nspname || '.' || f.proname funcion, coalesce(k.conname::text, '-') restriccion,
-         coalesce(rn.nspname || '.' || rr.relname, '-') relacionada,
-         case when t.tgtype & 2 = 2 then 'BEFORE' when t.tgtype & 64 = 64 then 'INSTEAD OF' else 'AFTER' end || ' '
-         || pg_catalog.concat_ws('/', case when t.tgtype & 4 = 4 then 'INSERT' end, case when t.tgtype & 8 = 8 then 'DELETE' end, case when t.tgtype & 16 = 16 then 'UPDATE' end, case when t.tgtype & 32 = 32 then 'TRUNCATE' end)
-         || ' · ' || case when t.tgtype & 1 = 1 then 'por fila' else 'por sentencia' end disparo,
-         t.tgenabled::text habilitado, l.lanname::text lenguaje, coalesce(k.contype::text, '-') tipo
-    from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid
-         join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
-         left join pg_catalog.pg_constraint k on k.oid = t.tgconstraint
-         left join pg_catalog.pg_class rr on rr.oid = t.tgconstrrelid left join pg_catalog.pg_namespace rn on rn.oid = rr.relnamespace
-   where t.tgrelid in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets')) and t.tgisinternal
+  -- R9I-02 (revisor interno): sin operadores sin calificar en lo nuevo (un «||» o un «&» ajenos de public, sin
+  -- coincidencia exacta en pg_catalog, ganarian con el search_path del editor): pg_catalog.concat y operator(pg_catalog.…)
+  select x.*,
+         pg_catalog.concat_ws(', ',
+           case when x.tgqual is not null then 'WHEN' end,
+           case when x.nargs operator(pg_catalog.<>) 0 then 'argumentos' end,
+           case when x.ncols is not null then 'columnas' end,
+           case when not x.fk_coherente then 'tablas de la FK' end,
+           case when not x.indice then 'indice' end,
+           case when not x.diferible then 'diferible' end,
+           case when not x.fk_medida then 'definicion de la FK' end) forma
+    from (
+      select r.relname::text tabla, pg_catalog.concat(n.nspname, '.', f.proname) funcion, coalesce(k.conname::text, '-') restriccion,
+             case when rr.oid is null then '-' else pg_catalog.concat(rn.nspname, '.', rr.relname) end relacionada,
+             pg_catalog.concat(
+               case when (t.tgtype::pg_catalog.int4 operator(pg_catalog.&) 2) operator(pg_catalog.<>) 0 then 'BEFORE' when (t.tgtype::pg_catalog.int4 operator(pg_catalog.&) 64) operator(pg_catalog.<>) 0 then 'INSTEAD OF' else 'AFTER' end, ' ',
+               pg_catalog.concat_ws('/', case when (t.tgtype::pg_catalog.int4 operator(pg_catalog.&) 4) operator(pg_catalog.<>) 0 then 'INSERT' end, case when (t.tgtype::pg_catalog.int4 operator(pg_catalog.&) 8) operator(pg_catalog.<>) 0 then 'DELETE' end,
+                                        case when (t.tgtype::pg_catalog.int4 operator(pg_catalog.&) 16) operator(pg_catalog.<>) 0 then 'UPDATE' end, case when (t.tgtype::pg_catalog.int4 operator(pg_catalog.&) 32) operator(pg_catalog.<>) 0 then 'TRUNCATE' end),
+               ' · ', case when (t.tgtype::pg_catalog.int4 operator(pg_catalog.&) 1) operator(pg_catalog.<>) 0 then 'por fila' else 'por sentencia' end) disparo,
+             t.tgenabled::text habilitado, l.lanname::text lenguaje, coalesce(k.contype::text, '-') tipo,
+             -- R9I-01 (revisor interno): la FORMA de un interno de integridad referencial. Sin WHEN, sin argumentos ni
+             -- columnas, con las tablas, el indice y lo diferible de SU restriccion, y la FK tal como la midio la s14e:
+             -- (bucket_id) → storage.buckets (id), NO ACTION en los dos sentidos, no diferible y validada
+             t.tgqual, t.tgnargs::pg_catalog.int4 nargs, case when t.tgattr::pg_catalog.text operator(pg_catalog.=) '' then null else t.tgattr::pg_catalog.text end ncols,
+             coalesce(k.oid is not null and ((t.tgrelid operator(pg_catalog.=) k.conrelid and t.tgconstrrelid operator(pg_catalog.=) k.confrelid)
+                                           or (t.tgrelid operator(pg_catalog.=) k.confrelid and t.tgconstrrelid operator(pg_catalog.=) k.conrelid)), false) fk_coherente,
+             coalesce(t.tgconstrindid operator(pg_catalog.=) k.conindid, false) indice,
+             coalesce(t.tgdeferrable operator(pg_catalog.=) k.condeferrable and t.tginitdeferred operator(pg_catalog.=) k.condeferred, false) diferible,
+             coalesce(k.contype operator(pg_catalog.=) 'f' and k.confrelid operator(pg_catalog.=) pg_catalog.to_regclass('storage.buckets')
+                      and (select pg_catalog.array_agg(a.attname::text order by u.n) from pg_catalog.unnest(k.conkey) with ordinality u(c, n) join pg_catalog.pg_attribute a on a.attrelid operator(pg_catalog.=) k.conrelid and a.attnum operator(pg_catalog.=) u.c) operator(pg_catalog.=) array['bucket_id']::pg_catalog.text[]
+                      and (select pg_catalog.array_agg(a.attname::text order by u.n) from pg_catalog.unnest(k.confkey) with ordinality u(c, n) join pg_catalog.pg_attribute a on a.attrelid operator(pg_catalog.=) k.confrelid and a.attnum operator(pg_catalog.=) u.c) operator(pg_catalog.=) array['id']::pg_catalog.text[]
+                      and k.confupdtype operator(pg_catalog.=) 'a' and k.confdeltype operator(pg_catalog.=) 'a' and not k.condeferrable and k.convalidated, false) fk_medida
+        from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid
+             join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
+             left join pg_catalog.pg_constraint k on k.oid = t.tgconstraint
+             left join pg_catalog.pg_class rr on rr.oid = t.tgconstrrelid left join pg_catalog.pg_namespace rn on rn.oid = rr.relnamespace
+       where t.tgrelid in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets')) and t.tgisinternal) x
 ),
 internos_veredicto as (
-  select i.*, exists (select 1 from internos_acreditados a
-                       where a.tabla = i.tabla and a.funcion = i.funcion and a.restriccion = i.restriccion and a.relacionada = i.relacionada
-                         and a.disparo = i.disparo and i.habilitado = 'O' and i.lenguaje = 'internal' and i.tipo = 'f') acreditado
+  select i.*, (i.forma operator(pg_catalog.=) '' and i.habilitado operator(pg_catalog.=) 'O' and i.lenguaje operator(pg_catalog.=) 'internal' and i.tipo operator(pg_catalog.=) 'f'
+               and exists (select 1 from internos_acreditados a
+                            where a.tabla operator(pg_catalog.=) i.tabla and a.funcion operator(pg_catalog.=) i.funcion and a.restriccion operator(pg_catalog.=) i.restriccion
+                              and a.relacionada operator(pg_catalog.=) i.relacionada and a.disparo operator(pg_catalog.=) i.disparo)) acreditado
     from internos i
+),
+-- R9I-01: CUENTA exacta. Cada entrada de la lista, con exactamente un interno acreditado (0: falta; 2 o mas: repetido)
+internos_cuenta as (
+  select a.*, (select pg_catalog.count(*) from internos_veredicto i
+                where i.acreditado and i.tabla operator(pg_catalog.=) a.tabla and i.funcion operator(pg_catalog.=) a.funcion and i.restriccion operator(pg_catalog.=) a.restriccion
+                  and i.relacionada operator(pg_catalog.=) a.relacionada and i.disparo operator(pg_catalog.=) a.disparo)::pg_catalog.int4 n
+    from internos_acreditados a
 ),
 -- lo que no es un disparador de la lista y tampoco se acredita: (tabla, objeto, difiere)
 otros as (
-  select g.tabla, 'regla ' || g.nombre objeto, 'regla ' || g.detalle || ': no se acredita ninguna' difiere from reglas g
+  select g.tabla, pg_catalog.concat('regla ', g.nombre) objeto, pg_catalog.concat('regla ', g.detalle, ': no se acredita ninguna') difiere from reglas g
   union all
-  select i.tabla, 'interno ' || i.funcion || ' · ' || i.restriccion,
-         'interno ' || i.disparo || ' · relacionada=' || i.relacionada || ' · habilitado=' || i.habilitado || ' · lenguaje=' || i.lenguaje
-         || ': no esta en la lista de internos acreditados (s14e, 16-oct)'
+  select i.tabla, pg_catalog.concat('interno ', i.funcion, ' · ', i.restriccion),
+         pg_catalog.concat('interno ', i.disparo, ' · relacionada=', i.relacionada, ' · habilitado=', i.habilitado, ' · lenguaje=', i.lenguaje,
+                           case when i.forma operator(pg_catalog.<>) '' then pg_catalog.concat(' · forma: ', i.forma) else '' end,
+                           ': no esta en la lista de internos acreditados (s14e, 16-oct)')
     from internos_veredicto i where not i.acreditado
   union all
-  select a.tabla, 'interno ' || a.funcion || ' · ' || a.restriccion, 'falta (interno ' || a.disparo || ' de la s14e, 16-oct)'
-    from internos_acreditados a
-   where not exists (select 1 from internos_veredicto i where i.acreditado and i.tabla = a.tabla and i.funcion = a.funcion
-                        and i.restriccion = a.restriccion and i.relacionada = a.relacionada and i.disparo = a.disparo)
+  select c.tabla, pg_catalog.concat('interno ', c.funcion, ' · ', c.restriccion),
+         case when c.n operator(pg_catalog.=) 0 then pg_catalog.concat('falta (interno ', c.disparo, ' de la s14e, 16-oct)')
+              else pg_catalog.concat('repetido (', c.n, ' internos ', c.disparo, ' para una sola entrada de la s14e, 16-oct)') end
+    from internos_cuenta c where c.n operator(pg_catalog.<>) 1
 )
 -- <<< acreditados
 , m as (
@@ -512,7 +551,8 @@ select seccion, objeto, detalle from (
   select 2, 2, 'disparador', '(internos)',
          'storage.objects: ' || (select count(*) from internos where tabla = 'objects') || ' · storage.buckets: ' || (select count(*) from internos where tabla = 'buckets')
          || ' · acreditados: ' || (select count(*) from internos_veredicto where acreditado) || ' de ' || (select count(*) from internos_acreditados)
-         || case when exists (select 1 from otros where objeto like 'interno %') then ': NO ACREDITADOS (lista exacta de la s14e); PARAR' else ': la lista exacta de la s14e (CTO 16-oct)' end
+         || case when exists (select 1 from internos_veredicto where not acreditado) or exists (select 1 from internos_cuenta where n <> 1)
+                 then ': NO ACREDITADOS (lista exacta de la s14e); PARAR' else ': la lista exacta de la s14e (CTO 16-oct)' end
   union all
   select 2, 2, 'disparador', '(reglas)',
          (select count(*) from reglas)::text || ' reglas (pg_rewrite) en storage.objects y storage.buckets'

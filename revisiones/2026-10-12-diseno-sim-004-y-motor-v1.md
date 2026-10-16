@@ -3126,3 +3126,116 @@ Astra r8 (`revisiones-suite/2026-10-15-astra-mercado-v1-etapa2-r8.md`): **NO**. 
 - **Fuera de alcance, anotado:** los disparadores en particiones (si `storage.buckets` fuera particionada) y las reglas (`pg_rewrite`) en `storage.buckets`, que equivalen a un disparador adicional que no ve ninguna guarda.
 
 **p.19.6 · E2R8-01 (disparadores internos): PARADO.** La regla del CTO admite solo internos de `pg_catalog` de la familia `RI_FKey_*`, «con la tabla y la restricción esperadas». Pero los internos de `storage.buckets` y `storage.objects` **no se han medido nunca en producción**: s14b, s14c y s14 los excluyen. Pregunta al CTO: medirlos antes con una consulta de solo lectura (s14e) y acreditar la lista exacta, o admitirlos por coherencia con `pg_constraint` sin lista cerrada.
+
+### p.20 · Etapa 2, ronda 9: cierre de E2R8-01 y E2R8-02 (CTO 16-oct, con la s14e de producción)
+
+**p.20.1 · Las decisiones del CTO (16-oct).**
+1. **Internos: opción (a).** Se miden antes (la s14e) y se acredita la lista exacta, con su función, tabla y restricción. Cualquier interno fuera de la lista da PARAR y aborta. **Exacta en las dos direcciones:** uno de más o uno de menos (una FK quitada) da PARAR, igual que los siete externos.
+2. **El orden numérico del enum queda como límite.** Se acreditan las etiquetas y su orden exactos; los valores de `enumsortorder`, no (la prueba del límite de p.19.4 se queda tal cual).
+3. **Reglas (`pg_rewrite`) en `storage.buckets` y `storage.objects`:** entran en la presencia exacta. Lo esperado es ninguna; cualquiera da PARAR y aborta.
+
+**p.20.2 · La s14e de producción (Ramón, 16-oct, después de la s10 de la puerta; literal en `sql/consultas/salidas/s14e-internos-storage-2026-10-16.csv`).**
+- Las dos tablas, `relkind=r`, sin particiones ni hijas. **0 reglas.**
+- **8 internos**, todos de `pg_catalog`, lenguaje `internal`, `habilitado=O`, por fila, de tres FK a `storage.buckets(id)` (`on delete`/`on update` NO ACTION, no diferibles, validadas):
+
+| Tabla | Función | Restricción | Tabla relacionada | Momento |
+|---|---|---|---|---|
+| buckets | `RI_FKey_noaction_del` | `objects_bucketId_fkey` | `storage.objects` | AFTER DELETE |
+| buckets | `RI_FKey_noaction_upd` | `objects_bucketId_fkey` | `storage.objects` | AFTER UPDATE |
+| buckets | `RI_FKey_noaction_del` | `s3_multipart_uploads_bucket_id_fkey` | `storage.s3_multipart_uploads` | AFTER DELETE |
+| buckets | `RI_FKey_noaction_upd` | `s3_multipart_uploads_bucket_id_fkey` | `storage.s3_multipart_uploads` | AFTER UPDATE |
+| buckets | `RI_FKey_noaction_del` | `s3_multipart_uploads_parts_bucket_id_fkey` | `storage.s3_multipart_uploads_parts` | AFTER DELETE |
+| buckets | `RI_FKey_noaction_upd` | `s3_multipart_uploads_parts_bucket_id_fkey` | `storage.s3_multipart_uploads_parts` | AFTER UPDATE |
+| objects | `RI_FKey_check_ins` | `objects_bucketId_fkey` | `storage.buckets` | AFTER INSERT |
+| objects | `RI_FKey_check_upd` | `objects_bucketId_fkey` | `storage.buckets` | AFTER UPDATE |
+
+**p.20.3 · Reglas (`67ed21f`).** En el bloque compartido entran los CTE `reglas` (cada fila de `pg_rewrite` de las dos tablas) y `otros` (lo que no es un disparador de la lista y tampoco se acredita).
+- **`mercado-001`** aborta antes del INSERT, con «regla <nombre> (difiere: regla <evento> · habilitada=<x>: no se acredita ninguna)».
+- **s14:**
+  - cada regla sale como NO ACREDITADO;
+  - la fila `(reglas)` las cuenta;
+  - el resumen las suma a «sin acreditar» (PARAR).
+- **Pruebas (sección 15):** una familia generada y exhaustiva:
+  - 2 tablas × INSERT/UPDATE/DELETE × (ALSO con efecto, INSTEAD NOTHING);
+  - una desactivada en cada tabla;
+  - una con el nombre de un disparador acreditado;
+  - el positivo y el control de una regla en otra tabla.
+- **Rojo contra `502a3fc`:** 32 rojos y 1 control roto (la fila nueva).
+
+**p.20.4 · Internos (`78023ca`).** En el bloque compartido:
+- **`internos_acreditados`:** los ocho de p.20.2, por función, tabla, restricción, tabla relacionada y momento.
+- **`internos`:** los de `tgisinternal`, con su ficha.
+- **`internos_veredicto`:** acreditado si coincide en esos cinco campos y además tiene `habilitado='O'`, lenguaje `internal` y restricción de tipo `f`.
+- **En `otros`:** cada interno no acreditado («no esta en la lista de internos acreditados») y cada acreditado sin su interno («falta»). El nombre `RI_ConstraintTrigger_…` lleva un oid y no se usa.
+- **s14:**
+  - los ocho, como «acreditado (s14e, 16-oct)»;
+  - la fila `(internos)`: «storage.objects: 2 · storage.buckets: 6 · acreditados: 8 de 8», o PARAR;
+  - el resumen cuenta los no acreditados.
+- **`mercado-001`:** aborta antes del INSERT nombrándolos.
+- **El montaje** (`REALES`) lleva la FK con su nombre de producción y las dos tablas `s3_*`. Un control comprueba que la s14e sobre el montaje da, sin el oid, las 16 filas de la salida literal.
+- **Pruebas (sección 16):**
+  - el positivo;
+  - 9 casos:
+    - cada una de las tres FK quitada;
+    - una FK de más con `ON DELETE CASCADE`;
+    - `objects_bucketId_fkey` con otra acción;
+    - la misma, renombrada;
+    - un interno desactivado;
+    - **los dos escenarios de Astra r8:** un BEFORE INSERT propio con efecto, marcado interno; y `enforce_bucket_name_length_trigger` marcado interno.
+
+  Cada uno da PARAR en s14 (con su recuento exacto) y aborto en `mercado-001`, con el testigo y el efecto sin consumir y nada cambiado. (En `78023ca` iba además el límite de la FK diferible; tras el revisor es un negativo: p.20.7.)
+- **Rojo contra `67ed21f`:** 21 rojos y 0 controles rotos.
+
+**p.20.5 · Límites declarados.**
+- **Lo acreditado de un interno** (tras el revisor, p.20.7): función, tabla, restricción, tabla relacionada, momento, habilitado, lenguaje y tipo, su forma (sin WHEN, argumentos ni columnas; tablas, índice y diferible de su restricción) y la definición de la FK medida. No se comparan `confmatchtype` (la s14e no lo midió) ni la ficha de las funciones internas (`proconfig`, dueño…), que solo un superusuario cambia.
+- **El orden numérico del enum** (decisión 2).
+- **Las particiones:** la s14e midió que no hay, y ni s14 ni `mercado-001` las inventarían.
+- **Un superusuario que reescriba `pg_catalog` a voluntad** queda fuera de lo que puede certificar una consulta (Astra r8).
+
+**p.20.6 · Tandas.** `67ed21f`: la prueba sola, 294 verdes. `78023ca`: 315 verdes; la tanda completa, 115 pruebas, código 0, con el turno de máquina.
+
+**p.20.7 · El revisor adversario interno (sobre `502a3fc..78023ca`).** Un subagente que no escribió el código; sus scripts, en `revisiones-suite/2026-10-16-mercado-v1-etapa2-r9b/revisor-interno/`.
+- **R9I-01 (alta), arreglado:** la lista de internos se comparaba como conjunto y por la tupla (tabla, función, restricción, relacionada, momento). Un **gemelo** de `RI_FKey_check_ins` creado a mano, marcado interno y colgado de `objects_bucketId_fkey`, pasaba de dos formas:
+  - **duplicado:** «acreditados: 9 de 8: la lista exacta», y `mercado-001` aplicaba;
+  - **sustituto, con WHEN de usuario:** «8 de 8», y el WHEN se ejecutaba en la sonda.
+
+  **Arreglo**, en el bloque compartido:
+  - la **forma** de un interno: sin WHEN, sin argumentos ni columnas, las tablas, el índice y lo diferible de **su** restricción, y la FK tal como la midió la s14e (`(bucket_id) → storage.buckets (id)`, NO ACTION en los dos sentidos, no diferible, validada);
+  - la **cuenta exacta**: cada entrada, con exactamente un interno (0: «falta»; 2 o más: «repetido»);
+  - «(internos)» dice PARAR si no cuadra.
+- **R9I-02 (baja; solo s14), arreglado:** un `||` (text, name) de `public` disfrazaba en s14 un CASCADE de NO ACTION; `mercado-001`, con su search_path, abortaba igual. **Arreglo:** lo nuevo del bloque (reglas e internos) usa `pg_catalog.concat` y `operator(pg_catalog.…)`. El resto del bloque, de antes (`fichas.firma`), sigue con la protección de `ctx`.
+- **R9I-03 (baja), arreglado:** la definición de la FK no se comparaba. Ahora sí (columnas, acciones, diferible, validada). **Cambio:** la FK diferible, que en `78023ca` era un límite declarado, ahora da PARAR (la s14e midió `diferible=false`).
+- **Familia nueva (sección 16):**
+  - 7 gemelos generados: exacto (repetido), con WHEN con efecto, con argumentos, con columnas, con otra tabla relacionada, diferible, y el sustituto;
+  - la FK diferible;
+  - el `||` ajeno.
+- **Lo que intentó sin encontrar nada:**
+  - el bloque, idéntico en los dos ficheros;
+  - la guarda, antes del INSERT (medido con testigo y efecto);
+  - un `RI_FKey_*` de otro esquema (se exige el esquema y el lenguaje `internal`);
+  - las dos direcciones sin duplicados;
+  - la partición interno / no interno, completa;
+  - las reglas desactivadas, de vistas o de otras tablas;
+  - `=`, `like` y las conversiones nuevas resuelven en `pg_catalog`;
+  - E2R8-02.
+- **Informativo, sin cambio:** `proconfig`, `prosecdef`, `prosrc` y dueño de las funciones internas no se comparan (solo un superusuario puede cambiarlos; el lenguaje `internal` y el esquema sí).
+
+**p.20.8 · La familia de atributos de pg_proc (CTO 16-oct, la de E3R2-01 de Astra) y la s14f de producción.**
+- **La decisión:** la acreditación de funciones de s14 y `mercado-001` cubre todos los atributos de `pg_proc` que cambian la ejecución, no solo el cuerpo. Se comparan el md5 de `pg_get_functiondef` completo (incluye STRICT, LEAKPROOF, PARALLEL, COST, ROWS y SET) y, de forma explícita, `proisstrict`, `proleakproof`, `proparallel`, `prokind`, `proretset`, `prorettype`, los argumentos (`pronargs`), `proargmodes`, `proargnames`, `proargdefaults`, `pronargdefaults`, `procost` y `prorows`, además de lo de E2R7-01 (lenguaje, `prosecdef`, dueño, `proconfig`, `provolatile`, firma).
+- **La medida:** la s14b y la s14c no medían esos atributos. Se escribió `sql/consultas/s14f-atributos-funciones-storage.sql` (solo lectura, una SELECT; prueba `pruebas/s14f-atributos-funciones-storage.mjs`), y Ramón la corrió el 16-oct. La salida literal está en `sql/consultas/salidas/s14f-atributos-funciones-storage-2026-10-16.csv`. Las cinco funciones tienen todos los atributos por defecto (`prokind=f`, sin conjunto, `trigger`, sin argumentos, sin STRICT ni LEAKPROOF, PARALLEL `u`, COST 100, ROWS 0). Sus md5 de `pg_get_functiondef` coinciden con los del montaje.
+- **En el bloque compartido:**
+  - la columna `atributos` de `acreditados`, con los valores de la s14f;
+  - el campo `atributos` de `fichas`, calculado con `pg_catalog.concat` y calificado (R9I-02);
+  - «atributos» en `veredictos.difiere`.
+
+  Un cambio en la propia función (cuerpo, SECURITY, `proconfig` o volatilidad) mueve también el md5 de `pg_get_functiondef`: su «difiere» suma «atributos». El dueño no entra en `pg_get_functiondef`.
+- **Lo que no aplica a una función de disparador, y por qué:**
+  - **Argumentos:** una función de disparador no tiene argumentos declarados (`CREATE TRIGGER` exige `RETURNS trigger` sin argumentos). Por eso `proargtypes`/`pronargs`, `proargmodes`, `proargnames`, `proargdefaults` y `pronargdefaults` solo se pueden alterar tocando el catálogo.
+  - **Conjuntos:** no devuelve un conjunto, así que `proretset` y `prorows` tampoco (ALTER rechaza ROWS).
+  - **Sin efecto en la ejecución:** STRICT no la cambia (no hay argumentos SQL que puedan ser NULL), y LEAKPROOF, PARALLEL y COST solo afectan al planificador.
+
+  Todos se comparan igual, para fallar cerrado.
+- **Pruebas (sección 17 de `pruebas/mercado-001-bucket.mjs`):**
+  - un mutante por atributo (los 16 y uno que solo cambia `pg_get_functiondef`: SUPPORT) sobre `storage.enforce_bucket_name_length`; los no admitidos por DDL, tocando el catálogo. Cada uno da PARAR en s14 y aborto en `mercado-001` antes del INSERT, con el testigo sin consumir;
+  - el control: la s14f sobre el montaje da, fila a fila, la salida literal de producción.
+- **Tanda de la prueba:** 367 verdes.
