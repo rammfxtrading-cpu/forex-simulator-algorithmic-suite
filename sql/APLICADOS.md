@@ -142,3 +142,4 @@ Solo las cifras: ni ids ni importes. s10 de `3fa2b3f`, con sha256 `eaa23bc7…75
   - Una sola fila `alumno`, con versión firmada `etapa1-1`.
   - s10 lista también `authenticator`, con 8 s.
   - Sin ninguna escritura sin firma, las 72 h se cuentan desde la instalación (13-oct, hacia las 19:30): **lo antes posible para la puerta, el 16-oct hacia las 19:30**. Hace falta una s10 de esa hora o posterior con A = 0, y el sí del CTO.
+- **16-oct, 20:32 (Madrid):** la s10 de la puerta: **A = 0**. Veredicto: se cumple la condición de la s10 para la puerta; falta el sí de Ramón.
