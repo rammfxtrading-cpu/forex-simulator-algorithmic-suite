@@ -71,6 +71,8 @@ try {
   const t2 = await ordena(cmd({ tipo: 'avanzar', version_esperada: v1, testigo, hasta: m(60), motivo: 'play' }))
   const r2 = JSON.parse(pg.uno(d, `select resumen::text from public.sim_recibos where session_id = ${L(u(1001))} and command_id = ${L(t2.cuerpo?.recibo?.command_id ?? u(0))}`) || 'null')
   oraculo('DETS', 'no calcula: recibo con resumen.detencion { motivo: sesion_terminada }, sin eventos y sin version nueva', t2.http === 200 && tx(r2?.detencion) === tx({ motivo: 'sesion_terminada' }) && r2?.eventos === 0 && version() === v1, tx({ t2: t2.http, r2 }))
+  // CTO 16-oct (respuesta 4): ese avance lleva tambien la causa, copiada del estado terminal guardado
+  oraculo('DETS', 'causa: el avance sobre el reto quemado guarda resumen.causa breach (aceptado, sin eventos) y la respuesta la trae', r2?.causa === 'breach' && r2?.resultado === 'aceptado' && t2.cuerpo?.recibo?.resumen?.causa === 'breach', tx({ r2, ack: t2.cuerpo?.recibo?.resumen?.causa }))
 
   // CTO 16-oct: el recibo de un comando rechazado { rechazado: 'sesion_terminada', motivo, causa }; la
   // causa, copiada del estado terminal guardado (pruebas/servidor-causa.mjs, los casos sin RPC)

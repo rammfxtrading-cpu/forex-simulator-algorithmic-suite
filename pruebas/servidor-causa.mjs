@@ -17,7 +17,9 @@
  * Un estado terminal desconocido es un error, no una causa adivinada. Otro rechazo, o un comando
  * aceptado, no llevan causa. Contra sim_comando real: servidor-detencion.mjs (DETS-causa).
  */
-import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { titulo, ver, oraculo, fin, importa, REPO } from './lib.mjs'
 const CA = await importa('lib/motor/cartera.mjs')
 const RT = await importa('lib/motor/reto.mjs')
 const CO = await importa('lib/servidor/comando.mjs')
@@ -95,5 +97,27 @@ titulo('4 · el reset de la hora del comando quema el reto (R2E3-04): la causa e
   ver('control: el reto guardado sigue en curso antes del comando', r.estado === 'en_curso', r.estado)
   const x = await CO.calcula({ fila: { estado: guardado(r), date_from: '2026-10-05' }, intencion: { tipo: 'cerrar', carga: { id: 'p4' } }, puertos: {} })
   oraculo('CAUSA', 'reset que quema el reto en la hora del comando: recibo sesion_terminada con causa breach, y el estado que se guarda con el es breach (reset_diario, breach, cierre)', x.resultado === 'rechazado' && x.motivo === 'sesion_terminada' && x.resumen.causa === 'breach' && x.estado.estado === 'breach' && x.eventos.map(e => e.tipo).join(',') === 'reset_diario,breach,cierre', tx({ r: x.resultado, m: x.motivo, c: x.resumen.causa, e: x.estado.estado, ev: x.eventos.map(e => e.tipo) }))
+}
+
+titulo('5 · avanzar sobre una sesion terminada (CTO 16-oct, respuesta 4): la misma causa, de la misma tabla')
+{
+  // el avance que no calcula (detencion sesion_terminada) copia la causa con causaTerminal, la misma tabla que
+  // usa el rechazo del motor; aqui, que las dos dan lo mismo sobre los mismos estados guardados
+  const r0 = reto(), b = base()
+  const estados = [
+    ['reto superada, motor en breach', { ...r0, estado: 'superada', motor: { ...r0.motor, estado: 'breach' } }, 'fase_superada'],
+    ['reto breach, cuenta sana', { ...r0, estado: 'breach' }, 'breach'],
+    ['practica breach', { ...b, estado: 'breach' }, 'breach'],
+    ['practica objetivo', { ...b, estado: 'objetivo' }, 'objetivo_alcanzado'],
+  ]
+  for (const [nombre, x, causa] of estados) {
+    const g = CA.deserializa(JSON.stringify(guardado(x)))
+    const rech = await pide(x)
+    oraculo('CAUSA', `${nombre}: causaTerminal del estado guardado = ${causa} = la causa del rechazo`, RT.causaTerminal(g) === causa && rech.resumen.causa === causa, `${RT.causaTerminal(g)} · ${rech.resumen.causa}`)
+  }
+  const lanzaT = x => { try { RT.causaTerminal(x); return false } catch { return true } }
+  oraculo('CAUSA', 'causaTerminal: un estado que no es terminal conocido (en curso, activo, pausa) lanza', lanzaT(reto()) && lanzaT(base()) && lanzaT({ ...reto(), estado: 'pausa' }) && lanzaT({ ...base(), estado: 'pausa' }))
+  const fuente = readFileSync(path.join(REPO, 'lib', 'servidor', 'comando.mjs'), 'utf8')
+  oraculo('CAUSA', 'el servidor la copia en el avance que no calcula (sesion_terminada) con causaTerminal, la tabla del motor', /detencion\?\.motivo === 'sesion_terminada' \? causaTerminal\(actual\) : null/.test(fuente))
 }
 fin()
