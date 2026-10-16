@@ -103,7 +103,7 @@ try {
   delete process.env.SIM_V1_ENDPOINTS
   espejo(u(1002))
   const off = await llama(hE, { method: 'GET', token: tok(AL), query: { session_id: u(1002) } })
-  oraculo('ESTA', 'sin el interruptor: estado 503 mantenimiento y nada', off.estado === 503 && db.log.length === 0, tx(off.cuerpo))
+  oraculo('ESTA', 'sin el interruptor: estado 503 apagado (literal) y nada', off.estado === 503 && JSON.stringify(off.cuerpo) === '{"ok":false,"http":503,"motivo":"apagado"}' && db.log.length === 0, tx(off.cuerpo))
   process.env.SIM_V1_ENDPOINTS = 'encendido'
   espejo(u(1002))
   const on = await llama(hE, { method: 'GET', token: tok(AL), query: { session_id: u(1002) } })

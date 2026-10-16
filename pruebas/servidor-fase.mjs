@@ -148,7 +148,7 @@ try {
   delete process.env.SIM_V1_ENDPOINTS
   espejo(R2)
   const off = await llama(handler, { method: 'POST', token: tok(AL), body: { padre_id: R2, hija_id: u(112), command_id: u(311), epoca: 1, version_esperada: 0 } })
-  oraculo('FASE', 'sin el interruptor: 503 mantenimiento y nada', off.estado === 503 && db.log.length === 0, tx(off.cuerpo))
+  oraculo('FASE', 'sin el interruptor: 503 apagado (literal) y nada', off.estado === 503 && JSON.stringify(off.cuerpo) === '{"ok":false,"http":503,"motivo":"apagado"}' && db.log.length === 0, tx(off.cuerpo))
   process.env.SIM_V1_ENDPOINTS = 'encendido'
   espejo(R2)
   const on = await llama(handler, { method: 'POST', token: tok(AL), body: { padre_id: R2, hija_id: u(112), command_id: u(311), epoca: 1, version_esperada: 0 } })

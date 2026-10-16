@@ -145,11 +145,21 @@ try {
   delete process.env.SIM_V1_ENDPOINTS
   montaFalso()
   const rA = await llama(handler, { method: 'POST', token: tok(AL), body: base({ session_id: u(1300), command_id: u(2300) }) })
-  oraculo('CREA', 'sin SIM_V1_ENDPOINTS=encendido: 503 mantenimiento, sin autenticar ni llamar a nada', rA.estado === 503 && rA.cuerpo?.motivo === 'mantenimiento' && db.log.length === 0, JSON.stringify({ e: rA.estado, c: rA.cuerpo, log: db.log.length }))
+  // CTO 16-oct: apagado es 503 'apagado', distinto de 'mantenimiento' (sim_servicio), en los logs y en el cliente
+  oraculo('CREA', 'sin SIM_V1_ENDPOINTS=encendido: 503 apagado (literal), sin autenticar ni llamar a nada', rA.estado === 503 && JSON.stringify(rA.cuerpo) === '{"ok":false,"http":503,"motivo":"apagado"}' && db.log.length === 0, JSON.stringify({ e: rA.estado, c: rA.cuerpo, log: db.log.length }))
+  for (const v of ['', 'ENCENDIDO', 'encendido ', 'true', '1']) {
+    process.env.SIM_V1_ENDPOINTS = v
+    montaFalso()
+    const r = await llama(handler, { method: 'POST', token: tok(AL), body: base({ session_id: u(1300), command_id: u(2300) }) })
+    oraculo('CREA', `negativo: SIM_V1_ENDPOINTS=${JSON.stringify(v)} sigue apagado: 503 apagado, nunca mantenimiento, sin tocar nada`, r.estado === 503 && r.cuerpo?.motivo === 'apagado' && db.log.length === 0, JSON.stringify({ e: r.estado, c: r.cuerpo, log: db.log.length }))
+  }
   process.env.SIM_V1_ENDPOINTS = 'encendido'
   montaFalso({ sim_servicio: [{ id: true, mantenimiento: true, version_minima: '1', cambiado_en: '2026-10-13T00:00:00Z' }] })
   const rM = await llama(handler, { method: 'POST', token: tok(AL), body: base({ session_id: u(1301), command_id: u(2301) }) })
-  oraculo('CREA', 'encendido y sim_servicio en mantenimiento: 503 mantenimiento, sin llamar a la RPC', rM.estado === 503 && rM.cuerpo?.motivo === 'mantenimiento' && llamadasRpc() === 0, JSON.stringify({ e: rM.estado, c: rM.cuerpo }))
+  oraculo('CREA', 'negativo: encendido y sim_servicio en mantenimiento: 503 mantenimiento (nunca apagado), sin llamar a la RPC', rM.estado === 503 && JSON.stringify(rM.cuerpo) === '{"ok":false,"http":503,"motivo":"mantenimiento"}' && llamadasRpc() === 0, JSON.stringify({ e: rM.estado, c: rM.cuerpo }))
+  montaFalso({ sim_servicio: [] })
+  const rI = await llama(handler, { method: 'POST', token: tok(AL), body: base({ session_id: u(1301), command_id: u(2301) }) })
+  oraculo('CREA', 'negativo: encendido y sim_servicio sin fila legible: 503 mantenimiento (nunca apagado), sin llamar a la RPC', rI.estado === 503 && rI.cuerpo?.motivo === 'mantenimiento' && llamadasRpc() === 0, JSON.stringify({ e: rI.estado, c: rI.cuerpo }))
   montaFalso()
   const rAdm = await llama(handler, { method: 'POST', token: tok(ADM), body: base({ session_id: u(1302), command_id: u(2302) }) })
   oraculo('CREA', 'un admin sin simulador_activo: 403 sin_acceso en el endpoint (h.4), sin llamar a la RPC', rAdm.estado === 403 && rAdm.cuerpo?.motivo === 'sin_acceso' && llamadasRpc() === 0, JSON.stringify({ e: rAdm.estado, c: rAdm.cuerpo }))

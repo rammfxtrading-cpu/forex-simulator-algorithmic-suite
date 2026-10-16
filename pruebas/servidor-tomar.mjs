@@ -78,7 +78,7 @@ try {
   delete process.env.SIM_V1_ENDPOINTS
   monta()
   const rA = await llama(handler, { method: 'POST', token: tok(AL), body: tomar(2, { forzar: true }) })
-  oraculo('TOMA', 'sin el interruptor: 503 mantenimiento y nada', rA.estado === 503 && db.log.length === 0, JSON.stringify(rA.cuerpo))
+  oraculo('TOMA', 'sin el interruptor: 503 apagado (literal) y nada', rA.estado === 503 && JSON.stringify(rA.cuerpo) === '{"ok":false,"http":503,"motivo":"apagado"}' && db.log.length === 0, JSON.stringify(rA.cuerpo))
   process.env.SIM_V1_ENDPOINTS = 'encendido'
   monta()
   const rE = await llama(handler, { method: 'POST', token: tok(AL), body: tomar(2, { forzar: true }) })
