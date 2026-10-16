@@ -3588,3 +3588,33 @@ En `revisiones-suite/2026-10-15-sim-etapa3-runbook.md` (el repo no guarda los ru
 
 - **Fuera el antiguo paso 6 (el corte).** El runbook lo dice al final: el corte (mantenimiento → sim-004 → s08 → encender v1) es la etapa 5, con su propio runbook.
 - **Le faltan sim-004 (la etapa 4) y el cliente v1 (d4–d8).**
+
+### q.18 · Etapa 3, ronda 2: decisiones del CTO del 16-oct (contratos, causa, apagado e integración)
+
+#### q.18.1 Los dos contratos de MCV2-01 con `5b348cd` (respuestas 1 y 2) — `274dd03`
+
+- **«optimizacion»:** la referencia es `4235196 + 36794dd + e58536d + 5b348cd`. El rechazo `sesion_terminada` es un cambio funcional posterior que no es la optimización.
+- **«mcv01»:** `63be57d + 5b348cd`, quitando solo `conversion`. **Nada de traducir códigos:** el instrumento no nombra ningún código de rechazo (oráculo).
+- **Controles:** `--sin-parches` y `--copia a8e40a4` llevan también `5b348cd`, para que la diferencia que ven sea solo la de MCV-01 (164/200 y 103/123, medidos por el revisor). Control nuevo `--sin-rechazo`: sin `5b348cd` en las referencias, 175/200 y 98/123, código 1. Los tres controles exigen 0 excepciones (R2E3-08).
+- **Límite (R2E3-08):** las 25 diferencias de `--sin-rechazo` son todas de práctica en breach. Ningún escenario del instrumento pasa por la parte de reto de `5b348cd` (reto terminado, reset que quema, fase superada) ni por `objetivo_alcanzado`; esa parte la cubren `pruebas/motor/sesion-terminada.mjs` y `pruebas/servidor-causa.mjs`, no el contrato.
+
+#### q.18.2 La causa en el recibo (respuesta 3) — `d75042c` y el arreglo del revisor
+
+- **La forma:** el recibo de un comando rechazado sobre una sesión terminada es `{ rechazado: 'sesion_terminada', motivo, causa }`. En `sim_recibos` (que solo guarda `resultado`, `motivo` y `resumen`): `resultado = 'rechazado'`, `motivo = 'sesion_terminada'` (la columna, como en todo rechazo) y `resumen.causa` ∈ `breach` | `fase_superada` | `objetivo_alcanzado`. La respuesta y su repetición traen ese recibo.
+- **Copiada, nunca recalculada:** `causaDe` (`lib/servidor/comando.mjs`) toma el motivo del rechazo del motor, que lo lee solo del campo `estado` del estado terminal; el servidor no evalúa límites ni eventos. Sin motivo válido: error (500), no se omite ni se adivina.
+- **Qué estado terminal (R2E3-04):** el que se guarda **con ese recibo**. Si el reset de la hora del comando quema el reto, el estado de antes estaba en curso y el que se guarda es `breach`: causa `breach`. Es la lectura del código; la otra («el estado de antes») dejaría ese recibo sin causa. **Pregunta al CTO.**
+- **Pruebas:** `pruebas/servidor-causa.mjs` (11): estados guardados donde copiar y recalcular difieren (reto `superada` con el motor en breach, `breach` con la cuenta sana, práctica en `breach` y en `objetivo`), lo que no lleva causa, `causaDe` con rechazos que el motor no da hoy (R2E3-07) y el reset (R2E3-04). Rojo contra `256bb89`: 5 de 8 (los tres restantes son de lo que no lleva causa). `pruebas/servidor-detencion.mjs`: el recibo guardado y su repetición contra `sim_comando` real.
+- **Lo que no lleva causa (R2E3-06):** un `avanzar` sobre una sesión terminada es aceptado, con `detencion: { motivo: 'sesion_terminada' }`; un `checkpoint`, aceptado; un reto con `terminal = 'superado'` no se calcula (409 `solo_lectura`). La decisión habla de comandos rechazados. **Pregunta al CTO:** ¿también el `avanzar` sobre una sesión terminada?
+
+#### q.18.3 El endpoint apagado (respuesta 5) — `9af656d`
+
+- Sin `SIM_V1_ENDPOINTS=encendido`, los seis `/api/sim/*` responden `{"ok":false,"http":503,"motivo":"apagado"}`, con `Cache-Control: no-store`, sin autenticar ni leer nada. `mantenimiento` queda solo para `sim_servicio` (con el interruptor encendido).
+- **Negativos:** valores parecidos del interruptor (vacío, `ENCENDIDO`, con espacio, `true`, `1`) siguen apagados; mantenimiento y `sim_servicio` ilegible dicen `mantenimiento`, nunca `apagado`. Las seis rutas, con su oráculo literal.
+- **Lo que queda (R2E3-01 y R2E3-03), sin tocar:**
+  - el cliente (`lib/sim/respuestas.js:10`) trata cualquier 503 como mantenimiento: con el despliegue apagado, quien borre una sesión legado desde el dashboard lee «El simulador está en mantenimiento». Separarlo es un texto de UI: **decide el CTO**;
+  - `lib/sim/apagado.js` (etapa 1) sigue diciendo `mantenimiento`; en esta rama no lo importa nadie.
+
+#### q.18.4 La integración (respuesta 4)
+
+No hoy (día de la puerta). Cuando Astra dé el sí a la ronda 9 de la etapa 2 y a la ronda 2 de la etapa 3, y pasada la puerta, en este orden: (a) la etapa 2 a `main`; (b) la etapa 3 encima; (c) despliegue apagado y comprobación; (d) `mercado-000`, `mercado-001` y el ciclo, según su runbook; (e) más adelante, la s16 y sim-004b. Escrito en los dos runbooks.
+- **Ensayo sin tocar nada (`git merge-tree`, 16-oct):** `main` ← `etapa2-simulador` entra limpio (`main` solo lleva un commit propio, el APLICADOS de la s10 del 14-oct). `etapa3-simulador` encima choca en dos ficheros que las dos ramas amplían por el final: `pruebas/tanda.sh` y este documento.

@@ -71,5 +71,29 @@ titulo('3 · lo que no lleva causa, y lo que no se adivina')
   let err = null
   try { await pide({ ...reto(), estado: 'pausa' }) } catch (e) { err = e }
   oraculo('CAUSA', 'un reto con un estado terminal desconocido: error, ninguna causa adivinada', err instanceof Error, String(err?.message))
+  // R2E3-07 (revisor interno): la comprobacion del servidor, con rechazos que el motor no da hoy
+  const lanza = x => { try { CO.causaDe(x); return false } catch { return true } }
+  oraculo('CAUSA', 'causaDe: sesion_terminada sin motivo, o con un motivo que no es causa, es error (no se omite en silencio)', lanza({ rechazado: 'sesion_terminada' }) && lanza({ rechazado: 'sesion_terminada', motivo: 'otra' }) && lanza({ rechazado: 'sesion_terminada', motivo: 'sesion_terminada' }))
+  oraculo('CAUSA', 'causaDe: aceptado u otro rechazo, sin causa; las tres causas, tal cual', CO.causaDe('aceptado') === null && CO.causaDe({ rechazado: 'sin_cotizacion' }) === null && ['breach', 'fase_superada', 'objetivo_alcanzado'].every(c => CO.causaDe({ rechazado: 'sesion_terminada', motivo: c }) === c))
+}
+
+titulo('4 · el reset de la hora del comando quema el reto (R2E3-04): la causa es la del estado que se guarda con ese recibo')
+{
+  // el guion C7-01 (pruebas/motor/reto.mjs), con la cartera: el reto guardado esta EN CURSO; el reset de la
+  // hora del comando lo quema en ese mismo comando, y sim_comando guarda ese estado terminal con el recibo
+  const M = await importa('lib/motor/motor.mjs')
+  const cero = Object.freeze({ version: 'prueba:EURUSD:0:0', spread_pips: Object.freeze({ EURUSD: 0 }), comision_lote_µ: 0n, swap_µ: 0n })
+  const vs = filas => M.velas('EURUSD', filas.map(([iso, p]) => ({ time: U(iso), open: p, high: p, low: p, close: p })))
+  const vM = vs([['2026-10-05T08:00:00Z', '1.10000'], ['2026-10-06T08:00:00Z', '1.10000'], ['2026-10-07T08:00:00Z', '1.10000'], ['2026-10-07T09:00:00Z', '1.20000'], ['2026-10-07T21:58:00Z', '1.10000'], ['2026-10-07T21:59:00Z', '1.08000'], ['2026-10-08T08:00:00Z', '1.08000']])
+  const gM = [['avanza', '2026-10-05T08:00:00Z'], ['abrir', 'BUY', '1'], ['cerrar', 'p1'], ['avanza', '2026-10-06T08:00:00Z'], ['abrir', 'BUY', '1'], ['cerrar', 'p2'], ['avanza', '2026-10-07T08:00:00Z'], ['abrir', 'BUY', '2'], ['avanza', '2026-10-07T09:00:00Z'], ['cerrar', 'p3'], ['avanza', '2026-10-07T21:58:00Z'], ['abrir', 'BUY', '5'], ['avanza', '2026-10-07T21:59:00Z']]
+  let r = RT.creaReto({ motor: CA.crea({ pares: ['EURUSD'], costes: cero, capital: '100000' }), inicio: U('2026-10-05T07:00:00Z') })
+  for (const paso of gM) {
+    const x = paso[0] === 'avanza' ? RT.avanzaReto(r, U(paso[1]), { EURUSD: vM })
+      : RT.aplicaReto(r, paso[0] === 'abrir' ? { tipo: 'abrir', par: 'EURUSD', lado: paso[1], orden: 'mercado', lotes: paso[2], cotizadoEn: r.motor.reloj.cursor } : { tipo: 'cerrar', id: paso[1] })
+    r = x.reto
+  }
+  ver('control: el reto guardado sigue en curso antes del comando', r.estado === 'en_curso', r.estado)
+  const x = await CO.calcula({ fila: { estado: guardado(r), date_from: '2026-10-05' }, intencion: { tipo: 'cerrar', carga: { id: 'p4' } }, puertos: {} })
+  oraculo('CAUSA', 'reset que quema el reto en la hora del comando: recibo sesion_terminada con causa breach, y el estado que se guarda con el es breach (reset_diario, breach, cierre)', x.resultado === 'rechazado' && x.motivo === 'sesion_terminada' && x.resumen.causa === 'breach' && x.estado.estado === 'breach' && x.eventos.map(e => e.tipo).join(',') === 'reset_diario,breach,cierre', tx({ r: x.resultado, m: x.motivo, c: x.resumen.causa, e: x.estado.estado, ev: x.eventos.map(e => e.tipo) }))
 }
 fin()
