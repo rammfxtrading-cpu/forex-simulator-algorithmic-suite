@@ -66,24 +66,24 @@ pol_esp as (
   select t || '|' || t || '_sesion_propia_update|RESTRICTIVE|UPDATE|{authenticated}|' || replace(c, 'TABLA', t) || '|' || replace(c, 'TABLA', t)
     from cond, unnest(array['sim_trades', 'session_drawings', 'session_chart_config']) t),
 fun_esp(firma, esperado, solo_con_puerta) as (values
-    ('sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|0634aba8572b154630175e35f6f4041656ce967608d80060b82baddeded2eace|service_role', false),
-    ('sim_borrar_sesion(uuid,uuid)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|210d6d9ef38f483eab2d2a73a773fcd68b49b4e58ac33d813bbf34532426360d|service_role', false),
-    ('sim_borrar_legacy(uuid,uuid)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|699be648cae457b5339a5f94d80bbe30f03f5952fb7dbeb9dadc79f3bce114f5|service_role', false),
-    ('sim_borrar_alumno(uuid)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|99130396d3fc4e301110d7aaf42c70240a80e7ae07d81ae738c1cba63e84cdea|service_role', false),
-    ('sim_error(integer,text,jsonb)', 'sql|true|i|search_path=""|dueño=ejecutor|d549317d65746f847af514cee10c6c31cb6bfd7eb678900af8531e14f01ccdc0|', false),
-    ('sim_bloquea_alumno(uuid)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|6f0b01b1fb10aedfe788a79dbc6500f23b43c74008f2e41f8062ad7206ffc672|', false),
-    ('sim_cierre_v0(uuid,numeric,bigint,jsonb)', 'plpgsql|false|v|search_path=""|dueño=ejecutor|3f116e57f9ba0c4ef6b2d1176f0a91997548106ab186b9e3eff9c0f27126d70b|authenticated', false),
-    ('sim_escrituras_v0_registra()', 'plpgsql|true|v|search_path=""|dueño=ejecutor|c47b1970ee48912748434f3161a62062835bfe1ec51af864659164dcddb7a6b4|', false),
-    ('sim_escrituras_v0_marca_balance()', 'plpgsql|true|v|search_path=""|dueño=ejecutor|894174ce7cbdd7f7ec69af214dd39fcff00ed12e117c48887c44bd0a058c3117|', false),
-    ('sim_escrituras_v0_inmutable()', 'plpgsql|false|v|search_path=""|dueño=ejecutor|58154aea4b93fa65064079566019ad2e390969860961b6aece7281b8463b48d3|', false),
-    ('sim_escrituras_v0_solo_disparador()', 'plpgsql|false|v|search_path=""|dueño=ejecutor|6b0f60c5164ea97357a5234501a106b95fcbacfb3362a203b070ad3ca1cb3146|', false),
-    ('sim_escrituras_v0_parejas(uuid)', 'plpgsql|false|s|search_path=""|dueño=ejecutor|287f3eba3f68aa68385b6dd2e82512b9ccea1ed963a8def38382f1fdd6adbf32|', false),
-    ('sim_escrituras_v0_canonico(uuid)', 'plpgsql|false|s|search_path=""|dueño=ejecutor|a84f48563b8abc6af7731fccee921d9b04231daeccd1bfa8abe81dddee0192b9|', false),
-    ('sim_sessions_rev_saldo()', 'plpgsql|false|v|search_path=""|dueño=ejecutor|c209d2326065f55a610319b3207c7b43fdc4ffb5be79302285081b0c5ce18503|', false),
-    ('sim_trades_rev_saldo()', 'plpgsql|true|v|search_path=""|dueño=ejecutor|94c4e7220af33da3f257dfc4eae01d00acbc412b5417d025636d83f88f74569d|', false),
-    ('sim_sessions_padre_propio()', 'plpgsql|true|v|search_path=""|dueño=ejecutor|3285b822d279587324951b93f7dd6268c2103bc5ff39f4e11d2e9a85d2623291|', false),
-    ('enforce_sim_session_limit()', 'plpgsql|true|v|search_path=public|dueño=ejecutor|16cecbd9686b423fa48e75a8a18bfa0a99bff07382c0c5438bc7ba402ae67505|PUBLIC,anon,authenticated,service_role', false),
-    ('sim_escrituras_v0_puerta()', 'plpgsql|false|v|search_path=""|dueño=ejecutor|fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883|', true)),
+    ('sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|0634aba8572b154630175e35f6f4041656ce967608d80060b82baddeded2eace|service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb|modes=-|names=p_actor,p_session_id,p_command_id,p_sobre,p_epoca,p_sesion,p_estado,p_mercado,p_resumen|defaults=-|ndefaults=0|cost=100|rows=0|def=abb09983533ae8b167c7c3910d36ddb7', false),
+    ('sim_borrar_sesion(uuid,uuid)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|210d6d9ef38f483eab2d2a73a773fcd68b49b4e58ac33d813bbf34532426360d|service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid|modes=-|names=p_actor,p_session_id|defaults=-|ndefaults=0|cost=100|rows=0|def=b039b2b9e9f005b2305416eb11b7e834', false),
+    ('sim_borrar_legacy(uuid,uuid)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|699be648cae457b5339a5f94d80bbe30f03f5952fb7dbeb9dadc79f3bce114f5|service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid|modes=-|names=p_user_id,p_session_id|defaults=-|ndefaults=0|cost=100|rows=0|def=5398552fbd631d0beebc6a2990633340', false),
+    ('sim_borrar_alumno(uuid)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|99130396d3fc4e301110d7aaf42c70240a80e7ae07d81ae738c1cba63e84cdea|service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid|modes=-|names=p_user_id|defaults=-|ndefaults=0|cost=100|rows=0|def=bdcb1e2a59d9422d6c7b9951482475ee', false),
+    ('sim_error(integer,text,jsonb)', 'sql|true|i|search_path=""|dueño=ejecutor|d549317d65746f847af514cee10c6c31cb6bfd7eb678900af8531e14f01ccdc0||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=integer,text,jsonb|modes=-|names=p_http,p_motivo,p_extra|defaults=''{}''::jsonb|ndefaults=1|cost=100|rows=0|def=a46517c97ea242e3901ad75f89ac92a7', false),
+    ('sim_bloquea_alumno(uuid)', 'plpgsql|true|v|search_path=""|dueño=ejecutor|6f0b01b1fb10aedfe788a79dbc6500f23b43c74008f2e41f8062ad7206ffc672||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid|modes=-|names=p_actor|defaults=-|ndefaults=0|cost=100|rows=0|def=c11ecb12f670396198cce2655f88387a', false),
+    ('sim_cierre_v0(uuid,numeric,bigint,jsonb)', 'plpgsql|false|v|search_path=""|dueño=ejecutor|3f116e57f9ba0c4ef6b2d1176f0a91997548106ab186b9e3eff9c0f27126d70b|authenticated|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=uuid|args=uuid,numeric,bigint,jsonb|modes=-|names=p_session_id,p_balance,p_last_timestamp,p_trade|defaults=-|ndefaults=0|cost=100|rows=0|def=4d35ee3cad1d8f34b22074607fa00e07', false),
+    ('sim_escrituras_v0_registra()', 'plpgsql|true|v|search_path=""|dueño=ejecutor|c47b1970ee48912748434f3161a62062835bfe1ec51af864659164dcddb7a6b4||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=a342f7511bc8cde06164e95bedfa521d', false),
+    ('sim_escrituras_v0_marca_balance()', 'plpgsql|true|v|search_path=""|dueño=ejecutor|894174ce7cbdd7f7ec69af214dd39fcff00ed12e117c48887c44bd0a058c3117||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=bb380293db1ca7e5715052e4d7e0bb8a', false),
+    ('sim_escrituras_v0_inmutable()', 'plpgsql|false|v|search_path=""|dueño=ejecutor|58154aea4b93fa65064079566019ad2e390969860961b6aece7281b8463b48d3||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=28490ac5564dae2cc9137c700e7dac07', false),
+    ('sim_escrituras_v0_solo_disparador()', 'plpgsql|false|v|search_path=""|dueño=ejecutor|6b0f60c5164ea97357a5234501a106b95fcbacfb3362a203b070ad3ca1cb3146||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=b5e4e4f3516eafbfc60ef7b28f856768', false),
+    ('sim_escrituras_v0_parejas(uuid)', 'plpgsql|false|s|search_path=""|dueño=ejecutor|287f3eba3f68aa68385b6dd2e82512b9ccea1ed963a8def38382f1fdd6adbf32||strict=false|leakproof=false|parallel=u|kind=f|retset=true|ret=record|args=uuid|modes={i,t,t,t}|names=p_session_id,orden,escritura_update,escritura_insert|defaults=-|ndefaults=0|cost=100|rows=1000|def=7999fb9592b0450511cb9fa3276bf600', false),
+    ('sim_escrituras_v0_canonico(uuid)', 'plpgsql|false|s|search_path=""|dueño=ejecutor|a84f48563b8abc6af7731fccee921d9b04231daeccd1bfa8abe81dddee0192b9||strict=false|leakproof=false|parallel=u|kind=f|retset=true|ret=record|args=uuid|modes={i,t,t}|names=p_session_id,texto,sha256|defaults=-|ndefaults=0|cost=100|rows=1000|def=a946bc032d0fa3b182ad6e3df9167074', false),
+    ('sim_sessions_rev_saldo()', 'plpgsql|false|v|search_path=""|dueño=ejecutor|c209d2326065f55a610319b3207c7b43fdc4ffb5be79302285081b0c5ce18503||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=a94d218859a71712d274259e40c15a98', false),
+    ('sim_trades_rev_saldo()', 'plpgsql|true|v|search_path=""|dueño=ejecutor|94c4e7220af33da3f257dfc4eae01d00acbc412b5417d025636d83f88f74569d||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=4ae9b01861c73e7ae45bc51760d56764', false),
+    ('sim_sessions_padre_propio()', 'plpgsql|true|v|search_path=""|dueño=ejecutor|3285b822d279587324951b93f7dd6268c2103bc5ff39f4e11d2e9a85d2623291||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=758dc4d0b122b53db35f91f8f85d44ec', false),
+    ('enforce_sim_session_limit()', 'plpgsql|true|v|search_path=public|dueño=ejecutor|16cecbd9686b423fa48e75a8a18bfa0a99bff07382c0c5438bc7ba402ae67505|PUBLIC,anon,authenticated,service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=057b9c51bfe664f3841b2b617aa724ae', false),
+    ('sim_escrituras_v0_puerta()', 'plpgsql|false|v|search_path=""|dueño=ejecutor|fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=58a2b98ce8df1cffcb40e2ee8466e718', true)),
 fun as (
   select e.firma, e.esperado,
          (select concat_ws('|', l.lanname, p.prosecdef::text, p.provolatile::text, coalesce(array_to_string(p.proconfig, ','), '-'),
@@ -93,7 +93,9 @@ fun as (
                            coalesce((select string_agg(g, ',' order by g collate "C") from (
                                        select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end g
                                          from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
-                                        where a.grantee <> p.proowner and a.privilege_type = 'EXECUTE') x), ''))
+                                        where a.grantee <> p.proowner and a.privilege_type = 'EXECUTE') x), ''),
+                           -- E3R2-01 (Astra r2; CTO 16-oct): todos los atributos de pg_proc y el md5 de pg_get_functiondef (la misma expresion que sim-004b)
+                           concat_ws('|', 'strict=' || p.proisstrict::text, 'leakproof=' || p.proleakproof::text, 'parallel=' || p.proparallel::text, 'kind=' || p.prokind::text, 'retset=' || p.proretset::text, 'ret=' || format_type(p.prorettype, NULL), 'args=' || coalesce((SELECT string_agg(format_type(u.t, NULL), ',' ORDER BY u.n) FROM unnest(p.proargtypes::oid[]) WITH ORDINALITY u(t, n)), ''), 'modes=' || coalesce(p.proargmodes::text, '-'), 'names=' || coalesce(array_to_string(p.proargnames, ','), '-'), 'defaults=' || coalesce(pg_get_expr(p.proargdefaults, 0), '-'), 'ndefaults=' || p.pronargdefaults::text, 'cost=' || p.procost::text, 'rows=' || p.prorows::text, 'def=' || md5(pg_get_functiondef(p.oid))))
             from pg_proc p join pg_language l on l.oid = p.prolang where p.oid = to_regprocedure('public.' || e.firma)) medido,
          (select 'md5 ' || md5(p.prosrc) || ' · dueño ' || pg_get_userbyid(p.proowner) || ' · acl ' || coalesce(p.proacl::text, '(por defecto)')
             from pg_proc p where p.oid = to_regprocedure('public.' || e.firma)) crudo
@@ -190,10 +192,10 @@ dos as (
          (select k.convalidated from pg_constraint k where k.conrelid = to_regclass('public.' || d.conrel) and k.conname = d.conname) validada,
          d.vieja, d.nueva
     from def_dos d),
-sust(firma, sha) as (values
-    ('sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)', '94f4db481cc09a2bc9b5d86512931186d8ec5aa98689bf6dc54bd6418798bc36'),
-    ('sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)', 'f58af2b0e4945d9313ea2c3bb55f4be7c003521be80ed92a5a0a56b5cdc03d48'),
-    ('sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)', '3409a208f5b26211be3406f8d4a93ed074cd1e1a72c6c3eed32f5b2d9c99526b')),
+sust(firma, sha, atr) as (values
+    ('sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)', '94f4db481cc09a2bc9b5d86512931186d8ec5aa98689bf6dc54bd6418798bc36', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb|modes=-|names=p_actor,p_session_id,p_command_id,p_tipo,p_sobre,p_epoca,p_version_esperada,p_cliente_id,p_testigo,p_resultado|defaults=-|ndefaults=0|cost=100|rows=0|def=8d7d99c91cd3207fa686f97a13fe526c'),
+    ('sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)', 'f58af2b0e4945d9313ea2c3bb55f4be7c003521be80ed92a5a0a56b5cdc03d48', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,integer,text,boolean|modes=-|names=p_actor,p_session_id,p_command_id,p_sobre,p_epoca,p_cliente_id,p_forzar|defaults=-|ndefaults=0|cost=100|rows=0|def=da773a9b444cf9cac9a610848a52b78b'),
+    ('sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)', '3409a208f5b26211be3406f8d4a93ed074cd1e1a72c6c3eed32f5b2d9c99526b', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb|modes=-|names=p_actor,p_padre_id,p_hija_id,p_command_id,p_sobre,p_epoca,p_version_esperada,p_sesion,p_estado,p_mercado,p_resumen|defaults=-|ndefaults=0|cost=100|rows=0|def=e26f913d4b994863373db75cd571ed94')),
 estado as (
   select (select count(*) from dos where def = vieja) viejas,
          (select count(*) from dos where def = nueva and validada) nuevas,
@@ -208,9 +210,11 @@ fsust as (
            || ' PUBLIC=' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0)
            || ' service_role=' || has_function_privilege('service_role', p.oid, 'EXECUTE')
            || case when (select viejas = 0 and nuevas = 2 and cuerpos = 3 from estado)
-                   then ' definer=' || p.prosecdef || ' search_path_vacio=' || coalesce('search_path=""' = any (p.proconfig), false) else '' end end medido,
+                   then ' definer=' || p.prosecdef || ' search_path_vacio=' || coalesce('search_path=""' = any (p.proconfig), false)
+                        -- E3R2-01: con sim-004b aplicada, todos sus atributos (antes, su CREATE OR REPLACE los vuelve a fijar)
+                        || ' atributos=' || concat_ws('|', 'strict=' || p.proisstrict::text, 'leakproof=' || p.proleakproof::text, 'parallel=' || p.proparallel::text, 'kind=' || p.prokind::text, 'retset=' || p.proretset::text, 'ret=' || format_type(p.prorettype, NULL), 'args=' || coalesce((SELECT string_agg(format_type(u.t, NULL), ',' ORDER BY u.n) FROM unnest(p.proargtypes::oid[]) WITH ORDINALITY u(t, n)), ''), 'modes=' || coalesce(p.proargmodes::text, '-'), 'names=' || coalesce(array_to_string(p.proargnames, ','), '-'), 'defaults=' || coalesce(pg_get_expr(p.proargdefaults, 0), '-'), 'ndefaults=' || p.pronargdefaults::text, 'cost=' || p.procost::text, 'rows=' || p.prorows::text, 'def=' || md5(pg_get_functiondef(p.oid))) else '' end end medido,
          'anon=false authenticated=false PUBLIC=false service_role=true'
-           || case when (select viejas = 0 and nuevas = 2 and cuerpos = 3 from estado) then ' definer=true search_path_vacio=true' else '' end esperado
+           || case when (select viejas = 0 and nuevas = 2 and cuerpos = 3 from estado) then ' definer=true search_path_vacio=true atributos=' || s.atr else '' end esperado
     from sust s left join pg_proc p on p.oid = to_regprocedure('public.' || s.firma)),
 restr_esp(rel, nombre, def) as (values
     ('sim_alumnos', 'sim_alumnos_pkey', 'PRIMARY KEY (user_id)'),
