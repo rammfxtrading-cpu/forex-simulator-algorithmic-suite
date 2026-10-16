@@ -319,7 +319,13 @@ internos as (
              coalesce(k.contype operator(pg_catalog.=) 'f' and k.confrelid operator(pg_catalog.=) pg_catalog.to_regclass('storage.buckets')
                       and (select pg_catalog.array_agg(a.attname::text order by u.n) from pg_catalog.unnest(k.conkey) with ordinality u(c, n) join pg_catalog.pg_attribute a on a.attrelid operator(pg_catalog.=) k.conrelid and a.attnum operator(pg_catalog.=) u.c) operator(pg_catalog.=) array['bucket_id']::pg_catalog.text[]
                       and (select pg_catalog.array_agg(a.attname::text order by u.n) from pg_catalog.unnest(k.confkey) with ordinality u(c, n) join pg_catalog.pg_attribute a on a.attrelid operator(pg_catalog.=) k.confrelid and a.attnum operator(pg_catalog.=) u.c) operator(pg_catalog.=) array['id']::pg_catalog.text[]
-                      and k.confupdtype operator(pg_catalog.=) 'a' and k.confdeltype operator(pg_catalog.=) 'a' and not k.condeferrable and k.convalidated, false) fk_medida
+                      and k.confupdtype operator(pg_catalog.=) 'a' and k.confdeltype operator(pg_catalog.=) 'a' and not k.condeferrable and k.convalidated
+                      -- R9J-01 (revisor interno): los operadores de igualdad que ejecuta el RI, los de pg_catalog para text,
+                      -- y el indice, el de la clave primaria de storage.buckets
+                      and k.conpfeqop operator(pg_catalog.=) array['pg_catalog.=(text,text)'::pg_catalog.regoperator::pg_catalog.oid]
+                      and k.conppeqop operator(pg_catalog.=) array['pg_catalog.=(text,text)'::pg_catalog.regoperator::pg_catalog.oid]
+                      and k.conffeqop operator(pg_catalog.=) array['pg_catalog.=(text,text)'::pg_catalog.regoperator::pg_catalog.oid]
+                      and k.conindid operator(pg_catalog.=) (select x.indexrelid from pg_catalog.pg_index x where x.indrelid operator(pg_catalog.=) pg_catalog.to_regclass('storage.buckets') and x.indisprimary), false) fk_medida
         from pg_catalog.pg_trigger t join pg_catalog.pg_class r on r.oid = t.tgrelid
              join pg_catalog.pg_proc f on f.oid = t.tgfoid join pg_catalog.pg_namespace n on n.oid = f.pronamespace join pg_catalog.pg_language l on l.oid = f.prolang
              left join pg_catalog.pg_constraint k on k.oid = t.tgconstraint

@@ -3239,3 +3239,16 @@ Astra r8 (`revisiones-suite/2026-10-15-astra-mercado-v1-etapa2-r8.md`): **NO**. 
   - un mutante por atributo (los 16 y uno que solo cambia `pg_get_functiondef`: SUPPORT) sobre `storage.enforce_bucket_name_length`; los no admitidos por DDL, tocando el catálogo. Cada uno da PARAR en s14 y aborto en `mercado-001` antes del INSERT, con el testigo sin consumir;
   - el control: la s14f sobre el montaje da, fila a fila, la salida literal de producción.
 - **Tanda de la prueba:** 367 verdes.
+
+**p.20.9 · El revisor adversario interno sobre `78023ca..3913df6` (R9J).** Pudo ejecutarlo todo, con el turno; sus scripts, en `revisiones-suite/2026-10-16-mercado-v1-etapa2-r9b/revisor-interno/`.
+- **R9J-01 (media), arreglado:** la definición medida de la FK no incluía sus operadores de igualdad (`conpfeqop`, `conppeqop`, `conffeqop`), que son los que ejecuta el RI.
+  - **El caso:** con `conpfeqop` apuntando, por catálogo, a un `=` ajeno con efecto, s14 decía «8 de 8» y `mercado-001` aplicaba; el efecto se ejecutaba en el INSERT del centinela, dentro de un interno acreditado.
+  - **Arreglo:** los tres operadores tienen que ser `pg_catalog.=(text,text)`, y el índice de la FK, el de la clave primaria de `storage.buckets`.
+- **R9J-02 (baja), arreglado en las pruebas:** tres partes de la forma (el índice, `convalidated` y la columna de la FK) no tenían prueba (un mutante que las quitaba dejaba 367 verdes). Familia nueva: el sustituto con otro índice, la FK NOT VALID y la FK sobre otra columna; con R9J-01, 4 casos más en la sección 16.
+- **Rojo contra `3913df6`:** 2 (R9J-01 en s14 y en `mercado-001`). Los otros tres ya los paraba el código; ahora tienen prueba. `pruebas/mercado-001-bucket.mjs`: 375 verdes.
+- **Lo que intentó sin encontrar nada:**
+  - el bloque, idéntico en los dos ficheros;
+  - `pg_get_functiondef` cubre STRICT, LEAKPROOF, PARALLEL, SECURITY, SET, SUPPORT, TRANSFORM, VARIADIC, WINDOW, los argumentos y el cuerpo; ROWS, COST, dueño y lenguaje van aparte;
+  - lo que queda sin calificar en el bloque (`=` entre text/oid y el CASE sobre `"char"`) tiene coincidencia exacta en `pg_catalog`. El `||` de `firma`, de antes, solo puede hacer que falle;
+  - `tgargs` con `tgnargs` 0, `tgoldtable`/`tgnewtable`, `tgparentid`, un `tgfoid` homónimo en otro esquema y restricciones duplicadas: ninguno da un falso acreditado;
+  - los mutantes obvios (atributos fuera de `difiere`, la cuenta en una dirección, la guarda tras el INSERT) los cazan las pruebas.

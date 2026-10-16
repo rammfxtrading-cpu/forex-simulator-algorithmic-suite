@@ -957,7 +957,22 @@ delete from pg_catalog.pg_trigger where tgisinternal and tgrelid = 'storage.obje
         ['R9I-01: sustituto (el real borrado del catalogo, el gemelo con WHEN en su sitio)', gemelo({ cuando: 'when (public.cuando())', borra: true }), 2, [`${CI}interno AFTER INSERT · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: WHEN`, `${CI}falta (interno AFTER INSERT · por fila`]],
       ]
       familia.push(...gemelos)
-      ver('control: la familia de internos tiene 3 FK quitadas, una de mas, otra accion, la renombrada, un interno desactivado, los dos de Astra r8, la diferible, el «||» ajeno y 7 gemelos', familia.length === 9 + 2 + 7)
+      // R9J (revisor interno de 78023ca..3913df6): los operadores de la FK, el indice y su definicion
+      const EQ = `create function public.eq_efecto(text, text) returns boolean language plpgsql security definer as $f$ begin perform pg_catalog.nextval('public.astra_efecto'); return $1 operator(pg_catalog.=) $2; end $f$;
+create operator public.=== (leftarg = text, rightarg = text, function = public.eq_efecto);`
+      const FKDEF = 'interno pg_catalog.RI_FKey_check_ins · objects_bucketId_fkey (difiere: interno AFTER INSERT · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: definicion de la FK'
+      familia.push(
+        ['R9J-01: el operador de igualdad de la FK (conpfeqop) apuntando a un «=» ajeno con efecto (catalogo)', `${EQ}\nupdate pg_catalog.pg_constraint set conpfeqop = array['public.===(text,text)'::pg_catalog.regoperator::oid] where conname = 'objects_bucketId_fkey';`, 8, [FKDEF]],
+        ['R9J-02: sustituto con OTRO indice (el real borrado; un gemelo sin WHEN con el indice de otro unico de buckets)', `create unique index otro_id on storage.buckets (id);
+create constraint trigger gemelo after insert on storage.objects from storage.buckets for each row execute function pg_catalog."RI_FKey_check_ins"();
+update pg_catalog.pg_trigger set tgisinternal = true, tgconstraint = (select oid from pg_catalog.pg_constraint where conname = 'objects_bucketId_fkey'), tgconstrindid = 'storage.otro_id'::regclass where tgname = 'gemelo';
+delete from pg_catalog.pg_constraint where conname = 'gemelo';
+delete from pg_catalog.pg_trigger where tgisinternal and tgrelid = 'storage.objects'::regclass and tgfoid = 'pg_catalog."RI_FKey_check_ins"'::regproc and tgname <> 'gemelo';`, 2, [`${CI}interno AFTER INSERT · por fila · relacionada=storage.buckets · habilitado=O · lenguaje=internal · forma: indice`, `${CI}falta`]],
+        ['R9J-02: objects_bucketId_fkey NOT VALID', `alter table storage.objects drop constraint "objects_bucketId_fkey", add constraint "objects_bucketId_fkey" foreign key (bucket_id) references storage.buckets(id) not valid;`, 8, [FKDEF]],
+        ['R9J-02: objects_bucketId_fkey sobre otra columna (otra → buckets.id), con el mismo nombre', `alter table storage.objects add column otra text;
+alter table storage.objects drop constraint "objects_bucketId_fkey", add constraint "objects_bucketId_fkey" foreign key (otra) references storage.buckets(id);`, 8, [FKDEF]],
+      )
+      ver('control: la familia de internos tiene 3 FK quitadas, una de mas, otra accion, la renombrada, un interno desactivado, los dos de Astra r8, la diferible, el «||» ajeno, 7 gemelos y los 4 de R9J', familia.length === 9 + 2 + 7 + 4)
       const efecto = d => pg.psql(`select last_value || ':' || is_called from public.astra_efecto`, d).out
       for (const [nombre, extra, k, dice] of familia) {
         const d = montaT(`create sequence public.astra_efecto;\n${extra}`)
