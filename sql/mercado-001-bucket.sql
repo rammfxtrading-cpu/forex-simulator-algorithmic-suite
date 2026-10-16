@@ -101,6 +101,10 @@
 --     aborta todo. s14 acredita esos dos valores por defecto y el enum.
 --   · PRESENCIA EXACTA (CTO 15-oct, tras Astra r8): uno de los siete de la
 --     lista que falte tambien aborta, «(difiere: falta)».
+--   · REGLAS (CTO 16-oct): una regla (pg_rewrite) en storage.objects o
+--     storage.buckets tambien aborta, antes del INSERT: lo acreditado es
+--     ninguna, «regla <nombre> (difiere: regla <evento>: no se acredita
+--     ninguna)». Es el mismo bloque que s14 (CTE «reglas» y «otros»).
 --   · ENUM (E2R8-02, CTO 15-oct): antes del INSERT, el array EXACTO de
 --     etiquetas de storage.buckettype en el orden de enumsortorder tiene que
 --     ser {STANDARD,ANALYTICS,VECTOR} (s14d); si no, aborta: «el enum
@@ -372,12 +376,28 @@ veredictos as (
 faltan as (
   select a.tabla, a.nombre from acreditados a
    where not exists (select 1 from fichas d where d.tabla = a.tabla and d.nombre = a.nombre)
+),
+-- reglas (CTO 16-oct, ronda 9 del revisor interno): una regla de pg_rewrite en storage.objects o storage.buckets
+-- equivale a un disparador que no ve ninguna guarda; entran en la presencia exacta y lo acreditado es NINGUNA
+-- (una vista tiene la suya, _RETURN). Cualquiera, NO ACREDITADA: s14 manda PARAR y mercado-001 aborta
+reglas as (
+  select r.relname::text tabla, w.rulename::text nombre,
+         case w.ev_type when '1' then 'SELECT' when '2' then 'UPDATE' when '3' then 'INSERT' when '4' then 'DELETE' else w.ev_type::text end
+         || case when w.is_instead then ' INSTEAD' else '' end || ' · habilitada=' || w.ev_enabled::text detalle
+    from pg_catalog.pg_rewrite w join pg_catalog.pg_class r on r.oid = w.ev_class
+   where w.ev_class in (pg_catalog.to_regclass('storage.objects'), pg_catalog.to_regclass('storage.buckets'))
+),
+-- lo que no es un disparador de la lista y tampoco se acredita: (tabla, objeto, difiere)
+otros as (
+  select g.tabla, 'regla ' || g.nombre objeto, 'regla ' || g.detalle || ': no se acredita ninguna' difiere from reglas g
 )
 -- <<< acreditados
 select v.tabla, v.nombre, v.difiere from veredictos v
    where not v.acreditado
  union all
-select f.tabla, f.nombre, 'falta' from faltan f) v;
+select f.tabla, f.nombre, 'falta' from faltan f
+ union all
+select o.tabla, o.objeto, o.difiere from otros o) v;
   if no_acreditados is not null then
     raise exception 'mercado-001: disparadores de storage NO ACREDITADOS: %. Su ficha, en s14; re-acreditar con el CTO; no se crea nada', no_acreditados;
   end if;

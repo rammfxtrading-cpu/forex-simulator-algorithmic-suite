@@ -847,6 +847,47 @@ create operator public.= (leftarg = text[], rightarg = text[], function = public
     oraculo('E2R8-02', 'la comparacion del enum es el mismo texto en s14 y en mercado-001 (una vez en cada uno)', expr(S14).length === 1 && expr(M1).length === 1 && expr(S14)[0] === expr(M1)[0])
     const exprT = t => (t.match(/coalesce\(\(select a\.atttypid from pg_catalog\.pg_attribute a where a\.attrelid = pg_catalog\.to_regclass\('storage\.buckets'\) and a\.attname = 'type' and not a\.attisdropped\) operator\(pg_catalog\.=\) pg_catalog\.to_regtype\('storage\.buckettype'\), false\)/g) || [])
     oraculo('R9-01', 'la comprobacion del tipo de la columna es el mismo texto en s14 y en mercado-001 (una vez en cada uno)', exprT(S14).length === 1 && exprT(M1).length === 1)
+
+    titulo('15 · reglas (CTO 16-oct): pg_rewrite en storage.objects y storage.buckets entra en la presencia exacta; lo acreditado es ninguna')
+    // Familia generada, exhaustiva: las dos tablas × INSERT/UPDATE/DELETE × (ALSO con efecto, INSTEAD NOTHING); una
+    // desactivada en cada tabla; una con el nombre de un disparador acreditado. El efecto de las ALSO es una secuencia
+    // (no se deshace): si mercado-001 llegara a escribir, se veria
+    {
+      const EFECTO = `\ncreate sequence public.efecto_regla;`
+      const efecto = d => pg.psql(`select last_value || ':' || is_called from public.efecto_regla`, d).out
+      const familia = []
+      for (const t of ['objects', 'buckets'])
+        for (const ev of ['INSERT', 'UPDATE', 'DELETE'])
+          for (const [forma, accion] of [['ALSO', `do also select nextval('public.efecto_regla')`], ['INSTEAD', 'do instead nothing']]) {
+            const n = `r_${t}_${ev.toLowerCase()}_${forma.toLowerCase()}`
+            familia.push([`${forma} ${ev} en storage.${t}`, t, n, `create rule ${n} as on ${ev.toLowerCase()} to storage.${t} ${accion};`, `regla ${ev}${forma === 'INSTEAD' ? ' INSTEAD' : ''} · habilitada=O`])
+          }
+      for (const t of ['objects', 'buckets'])
+        familia.push([`desactivada (DISABLE RULE) en storage.${t}`, t, `r_${t}_desactivada`, `create rule r_${t}_desactivada as on insert to storage.${t} do also select nextval('public.efecto_regla'); alter table storage.${t} disable rule r_${t}_desactivada;`, 'regla INSERT · habilitada=D'])
+      familia.push(['con el nombre de un disparador acreditado (protect_buckets_delete)', 'buckets', 'protect_buckets_delete', `create rule protect_buckets_delete as on delete to storage.buckets do instead nothing;`, 'regla DELETE INSTEAD · habilitada=O'])
+      ver('control: la familia de reglas tiene 2 × 3 × 2 + 2 + 1 = 15 casos', familia.length === 15)
+      for (const [nombre, t, n, extra, detalle] of familia) {
+        const d = montaT(EFECTO + '\n' + extra)
+        const e0 = efecto(d)
+        const qq = s14(d)
+        const quien = t === 'objects' ? `regla ${n}` : `buckets.regla ${n}`
+        const fila = `disparador|${quien}|storage.${t} · NO ACREDITADO (difiere: ${detalle}: no se acredita ninguna)`
+        const lineas = qq.out.split('\n').filter(x => x.startsWith('disparador|'))
+        oraculo('REGLAS', `s14: ${nombre} → su fila NO ACREDITADO, «(reglas)» 1 y el resumen cuenta 1 sin acreditar: PARAR`, qq.ok && lineas.includes(fila) && lineas.includes('disparador|(reglas)|1 reglas (pg_rewrite) en storage.objects y storage.buckets: NO ACREDITADAS (lo acreditado es ninguna); PARAR') && /^disparador\|\(resumen\)\|storage\.objects: 2 \(1 por sentencia\) · storage\.buckets: 5 · sin acreditar: 1: .*PARAR/m.test(qq.out), lineas.join(' / ') || qq.err)
+        const a = estado(d)
+        const r = pg.psql(M1, d)
+        oraculo('REGLAS', `mercado-001: ${nombre} → aborta antes del INSERT (testigo y efecto sin consumir) nombrando la regla, y nada cambia`, !r.ok && r.err.includes(`mercado-001: disparadores de storage NO ACREDITADOS: ${quien} (difiere: ${detalle}: no se acredita ninguna)`) && sinInsert(d) && efecto(d) === e0 && estado(d) === a, err1(r))
+      }
+      {
+        const qq = s14(monta(SUPA))
+        oraculo('REGLAS', 'positivo: sin reglas, «(reglas)» dice 0 y ninguna, y los siete siguen acreditados', qq.ok && /^disparador\|\(reglas\)\|0 reglas \(pg_rewrite\) en storage\.objects y storage\.buckets: ninguna, como lo acreditado \(CTO 16-oct\)$/m.test(qq.out) && /sin acreditar: 0: todos acreditados/.test(qq.out), qq.out.split('\n').filter(x => x.startsWith('disparador|(')).join(' / ') || qq.err)
+        const d = monta(SUPA + EFECTO + `\ncreate table public.otra (x int); create rule r_otra as on insert to public.otra do also select nextval('public.efecto_regla');`)
+        const q2 = s14(d)
+        ver('control: una regla en otra tabla (public.otra) no cuenta: «(reglas)» 0 y mercado-001 aplica', q2.ok && /^disparador\|\(reglas\)\|0 reglas /m.test(q2.out) && pg.psql(M1, d).ok, q2.out.split('\n').filter(x => x.startsWith('disparador|(')).join(' / ') || q2.err)
+      }
+      const exprR = t => (t.match(/from pg_catalog\.pg_rewrite w join pg_catalog\.pg_class r on r\.oid = w\.ev_class\n   where w\.ev_class in \(pg_catalog\.to_regclass\('storage\.objects'\), pg_catalog\.to_regclass\('storage\.buckets'\)\)/g) || [])
+      oraculo('REGLAS', 'la lectura de las reglas esta dentro del bloque compartido (una vez en cada fichero)', exprR(S14).length === 1 && exprR(M1).length === 1)
+    }
   }
 
   oraculo('S14', 'una sola SELECT: sin escrituras ni EXECUTE (fuera comentarios)', (() => { const sin = S14.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''"); return !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|perform|call|do)\b/i.test(sin) && (sin.match(/;/g) || []).length === 1 })())
