@@ -16,6 +16,7 @@
  * y su informe.
  */
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 const corre = (...args) => {
@@ -30,9 +31,16 @@ titulo('los dos contratos, 200 escenarios')
 const a = corre('200')
 const opt = linea(a.salida, 'optimizacion'), mcv = linea(a.salida, 'mcv01')
 console.log('  ' + opt + '\n  ' + mcv)
-oraculo('MCV2', 'contrato «optimizacion» (4235196 + MCV-01 + E3-02, la misma politica de ambiguedad): 200 de 200 identicos, 0 excepciones', num(opt, 'identicos') === 200 && num(opt, 'escenarios') === 200 && num(opt, 'excepciones') === 0, opt || a.salida.slice(0, 300))
-oraculo('MCV2', 'contrato «mcv01» (contra 63be57d, quitando solo conversion): todos los escenarios de practica y FTMO identicos, 0 excepciones', num(mcv, 'escenarios') > 50 && num(mcv, 'identicos') === num(mcv, 'escenarios') && num(mcv, 'excepciones') === 0, mcv || '(sin linea del contrato)')
+oraculo('MCV2', 'contrato «optimizacion» (4235196 + MCV-01 + E3-02 + el rechazo 5b348cd, la misma politica de ambiguedad): 200 de 200 identicos, 0 excepciones', num(opt, 'identicos') === 200 && num(opt, 'escenarios') === 200 && num(opt, 'excepciones') === 0 && opt.includes('referencia 4235196 + 36794dd + e58536d + 5b348cd ·'), opt || a.salida.slice(0, 300))
+oraculo('MCV2', 'contrato «mcv01» (63be57d + el rechazo 5b348cd, quitando solo conversion): todos los escenarios de practica y FTMO identicos, 0 excepciones', num(mcv, 'escenarios') > 50 && num(mcv, 'identicos') === num(mcv, 'escenarios') && num(mcv, 'excepciones') === 0 && mcv.includes('referencia 63be57d + 5b348cd (sin conversion) ·'), mcv || '(sin linea del contrato)')
 oraculo('MCV2', 'los dos contratos con eventos de verdad (cierres y breaches), y el instrumento sale con 0', num(opt, 'cierres') > 100 && num(opt, 'breaches') > 10 && num(mcv, 'cierres') > 50 && a.codigo === 0, `codigo ${a.codigo}`)
+
+titulo('el rechazo 5b348cd va en las referencias como parche, nunca traduciendo codigos (CTO 16-oct)')
+const fuente = readFileSync(path.join(REPO, 'pruebas', 'medidas', 'equivalencia.mjs'), 'utf8')
+oraculo('MCV2', 'el instrumento no nombra ningun codigo de rechazo (ni viejo ni nuevo): no hay traduccion posible, solo el parche', !/sesion_en_breach|reto_terminado|sesion_terminada|objetivo_alcanzado/.test(fuente.replace(/^\s*(\/\/|\*).*$/gm, '')), (fuente.match(/.*(sesion_en_breach|reto_terminado|sesion_terminada|objetivo_alcanzado).*/g) ?? []).filter(l => !/^\s*(\/\/|\*)/.test(l)).join(' | ') || '-')
+const sr = corre('200', '--sin-rechazo')
+const sro = linea(sr.salida, 'optimizacion'), srm = linea(sr.salida, 'mcv01')
+ver('control: sin 5b348cd en las referencias, los dos contratos ven diferencias (los comandos sobre una sesion terminada) y el instrumento sale con 1', sr.codigo === 1 && num(sro, 'identicos') < 200 && num(srm, 'identicos') < num(srm, 'escenarios') && num(sro, 'excepciones') === 0 && num(srm, 'excepciones') === 0, `${sro} || ${srm}`)
 
 titulo('una excepcion es rojo, nunca igualdad')
 const e = corre('5', '--control-excepcion')

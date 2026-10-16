@@ -7,17 +7,21 @@
  * referencia sacada con `git show` a una carpeta temporal:
  *   · optimizacion: contra 4235196 (el ultimo sin optimizar) con la MISMA politica de ambiguedad:
  *     a la referencia se le aplican los cambios funcionales posteriores del motor que no son la
- *     optimizacion (36794dd MCV-01 y e58536d E3-02). Sin eso se mezcla el arreglo de MCV-01 con la
- *     referencia que aun tenia el fallo (el 164/200 de Astra);
- *   · mcv01: la regresion de MCV-01 contra 63be57d (antes del campo conversion del evento cierre):
+ *     optimizacion (36794dd MCV-01, e58536d E3-02 y 5b348cd, el rechazo sesion_terminada). Sin eso
+ *     se mezcla el arreglo de MCV-01 con la referencia que aun tenia el fallo (el 164/200 de Astra);
+ *   · mcv01: la regresion de MCV-01 contra 63be57d (antes del campo conversion del evento cierre)
+ *     con 5b348cd aplicado tambien a la referencia (CTO 16-oct: nada de traducir codigos):
  *     identico quitando SOLO ese campo, en los tipos que 63be57d conoce (practica y FTMO).
  * Una EXCEPCION en un escenario es rojo (se cuenta aparte), nunca igualdad.
  *   node --import ./pruebas/sin-red.mjs --import ./pruebas/registro.mjs pruebas/medidas/equivalencia.mjs [escenarios]
  *        [--contrato optimizacion|mcv01] [--sin-parches] [--control-excepcion]
- * --sin-parches: la referencia de «optimizacion» sin los cambios funcionales (control: el rojo mezclado).
+ * --sin-parches: la referencia de «optimizacion» sin MCV-01 ni E3-02 (control: el rojo mezclado); el
+ *   rechazo 5b348cd sigue aplicado, para que las diferencias sean solo las de MCV-01.
+ * --sin-rechazo: las dos referencias sin 5b348cd (control: los comandos sobre una sesion terminada
+ *   dan el codigo viejo en la referencia y el nuevo en la copia; tiene que salir rojo).
  * --control-excepcion: las dos versiones lanzan en el escenario 0 (control: tiene que salir rojo).
- * --copia COMMIT: en lugar de la copia de trabajo, el motor de ese commit (control: con a8e40a4, que
- *   aun tiene el fallo de MCV-01, el contrato mcv01 tiene que ver diferencias).
+ * --copia COMMIT: en lugar de la copia de trabajo, el motor de ese commit con 5b348cd encima (control:
+ *   con a8e40a4, que aun tiene el fallo de MCV-01, el contrato mcv01 tiene que ver diferencias).
  * Codigo 0 solo si todos los contratos pedidos salen identicos, sin excepciones y con eventos.
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
@@ -29,10 +33,15 @@ import { REPO, importa } from '../lib.mjs'
 const args = process.argv.slice(2)
 const opcion = k => { const i = args.indexOf(k); return i < 0 ? null : args[i + 1] }
 const N = Number(args.find(x => /^\d+$/.test(x)) ?? 60)
-const SIN_PARCHES = args.includes('--sin-parches'), CONTROL_EXC = args.includes('--control-excepcion')
+const SIN_PARCHES = args.includes('--sin-parches'), CONTROL_EXC = args.includes('--control-excepcion'), SIN_RECHAZO = args.includes('--sin-rechazo')
+// 5b348cd (CTO 15-oct): un comando sobre una sesion terminada → { rechazado: 'sesion_terminada', motivo }.
+// Es un cambio funcional posterior a las dos referencias: va a sus parches (CTO 16-oct), nunca como
+// una traduccion de codigos en la comparacion.
+const RECHAZO = '5b348cd'
+const R = SIN_RECHAZO ? [] : [RECHAZO]
 const CONTRATOS = {
-  optimizacion: { ref: '4235196', parches: SIN_PARCHES ? [] : ['36794dd', 'e58536d'], tipos: null, quita: [] },
-  mcv01: { ref: '63be57d', parches: [], tipos: ['practica', 'FTMO'], quita: ['conversion'] },
+  optimizacion: { ref: '4235196', parches: SIN_PARCHES ? R : ['36794dd', 'e58536d', ...R], tipos: null, quita: [] },
+  mcv01: { ref: '63be57d', parches: R, tipos: ['practica', 'FTMO'], quita: ['conversion'] },
 }
 const pedidos = opcion('--contrato') ? [opcion('--contrato')] : Object.keys(CONTRATOS)
 if (!pedidos.every(c => CONTRATOS[c])) { console.log(`contrato desconocido: ${pedidos}`); process.exit(2) }
@@ -48,9 +57,9 @@ async function referencia({ ref, parches }) {
   const de = f => import(pathToFileURL(path.join(dir, f)).href)
   return { dir, MO: { CA: await de('lib/motor/cartera.mjs'), RT: await de('lib/motor/reto.mjs'), M: await de('lib/motor/motor.mjs') } }
 }
-// la copia de trabajo, o (--copia COMMIT, para los controles) el motor de ese commit
+// la copia de trabajo, o (--copia COMMIT, para los controles) el motor de ese commit con el rechazo encima
 const COPIA = opcion('--copia')
-const copia = COPIA ? await referencia({ ref: COPIA, parches: [] }) : null
+const copia = COPIA ? await referencia({ ref: COPIA, parches: [RECHAZO] }) : null
 const NUEVO = copia ? copia.MO : { CA: await importa('lib/motor/cartera.mjs'), RT: await importa('lib/motor/reto.mjs'), M: await importa('lib/motor/motor.mjs') }
 const PARES = ['AUDCAD', 'AUDUSD', 'EURUSD', 'GBPJPY', 'GBPUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY']
 const BASE = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3, NZDUSD: 0.6, USDCAD: 1.37, USDCHF: 0.88, USDJPY: 150.2 }
