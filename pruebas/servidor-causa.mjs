@@ -17,9 +17,7 @@
  * Un estado terminal desconocido es un error, no una causa adivinada. Otro rechazo, o un comando
  * aceptado, no llevan causa. Contra sim_comando real: servidor-detencion.mjs (DETS-causa).
  */
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { titulo, ver, oraculo, fin, importa, REPO } from './lib.mjs'
+import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
 const CA = await importa('lib/motor/cartera.mjs')
 const RT = await importa('lib/motor/reto.mjs')
 const CO = await importa('lib/servidor/comando.mjs')
@@ -110,14 +108,19 @@ titulo('5 · avanzar sobre una sesion terminada (CTO 16-oct, respuesta 4): la mi
     ['practica breach', { ...b, estado: 'breach' }, 'breach'],
     ['practica objetivo', { ...b, estado: 'objetivo' }, 'objetivo_alcanzado'],
   ]
+  // E3R2-02 (Astra r2): calcula con avanzar DE VERDAD, con un almacen que falla en cualquier lectura de mercado
+  let lecturas = 0
+  const caido = new Proxy({}, { get: () => async () => { lecturas++; throw new Error('almacen caido (prueba)') } })
   for (const [nombre, x, causa] of estados) {
     const g = CA.deserializa(JSON.stringify(guardado(x)))
     const rech = await pide(x)
     oraculo('CAUSA', `${nombre}: causaTerminal del estado guardado = ${causa} = la causa del rechazo`, RT.causaTerminal(g) === causa && rech.resumen.causa === causa, `${RT.causaTerminal(g)} · ${rech.resumen.causa}`)
+    const l0 = lecturas
+    let av, err = null
+    try { av = await CO.calcula({ fila: { estado: guardado(x), date_from: '2025-01-06' }, intencion: { tipo: 'avanzar', carga: { hasta: U('2025-01-07T00:00:00Z'), motivo: 'play' } }, puertos: { almacen: caido } }) } catch (e) { err = e }
+    oraculo('CAUSA', `${nombre}: calcula(avanzar) sin leer mercado: aceptado, detencion sesion_terminada, causa ${causa}, sin eventos y el estado tal cual`, !err && lecturas === l0 && av.resultado === 'aceptado' && tx(av.resumen.detencion) === tx({ motivo: 'sesion_terminada' }) && av.resumen.causa === causa && av.eventos.length === 0 && JSON.stringify(av.estado) === CA.serializa(g), err ? String(err.message) : tx({ lecturas: lecturas - l0, r: av.resultado, det: av.resumen.detencion, c: av.resumen.causa, ev: av.eventos.length }))
   }
   const lanzaT = x => { try { RT.causaTerminal(x); return false } catch { return true } }
   oraculo('CAUSA', 'causaTerminal: un estado que no es terminal conocido (en curso, activo, pausa) lanza', lanzaT(reto()) && lanzaT(base()) && lanzaT({ ...reto(), estado: 'pausa' }) && lanzaT({ ...base(), estado: 'pausa' }))
-  const fuente = readFileSync(path.join(REPO, 'lib', 'servidor', 'comando.mjs'), 'utf8')
-  oraculo('CAUSA', 'el servidor la copia en el avance que no calcula (sesion_terminada) con causaTerminal, la tabla del motor', /detencion\?\.motivo === 'sesion_terminada' \? causaTerminal\(actual\) : null/.test(fuente))
 }
 fin()
