@@ -72,6 +72,20 @@ try {
   const r2 = JSON.parse(pg.uno(d, `select resumen::text from public.sim_recibos where session_id = ${L(u(1001))} and command_id = ${L(t2.cuerpo?.recibo?.command_id ?? u(0))}`) || 'null')
   oraculo('DETS', 'no calcula: recibo con resumen.detencion { motivo: sesion_terminada }, sin eventos y sin version nueva', t2.http === 200 && tx(r2?.detencion) === tx({ motivo: 'sesion_terminada' }) && r2?.eventos === 0 && version() === v1, tx({ t2: t2.http, r2 }))
 
+  // CTO 16-oct: el recibo de un comando rechazado { rechazado: 'sesion_terminada', motivo, causa }; la
+  // causa, copiada del estado terminal guardado (pruebas/servidor-causa.mjs, los casos sin RPC)
+  titulo('un comando sobre el reto ya quemado: el recibo con su causa')
+  sinTasa()
+  const c3 = cmd({ tipo: 'cerrar', version_esperada: version(), testigo, id: 'p1' })
+  const t3 = await ordena(c3)
+  const fila3 = JSON.parse(pg.uno(d, `select json_build_object('resultado', resultado, 'motivo', motivo, 'causa', resumen->'causa', 'resumen_motivo', resumen->'motivo')::text from public.sim_recibos where session_id = ${L(u(1001))} and command_id = ${L(c3.command_id)}`) || 'null')
+  const estadoGuardado = pg.uno(d, `select estado->>'estado' from public.sim_sessions where id = ${L(u(1001))}`)
+  ver('control: el estado guardado del reto es breach', estadoGuardado === 'breach', String(estadoGuardado))
+  oraculo('DETS', 'causa: sim_recibos guarda resultado rechazado, motivo sesion_terminada y resumen.causa breach, y la respuesta trae ese recibo', t3.http === 200 && tx(fila3) === tx({ resultado: 'rechazado', motivo: 'sesion_terminada', causa: 'breach', resumen_motivo: 'sesion_terminada' }) && t3.cuerpo?.recibo?.resumen?.causa === 'breach' && t3.cuerpo?.recibo?.motivo === 'sesion_terminada', tx({ t3: t3.http, fila3, recibo: t3.cuerpo?.recibo?.resumen }))
+  sinTasa()
+  const t4 = await ordena(c3)
+  oraculo('DETS', 'causa: la repeticion del mismo comando devuelve el recibo guardado, con la misma causa', t4.http === 200 && t4.cuerpo?.repetido === true && t4.cuerpo?.recibo?.resumen?.causa === 'breach' && t4.cuerpo?.recibo?.motivo === 'sesion_terminada', tx({ t4: t4.http, rep: t4.cuerpo?.repetido, r: t4.cuerpo?.recibo?.resumen }))
+
   // CTO 15-oct (diseño q.17.7): la practica no tiene limites; ninguna perdida la detiene por breach
   titulo('la practica sin limites: ninguna perdida la detiene')
   const P1 = u(1002)
