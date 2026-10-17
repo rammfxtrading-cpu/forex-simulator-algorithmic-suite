@@ -85,7 +85,7 @@ try {
     const d = nueva(despues)
     const q = s16(d)
     const inv = q.out.split('\n').filter(l => /^(inventario|funcion_ajena)\|/.test(l))
-    ver(`control: limpio ${despues ? 'con sim-004b aplicada' : 'antes de sim-004b'}: las 8 familias y las 3 funciones ajenas coinciden, s16 OK y sim-004b ${despues ? 'se reejecuta' : 'aplica'}`, q.ok && inv.length === 11 && inv.every(l => l.endsWith(' · coincide')) && /^veredicto\|OK\|/m.test(q.out) && aplica(d).ok, inv.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 300))
+    ver(`control: limpio ${despues ? 'con sim-004b aplicada' : 'antes de sim-004b'}: las 10 familias y las 3 funciones ajenas coinciden, s16 OK y sim-004b ${despues ? 'se reejecuta' : 'aplica'}`, q.ok && inv.length === 13 && inv.every(l => l.endsWith(' · coincide')) && /^veredicto\|OK\|/m.test(q.out) && aplica(d).ok, inv.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 300))
   }
 
   titulo('un mutante por familia: s16 DIFIERE en su familia y sim-004b aborta')
