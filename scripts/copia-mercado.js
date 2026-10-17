@@ -18,14 +18,16 @@
 // Transferencia: un fichero anual por par (≈ 29 MB en .json, ≈ 4,1-4,5 MB en
 // .json.gz, medidos el 9-oct sobre la copia del 5-oct).
 const { createClient } = require('@supabase/supabase-js')
+// la clave: SUPABASE_SECRET_KEY y, si no está, la vieja (lib/claveServidor.cjs, orden 2-018)
+const { getClaveServidor, hayClaveServidor } = require('../lib/claveServidor.cjs')
 const fs = require('fs'), path = require('path'), os = require('os'), crypto = require('crypto')
 
 function getEnv() {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: process.env.SUPABASE_SERVICE_ROLE_KEY.trim() }
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && hayClaveServidor(process.env)) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: getClaveServidor(process.env) }
   const env = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
     .reduce((a, l) => { const eq = l.indexOf('='); if (eq > 0) a[l.slice(0, eq).trim()] = l.slice(eq + 1).trim().replace(/^["']|["']$/g, ''); return a }, {})
-  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: env.SUPABASE_SERVICE_ROLE_KEY }
+  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: getClaveServidor(env) }
 }
 const ymd = t => new Date(t * 1000).toISOString().slice(0, 10)
 

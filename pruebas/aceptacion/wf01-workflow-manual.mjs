@@ -73,6 +73,7 @@ oraculo('WF01', 'la validacion del objetivo (ejecutada con bash): vacio o PAR:FE
 titulo('4 · lo que no puede pasar')
 oraculo('WF01', 'los dos modos imprimen el codigo de salida al final', /Codigo de salida/.test(String(sonda?.run ?? '')) && /Codigo de salida/.test(String(recup?.run ?? '')))
 const secretos = [...new Set((texto.match(/secrets\.([A-Z0-9_]+)/g) || []).map(x => x.slice(8)))].sort()
-oraculo('WF01', 'secretos: solo NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (ninguno nuevo)', JSON.stringify(secretos) === '["NEXT_PUBLIC_SUPABASE_URL","SUPABASE_SERVICE_ROLE_KEY"]', secretos.join(', '))
+// 2-018 (CTO): la clave nueva SUPABASE_SECRET_KEY, junto a la vieja mientras dura el cambio; nada mas
+oraculo('WF01', 'secretos: solo NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY y SUPABASE_SERVICE_ROLE_KEY (ninguno mas)', JSON.stringify(secretos) === '["NEXT_PUBLIC_SUPABASE_URL","SUPABASE_SECRET_KEY","SUPABASE_SERVICE_ROLE_KEY"]', secretos.join(', '))
 oraculo('WF01', 'no llama a liberar-cerrojo ni activa el diagnostico de credenciales', !/liberar-cerrojo|DIAG_CREDS/.test(texto))
 fin()

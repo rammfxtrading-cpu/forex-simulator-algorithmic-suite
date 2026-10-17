@@ -6,7 +6,8 @@ const env = fs.readFileSync('.env.local', 'utf8')
   .split('\n').filter(l => l && !l.startsWith('#'))
   .reduce((a, l) => { const eq = l.indexOf('='); if(eq>0) a[l.slice(0,eq).trim()] = l.slice(eq+1).trim().replace(/^["']|["']$/g,''); return a }, {})
 
-const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
+// la clave: SUPABASE_SECRET_KEY y, si no está, la vieja (lib/claveServidor.cjs, orden 2-018)
+const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, require('../lib/claveServidor.cjs').getClaveServidor(env))
 const BUCKET = 'forex-data'
 
 async function main() {

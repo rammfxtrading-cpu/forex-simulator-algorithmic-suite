@@ -10,14 +10,16 @@
 //   node scripts/liberar-cerrojo.js EURUSD_2026              -> enseña quien lo tiene y desde cuando; NO borra
 //   node scripts/liberar-cerrojo.js EURUSD_2026 --confirmo   -> lo borra
 const { createClient } = require('@supabase/supabase-js')
+// la clave: SUPABASE_SECRET_KEY y, si no está, la vieja (lib/claveServidor.cjs, orden 2-018)
+const { getClaveServidor, hayClaveServidor } = require('../lib/claveServidor.cjs')
 const fs = require('fs'), path = require('path')
 
 function getEnv() {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: process.env.SUPABASE_SERVICE_ROLE_KEY.trim() }
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && hayClaveServidor(process.env)) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: getClaveServidor(process.env) }
   const env = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
     .reduce((a, l) => { const eq = l.indexOf('='); if (eq > 0) a[l.slice(0, eq).trim()] = l.slice(eq + 1).trim().replace(/^["']|["']$/g, ''); return a }, {})
-  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: env.SUPABASE_SERVICE_ROLE_KEY }
+  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: getClaveServidor(env) }
 }
 
 async function main() {

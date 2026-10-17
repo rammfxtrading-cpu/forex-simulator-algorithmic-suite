@@ -32,6 +32,8 @@ jobs:
     timeout-minutes: 330
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      # la nueva (orden 2-018); si el secreto no existe llega '' y lib/claveServidor.cjs usa la vieja
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       MERCADO_CACHE: ${{ github.workspace }}/.cache-mercado
       MERCADO_TOPE_BYTES: ${{ vars.MERCADO_TOPE_BYTES || '45000000' }}

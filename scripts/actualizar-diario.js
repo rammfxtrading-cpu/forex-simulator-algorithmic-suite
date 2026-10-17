@@ -14,18 +14,22 @@
 // lo hay. El estado final no descarga nada.
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
+const { getClaveServidor, hayClaveServidor, variableClaveServidor } = require('../lib/claveServidor.cjs')
 
 const SUBIR = process.argv.includes('--subir')
 
 // Credenciales: de variables de entorno (GitHub Actions) o de .env.local (local)
 function getEnv() {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && hayClaveServidor(process.env)) {
     // .trim() defensivo: al pegar secretos en GitHub es facil colar un espacio
     // o salto de linea final, y Supabase rechaza el token ("Invalid Compact JWS").
+    // La clave: SUPABASE_SECRET_KEY y, si no está, la vieja (lib/claveServidor.cjs, orden 2-018; ya sin espacios)
     const u = process.env.NEXT_PUBLIC_SUPABASE_URL.trim()
-    const k = process.env.SUPABASE_SERVICE_ROLE_KEY.trim()
+    const k = getClaveServidor(process.env)
     if (process.env.DIAG_CREDS === '1') {
-      const crudo = process.env.SUPABASE_SERVICE_ROLE_KEY
+      const variable = variableClaveServidor(process.env)
+      const crudo = process.env[variable]
+      console.log('[DIAG] key  -> variable:', variable)
       console.log('[DIAG] url  -> largo:', u.length, '| empieza por https:', u.startsWith('https://'))
       console.log('[DIAG] key  -> largo crudo:', crudo.length, '| largo tras trim:', k.length)
       console.log('[DIAG] key  -> tenia espacios/saltos sobrantes:', crudo.length !== k.length)
@@ -38,7 +42,7 @@ function getEnv() {
   const env = fs.readFileSync(path.join(__dirname,'..','.env.local'),'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
     .reduce((a,l)=>{ const eq=l.indexOf('='); if(eq>0) a[l.slice(0,eq).trim()]=l.slice(eq+1).trim().replace(/^["']|["']$/g,''); return a },{})
-  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: env.SUPABASE_SERVICE_ROLE_KEY }
+  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: getClaveServidor(env) }
 }
 
 const { url, key } = getEnv()

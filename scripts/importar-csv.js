@@ -34,6 +34,8 @@
 // valida (tambien si el CSV no casa con lo guardado, aunque sea bajo el cerrojo).
 // Clave por nombre (como el resto de scripts), nunca impresa. Publica .json.gz (un solo formato, CTO 9-oct).
 const { createClient } = require('@supabase/supabase-js')
+// la clave: SUPABASE_SECRET_KEY y, si no está, la vieja (lib/claveServidor.cjs, orden 2-018)
+const { getClaveServidor, hayClaveServidor } = require('../lib/claveServidor.cjs')
 const fs = require('fs'), path = require('path')
 
 const PARES = ['AUDCAD', 'AUDUSD', 'EURUSD', 'GBPJPY', 'GBPUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY']
@@ -42,11 +44,11 @@ const arg = n => { const i = process.argv.indexOf(n); return i >= 0 ? process.ar
 const fechaOk = f => { if (!/^\d{4}-\d{2}-\d{2}$/.test(f || '')) return false; const t = Date.parse(f + 'T00:00:00Z'); return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === f }   // MER-R2: 2026-13-01 o 99-99 sin RangeError
 
 function getEnv() {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: process.env.SUPABASE_SERVICE_ROLE_KEY.trim() }
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && hayClaveServidor(process.env)) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: getClaveServidor(process.env) }
   const env = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
     .reduce((a, l) => { const eq = l.indexOf('='); if (eq > 0) a[l.slice(0, eq).trim()] = l.slice(eq + 1).trim().replace(/^["']|["']$/g, ''); return a }, {})
-  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: env.SUPABASE_SERVICE_ROLE_KEY }
+  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: getClaveServidor(env) }
 }
 
 const para = (motivo, codigo = 4) => { const e = new Error(motivo); e.propio = true; e.codigoSalida = codigo; return e }

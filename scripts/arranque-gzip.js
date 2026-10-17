@@ -48,6 +48,8 @@
 // Codigo: 0 todos migrados (o certificados) y su .json borrado · 1 algo fallo
 // (para ahi) · 5 un cerrojo puesto (para ahi) · 4 uso (tambien --subir sin --copia).
 const { createClient } = require('@supabase/supabase-js')
+// la clave: SUPABASE_SECRET_KEY y, si no está, la vieja (lib/claveServidor.cjs, orden 2-018)
+const { getClaveServidor, hayClaveServidor } = require('../lib/claveServidor.cjs')
 const fs = require('fs'), path = require('path')
 
 const ANIO = 2026
@@ -56,11 +58,11 @@ const SUBIR = process.argv.includes('--subir')
 const crypto = require('crypto')
 
 function getEnv() {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: process.env.SUPABASE_SERVICE_ROLE_KEY.trim() }
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && hayClaveServidor(process.env)) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: getClaveServidor(process.env) }
   const env = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
     .reduce((a, l) => { const eq = l.indexOf('='); if (eq > 0) a[l.slice(0, eq).trim()] = l.slice(eq + 1).trim().replace(/^["']|["']$/g, ''); return a }, {})
-  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: env.SUPABASE_SERVICE_ROLE_KEY }
+  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: getClaveServidor(env) }
 }
 function copiaPedida(argv) {
   const i = argv.findIndex(a => a === '--copia' || a.startsWith('--copia='))

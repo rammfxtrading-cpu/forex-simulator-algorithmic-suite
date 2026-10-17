@@ -52,6 +52,7 @@
   "s05-logs": 3,
   "sp01-sonda-proveedor": 9,
   "sp02-sonda-educada": 11,
+  "srk01-clave-servidor": 23,
   "u01-auto-break-even": 1,
   "vd01-verifica-diario": 23,
   "wf01-workflow-manual": 14

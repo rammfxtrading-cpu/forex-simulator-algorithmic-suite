@@ -3,6 +3,7 @@
 //   @supabase/supabase-js  → supabase-falso.mjs (?servidor desde lib/authApi.js,
 //                            ?navegador desde lib/supabase.js; la base es una)
 //   dukascopy-node         → proveedor-falso.mjs (el proveedor de velas; nunca el real)
+//   ./claveServidor.cjs (desde lib/authApi.js) → clave-servidor-falsa.mjs (la real si hay variable; si no, ficticia)
 //   react, react/jsx-runtime → react-falso.mjs (un React minimo)
 //   next/router, next/link, next/head, next/dynamic → next-falso.mjs
 //   components/Estrellas, NetworkBg, Fps, AntimatterLoader → decorado-falso.mjs
@@ -32,6 +33,10 @@ export async function resolve(spec, ctx, next) {
       const quien = fileURLToPath(ctx.parentURL) === REPO + 'lib/authApi.js' ? 'servidor' : 'navegador'
       return { url: url('supabase-falso.mjs') + '?' + quien, shortCircuit: true }
     }
+    // 2-018: la clave de servidor de la app. Bajo `env -i` no hay ninguna (el arnes lo exige) y la real daria el
+    // error de «falta la clave» al cargar lib/authApi.js; el doble usa la REAL si hay alguna variable y, si no, una
+    // ficticia (pruebas/clave-servidor-falsa.mjs). La real se prueba en aceptacion/srk01-clave-servidor.mjs
+    if (spec === './claveServidor.cjs' && fileURLToPath(ctx.parentURL) === REPO + 'lib/authApi.js') return { url: url('clave-servidor-falsa.mjs'), shortCircuit: true }
     if (spec === 'dukascopy-node') return { url: url('proveedor-falso.mjs'), shortCircuit: true }
     if (spec === 'react' || spec === 'react/jsx-runtime' || spec === 'react/jsx-dev-runtime') return { url: url('react-falso.mjs'), shortCircuit: true }
     if (NEXT[spec]) return { url: 'falso:' + NEXT[spec], shortCircuit: true }

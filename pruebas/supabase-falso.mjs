@@ -388,6 +388,8 @@ async function rpc(nombre, args = {}) {
 }
 export function createClient(url, key, opciones) {
   db.clientes.push(opciones ?? null)
+  // 2-018: la clave con la que se crea (solo para srk01; nunca se imprime)
+  ;(globalThis.__clavesUsadas ??= []).push(key)
   return { from: t => new Q(t), storage: { from: bucket }, auth, rpc }
 }
 
