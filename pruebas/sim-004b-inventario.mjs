@@ -1,6 +1,7 @@
 /**
  * ETAPA 3 · R3E3B-01 y R3E3B-02 (revisor interno; CTO 17-oct): sim-004b y s16 acreditan el inventario EXACTO de las 14
- * tablas fuera de pg_proc y las tres funciones ajenas que llaman los cuerpos, con lo medido en produccion (s16b, 17-oct).
+ * tablas fuera de pg_proc y las tres funciones ajenas que llaman los cuerpos, con lo medido en produccion (s16b, 17-oct;
+ * desde RINV3-01, CTO 17-oct, la s16e: los textos tal cual, con el search_path vacio y con el del editor).
  * Escrita ANTES que el codigo (contra 2d7a238: en rojo).
  *
  * Contra PostgreSQL 17 local (montaje-v1: sim-003 y la preparatoria, como en produccion; con la puerta).
@@ -16,7 +17,6 @@
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
 import { titulo, ver, oraculo, fin, importa, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
 import { montajeV1, conUidDelMontaje, FICHA_UID_MONTAJE, FICHA_UID_PRODUCCION } from './montaje-v1.mjs'
@@ -27,22 +27,23 @@ const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const err1 = r => (r.err.split('\n').find(l => /ERROR/.test(l)) || r.err.split('\n')[0] || '').replace(/^.*ERROR:\s+/, '')
 const L = s => `'${s.replace(/'/g, "''")}'`
 
-titulo('procedencia: los valores esperados son los de la s16c de produccion')
-const csv = t => t.replace(/\r/g, '').split('\n').filter(Boolean).slice(1).map(l => { const o = []; let c = '', q = false; for (let i = 0; i < l.length; i++) { const ch = l[i]; if (q) { if (ch === '"' && l[i + 1] === '"') { c += '"'; i++ } else if (ch === '"') q = false; else c += ch } else if (ch === '"') q = true; else if (ch === ',') { o.push(c); c = '' } else c += ch } o.push(c); return o })
-// la s16c (RINV-01..04): la s16b con el dueño, la RLS de las 3 no protegidas, el esquema del tipo y las identity
-// y la s16d (RINV2-01, -04): la familia «ajeno», de que dependen fuera de pg_catalog
-const PROD = [...csv(lee('sql/consultas/salidas/s16c-catalogo-tablas-sim004b-2026-10-17.csv')), ...csv(lee('sql/consultas/salidas/s16d-dependencias-tablas-sim004b-2026-10-17.csv')).filter(r => r[0] === 'ajeno')]
-const VARIABLES = new Set(['sim_sessions.sim_sessions_terminal_valida', 'sim_eventos.sim_eventos_tipo_check'])
-const ordena = xs => xs.map(x => [Buffer.from(x, 'utf8'), x]).sort((a, b) => Buffer.compare(a[0], b[0])).map(x => x[1])
+titulo('procedencia: los valores esperados son los de la s16e de produccion')
+// RINV3-01 (CTO 17-oct, orden 1-008): los textos van tal cual, y su md5 depende del search_path. La s16e (salida literal
+// de produccion) mide el bloque con el del editor ({public,extensions}: la s16) y con el vacio ({}: sim-004b)
+const S16E_SALIDA = 'sql/consultas/salidas/s16e-inventario-sin-normalizar-2026-10-17.txt'
+const PROD = lee(S16E_SALIDA).replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.startsWith('s16e | {')).map(l => l.split(' | '))
 const familias = ['ajeno', 'columna', 'identidad', 'indice', 'politica', 'regla', 'restriccion', 'tabla']
-const esperado = Object.fromEntries(familias.map(f => {
-  const xs = ordena(PROD.filter(r => r[0] === f).map(([, o, d]) => `${o}|${f === 'restriccion' && VARIABLES.has(o) ? d.split(' · ')[0] + ' · (la de sim-004b, segun su estado)' : d}`))
-  return [f, [xs.length, createHash('md5').update(xs.join('\n')).digest('hex')]]
-}))
-const fichas = Object.fromEntries(PROD.filter(r => r[0] === 'funcion').map(([, o, d]) => [o, d]))
+const ESQUEMAS = ['{}', '{public,extensions}']
+const esperado = Object.fromEntries(ESQUEMAS.flatMap(e => familias.map(f => {
+  const fila = PROD.find(r => r[1] === e && r[2] === 'inventario' && r[3] === f)
+  const x = /^n=(\d+) md5=([0-9a-f]{32})$/.exec(fila?.[4] ?? '')
+  return [`${e}|${f}`, x ? [Number(x[1]), x[2]] : null]
+})))
+const fichas = Object.fromEntries(PROD.filter(r => r[1] === '{public,extensions}' && r[2] === 'funcion_ajena').map(r => [r[3], r[4]]))
+ver('control: la salida de la s16e trae las 8 familias con los dos search_path, sin ninguna «(sim-004b espera …)», y las mismas 3 fichas con los dos', Object.values(esperado).every(Boolean) && Object.keys(fichas).length === 3 && PROD.filter(r => r[1] === '{}' && r[2] === 'funcion_ajena').every(r => fichas[r[3]] === r[4]), PROD.length + ' filas')
 for (const [nombre, texto] of [['sim-004b', S4B0], ['s16', S160]]) {
-  oraculo('INV', `${nombre}: los recuentos y md5 de las ocho familias son los de la s16c y la s16d de produccion`, familias.every(f => texto.includes(`(${L(f)}, ${esperado[f][0]}, ${L(esperado[f][1])})`)), familias.map(f => `${f} ${esperado[f].join(' ')}`).join(' / '))
-  oraculo('INV', `${nombre}: las fichas de las tres funciones ajenas son, literales, las de la s16c de produccion`, Object.entries(fichas).length === 3 && Object.entries(fichas).every(([f, d]) => texto.includes(`(${L(f)}, ${L(d)})`)), Object.keys(fichas).join(', '))
+  oraculo('INV', `${nombre}: los recuentos y md5 de las ocho familias, con los dos search_path, son los de la s16e de produccion`, Object.entries(esperado).every(([k, v]) => { const [e, f] = k.split('|'); return v && texto.includes(`(${L(e)}, ${L(f)}, ${v[0]}, ${L(v[1])})`) }), Object.entries(esperado).map(([k, v]) => `${k} ${v?.join(' ')}`).join(' / ').slice(0, 600))
+  oraculo('INV', `${nombre}: las fichas de las tres funciones ajenas son, literales, las de la s16e de produccion`, Object.entries(fichas).length === 3 && Object.entries(fichas).every(([f, d]) => texto.includes(`(${L(f)}, ${L(d)})`)), Object.keys(fichas).join(', '))
 }
 const blk = t => { const a = t.indexOf('-- >>> inventario'), b = t.indexOf('-- <<< inventario'); return a >= 0 && b > a ? t.slice(a, b) : null }
 oraculo('INV', 'el bloque «inventario» es el mismo texto, byte a byte, en sim-004b y en s16', blk(S4B0) !== null && blk(S4B0) === blk(S160))

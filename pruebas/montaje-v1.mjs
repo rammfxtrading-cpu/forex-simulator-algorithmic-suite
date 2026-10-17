@@ -26,6 +26,9 @@ do $r$ begin if not exists (select 1 from pg_roles where rolname = 'pgx') then
 grant anon, authenticated, service_role to pgx with admin option;
 grant usage, create on schema public to pgx;
 grant usage on schema auth, extensions to pgx;
+-- RINV3-01 (CTO 17-oct): el search_path del editor de Supabase (s04: "$user", public, extensions); sin normalizar,
+-- los textos de la s16 dependen de el
+alter role pgx set search_path = "$user", public, extensions;
 do $$ declare r record; begin
   for r in select c.oid::regclass t from pg_class c join pg_namespace n on n.oid = c.relnamespace
             where n.nspname = 'public' and c.relkind in ('r','p','v','m') loop

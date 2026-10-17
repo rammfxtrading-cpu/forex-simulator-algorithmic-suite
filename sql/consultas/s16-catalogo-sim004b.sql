@@ -11,7 +11,8 @@
 -- da por bueno es exactamente lo que exige sim-004b. Acaba en «FIN | s16 | consulta».
 --
 -- Que trae, por este orden (cada fila acaba en «coincide» o en DIFIERE / DE MAS / FALTA):
---   0 requisito      PostgreSQL >= 17 y los roles anon, authenticated y service_role (seccion 0)
+--   0 requisito      PostgreSQL >= 17, los roles anon, authenticated y service_role (seccion 0) y el
+--                    search_path del editor (esquemas efectivos {public,extensions})
 --   0 sim004b_estado las dos restricciones y los tres cuerpos que cambia sim-004b: «sin aplicar» o
 --                    «aplicada»; si no, A MEDIAS (sim-004b aborta)
 --   0 restriccion    las 25 restricciones de sim-003 que sim-004b compara al pie de la letra (seccion 3)
@@ -31,8 +32,9 @@
 --   3b funcion_sustituida  las 3 RPC que sim-004b sustituye: EXECUTE (anon, authenticated y PUBLIC no;
 --                    service_role si) y, con sim-004b ya aplicada, SECURITY DEFINER y search_path vacio
 --   8 veredicto  «OK» (se puede aplicar sim-004b) o «DIFIEREN n» — NO aplicar sim-004b
--- Los textos van SIN el prefijo «public.» (el editor tiene public en el search_path y sim-004b
--- compara con search_path vacio: quitarlo hace la salida igual con los dos).
+-- Los textos van TAL CUAL los da el catalogo, sin quitar ningun prefijo (RINV3-01, CTO 17-oct: quitar
+-- «public.» con regexp_replace tambien lo quitaba de dentro de los literales). Por eso dependen del
+-- search_path: la s16 exige el del editor (requisito «search_path») y el inventario lleva sus propios md5.
 -- LIMITE DECLARADO (RINV2-03, CTO 17-oct): solo catalogo. El ESTADO de las secuencias identity
 -- (last_value, is_called; un RESTART o un setval) no es catalogo y cambia con el uso normal: esta
 -- consulta NO lo mide. Lo comprueba sim-004b al aplicarse (seccion 0: el siguiente valor de cada
@@ -50,8 +52,8 @@ rls as (
          coalesce(c.oid is not null and (c.relrowsecurity or not t.protegida) and not c.relforcerowsecurity, false) bien
     from tablas t left join pg_class c on c.oid = to_regclass('public.' || t.t)),
 pol_med as (
-  select regexp_replace(p.tablename || '|' || p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|'
-                        || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-'), '\mpublic\.', '', 'g') x
+  select p.tablename || '|' || p.policyname || '|' || p.permissive || '|' || p.cmd || '|' || p.roles::text || '|'
+         || coalesce(p.qual, '-') || '|' || coalesce(p.with_check, '-') x
     from pg_policies p where p.schemaname = 'public' and p.tablename in (select t from tablas where protegida)),
 cond(c) as (values (E'(EXISTS ( SELECT 1\n   FROM sim_sessions s\n  WHERE ((s.id = TABLA.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))')),
 pol_esp as (
@@ -127,25 +129,25 @@ tri_esp(x, solo_con_puerta) as (values
     ('sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_upd"()|17|O', false),
     ('sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_cascade_del"()|9|O', false),
     ('sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_noaction_upd"()|17|O', false),
-    ('sim_sessions|trg_enforce_sim_session_limit|CREATE TRIGGER trg_enforce_sim_session_limit BEFORE INSERT ON sim_sessions FOR EACH ROW EXECUTE FUNCTION enforce_sim_session_limit()|7|O', false),
+    ('sim_sessions|trg_enforce_sim_session_limit|CREATE TRIGGER trg_enforce_sim_session_limit BEFORE INSERT ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION enforce_sim_session_limit()|7|O', false),
     ('sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_ins"()|5|O', false),
     ('sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_upd"()|17|O', false),
     ('sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_ins"()|5|O', false),
     ('sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_upd"()|17|O', false),
     ('sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_ins"()|5|O', false),
     ('sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_upd"()|17|O', false),
-    ('sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_inmutable()|27|O', false),
-    ('sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON sim_escrituras_v0_marcas FOR EACH STATEMENT EXECUTE FUNCTION sim_escrituras_v0_inmutable()|34|O', false),
-    ('sim_escrituras_v0_marcas|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_solo_disparador()|7|O', false),
-    ('sim_escrituras_v0|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_inmutable()|27|O', false),
-    ('sim_escrituras_v0|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON sim_escrituras_v0 FOR EACH STATEMENT EXECUTE FUNCTION sim_escrituras_v0_inmutable()|34|O', false),
-    ('sim_escrituras_v0|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_solo_disparador()|7|O', false),
-    ('sim_sessions|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_registra()|29|O', false),
-    ('sim_sessions|sim_escrituras_v0_b_balance|CREATE TRIGGER sim_escrituras_v0_b_balance AFTER UPDATE OF balance ON sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_marca_balance()|17|O', false),
-    ('sim_sessions|sim_sessions_padre_propio|CREATE TRIGGER sim_sessions_padre_propio BEFORE INSERT OR UPDATE ON sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_sessions_padre_propio()|23|O', false),
-    ('sim_sessions|sim_sessions_rev_saldo|CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_sessions_rev_saldo()|23|O', false),
-    ('sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON sim_trades FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_registra()|29|O', false),
-    ('sim_trades|sim_trades_rev_saldo|CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR DELETE OR UPDATE ON sim_trades FOR EACH ROW EXECUTE FUNCTION sim_trades_rev_saldo()|29|O', false),
+    ('sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_inmutable()|27|O', false),
+    ('sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON public.sim_escrituras_v0_marcas FOR EACH STATEMENT EXECUTE FUNCTION sim_escrituras_v0_inmutable()|34|O', false),
+    ('sim_escrituras_v0_marcas|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_solo_disparador()|7|O', false),
+    ('sim_escrituras_v0|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON public.sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_inmutable()|27|O', false),
+    ('sim_escrituras_v0|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON public.sim_escrituras_v0 FOR EACH STATEMENT EXECUTE FUNCTION sim_escrituras_v0_inmutable()|34|O', false),
+    ('sim_escrituras_v0|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON public.sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_solo_disparador()|7|O', false),
+    ('sim_sessions|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_registra()|29|O', false),
+    ('sim_sessions|sim_escrituras_v0_b_balance|CREATE TRIGGER sim_escrituras_v0_b_balance AFTER UPDATE OF balance ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_marca_balance()|17|O', false),
+    ('sim_sessions|sim_sessions_padre_propio|CREATE TRIGGER sim_sessions_padre_propio BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_sessions_padre_propio()|23|O', false),
+    ('sim_sessions|sim_sessions_rev_saldo|CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_sessions_rev_saldo()|23|O', false),
+    ('sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_registra()|29|O', false),
+    ('sim_trades|sim_trades_rev_saldo|CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION sim_trades_rev_saldo()|29|O', false),
     ('session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_ins"()|5|O', false),
     ('session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_upd"()|17|O', false),
     ('session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_ins"()|5|O', false),
@@ -170,30 +172,34 @@ tri_esp(x, solo_con_puerta) as (values
     ('user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_upd"()|17|O', false),
     ('user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_ins"()|5|O', false),
     ('user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_upd"()|17|O', false),
-    ('sim_sessions|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_puerta()|31|O', true),
-    ('sim_trades|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON sim_trades FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_puerta()|31|O', true)),
+    ('sim_sessions|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_puerta()|31|O', true),
+    ('sim_trades|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_puerta()|31|O', true)),
 tri_e as (select x from tri_esp, puerta where not tri_esp.solo_con_puerta or puerta.hay),
 tri_med as (
-  select regexp_replace(c.oid::regclass::text || '|' ||
+  select c.oid::regclass::text || '|' ||
            case when t.tgisinternal then 'fk:' || k.conname || '|' || t.tgfoid::regprocedure::text
                 else t.tgname || '|' || pg_get_triggerdef(t.oid) end
-           || '|' || t.tgtype || '|' || t.tgenabled::text, '\mpublic\.', '', 'g') x
+           || '|' || t.tgtype || '|' || t.tgenabled::text x
     from pg_trigger t join pg_class c on c.oid = t.tgrelid left join pg_constraint k on k.oid = t.tgconstraint
    where c.oid in (select to_regclass('public.' || t) from tablas)),
 -- 0-3 lo que sim-004b exige ANTES de su seccion 4 (revisor de d20dcef, H1; CTO: la s16 mide TODO lo
 -- que sim-004b exige, ni mas ni menos). Las definiciones, COPIADAS de sql/sim-004b-contrato-v1.sql (la
--- prueba lo comprueba); los textos sin el prefijo «public.» (sim-004b compara con search_path = public).
+-- prueba lo comprueba); los textos tal cual, con el search_path del editor (sus esquemas efectivos son los
+-- mismos que los de search_path = public, con el que sim-004b compara estas: el requisito «search_path»).
 requisito(objeto, bien, detalle) as (values
     ('PostgreSQL >= 17', current_setting('server_version_num')::integer >= 170000, current_setting('server_version')),
     ('rol anon', exists (select 1 from pg_roles where rolname = 'anon'), 'existe'),
     ('rol authenticated', exists (select 1 from pg_roles where rolname = 'authenticated'), 'existe'),
-    ('rol service_role', exists (select 1 from pg_roles where rolname = 'service_role'), 'existe')),
+    ('rol service_role', exists (select 1 from pg_roles where rolname = 'service_role'), 'existe'),
+    -- RINV3-01 (CTO 17-oct): sin normalizar, los textos dependen del search_path; el del editor, por sus esquemas efectivos
+    ('search_path', pg_catalog.current_schemas(false)::text = '{public,extensions}',
+     'esquemas=' || pg_catalog.current_schemas(false)::text || ' (el del editor de Supabase: "$user", public, extensions)')),
 def_dos(conrel, conname, vieja, nueva) as (values
     ('sim_sessions', 'sim_sessions_terminal_valida', 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text]))))', 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text, ''superado''::text]))))'),
     ('sim_eventos', 'sim_eventos_tipo_check', 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text])))', 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text, ''hueco_aceptado''::text])))')),
 dos as (
   select d.conname,
-         (select regexp_replace(pg_get_constraintdef(k.oid), '\mpublic\.', '', 'g') from pg_constraint k
+         (select pg_get_constraintdef(k.oid) from pg_constraint k
            where k.conrelid = to_regclass('public.' || d.conrel) and k.conname = d.conname) def,
          (select k.convalidated from pg_constraint k where k.conrelid = to_regclass('public.' || d.conrel) and k.conname = d.conname) validada,
          d.vieja, d.nueva
@@ -255,7 +261,7 @@ restr_esp(rel, nombre, def) as (values
     ('sim_trades', 'sim_trades_v1_coherente', 'CHECK ((((motor_version = 0) AND (evento_id IS NULL)) OR ((motor_version = 1) AND (evento_id IS NOT NULL) AND (bruto_micro IS NOT NULL) AND (neto_micro IS NOT NULL) AND (comision_micro IS NOT NULL) AND (spread_micro IS NOT NULL) AND (swap_micro IS NOT NULL) AND (ambigua IS NOT NULL))))')),
 restr as (
   select e.rel, e.nombre, e.def esperado,
-         (select regexp_replace(pg_get_constraintdef(k.oid), '\mpublic\.', '', 'g') || case when k.convalidated then '' else ' (NO VALIDADA)' end
+         (select pg_get_constraintdef(k.oid) || case when k.convalidated then '' else ' (NO VALIDADA)' end
             from pg_constraint k where k.conrelid = to_regclass('public.' || e.rel) and k.conname = e.nombre) medido
     from restr_esp e),
 idx_esp(nombre, def) as (values
@@ -270,8 +276,8 @@ idx_esp(nombre, def) as (values
     ('sim_trades_evento_id_key', 'CREATE UNIQUE INDEX sim_trades_evento_id_key ON public.sim_trades USING btree (evento_id)'),
     ('sim_sessions_una_hija_v1_key', 'CREATE UNIQUE INDEX sim_sessions_una_hija_v1_key ON public.sim_sessions USING btree (challenge_parent_id) WHERE ((motor_version = 1) AND (challenge_parent_id IS NOT NULL))')),
 idx as (
-  select e.nombre, regexp_replace(e.def, '\mpublic\.', '', 'g') esperado,
-         (select regexp_replace(pg_get_indexdef(i.indexrelid), '\mpublic\.', '', 'g')
+  select e.nombre, e.def esperado,
+         (select pg_get_indexdef(i.indexrelid)
                  || case when i.indisunique then '' else ' (NO UNICO)' end || case when i.indisvalid then '' else ' (NO VALIDO)' end
             from pg_index i where i.indexrelid = to_regclass('public.' || e.nombre)) medido
     from idx_esp e),
@@ -306,7 +312,7 @@ acl_r as (
                       and a.grantee in ('authenticated'::regrole, 'service_role'::regrole))) de_mas
     from nuevas n left join pg_class c on c.oid = to_regclass('public.' || n.o)),
 acl_c as (
-  select string_agg(regexp_replace(a.attrelid::regclass::text, '\mpublic\.', '', 'g') || '.' || a.attname || ' ' || a.attacl::text, ', '
+  select string_agg(a.attrelid::regclass::text || '.' || a.attname || ' ' || a.attacl::text, ', '
                     order by a.attrelid::regclass::text collate "C", a.attname collate "C") de_mas
     from pg_attribute a
    where a.attrelid in (select to_regclass('public.' || t) from tablas where protegida) and a.attnum > 0 and coalesce(cardinality(a.attacl), 0) > 0),
@@ -363,14 +369,15 @@ filas as (
     from (
       -- >>> inventario (identico en sql/sim-004b-contrato-v1.sql y sql/consultas/s16-catalogo-sim004b.sql)
       -- R3E3B-01 (revisor interno; CTO 17-oct): el inventario EXACTO de las 14 tablas fuera de pg_proc, por familias,
-      -- con las expresiones de la s16b (los textos sin «public.»): la tabla (relkind, persistencia, particion, hijas,
+      -- con los textos TAL CUAL los da el catalogo (RINV3-01, CTO 17-oct: sin quitar ningun prefijo): la tabla (relkind, persistencia, particion, hijas,
       -- padres, particionada), cada columna (tipo, NOT NULL, identity, generated, colacion, valor por defecto), cada
       -- restriccion (tipo y definicion, validada, diferible), cada indice (pg_get_indexdef), cada regla, y las politicas
       -- de las 3 no protegidas (las de las 11 protegidas ya son exactas aparte). Las dos restricciones que cambia
       -- sim-004b van por nombre: su definicion la acredita su estado. Los disparadores ya tienen inventario exacto aparte
-      -- Por familia se compara el recuento y el md5 del conjunto ordenado con lo medido en produccion (s16c, 17-oct;
-      -- sql/consultas/salidas/s16c-catalogo-tablas-sim004b-2026-10-17.csv); las tres funciones ajenas, ficha a ficha (una
-      -- lista fija: no puede haber otras). Si algo no coincide, la s16c dice que fila es
+      -- Por familia se compara el recuento y el md5 del conjunto ordenado con lo medido en produccion (s16e, 17-oct;
+      -- sql/consultas/salidas/), uno por search_path: el vacio (sim-004b) y el del editor (la s16), por sus esquemas
+      -- efectivos (current_schemas); con otro, la fila «search_path» no coincide. Las tres funciones ajenas, ficha a ficha
+      -- (una lista fija: no puede haber otras). Si algo no coincide, se mide fila a fila con una consulta aparte
       select v.familia, v.objeto, v.detalle, v.bien from (
         with inv as (
           select x.familia, x.fila from (
@@ -378,7 +385,7 @@ filas as (
                    case when c.oid is null then 'NO EXISTE'
                         else 'relkind=' || c.relkind::text || ' · persistencia=' || c.relpersistence::text || ' · particion=' || c.relispartition::text
                              || ' · hijas=' || (select count(*) from pg_catalog.pg_inherits i where i.inhparent = c.oid)
-                             || ' · padres=' || coalesce((select string_agg(regexp_replace(i.inhparent::regclass::text, '^public\.', ''), ',' order by i.inhseqno) from pg_catalog.pg_inherits i where i.inhrelid = c.oid), '-')
+                             || ' · padres=' || coalesce((select string_agg(i.inhparent::regclass::text, ',' order by i.inhseqno) from pg_catalog.pg_inherits i where i.inhrelid = c.oid), '-')
                              || ' · particionada=' || exists (select 1 from pg_catalog.pg_partitioned_table p where p.partrelid = c.oid)::text
                              -- RINV-01: el dueño («ejecutor» si es quien ejecuta); RINV-04: la RLS de las 3 no protegidas
                              || ' · dueño=' || case when c.relowner = (select x.oid from pg_catalog.pg_roles x where x.rolname = current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(c.relowner)::text end
@@ -399,7 +406,7 @@ filas as (
                                              else coalesce((select pg_catalog.concat(cn.nspname, '.', co.collname, ' · proveedor=', co.collprovider::text, ' · determinista=', co.collisdeterministic::text,
                                                                                      ' · locale=', coalesce(co.collcollate, co.colllocale, '-'))
                                                               from pg_catalog.pg_collation co join pg_catalog.pg_namespace cn on cn.oid = co.collnamespace where co.oid = a.attcollation), 'NO EXISTE') end
-                   || ' · defecto=' || coalesce(regexp_replace(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '\mpublic\.', '', 'g'), '-')
+                   || ' · defecto=' || coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '-')
               from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
                    join pg_catalog.pg_type ty on ty.oid = a.atttypid join pg_catalog.pg_namespace tn on tn.oid = ty.typnamespace
                    left join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
@@ -409,13 +416,13 @@ filas as (
             select 'restriccion', c.relname || '.' || k.conname || '|' ||
                    case when (c.relname, k.conname) in (('sim_sessions', 'sim_sessions_terminal_valida'), ('sim_eventos', 'sim_eventos_tipo_check'))
                         then k.contype::text || ' · (la de sim-004b, segun su estado)'
-                        else k.contype::text || ' · ' || regexp_replace(pg_catalog.pg_get_constraintdef(k.oid), '\mpublic\.', '', 'g')
+                        else k.contype::text || ' · ' || pg_catalog.pg_get_constraintdef(k.oid)
                              || ' · validada=' || k.convalidated::text || ' · diferible=' || k.condeferrable::text || '/' || k.condeferred::text end
               from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid = c.oid
              where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
                            'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
             union all
-            select 'indice', c.relname || '.' || ic.relname || '|' || regexp_replace(pg_catalog.pg_get_indexdef(x.indexrelid), '\mpublic\.', '', 'g')
+            select 'indice', c.relname || '.' || ic.relname || '|' || pg_catalog.pg_get_indexdef(x.indexrelid)
               from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid = c.oid join pg_catalog.pg_class ic on ic.oid = x.indexrelid
              where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
                            'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
@@ -455,14 +462,14 @@ filas as (
                 or (dp.refclassid = 'pg_catalog.pg_type'::regclass and (select p.typnamespace from pg_catalog.pg_type p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
                 or (dp.refclassid = 'pg_catalog.pg_collation'::regclass and (select p.collnamespace from pg_catalog.pg_collation p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
             union all
-            select 'regla', c.relname || '.' || w.rulename || '|' || regexp_replace(pg_catalog.pg_get_ruledef(w.oid), '\mpublic\.', '', 'g')
+            select 'regla', c.relname || '.' || w.rulename || '|' || pg_catalog.pg_get_ruledef(w.oid)
               from pg_catalog.pg_class c join pg_catalog.pg_rewrite w on w.ev_class = c.oid
              where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
                            'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
             union all
             select 'politica', p.tablename || '.' || p.policyname || '|' ||
-                   p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text || ' · using=' || coalesce(regexp_replace(p.qual, '\mpublic\.', '', 'g'), '-')
-                   || ' · check=' || coalesce(regexp_replace(p.with_check, '\mpublic\.', '', 'g'), '-')
+                   p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text || ' · using=' || coalesce(p.qual, '-')
+                   || ' · check=' || coalesce(p.with_check, '-')
               from pg_catalog.pg_policies p where p.schemaname = 'public' and p.tablename in ('sim_drawing_templates', 'user_chart_config', 'user_tool_config')
             union all
             -- R3E3B-02 (CTO 17-oct): las tres funciones ajenas que llaman los cuerpos, con la ficha de la s16b
@@ -480,15 +487,23 @@ filas as (
                    left join pg_catalog.pg_proc p on p.oid = pg_catalog.to_regprocedure(f.firma) left join pg_catalog.pg_language l on l.oid = p.prolang
           ) x
         ),
-        esp_f(familia, n, h) as (values
-          ('ajeno', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
-          ('columna', 135, '9610bdfa6bce4ff3b95a3d4fafd743b0'),
-          ('identidad', 4, '472c2271705ab4440fba7bbe0c61ed04'),
-          ('indice', 31, '34f45c0e9b412391d3d8b9fea837632a'),
-          ('politica', 3, 'ae70c7a2dca8be8f6aa6c6eae4d9754f'),
-          ('regla', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
-          ('restriccion', 59, '8c1bcac993492ca83039e80ec6168d01'),
-          ('tabla', 14, 'a9b56cc77c3da41b455e0250b489e0aa')),
+        esp_f(esquemas, familia, n, h) as (values
+          ('{}', 'ajeno', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
+          ('{}', 'columna', 135, '9610bdfa6bce4ff3b95a3d4fafd743b0'),
+          ('{}', 'identidad', 4, '472c2271705ab4440fba7bbe0c61ed04'),
+          ('{}', 'indice', 31, '6f248b06ad3aac95b276fc24a00ecb88'),
+          ('{}', 'politica', 3, 'ae70c7a2dca8be8f6aa6c6eae4d9754f'),
+          ('{}', 'regla', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
+          ('{}', 'restriccion', 59, '4f9d1a1af4e93723672d6bba7ae10829'),
+          ('{}', 'tabla', 14, 'a9b56cc77c3da41b455e0250b489e0aa'),
+          ('{public,extensions}', 'ajeno', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
+          ('{public,extensions}', 'columna', 135, '9610bdfa6bce4ff3b95a3d4fafd743b0'),
+          ('{public,extensions}', 'identidad', 4, '472c2271705ab4440fba7bbe0c61ed04'),
+          ('{public,extensions}', 'indice', 31, '6f248b06ad3aac95b276fc24a00ecb88'),
+          ('{public,extensions}', 'politica', 3, 'ae70c7a2dca8be8f6aa6c6eae4d9754f'),
+          ('{public,extensions}', 'regla', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
+          ('{public,extensions}', 'restriccion', 59, '8c1bcac993492ca83039e80ec6168d01'),
+          ('{public,extensions}', 'tabla', 14, 'a9b56cc77c3da41b455e0250b489e0aa')),
         esp_a(firma, ficha) as (values
           ('auth.uid()', 'functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0'),
           ('extensions.digest(bytea,text)', 'functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0'),
@@ -498,9 +513,14 @@ filas as (
         select 'inventario'::text familia, e.familia objeto,
                'n=' || coalesce(m.n, 0) || ' md5=' || coalesce(m.h, pg_catalog.md5(''))
                || case when coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h then ''
-                       else ' (sim-004b espera n=' || e.n || ' md5=' || e.h || '; que fila, en la s16c o la s16d)' end detalle,
+                       else ' (sim-004b espera n=' || e.n || ' md5=' || e.h || ' con esquemas=' || e.esquemas || '; que fila: medirlo aparte)' end detalle,
                coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h bien
           from esp_f e left join med_f m on m.familia = e.familia
+         where e.esquemas = pg_catalog.current_schemas(false)::text
+        union all
+        select 'inventario', 'search_path', 'esquemas=' || pg_catalog.current_schemas(false)::text
+               || ' (sin valores esperados: solo {} en sim-004b y {public,extensions}, el del editor, en la s16)', false
+         where not exists (select 1 from esp_f e where e.esquemas = pg_catalog.current_schemas(false)::text)
         union all
         select 'funcion_ajena', coalesce(e.firma, m.firma),
                coalesce(m.ficha, 'NO EXISTE') || case when m.ficha is distinct from e.ficha then ' (sim-004b espera ' || e.ficha || ')' else '' end,

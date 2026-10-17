@@ -3,7 +3,8 @@
  * CTO 15-oct, diseño q.16.6). ENSAYO LOCAL; en produccion NO se ha corrido (la corre Ramon despues de la
  * puerta y antes de sim-004b).
  *   · una sola SELECT, dentro de una transaccion READ ONLY y como el ejecutor NO superusuario del montaje;
- *     acaba en «FIN | s16 | consulta»; la salida es la misma con search_path vacio y con el de defecto;
+ *     acaba en «FIN | s16 | consulta»; los textos van tal cual (RINV3-01, CTO 17-oct): exige el search_path del
+ *     editor ({public,extensions}; el ejecutor del montaje lo tiene como el postgres de Supabase) y con otro dice DIFIEREN;
  *   · sobre el montaje de hoy (y con la puerta): veredicto OK, y sim-004b aplica;
  *   · lo que da por bueno es lo que exige sim-004b: los sha256 de las funciones que conserva son los de
  *     sim-004b, y cada desvio de los que sim-004b acredita (RLS, force, politicas, funciones, disparadores)
@@ -41,16 +42,19 @@ try {
   titulo('2 · solo lectura, no superusuario, sobre el montaje de hoy')
   const d = m.base('s16a')
   ver('control: el ejecutor del montaje NO es superusuario', m.comoEjecutor(d, 'select rolsuper from pg_roles where rolname = current_user').out === 'f')
-  const r = corre(d), r0 = corre(d, "set search_path = '';\n")
+  const r = corre(d), r0 = corre(d, "set search_path = '';\n"), r1 = corre(d, 'set search_path = public;\n')
   const lineas = r.out.split('\n').filter(Boolean)
   oraculo('S16', 'en READ ONLY y como no superusuario: veredicto OK y acaba en «FIN|s16|consulta»', r.ok && veredicto(r) === 'OK' && lineas.at(-1) === 'FIN|s16|consulta', r.ok ? lineas.filter(l => /DIFIERE|DE MAS|FALTA|veredicto/.test(l)).join(' / ').slice(0, 600) : r.err)
-  oraculo('S16', 'la misma salida con el search_path vacio que con el de defecto', r0.ok && r0.out === r.out, r0.ok ? '' : r0.err)
+  // RINV3-01: sin normalizar, la salida depende del search_path; la s16 exige el del editor (por sus esquemas efectivos)
+  ver('control: el ejecutor del montaje tiene el search_path del editor de Supabase ({public,extensions})', m.comoEjecutor(d, 'select pg_catalog.current_schemas(false)::text').out === '{public,extensions}')
+  const reqSp = x => (x.out.split('\n').find(l => l.startsWith('requisito|search_path|')) ?? '')
+  oraculo('S16', 'con el search_path vacio o con «public» a secas: el requisito «search_path» DIFIERE y veredicto DIFIEREN', r0.ok && r1.ok && reqSp(r).endsWith(' · coincide') && reqSp(r0).endsWith(' · DIFIERE') && reqSp(r1).endsWith(' · DIFIERE') && /^DIFIEREN \d+$/.test(veredicto(r0)) && /^DIFIEREN \d+$/.test(veredicto(r1)), [reqSp(r0), veredicto(r0), reqSp(r1), veredicto(r1)].join(' / ').slice(0, 400))
   oraculo('S16', 'sus filas: 14 rls, 13 politicas, 17 funciones y 63 disparadores, todas «coincide»', lineas.filter(l => l.startsWith('rls|')).length === 14 && lineas.filter(l => l.startsWith('funcion|') && l.endsWith('coincide')).length === 17 && lineas.filter(l => l.startsWith('disparador|') && l.endsWith('coincide')).length === 63, String((r.out.match(/coincide$/gm) ?? []).length))
   // CTO 15-oct (ronda 2): la s16 mide TODO lo que sim-004b exige, tambien las ACL de tabla (su 4.3): la
   // matriz efectiva de los siete privilegios en las 11 protegidas, los receptores de mas en las 7 nuevas
   // y sus 4 secuencias, y ninguna ACL de columna en las 11
   const acl = lineas.filter(l => /^acl_(tabla|receptores|columna)\|/.test(l))
-  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63 + 23 + 43 + 1 + 11, acl.join(' / ').slice(0, 500))
+  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63 + 23 + 43 + 1 + 11 + 1, acl.join(' / ').slice(0, 500))
   oraculo('S16', 'y con eso sim-004b aplica', aplica(d).ok)
   const dp = m.base('s16p')
   const pp = m.comoEjecutor(dp, PUERTA)
@@ -196,6 +200,6 @@ try {
   }
   oraculo('S16', `aplicada: en las 3 RPC, otro search_path, SECURITY INVOKER o EXECUTE a anon → la s16 dice DIFIEREN y sim-004b aborta (${malosApl.length})`, desApl.length === 0, desApl.join(' · '))
   const filasNuevas = lineas.filter(l => /^(requisito|sim004b_estado|restriccion|indice|funcion_sustituida)\|/.test(l))
-  oraculo('S16', 'y en el montaje: 4 requisito, 1 sim004b_estado, 25 restriccion, 10 indice y 3 funcion_sustituida, todas «coincide»', filasNuevas.filter(l => l.startsWith('requisito|')).length === 4 && filasNuevas.filter(l => l.startsWith('sim004b_estado|')).length === 1 && filasNuevas.filter(l => l.startsWith('restriccion|')).length === 25 && filasNuevas.filter(l => l.startsWith('indice|')).length === 10 && filasNuevas.filter(l => l.startsWith('funcion_sustituida|')).length === 3 && filasNuevas.every(l => l.endsWith('coincide')), filasNuevas.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 400))
+  oraculo('S16', 'y en el montaje: 5 requisito (con el search_path), 1 sim004b_estado, 25 restriccion, 10 indice y 3 funcion_sustituida, todas «coincide»', filasNuevas.filter(l => l.startsWith('requisito|')).length === 5 && filasNuevas.filter(l => l.startsWith('sim004b_estado|')).length === 1 && filasNuevas.filter(l => l.startsWith('restriccion|')).length === 25 && filasNuevas.filter(l => l.startsWith('indice|')).length === 10 && filasNuevas.filter(l => l.startsWith('funcion_sustituida|')).length === 3 && filasNuevas.every(l => l.endsWith('coincide')), filasNuevas.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 400))
 } finally { m.cierra() }
 fin()
