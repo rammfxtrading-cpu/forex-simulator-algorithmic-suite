@@ -27,16 +27,18 @@ const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const err1 = r => (r.err.split('\n').find(l => /ERROR/.test(l)) || r.err.split('\n')[0] || '').replace(/^.*ERROR:\s+/, '')
 const L = s => `'${s.replace(/'/g, "''")}'`
 
-titulo('procedencia: los valores esperados son los de la s16e de produccion')
+titulo('procedencia: los valores esperados son los de la s16f de produccion')
 // RINV3-01 (CTO 17-oct, orden 1-008): los textos van tal cual, y su md5 depende del search_path. La s16e (salida literal
-// de produccion) mide el bloque con el del editor ({public,extensions}: la s16) y con el vacio ({}: sim-004b)
-const S16E_SALIDA = 'sql/consultas/salidas/s16e-inventario-sin-normalizar-2026-10-17.txt'
+// de produccion) mide el bloque con el del editor ({public,extensions}: la s16) y con el vacio ({}: sim-004b). Desde la
+// ronda 4 (E3R3-01..04, orden 1-009), la s16f: el mismo bloque con las sobrecargas, el permiso y el estado de los indices,
+// y los disparadores internos de las FK de las 14 tablas
+const S16E_SALIDA = 'sql/consultas/salidas/s16f-inventario-y-disparadores-internos-2026-10-17.txt'
 // RINV4-01: una salida provisional (del montaje, para ensayar antes de tener la de produccion) lleva la marca
 // «PROVISIONAL»: con ella, esta prueba no puede dar verde
 const S16E_TEXTO = lee(S16E_SALIDA)
-ver('control: la salida de la s16e es la de produccion (sin la marca «PROVISIONAL» del montaje)', !/PROVISIONAL/.test(S16E_TEXTO))
-const PROD = S16E_TEXTO.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.startsWith('s16e | {')).map(l => l.split(' | '))
-const familias = ['ajeno', 'columna', 'identidad', 'indice', 'politica', 'regla', 'restriccion', 'tabla']
+ver('control: la salida de la s16f es la de produccion (sin la marca «PROVISIONAL» del montaje)', !/PROVISIONAL/.test(S16E_TEXTO))
+const PROD = S16E_TEXTO.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.startsWith('s16f | {')).map(l => l.split(' | '))
+const familias = ['ajeno', 'columna', 'identidad', 'indice', 'permiso', 'politica', 'regla', 'restriccion', 'sobrecarga', 'tabla']
 const ESQUEMAS = ['{}', '{public,extensions}']
 const esperado = Object.fromEntries(ESQUEMAS.flatMap(e => familias.map(f => {
   const fila = PROD.find(r => r[1] === e && r[2] === 'inventario' && r[3] === f)
@@ -44,11 +46,15 @@ const esperado = Object.fromEntries(ESQUEMAS.flatMap(e => familias.map(f => {
   return [`${e}|${f}`, x ? [Number(x[1]), x[2]] : null]
 })))
 const fichas = Object.fromEntries(PROD.filter(r => r[1] === '{public,extensions}' && r[2] === 'funcion_ajena').map(r => [r[3], r[4]]))
-ver('control: la salida de la s16e trae las 8 familias con los dos search_path, sin ninguna «(sim-004b espera …)», y las mismas 3 fichas con los dos', Object.values(esperado).every(Boolean) && Object.keys(fichas).length === 3 && PROD.filter(r => r[1] === '{}' && r[2] === 'funcion_ajena').every(r => fichas[r[3]] === r[4]), PROD.length + ' filas')
+ver('control: la salida de la s16f trae las 10 familias con los dos search_path, sin ninguna «(sim-004b espera …)», y las mismas 3 fichas con los dos', Object.values(esperado).every(Boolean) && Object.keys(fichas).length === 3 && PROD.filter(r => r[1] === '{}' && r[2] === 'funcion_ajena').every(r => fichas[r[3]] === r[4]), PROD.length + ' filas')
 for (const [nombre, texto] of [['sim-004b', S4B0], ['s16', S160]]) {
-  oraculo('INV', `${nombre}: los recuentos y md5 de las ocho familias, con los dos search_path, son los de la s16e de produccion`, Object.entries(esperado).every(([k, v]) => { const [e, f] = k.split('|'); return v && texto.includes(`(${L(e)}, ${L(f)}, ${v[0]}, ${L(v[1])})`) }), Object.entries(esperado).map(([k, v]) => `${k} ${v?.join(' ')}`).join(' / ').slice(0, 600))
-  oraculo('INV', `${nombre}: las fichas de las tres funciones ajenas son, literales, las de la s16e de produccion`, Object.entries(fichas).length === 3 && Object.entries(fichas).every(([f, d]) => texto.includes(`(${L(f)}, ${L(d)})`)), Object.keys(fichas).join(', '))
+  oraculo('INV', `${nombre}: los recuentos y md5 de las diez familias, con los dos search_path, son los de la s16f de produccion`, Object.entries(esperado).every(([k, v]) => { const [e, f] = k.split('|'); return v && texto.includes(`(${L(e)}, ${L(f)}, ${v[0]}, ${L(v[1])})`) }), Object.entries(esperado).map(([k, v]) => `${k} ${v?.join(' ')}`).join(' / ').slice(0, 600))
+  oraculo('INV', `${nombre}: las fichas de las tres funciones ajenas son, literales, las de la s16f de produccion`, Object.entries(fichas).length === 3 && Object.entries(fichas).every(([f, d]) => texto.includes(`(${L(f)}, ${L(d)})`)), Object.keys(fichas).join(', '))
 }
+// E3R3-03: los disparadores internos de produccion (s16f) son, uno a uno, los que espera sim-004b (4.5)
+const trgProd = S16E_TEXTO.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.startsWith('s16f | disparador | ')).map(l => l.slice('s16f | disparador | '.length)).sort()
+const trg4b = [...S4B0.matchAll(/^    '([^']*\|fk:[^']*)',?\)?;?$/gm)].map(x => x[1]).sort()
+oraculo('INV', 'sim-004b: los 68 disparadores internos que espera son, uno a uno, los de la s16f de produccion', trg4b.length === 68 && trgProd.length === 68 && trg4b.every((x, i) => x === trgProd[i]), `${trg4b.length} esperados · ${trgProd.length} de produccion`)
 const blk = t => { const a = t.indexOf('-- >>> inventario'), b = t.indexOf('-- <<< inventario'); return a >= 0 && b > a ? t.slice(a, b) : null }
 oraculo('INV', 'el bloque «inventario» es el mismo texto, byte a byte, en sim-004b y en s16', blk(S4B0) !== null && blk(S4B0) === blk(S160))
 

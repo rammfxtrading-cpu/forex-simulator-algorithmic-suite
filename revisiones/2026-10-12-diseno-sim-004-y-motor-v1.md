@@ -3680,7 +3680,7 @@ Astra r2 (`revisiones-suite/2026-10-16-astra-sim-etapa3-r2.md`): **NO** por E3R2
 
 Pudo ejecutar todo, con el turno. Sus scripts y salidas, en `revisiones-suite/2026-10-17-sim-etapa3-r3/revisor-interno/`.
 - **R3E3B-03 (baja), arreglado en las pruebas:** dos mutantes del retorno temprano sobrevivían. A usaba el cursor del motor en vez del horizonte del reto; C fijaba `cortado` a true. La prueba siempre tenía horizonte = cursor y `hasta` > alcanzado. El caso nuevo de `servidor-causa` §5 es un reto quemado en un reset de medianoche: horizonte 23:00 y cursor 21:59, con `hasta` a 00:00 y a 22:30. Caza A y C (un rojo cada uno). El código ya estaba bien.
-- **R3E3B-01 (media), PREGUNTA AL CTO, sin cambio:** sim-004b y la s16 no ven cambios de catálogo fuera de `pg_proc` en las 14 tablas que acreditan:
+- **R3E3B-01 (media); era una pregunta al CTO, que el 17-oct decidió que ENTRA (`679d363` y siguientes; ver q.20):** sim-004b y la s16 no ven cambios de catálogo fuera de `pg_proc` en las 14 tablas que acreditan:
   - reglas (`pg_rewrite`);
   - valores por defecto (`pg_attrdef`);
   - herencia (`pg_inherits`);
@@ -3693,7 +3693,7 @@ Pudo ejecutar todo, con el turno. Sus scripts y salidas, en `revisiones-suite/20
   - con un CHECK o un índice único de más, las RPC fallan.
 
   Es la misma clase que E3R2-01, fuera de `pg_proc`. El arreglo sería un inventario exacto de esos cinco catálogos en las 14 tablas, en sim-004b y en la s16, con su familia. Es más amplio que lo encargado (E3R2-01/02): lo decide el CTO.
-- **R3E3B-02 (baja), PREGUNTA AL CTO, sin cambio:** las funciones de otros esquemas que llaman los cuerpos (`extensions.digest`, `extensions.gen_random_bytes`, `auth.uid()`) no se acreditan. Cambiarlas exige el dueño de `extensions`/`auth` (en Supabase, `supabase_admin`); el ejecutor no puede. Cerrarlo sería acreditar el sha de su `prosrc` y su dueño.
+- **R3E3B-02 (baja); era una pregunta al CTO, que el 17-oct decidió que ENTRA (la familia `funcion_ajena`; ver q.20):** las funciones de otros esquemas que llaman los cuerpos (`extensions.digest`, `extensions.gen_random_bytes`, `auth.uid()`) no se acreditan. Cambiarlas exige el dueño de `extensions`/`auth` (en Supabase, `supabase_admin`); el ejecutor no puede. Cerrarlo sería acreditar el sha de su `prosrc` y su dueño.
 - **Lo que intentó sin encontrar nada:**
   - la condición del retorno temprano es la del motor;
   - quitar la causa, cambiar la detención o saltarse la RPC lo cazan las pruebas;
@@ -3702,3 +3702,32 @@ Pudo ejecutar todo, con el turno. Sus scripts y salidas, en `revisiones-suite/20
   - `enforce_sim_session_limit` usa operadores con coincidencia exacta en `pg_catalog`;
   - la simetría s16 ⇔ sim-004b;
   - el md5, independiente del search_path.
+
+### q.20 · Etapa 3, rondas 3 y 4: el inventario de las 14 tablas y el criterio de parada del certificado de catálogo (CTO 17-oct)
+
+#### q.20.1 Lo que entró en la ronda 3 (`2d7a238..78bfd2e`)
+
+- **R3E3B-01 y R3E3B-02 ENTRAN** (CTO 17-oct): el bloque «inventario», idéntico en sim-004b (4.6) y en la s16, por familias (tabla, columna, restricción, índice, regla, política de las 3 no protegidas, identidad, ajeno) y las fichas de las tres funciones ajenas, contra lo medido en producción (s16b–s16e).
+- Sus revisores internos: RINV (`15331a9`), RINV2 (`2208470`, `ccf112a`: la guarda de las secuencias identity, decisión del CTO), RINV3 (`7fd4691`: los textos tal cual, sin normalizar, con un md5 por search_path; decisión del CTO, opción b) y RINV4 (`9dc1994`).
+
+#### q.20.2 Astra r3: NO por E3R3-01..04 (17-oct) y lo que cambia en la ronda 4
+
+`revisiones-suite/2026-10-17-astra-sim-etapa3-r3.md`. Los cuatro, de gravedad media, del certificado de catálogo; se arreglan por familias, igual en sim-004b y la s16:
+- **E3R3-01, sobrecargas:** familia `sobrecarga`, el conjunto EXACTO de funciones llamadas `digest` y `gen_random_bytes` en `extensions` y `uid` en `auth` (las RPC las llaman calificadas: una sobrecarga de más en el mismo esquema hace la llamada ambigua, 42725). Las de pgcrypto que hay, `digest(text,text)` incluida, son las acreditadas.
+- **E3R3-02, permiso efectivo:** familia `permiso`, `has_function_privilege` de EXECUTE del dueño de las RPC sobre las tres, y de `authenticated` sobre `auth.uid()` (las políticas de RLS). Lo medido, no la ACL textual.
+- **E3R3-03, disparadores internos:** cada interno lleva, además de restricción, función, tipo y activación, `when` (si tiene condición), argumentos, la relación y el índice referenciados, la diferibilidad y las columnas, sin OIDs ni nombres generados. Y el alcance incluye los del otro extremo de las FK de las 14 tablas (en `profiles` y `auth.users`: la cascada al borrar el perfil o el usuario).
+- **E3R3-04, índices:** `indisready` e `indislive` en los 10 únicos de sim-003 (sección 3) y, con la validez y la unicidad, en los 31 del inventario.
+- Los valores nuevos se miden en producción con la **s16f** (solo lectura).
+
+#### q.20.3 Criterio de parada del certificado de catálogo (decisión del CTO, 17-oct, orden 1-009)
+
+**A partir de la ronda 4**, un hallazgo del certificado de catálogo (s16 / sim-004b) que solo se reproduzca **escribiendo directamente el catálogo de sistema** (`pg_trigger`, `pg_index`, `pg_proc`… con UPDATE de superusuario) **se documenta como límite declarado y no bloquea**. **Bloquea** lo que se reproduzca con **DDL ordinario** o lo que alcance un **alumno, anon o authenticated**. Los cuatro de la ronda 3 (dos con DDL ordinario, E3R3-01/02; dos con escritura del catálogo, E3R3-03/04) se arreglan igualmente.
+
+#### q.20.4 El dictamen en dos partes (CTO, 17-oct)
+
+Desde la ronda 4, Astra da dos veredictos separados:
+- **A)** integrar las etapas 2 y 3 y desplegar con v1 **apagado** (el código del servidor, el cliente de la etapa 1 sin regresión, los cierres E3R2);
+- **B)** el certificado de catálogo s16 / sim-004b, para encender en la etapa 5.
+
+La integración y el despliegue apagado solo necesitan el **SÍ en A**. La integración parte de `main` local (con sus 2 commits de `APLICADOS`, que se suben con ella).
+

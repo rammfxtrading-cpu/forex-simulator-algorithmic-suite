@@ -506,33 +506,33 @@ DECLARE
   -- los disparadores de las tablas que escriben las RPC y los disparadores (el inventario de la
   -- preparatoria: estado 1, o 2 con la puerta; y el de las demas tablas, solo los de sus FK)
   v_trg_hoy text := concat_ws(E'\n',
-    'public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
-    'public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
-    'public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
-    'public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
-    'public.sim_sessions|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
-    'public.sim_sessions|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
-    'public.sim_sessions|fk:sim_eventos_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
-    'public.sim_sessions|fk:sim_eventos_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
-    'public.sim_sessions|fk:sim_recibos_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
-    'public.sim_sessions|fk:sim_recibos_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
-    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_noaction_upd"()|17|O',
-    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_setnull_del"()|9|O',
-    'public.sim_sessions|fk:sim_sessions_user_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_sessions|fk:sim_sessions_user_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_cascade_del"()|9|O',
-    'public.sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_noaction_upd"()|17|O',
+    'public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_chart_config · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
+    'public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_chart_config · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_drawings · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
+    'public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_drawings · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_arrendamientos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
+    'public.sim_sessions|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_arrendamientos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:sim_eventos_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_eventos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
+    'public.sim_sessions|fk:sim_eventos_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_eventos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:sim_recibos_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_recibos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
+    'public.sim_sessions|fk:sim_recibos_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_recibos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_setnull_del"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
+    'public.sim_sessions|fk:sim_sessions_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_sessions|fk:sim_sessions_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.profiles · indice=public.profiles_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.profiles · indice=public.profiles_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_trades · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
+    'public.sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_trades · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
     'public.sim_sessions|trg_enforce_sim_session_limit|CREATE TRIGGER trg_enforce_sim_session_limit BEFORE INSERT ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.enforce_sim_session_limit()|7|O',
-    'public.sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_upd"()|17|O');
+    'public.sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_eventos · indice=public.sim_eventos_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_eventos · indice=public.sim_eventos_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O');
   -- lo que añade este fichero: estado 1
   v_trg_registro text := concat_ws(E'\n',
     'public.sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_inmutable()|27|O',
@@ -552,30 +552,48 @@ DECLARE
     'public.sim_sessions|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O',
     'public.sim_trades|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O');
   v_trg_otros text := concat_ws(E'\n',
-    'public.session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.session_drawings|fk:session_drawings_session_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.session_drawings|fk:session_drawings_session_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.session_drawings|fk:session_drawings_user_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.session_drawings|fk:session_drawings_user_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_alumnos|fk:sim_alumnos_user_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_alumnos|fk:sim_alumnos_user_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_eventos|fk:sim_eventos_session_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_eventos|fk:sim_eventos_session_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.sim_eventos|fk:sim_trades_evento_id_fkey|"RI_FKey_cascade_del"()|9|O',
-    'public.sim_eventos|fk:sim_trades_evento_id_fkey|"RI_FKey_noaction_upd"()|17|O',
-    'public.sim_recibos|fk:sim_recibos_session_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.sim_recibos|fk:sim_recibos_session_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_upd"()|17|O',
-    'public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_ins"()|5|O',
-    'public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_upd"()|17|O');
+    'auth.users|fk:session_chart_config_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
+    'auth.users|fk:session_chart_config_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'auth.users|fk:session_drawings_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_drawings · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
+    'auth.users|fk:session_drawings_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_drawings · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'auth.users|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_drawing_templates · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
+    'auth.users|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_drawing_templates · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'auth.users|fk:sim_sessions_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_sessions · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
+    'auth.users|fk:sim_sessions_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'auth.users|fk:sim_trades_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_trades · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
+    'auth.users|fk:sim_trades_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_trades · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'auth.users|fk:user_chart_config_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.user_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
+    'auth.users|fk:user_chart_config_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.user_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'auth.users|fk:user_tool_config_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.user_tool_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
+    'auth.users|fk:user_tool_config_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.user_tool_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'public.profiles|fk:sim_alumnos_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_alumnos · indice=public.profiles_pkey · diferible=false/false · columnas=|9|O',
+    'public.profiles|fk:sim_alumnos_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_alumnos · indice=public.profiles_pkey · diferible=false/false · columnas=|17|O',
+    'public.profiles|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_sessions · indice=public.profiles_pkey · diferible=false/false · columnas=|9|O',
+    'public.profiles|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.profiles_pkey · diferible=false/false · columnas=|17|O',
+    'public.session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O',
+    'public.session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
+    'public.session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'public.session_drawings|fk:session_drawings_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O',
+    'public.session_drawings|fk:session_drawings_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.session_drawings|fk:session_drawings_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
+    'public.session_drawings|fk:session_drawings_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_alumnos|fk:sim_alumnos_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.profiles · indice=public.profiles_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_alumnos|fk:sim_alumnos_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.profiles · indice=public.profiles_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_eventos|fk:sim_eventos_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_eventos|fk:sim_eventos_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_eventos|fk:sim_trades_evento_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_trades · indice=public.sim_eventos_pkey · diferible=false/false · columnas=|9|O',
+    'public.sim_eventos|fk:sim_trades_evento_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_trades · indice=public.sim_eventos_pkey · diferible=false/false · columnas=|17|O',
+    'public.sim_recibos|fk:sim_recibos_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O',
+    'public.sim_recibos|fk:sim_recibos_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
+    'public.user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
+    'public.user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
+    'public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
+    'public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O');
 BEGIN
   -- ── 0 · lo que se da por hecho ──────────────────────────────────────────
   IF current_setting('server_version_num')::integer < 170000 THEN
@@ -722,8 +740,8 @@ BEGIN
       ('sim_sessions_una_hija_v1_key', 'CREATE UNIQUE INDEX sim_sessions_una_hija_v1_key ON public.sim_sessions USING btree (challenge_parent_id) WHERE ((motor_version = 1) AND (challenge_parent_id IS NOT NULL))')) c(nombre, def)
   LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = to_regclass('public.' || f)
-                    AND i.indisunique AND i.indisvalid AND pg_get_indexdef(i.indexrelid) = v_def) THEN
-      RAISE EXCEPTION 'sim-004b: el indice unico % falta, no es valido o no es el previsto (%)', f, v_def;
+                    AND i.indisunique AND i.indisvalid AND i.indisready AND i.indislive AND pg_get_indexdef(i.indexrelid) = v_def) THEN
+      RAISE EXCEPTION 'sim-004b: el indice unico % falta, no es valido, no esta listo o vivo, o no es el previsto (%)', f, v_def;
     END IF;
   END LOOP;
   FOREACH f IN ARRAY ARRAY['sim_recibos', 'sim_eventos'] LOOP
@@ -887,10 +905,18 @@ BEGIN
   SELECT coalesce(string_agg(x, E'\n' ORDER BY x COLLATE "C"), '') INTO v_actual FROM (
     SELECT c.oid::regclass::text || '|' ||
            CASE WHEN t.tgisinternal THEN 'fk:' || k.conname || '|' || t.tgfoid::regprocedure::text
+                -- E3R3-03 (Astra r3): lo que decide si y como se ejecuta, sin OIDs ni nombres generados
+                || ' · when=' || CASE WHEN t.tgqual IS NULL THEN 'no' ELSE 'SI' END || ' · args=' || t.tgnargs || ':' || encode(t.tgargs, 'hex')
+                || ' · ref=' || CASE WHEN t.tgconstrrelid = 0 THEN '-' ELSE t.tgconstrrelid::regclass::text END
+                || ' · indice=' || CASE WHEN t.tgconstrindid = 0 THEN '-' ELSE t.tgconstrindid::regclass::text END
+                || ' · diferible=' || t.tgdeferrable::text || '/' || t.tginitdeferred::text || ' · columnas=' || t.tgattr::text
                 ELSE t.tgname || '|' || pg_get_triggerdef(t.oid) END
            || '|' || t.tgtype || '|' || t.tgenabled::text AS x
       FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid LEFT JOIN pg_constraint k ON k.oid = t.tgconstraint
-     WHERE c.oid IN (SELECT to_regclass('public.' || x) FROM unnest(v_protegidas || ARRAY['sim_drawing_templates', 'user_chart_config', 'user_tool_config']) x)) s;
+     WHERE c.oid IN (SELECT to_regclass('public.' || x) FROM unnest(v_protegidas || ARRAY['sim_drawing_templates', 'user_chart_config', 'user_tool_config']) x)
+        -- E3R3-03: y los del otro extremo de sus FK (en profiles y auth.users: la cascada al borrar el perfil)
+        OR t.tgconstraint IN (SELECT k2.oid FROM pg_constraint k2 WHERE k2.contype = 'f' AND k2.conrelid IN
+             (SELECT to_regclass('public.' || x) FROM unnest(v_protegidas || ARRAY['sim_drawing_templates', 'user_chart_config', 'user_tool_config']) x))) s;
   SELECT string_agg(x, E'\n' ORDER BY x COLLATE "C") INTO v_esperado
     FROM regexp_split_to_table(concat_ws(E'\n', v_trg_hoy, v_trg_registro, CASE WHEN v_puerta THEN v_trg_puerta END, v_trg_otros), E'\n') x;
   PERFORM set_config('search_path', v_sp, true);
@@ -901,18 +927,19 @@ BEGIN
   END IF;
   -- 4.6 R3E3B-01 y R3E3B-02 (CTO 17-oct): el inventario EXACTO de las 14 tablas fuera de pg_proc (tabla, columnas,
   -- restricciones, indices, reglas y las politicas de las 3 no protegidas) y las tres funciones ajenas que llaman los
-  -- cuerpos, con lo medido en produccion (s16e). El mismo bloque que s16. Con search_path vacio: los textos tal cual (RINV3-01)
+  -- cuerpos, con lo medido en produccion (s16e y s16f). El mismo bloque que s16. Con search_path vacio: los textos tal cual (RINV3-01)
   PERFORM set_config('search_path', '', true);
   SELECT string_agg(i.familia || ' ' || i.objeto || ': ' || i.detalle, ' ; ' ORDER BY i.familia, i.objeto) INTO v_txt
     FROM (
       -- >>> inventario (identico en sql/sim-004b-contrato-v1.sql y sql/consultas/s16-catalogo-sim004b.sql)
-      -- R3E3B-01 (revisor interno; CTO 17-oct): el inventario EXACTO de las 14 tablas fuera de pg_proc, por familias,
+      -- R3E3B-01 (revisor interno; CTO 17-oct): el inventario EXACTO de las 14 tablas fuera de pg_proc, por familias
+      -- (E3R3-01/02/04, Astra r3: las sobrecargas y el permiso efectivo de las tres auxiliares; el estado de los indices),
       -- con los textos TAL CUAL los da el catalogo (RINV3-01, CTO 17-oct: sin quitar ningun prefijo): la tabla (relkind, persistencia, particion, hijas,
       -- padres, particionada), cada columna (tipo, NOT NULL, identity, generated, colacion, valor por defecto), cada
       -- restriccion (tipo y definicion, validada, diferible), cada indice (pg_get_indexdef), cada regla, y las politicas
       -- de las 3 no protegidas (las de las 11 protegidas ya son exactas aparte). Las dos restricciones que cambia
       -- sim-004b van por nombre: su definicion la acredita su estado. Los disparadores ya tienen inventario exacto aparte
-      -- Por familia se compara el recuento y el md5 del conjunto ordenado con lo medido en produccion (s16e, 17-oct;
+      -- Por familia se compara el recuento y el md5 del conjunto ordenado con lo medido en produccion (s16e y s16f, 17-oct;
       -- sql/consultas/salidas/), uno por search_path: el vacio (sim-004b) y el del editor (la s16), por sus esquemas
       -- efectivos (current_schemas); con otro, la fila «search_path» no coincide. Las tres funciones ajenas, ficha a ficha
       -- (una lista fija: no puede haber otras). Si algo no coincide, se mide fila a fila con una consulta aparte
@@ -960,7 +987,9 @@ BEGIN
              where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
                            'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
             union all
+            -- E3R3-04 (Astra r3): ademas de la definicion, el estado operativo (unico, valido, listo y vivo)
             select 'indice', c.relname || '.' || ic.relname || '|' || pg_catalog.pg_get_indexdef(x.indexrelid)
+                   || ' · unico=' || x.indisunique::text || ' · valido=' || x.indisvalid::text || ' · listo=' || x.indisready::text || ' · vivo=' || x.indislive::text
               from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid = c.oid join pg_catalog.pg_class ic on ic.oid = x.indexrelid
              where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
                            'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
@@ -1010,6 +1039,20 @@ BEGIN
                    || ' · check=' || coalesce(p.with_check, '-')
               from pg_catalog.pg_policies p where p.schemaname = 'public' and p.tablename in ('sim_drawing_templates', 'user_chart_config', 'user_tool_config')
             union all
+            -- E3R3-01 (Astra r3): TODAS las funciones con esos nombres en esos esquemas (las RPC las llaman calificadas,
+            -- extensions.digest(...), y una sobrecarga de mas en el mismo esquema hace ambigua la llamada: 42725)
+            select 'sobrecarga', n.nspname::text || '.' || p.proname::text || '(' || pg_catalog.pg_get_function_identity_arguments(p.oid) || ')'
+              from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+             where (n.nspname, p.proname) in (('extensions', 'digest'), ('extensions', 'gen_random_bytes'), ('auth', 'uid'))
+            union all
+            -- E3R3-02 (Astra r3): el permiso EFECTIVO de EXECUTE de quien las usa: el dueño de las RPC (definer) las tres,
+            -- y authenticated auth.uid() (las politicas de RLS). Lo medido, no la ACL textual
+            select 'permiso', f.firma || '|dueño_rpc=' || coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::text, 'NO EXISTE')
+                   || case when f.firma = 'auth.uid()' then ' · authenticated=' || coalesce(pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')::text, 'NO EXISTE') else '' end
+              from (values ('extensions.digest(bytea,text)'), ('extensions.gen_random_bytes(integer)'), ('auth.uid()')) f(firma)
+                   left join pg_catalog.pg_proc p on p.oid = pg_catalog.to_regprocedure(f.firma)
+                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+            union all
             -- R3E3B-02 (CTO 17-oct): las tres funciones ajenas que llaman los cuerpos, con la ficha de la s16b
             select 'funcion_ajena', f.firma || '|' ||
                    case when p.oid is null then 'NO EXISTE' else
@@ -1029,18 +1072,22 @@ BEGIN
           ('{}', 'ajeno', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
           ('{}', 'columna', 135, '9610bdfa6bce4ff3b95a3d4fafd743b0'),
           ('{}', 'identidad', 4, '472c2271705ab4440fba7bbe0c61ed04'),
-          ('{}', 'indice', 31, '6f248b06ad3aac95b276fc24a00ecb88'),
+          ('{}', 'indice', 31, '79cdc8554026972e2802601707a99bd1'),
+          ('{}', 'permiso', 3, 'd752cfb7c979bde79e2aad35a4434371'),
           ('{}', 'politica', 3, 'ae70c7a2dca8be8f6aa6c6eae4d9754f'),
           ('{}', 'regla', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
           ('{}', 'restriccion', 59, '4f9d1a1af4e93723672d6bba7ae10829'),
+          ('{}', 'sobrecarga', 4, 'df3ad2088d0f399ac318d9e1346413b4'),
           ('{}', 'tabla', 14, 'a9b56cc77c3da41b455e0250b489e0aa'),
           ('{public,extensions}', 'ajeno', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
           ('{public,extensions}', 'columna', 135, '9610bdfa6bce4ff3b95a3d4fafd743b0'),
           ('{public,extensions}', 'identidad', 4, '472c2271705ab4440fba7bbe0c61ed04'),
-          ('{public,extensions}', 'indice', 31, '6f248b06ad3aac95b276fc24a00ecb88'),
+          ('{public,extensions}', 'indice', 31, '79cdc8554026972e2802601707a99bd1'),
+          ('{public,extensions}', 'permiso', 3, 'd752cfb7c979bde79e2aad35a4434371'),
           ('{public,extensions}', 'politica', 3, 'ae70c7a2dca8be8f6aa6c6eae4d9754f'),
           ('{public,extensions}', 'regla', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
           ('{public,extensions}', 'restriccion', 59, '8c1bcac993492ca83039e80ec6168d01'),
+          ('{public,extensions}', 'sobrecarga', 4, 'df3ad2088d0f399ac318d9e1346413b4'),
           ('{public,extensions}', 'tabla', 14, 'a9b56cc77c3da41b455e0250b489e0aa')),
         esp_a(firma, ficha) as (values
           ('auth.uid()', 'functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0'),
@@ -1069,7 +1116,7 @@ BEGIN
     ) i WHERE NOT i.bien;
   PERFORM set_config('search_path', v_sp, true);
   IF v_txt IS NOT NULL THEN
-    RAISE EXCEPTION 'sim-004b: el catalogo de las 14 tablas o las funciones ajenas no son las medidas (s16e, 17-oct): %', v_txt;
+    RAISE EXCEPTION 'sim-004b: el catalogo de las 14 tablas o las funciones ajenas no son las medidas (s16e y s16f, 17-oct): %', v_txt;
   END IF;
 END
 $sim_004b$;

@@ -8,6 +8,8 @@
  *     8 familias y las 3 funciones ajenas de cada uno, y acaba en «FIN | s16e | consulta»; sus recuentos y md5 son
  *     los que esperan sim-004b ({}) y la s16 ({public,extensions})
  *   3 mide los textos tal cual: un literal 'public.…' en un valor por defecto cambia el md5 de «columna» con los dos
+ * HISTORICA desde la ronda 4 (orden 1-009): el bloque de sim-004b y la s16 crecio (E3R3-01/02/04) y lo mide la s16f. Esta
+ * prueba conserva la s16e tal como la corrio Ramon: sus dos copias, iguales entre si, y en el montaje da su salida de produccion.
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -15,7 +17,7 @@ import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
 import { montajeV1, FICHA_UID_MONTAJE, FICHA_UID_PRODUCCION } from './montaje-v1.mjs'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
-const S16E0 = lee('sql/consultas/s16e-inventario-sin-normalizar.sql'), S4B = lee('sql/sim-004b-contrato-v1.sql'), S16 = lee('sql/consultas/s16-catalogo-sim004b.sql')
+const S16E0 = lee('sql/consultas/s16e-inventario-sin-normalizar.sql')
 const familias = ['ajeno', 'columna', 'identidad', 'indice', 'politica', 'regla', 'restriccion', 'tabla']
 
 titulo('1 · solo lectura y el mismo bloque')
@@ -23,13 +25,15 @@ const sin = S16E0.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''").replace(/\$s1
 oraculo('S16e', 'un solo bloque DO: sin escrituras ni EXECUTE; el unico set_config es el del search_path', !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|call|copy)\b/i.test(sin) && (S16E0.match(/^do \$s16e\$$/gm) || []).length === 1 && (S16E0.match(/set_config\(/g) || []).length === 3 && (S16E0.match(/set_config\('search_path', /g) || []).length === 3)
 const blk = t => { const a = t.indexOf('-- >>> inventario'), b = t.indexOf('-- <<< inventario'); return a >= 0 && b > a ? t.slice(a, b) : null }
 const dos = S16E0.split('-- >>> inventario').length - 1
-oraculo('S16e', 'lleva dos veces el bloque «inventario», byte a byte el de sim-004b y la s16', dos === 2 && blk(S16E0) === blk(S4B) && blk(S16E0.slice(S16E0.lastIndexOf('-- >>> inventario'))) === blk(S4B) && blk(S4B) === blk(S16))
+oraculo('S16e', 'lleva dos veces el mismo bloque «inventario», byte a byte (el de sim-004b de 78bfd2e; desde la ronda 4, historica)', dos === 2 && blk(S16E0) !== null && blk(S16E0) === blk(S16E0.slice(S16E0.lastIndexOf('-- >>> inventario'))))
 
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay, la prueba no se ha ejecutado', false); fin() }
 // la unica adaptacion del montaje (montaje-v1.mjs, conUidDelMontaje): la ficha de auth.uid(), aqui en las dos copias del bloque
 const S16E = S16E0.split(`('auth.uid()', '${FICHA_UID_PRODUCCION}')`).join(`('auth.uid()', '${FICHA_UID_MONTAJE}')`)
 ver('control: la unica adaptacion del montaje (la ficha de auth.uid()) toca exactamente las dos copias del bloque', S16E0.split(`('auth.uid()', '${FICHA_UID_PRODUCCION}')`).length === 3 && !S16E.includes(FICHA_UID_PRODUCCION))
-const esperado = Object.fromEntries([...S4B.matchAll(/\('(\{[a-z,]*\})', '([a-z_]+)', (\d+), '([0-9a-f]{32})'\)/g)].map(x => [`${x[1]}|${x[2]}`, `n=${x[3]} md5=${x[4]}`]))
+// lo esperado: su salida de produccion (Ramon, 17-oct), que el montaje reproduce
+const SALIDA = lee('sql/consultas/salidas/s16e-inventario-sin-normalizar-2026-10-17.txt').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.startsWith('s16e | {'))
+const esperado = Object.fromEntries(SALIDA.filter(l => / \| inventario \| /.test(l)).map(l => { const [, e, , f, d] = l.split(' | '); return [`${e}|${f}`, d] }))
 const m = montajeV1()
 try {
   m.arranca()
@@ -46,7 +50,7 @@ try {
   ver('control: el montaje no cambia (READ ONLY; el informe sale como error)', !r.ok && /informe s16e \(no es un fallo\)/.test(r.err), r.err.slice(0, 200))
   oraculo('S16e', 'el search_path del editor, las 8 familias y las 3 funciones ajenas con cada uno, y acaba en «FIN | s16e | consulta»', ls[0] === 's16e | search_path | "$user", public, extensions' && familias.every(f => de(ls, '{public,extensions}')[f] && de(ls, '{}')[f]) && ls.filter(l => / \| funcion_ajena \| /.test(l)).length === 6 && ls.at(-1) === 'FIN | s16e | consulta', ls.slice(0, 3).join(' / '))
   const ed = de(ls, '{public,extensions}'), va = de(ls, '{}')
-  oraculo('S16e', 'sus recuentos y md5 son, uno a uno, los que esperan la s16 ({public,extensions}) y sim-004b ({})', Object.keys(esperado).length === 16 && familias.every(f => ed[f] === esperado[`{public,extensions}|${f}`] && va[f] === esperado[`{}|${f}`]), familias.map(f => `${f} ${ed[f]} / ${va[f]}`).join(' · ').slice(0, 600))
+  oraculo('S16e', 'sus recuentos y md5 son, uno a uno, los de su salida de produccion, con los dos search_path', Object.keys(esperado).length === 16 && familias.every(f => ed[f] === esperado[`{public,extensions}|${f}`] && va[f] === esperado[`{}|${f}`]), familias.map(f => `${f} ${ed[f]} / ${va[f]}`).join(' · ').slice(0, 600))
   // como en el editor: sin transaccion explicita y siguiendo tras el error del informe, en la MISMA sesion
   const tras = m.comoEjecutor(d, `\\set ON_ERROR_STOP 0\n${S16E}\nselect 'tras|' || pg_catalog.current_schemas(false)::text;`)
   oraculo('S16e', 'y no deja el search_path cambiado: despues, en la misma sesion y sin transaccion, sigue el del editor', /informe s16e/.test(tras.err) && tras.out.trim().split('\n').at(-1) === 'tras|{public,extensions}', tras.out.slice(-120))

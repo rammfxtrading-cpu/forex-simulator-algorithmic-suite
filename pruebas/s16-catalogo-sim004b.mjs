@@ -49,12 +49,12 @@ try {
   ver('control: el ejecutor del montaje tiene el search_path del editor de Supabase ({public,extensions})', m.comoEjecutor(d, 'select pg_catalog.current_schemas(false)::text').out === '{public,extensions}')
   const reqSp = x => (x.out.split('\n').find(l => l.startsWith('requisito|search_path|')) ?? '')
   oraculo('S16', 'con el search_path vacio o con «public» a secas: el requisito «search_path» DIFIERE y veredicto DIFIEREN', r0.ok && r1.ok && reqSp(r).endsWith(' · coincide') && reqSp(r0).endsWith(' · DIFIERE') && reqSp(r1).endsWith(' · DIFIERE') && /^DIFIEREN \d+$/.test(veredicto(r0)) && /^DIFIEREN \d+$/.test(veredicto(r1)), [reqSp(r0), veredicto(r0), reqSp(r1), veredicto(r1)].join(' / ').slice(0, 400))
-  oraculo('S16', 'sus filas: 14 rls, 13 politicas, 17 funciones y 63 disparadores, todas «coincide»', lineas.filter(l => l.startsWith('rls|')).length === 14 && lineas.filter(l => l.startsWith('funcion|') && l.endsWith('coincide')).length === 17 && lineas.filter(l => l.startsWith('disparador|') && l.endsWith('coincide')).length === 63, String((r.out.match(/coincide$/gm) ?? []).length))
+  oraculo('S16', 'sus filas: 14 rls, 13 politicas, 17 funciones y 81 disparadores (con los 18 del otro extremo de las FK, E3R3-03), todas «coincide»', lineas.filter(l => l.startsWith('rls|')).length === 14 && lineas.filter(l => l.startsWith('funcion|') && l.endsWith('coincide')).length === 17 && lineas.filter(l => l.startsWith('disparador|') && l.endsWith('coincide')).length === 81, String((r.out.match(/coincide$/gm) ?? []).length))
   // CTO 15-oct (ronda 2): la s16 mide TODO lo que sim-004b exige, tambien las ACL de tabla (su 4.3): la
   // matriz efectiva de los siete privilegios en las 11 protegidas, los receptores de mas en las 7 nuevas
   // y sus 4 secuencias, y ninguna ACL de columna en las 11
   const acl = lineas.filter(l => /^acl_(tabla|receptores|columna)\|/.test(l))
-  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63 + 23 + 43 + 1 + 11 + 1, acl.join(' / ').slice(0, 500))
+  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 81 + 23 + 43 + 1 + 11 + 1 + 2, acl.join(' / ').slice(0, 500))
   oraculo('S16', 'y con eso sim-004b aplica', aplica(d).ok)
   const dp = m.base('s16p')
   const pp = m.comoEjecutor(dp, PUERTA)
