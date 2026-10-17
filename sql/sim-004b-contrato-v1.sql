@@ -869,6 +869,118 @@ BEGIN
       (SELECT string_agg(x, ' ; ') FROM (SELECT regexp_split_to_table(v_actual, E'\n') x EXCEPT ALL SELECT regexp_split_to_table(v_esperado, E'\n')) d),
       (SELECT string_agg(x, ' ; ') FROM (SELECT regexp_split_to_table(v_esperado, E'\n') x EXCEPT ALL SELECT regexp_split_to_table(v_actual, E'\n')) d);
   END IF;
+  -- 4.6 R3E3B-01 y R3E3B-02 (CTO 17-oct): el inventario EXACTO de las 14 tablas fuera de pg_proc (tabla, columnas,
+  -- restricciones, indices, reglas y las politicas de las 3 no protegidas) y las tres funciones ajenas que llaman los
+  -- cuerpos, con lo medido en produccion (s16b). El mismo bloque que s16. Con search_path vacio (los textos, sin «public.»)
+  PERFORM set_config('search_path', '', true);
+  SELECT string_agg(i.familia || ' ' || i.objeto || ': ' || i.detalle, ' ; ' ORDER BY i.familia, i.objeto) INTO v_txt
+    FROM (
+      -- >>> inventario (identico en sql/sim-004b-contrato-v1.sql y sql/consultas/s16-catalogo-sim004b.sql)
+      -- R3E3B-01 (revisor interno; CTO 17-oct): el inventario EXACTO de las 14 tablas fuera de pg_proc, por familias,
+      -- con las expresiones de la s16b (los textos sin «public.»): la tabla (relkind, persistencia, particion, hijas,
+      -- padres, particionada), cada columna (tipo, NOT NULL, identity, generated, colacion, valor por defecto), cada
+      -- restriccion (tipo y definicion, validada, diferible), cada indice (pg_get_indexdef), cada regla, y las politicas
+      -- de las 3 no protegidas (las de las 11 protegidas ya son exactas aparte). Las dos restricciones que cambia
+      -- sim-004b van por nombre: su definicion la acredita su estado. Los disparadores ya tienen inventario exacto aparte
+      -- Por familia se compara el recuento y el md5 del conjunto ordenado con lo medido en produccion (s16b, 17-oct;
+      -- sql/consultas/salidas/s16b-catalogo-tablas-sim004b-2026-10-17.csv); las tres funciones ajenas, ficha a ficha. Si
+      -- algo no coincide, la s16b dice que fila es
+      select v.familia, v.objeto, v.detalle, v.bien from (
+        with inv as (
+          select x.familia, x.fila from (
+            select 'tabla'::text familia, r.t || '|' ||
+                   case when c.oid is null then 'NO EXISTE'
+                        else 'relkind=' || c.relkind::text || ' · persistencia=' || c.relpersistence::text || ' · particion=' || c.relispartition::text
+                             || ' · hijas=' || (select count(*) from pg_catalog.pg_inherits i where i.inhparent = c.oid)
+                             || ' · padres=' || coalesce((select string_agg(regexp_replace(i.inhparent::regclass::text, '^public\.', ''), ',' order by i.inhseqno) from pg_catalog.pg_inherits i where i.inhrelid = c.oid), '-')
+                             || ' · particionada=' || exists (select 1 from pg_catalog.pg_partitioned_table p where p.partrelid = c.oid)::text end fila
+              from (values ('sim_alumnos'), ('sim_arrendamientos'), ('sim_recibos'), ('sim_eventos'), ('sim_escrituras_v0'), ('sim_escrituras_v0_marcas'), ('sim_servicio'),
+                           ('sim_sessions'), ('sim_trades'), ('session_drawings'), ('session_chart_config'), ('sim_drawing_templates'), ('user_chart_config'), ('user_tool_config')) r(t)
+                   left join pg_catalog.pg_class c on c.oid = pg_catalog.to_regclass('public.' || r.t)
+            union all
+            select 'columna', c.relname || '.' || a.attname || '|' ||
+                   'tipo=' || regexp_replace(pg_catalog.format_type(a.atttypid, a.atttypmod), '\mpublic\.', '', 'g')
+                   || ' · notnull=' || a.attnotnull::text
+                   || ' · identity=' || coalesce(nullif(a.attidentity::text, ''), '-')
+                   || ' · generated=' || coalesce(nullif(a.attgenerated::text, ''), '-')
+                   || ' · colacion=' || coalesce((select case when a.attcollation = t.typcollation then 'por defecto' else co.collname::text end
+                                                    from pg_catalog.pg_collation co, pg_catalog.pg_type t where co.oid = a.attcollation and t.oid = a.atttypid), '-')
+                   || ' · defecto=' || coalesce(regexp_replace(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '\mpublic\.', '', 'g'), '-')
+              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+                   left join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config') and c.relkind = 'r'
+            union all
+            select 'restriccion', c.relname || '.' || k.conname || '|' ||
+                   case when (c.relname, k.conname) in (('sim_sessions', 'sim_sessions_terminal_valida'), ('sim_eventos', 'sim_eventos_tipo_check'))
+                        then k.contype::text || ' · (la de sim-004b, segun su estado)'
+                        else k.contype::text || ' · ' || regexp_replace(pg_catalog.pg_get_constraintdef(k.oid), '\mpublic\.', '', 'g')
+                             || ' · validada=' || k.convalidated::text || ' · diferible=' || k.condeferrable::text || '/' || k.condeferred::text end
+              from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid = c.oid
+             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            union all
+            select 'indice', c.relname || '.' || ic.relname || '|' || regexp_replace(pg_catalog.pg_get_indexdef(x.indexrelid), '\mpublic\.', '', 'g')
+              from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid = c.oid join pg_catalog.pg_class ic on ic.oid = x.indexrelid
+             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            union all
+            select 'regla', c.relname || '.' || w.rulename || '|' || regexp_replace(pg_catalog.pg_get_ruledef(w.oid), '\mpublic\.', '', 'g')
+              from pg_catalog.pg_class c join pg_catalog.pg_rewrite w on w.ev_class = c.oid
+             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            union all
+            select 'politica', p.tablename || '.' || p.policyname || '|' ||
+                   p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text || ' · using=' || coalesce(regexp_replace(p.qual, '\mpublic\.', '', 'g'), '-')
+                   || ' · check=' || coalesce(regexp_replace(p.with_check, '\mpublic\.', '', 'g'), '-')
+              from pg_catalog.pg_policies p where p.schemaname = 'public' and p.tablename in ('sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            union all
+            -- R3E3B-02 (CTO 17-oct): las tres funciones ajenas que llaman los cuerpos, con la ficha de la s16b
+            select 'funcion_ajena', f.firma || '|' ||
+                   case when p.oid is null then 'NO EXISTE' else
+                     'functiondef md5=' || pg_catalog.md5(pg_catalog.pg_get_functiondef(p.oid))
+                     || ' · prosrc md5=' || pg_catalog.md5(coalesce(p.prosrc, '')) || ' · probin=' || coalesce(p.probin, '-')
+                     || ' · lenguaje=' || l.lanname || ' · dueño=' || pg_catalog.pg_get_userbyid(p.proowner)
+                     || ' · prosecdef=' || p.prosecdef::text || ' · provolatile=' || p.provolatile::text || ' · proconfig=' || coalesce(p.proconfig::text, '-')
+                     || ' · proisstrict=' || p.proisstrict::text || ' · proleakproof=' || p.proleakproof::text || ' · proparallel=' || p.proparallel::text
+                     || ' · prokind=' || p.prokind::text || ' · proretset=' || p.proretset::text || ' · prorettype=' || pg_catalog.format_type(p.prorettype, null)
+                     || ' · proargmodes=' || coalesce(p.proargmodes::text, '-') || ' · proargnames=' || coalesce(p.proargnames::text, '-')
+                     || ' · pronargdefaults=' || p.pronargdefaults::text || ' · procost=' || p.procost::text || ' · prorows=' || p.prorows::text end
+              from (values ('extensions.digest(bytea,text)'), ('extensions.gen_random_bytes(integer)'), ('auth.uid()')) f(firma)
+                   left join pg_catalog.pg_proc p on p.oid = pg_catalog.to_regprocedure(f.firma) left join pg_catalog.pg_language l on l.oid = p.prolang
+          ) x
+        ),
+        esp_f(familia, n, h) as (values
+          ('columna', 135, '28818346b36d6bb04deb43f4b9fc9d1c'),
+          ('indice', 31, '34f45c0e9b412391d3d8b9fea837632a'),
+          ('politica', 3, 'ae70c7a2dca8be8f6aa6c6eae4d9754f'),
+          ('regla', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
+          ('restriccion', 59, '8c1bcac993492ca83039e80ec6168d01'),
+          ('tabla', 14, 'fbc3d791067856bdb2e543e30481fe17')),
+        esp_a(firma, ficha) as (values
+          ('auth.uid()', 'functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0'),
+          ('extensions.digest(bytea,text)', 'functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0'),
+          ('extensions.gen_random_bytes(integer)', 'functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0')),
+        med_f as (select i.familia, count(*)::integer n, pg_catalog.md5(string_agg(i.fila, E'\n' order by i.fila collate "C")) h from inv i where i.familia <> 'funcion_ajena' group by i.familia),
+        med_a as (select split_part(i.fila, '|', 1) firma, substr(i.fila, strpos(i.fila, '|') + 1) ficha from inv i where i.familia = 'funcion_ajena')
+        select 'inventario'::text familia, e.familia objeto,
+               'n=' || coalesce(m.n, 0) || ' md5=' || coalesce(m.h, pg_catalog.md5(''))
+               || case when coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h then ''
+                       else ' (sim-004b espera n=' || e.n || ' md5=' || e.h || '; que fila, en la s16b)' end detalle,
+               coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h bien
+          from esp_f e left join med_f m on m.familia = e.familia
+        union all
+        select 'funcion_ajena', coalesce(e.firma, m.firma),
+               coalesce(m.ficha, 'NO EXISTE') || case when e.firma is null then ' (de mas)' when m.ficha is distinct from e.ficha then ' (sim-004b espera ' || e.ficha || ')' else '' end,
+               e.firma is not null and m.ficha is not distinct from e.ficha
+          from esp_a e full join med_a m on m.firma = e.firma
+      ) v
+      -- <<< inventario
+    ) i WHERE NOT i.bien;
+  PERFORM set_config('search_path', v_sp, true);
+  IF v_txt IS NOT NULL THEN
+    RAISE EXCEPTION 'sim-004b: el catalogo de las 14 tablas o las funciones ajenas no son las medidas (s16b, 17-oct): %', v_txt;
+  END IF;
 END
 $sim_004b$;
 

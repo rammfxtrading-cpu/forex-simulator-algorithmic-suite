@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, importa, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, L } from './montaje-v1.mjs'
+import { montajeV1, L, conUidDelMontaje } from './montaje-v1.mjs'
 const P = await importa('lib/mercado/publicador-v1.mjs')
 const PV = await importa('lib/mercado/publica-v1.mjs')
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
@@ -58,7 +58,7 @@ try {
   pg.arranca()
   // con sim-004b aplicada (sim_avanzar_fase generalizada: la ultima fase sin hija), como servidor-fase
   const d = pg.base('ter1'), AL = u(1)
-  const a4b = pg.comoEjecutor(d, readFileSync(path.join(REPO, 'sql/sim-004b-contrato-v1.sql'), 'utf8'))
+  const a4b = pg.comoEjecutor(d, conUidDelMontaje(readFileSync(path.join(REPO, 'sql/sim-004b-contrato-v1.sql'), 'utf8')))
   ver('control: sim-004b aplicada en el montaje', a4b.ok, a4b.err.slice(0, 200))
   pg.alumno(d, AL)
   const leeSesion = async id => { const t = pg.uno(d, `select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }

@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { llama } from './supabase-falso.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, L } from './montaje-v1.mjs'
+import { montajeV1, L, conUidDelMontaje } from './montaje-v1.mjs'
 const P = await importa('lib/mercado/publicador-v1.mjs')
 const PV = await importa('lib/mercado/publica-v1.mjs')
 const CA = await importa('lib/motor/cartera.mjs')
@@ -32,7 +32,8 @@ const SO = await importa('lib/servidor/sobre.mjs'), CR = await importa('lib/serv
 const ME = await importa('lib/servidor/mercado.mjs')
 let FA = null
 try { FA = await importa('lib/servidor/fase.mjs') } catch { FA = null }
-const S4B = readFileSync(path.join(REPO, 'sql/sim-004b-contrato-v1.sql'), 'utf8')
+// R3E3B-02: la ficha de auth.uid() de produccion, por la del montaje (la unica adaptacion; montaje-v1.mjs)
+const S4B = conUidDelMontaje(readFileSync(path.join(REPO, 'sql/sim-004b-contrato-v1.sql'), 'utf8'))
 const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const U = iso => Date.parse(iso) / 1000
 const tx = x => JSON.stringify(x, (k, v) => (typeof v === 'bigint' ? `${v}n` : v))

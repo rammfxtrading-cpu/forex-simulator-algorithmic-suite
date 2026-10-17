@@ -23,11 +23,12 @@ import path from 'node:path'
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, L } from './montaje-v1.mjs'
+import { montajeV1, L, conUidDelMontaje } from './montaje-v1.mjs'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const S3 = lee('sql/sim-003-persistencia-aditiva.sql'), PREP = lee('sql/sim-004a-preparatoria.sql')
 let S4B = null
-try { S4B = lee('sql/sim-004b-contrato-v1.sql') } catch { S4B = null }
+// R3E3B-02: la ficha de auth.uid() de produccion, por la del montaje (la unica adaptacion; montaje-v1.mjs)
+try { S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')) } catch { S4B = null }
 const P = await importa('lib/mercado/publicador-v1.mjs')
 const PV = await importa('lib/mercado/publica-v1.mjs')
 const CA = await importa('lib/motor/cartera.mjs')

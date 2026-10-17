@@ -13,9 +13,10 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1 } from './montaje-v1.mjs'
+import { montajeV1, conUidDelMontaje } from './montaje-v1.mjs'
 const lee = p => { try { return readFileSync(path.join(REPO, p), 'utf8') } catch { return null } }
-const S16 = lee('sql/consultas/s16-catalogo-sim004b.sql'), S4B = lee('sql/sim-004b-contrato-v1.sql'), PUERTA = lee('sql/sim-004a-puerta.sql')
+// R3E3B-02: la ficha de auth.uid() de produccion, por la del montaje (la unica adaptacion; montaje-v1.mjs)
+const S16 = conUidDelMontaje(lee('sql/consultas/s16-catalogo-sim004b.sql')), S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')), PUERTA = lee('sql/sim-004a-puerta.sql')
 titulo('1 · la consulta y sim-004b dan por buenas las mismas funciones')
 const shas = t => new Set([...(t ?? '').matchAll(/'([0-9a-f]{64})'/g)].map(x => x[1]).concat([...(t ?? '').matchAll(/\|([0-9a-f]{64})\|/g)].map(x => x[1])))
 const s16 = shas(S16), s4b = shas(S4B)
@@ -49,7 +50,7 @@ try {
   // matriz efectiva de los siete privilegios en las 11 protegidas, los receptores de mas en las 7 nuevas
   // y sus 4 secuencias, y ninguna ACL de columna en las 11
   const acl = lineas.filter(l => /^acl_(tabla|receptores|columna)\|/.test(l))
-  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63 + 23 + 43 + 1, acl.join(' / ').slice(0, 500))
+  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63 + 23 + 43 + 1 + 9, acl.join(' / ').slice(0, 500))
   oraculo('S16', 'y con eso sim-004b aplica', aplica(d).ok)
   const dp = m.base('s16p')
   const pp = m.comoEjecutor(dp, PUERTA)

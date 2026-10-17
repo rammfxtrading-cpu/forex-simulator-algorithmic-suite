@@ -39,6 +39,22 @@ alter default privileges for role pgx in schema public grant all on functions to
 // un literal SQL sin tipo (la funcion le da el suyo por el nombre del parametro)
 export const L = v => (v == null ? 'NULL' : `'${(typeof v === 'object' ? JSON.stringify(v) : String(v)).replace(/'/g, "''")}'`)
 
+// R3E3B-02 (CTO 17-oct): sim-004b y s16 acreditan la ficha de auth.uid() MEDIDA en produccion (s16b, 17-oct). El
+// auth.uid() del montaje (pg-ensayo) no puede ser ese: su cuerpo de Supabase no se conoce y su dueño es otro. Esta es la
+// UNICA adaptacion del montaje: cambia en el texto del SQL esa ficha por la del montaje (exactamente una vez; si no, falla).
+// pruebas/sim-004b-inventario.mjs comprueba que la ficha del montaje es esta, en vivo, y que la de produccion es la literal
+export const FICHA_UID_PRODUCCION = (() => {
+  const t = readFileSync(path.join(REPO, 'sql/consultas/salidas/s16b-catalogo-tablas-sim004b-2026-10-17.csv'), 'utf8').replace(/\r/g, '')
+  const l = t.split('\n').find(x => x.startsWith('funcion,auth.uid(),'))
+  return l ? l.slice('funcion,auth.uid(),'.length) : null
+})()
+export const FICHA_UID_MONTAJE = 'functiondef md5=ac095177defffa16dd5af59ee5bbd056 · prosrc md5=766254a986338dc8e8c4a4ce3985441a · probin=- · lenguaje=sql · dueño=postgres · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0'
+export function conUidDelMontaje(texto) {
+  const de = `('auth.uid()', '${FICHA_UID_PRODUCCION}')`, a = `('auth.uid()', '${FICHA_UID_MONTAJE}')`
+  if (!FICHA_UID_PRODUCCION || texto.split(de).length !== 2) throw new Error('conUidDelMontaje: la ficha de produccion de auth.uid() no esta exactamente una vez en el SQL')
+  return texto.replace(de, a)
+}
+
 export function montajeV1() {
   const pg = cluster()
   const pgx = (texto, db) => {
