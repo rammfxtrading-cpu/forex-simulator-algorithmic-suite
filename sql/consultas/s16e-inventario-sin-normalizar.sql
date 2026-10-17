@@ -6,7 +6,7 @@
 -- de los literales (RINV3-01). Ahora comparan los textos TAL CUAL, y el texto depende del search_path:
 -- sim-004b lo mide con el vacio y la s16 con el del editor. Esta consulta mide en produccion el bloque
 -- «inventario» (el mismo texto que sim-004b y la s16) con los dos: primero con el del editor y despues
--- con el vacio. Trae, por familia, el recuento y el md5 de cada uno, y las fichas de las tres funciones
+-- con el vacio (fija los dos solo en su transaccion y dice el de partida). Trae, por familia, el recuento y el md5 de cada uno, y las fichas de las tres funciones
 -- ajenas. Con su salida, el CTO acredita los valores esperados de sim-004b y de la s16.
 --
 -- NO cambia nada. Es un bloque DO (el editor de Supabase no deja cambiar el search_path y despues medir
@@ -23,7 +23,9 @@ declare
   v_ed text;
   v_vacio text;
 begin
-  -- 1 con el search_path del editor
+  -- 1 con el search_path del editor, fijado aqui (solo en esta transaccion): asi mide sus md5 aunque el de partida sea
+  -- otro (RINV4-02); el de partida sale en la fila «search_path»
+  perform pg_catalog.set_config('search_path', '"$user", public, extensions', true);
   v_esq := pg_catalog.current_schemas(false)::text;
   select string_agg('s16e | ' || v_esq || ' | ' || i.familia || ' | ' || i.objeto || ' | ' || i.detalle, E'\n' order by i.familia, i.objeto)
     into v_ed

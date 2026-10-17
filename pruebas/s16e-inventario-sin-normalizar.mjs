@@ -20,7 +20,7 @@ const familias = ['ajeno', 'columna', 'identidad', 'indice', 'politica', 'regla'
 
 titulo('1 · solo lectura y el mismo bloque')
 const sin = S16E0.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''").replace(/\$s16e\$/g, '')
-oraculo('S16e', 'un solo bloque DO: sin escrituras ni EXECUTE; el unico set_config es el del search_path', !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|call|copy)\b/i.test(sin) && (S16E0.match(/^do \$s16e\$$/gm) || []).length === 1 && (S16E0.match(/set_config\(/g) || []).length === 2 && (S16E0.match(/set_config\('search_path', /g) || []).length === 2)
+oraculo('S16e', 'un solo bloque DO: sin escrituras ni EXECUTE; el unico set_config es el del search_path', !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|call|copy)\b/i.test(sin) && (S16E0.match(/^do \$s16e\$$/gm) || []).length === 1 && (S16E0.match(/set_config\(/g) || []).length === 3 && (S16E0.match(/set_config\('search_path', /g) || []).length === 3)
 const blk = t => { const a = t.indexOf('-- >>> inventario'), b = t.indexOf('-- <<< inventario'); return a >= 0 && b > a ? t.slice(a, b) : null }
 const dos = S16E0.split('-- >>> inventario').length - 1
 oraculo('S16e', 'lleva dos veces el bloque «inventario», byte a byte el de sim-004b y la s16', dos === 2 && blk(S16E0) === blk(S4B) && blk(S16E0.slice(S16E0.lastIndexOf('-- >>> inventario'))) === blk(S4B) && blk(S4B) === blk(S16))
@@ -50,6 +50,10 @@ try {
   // como en el editor: sin transaccion explicita y siguiendo tras el error del informe, en la MISMA sesion
   const tras = m.comoEjecutor(d, `\\set ON_ERROR_STOP 0\n${S16E}\nselect 'tras|' || pg_catalog.current_schemas(false)::text;`)
   oraculo('S16e', 'y no deja el search_path cambiado: despues, en la misma sesion y sin transaccion, sigue el del editor', /informe s16e/.test(tras.err) && tras.out.trim().split('\n').at(-1) === 'tras|{public,extensions}', tras.out.slice(-120))
+
+  // RINV4-02: con otro search_path de partida, mide igual los dos y dice el de partida
+  const r0 = m.comoEjecutor(d, `begin read only;\nset local search_path = '';\n${S16E}\nrollback;`), l0 = informe(r0)
+  oraculo('S16e', 'con el search_path vacio de partida: dice el de partida y mide igual los dos (los mismos md5)', l0[0] === 's16e | search_path | ""' && familias.every(f => de(l0, '{public,extensions}')[f] === ed[f] && de(l0, '{}')[f] === va[f]), l0.slice(0, 2).join(' / '))
 
   titulo('3 · mide los textos tal cual (RINV3-01)')
   const d2 = nueva()

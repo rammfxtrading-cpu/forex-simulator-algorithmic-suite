@@ -31,7 +31,11 @@ titulo('procedencia: los valores esperados son los de la s16e de produccion')
 // RINV3-01 (CTO 17-oct, orden 1-008): los textos van tal cual, y su md5 depende del search_path. La s16e (salida literal
 // de produccion) mide el bloque con el del editor ({public,extensions}: la s16) y con el vacio ({}: sim-004b)
 const S16E_SALIDA = 'sql/consultas/salidas/s16e-inventario-sin-normalizar-2026-10-17.txt'
-const PROD = lee(S16E_SALIDA).replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.startsWith('s16e | {')).map(l => l.split(' | '))
+// RINV4-01: una salida provisional (del montaje, para ensayar antes de tener la de produccion) lleva la marca
+// «PROVISIONAL»: con ella, esta prueba no puede dar verde
+const S16E_TEXTO = lee(S16E_SALIDA)
+ver('control: la salida de la s16e es la de produccion (sin la marca «PROVISIONAL» del montaje)', !/PROVISIONAL/.test(S16E_TEXTO))
+const PROD = S16E_TEXTO.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.startsWith('s16e | {')).map(l => l.split(' | '))
 const familias = ['ajeno', 'columna', 'identidad', 'indice', 'politica', 'regla', 'restriccion', 'tabla']
 const ESQUEMAS = ['{}', '{public,extensions}']
 const esperado = Object.fromEntries(ESQUEMAS.flatMap(e => familias.map(f => {

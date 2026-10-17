@@ -1,7 +1,8 @@
 /**
  * ETAPA 3 · RINV3-01 (revisor interno de ce8b315; CTO 17-oct, orden 1-008, opcion b): sim-004b y s16 comparan los textos
  * del catalogo TAL CUAL, sin quitar «public.» con regexp_replace (que tambien lo quitaba de dentro de los literales).
- * Escrita ANTES de dar el arreglo por bueno: contra el SQL de ce8b315, los mutantes del revisor pasan (rojo previo).
+ * Rojo previo contra el SQL de ce8b315: los 4 casos del revisor (sim-004b aplica y la s16 da OK) y el predicado de indice
+ * (la s16 da OK; sim-004b ya lo paraba por su seccion 3). Los demas ya los paraba la comparacion exacta: son cobertura.
  *
  * Contra PostgreSQL 17 local (montaje-v1, con la puerta), cada mutante en primera aplicacion y en reejecucion: la s16 dice
  * DIFIEREN y sim-004b aborta sin cambiar nada.
