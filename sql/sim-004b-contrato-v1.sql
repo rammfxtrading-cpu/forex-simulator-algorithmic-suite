@@ -59,6 +59,8 @@
 --   · RLS NO forzada (relforcerowsecurity = false) en las 14 tablas que acredita (CTO 15-oct, q.16.6).
 --   · antes de cambiar nada (seccion 0; RINV2-03, CTO 17-oct): el siguiente valor de cada secuencia identity de
 --     las 14 tablas, por encima de max(id) (solo el agregado; tabla vacia, pasa). La s16 no lo mide: no es catalogo.
+--   · antes de cambiar nada (seccion 0; RE3-01, CTO 17-oct): session_replication_role = origin y row_security = on,
+--     y ninguno de los dos fijado en pg_db_role_setting para la base o los roles que ejecutan (solo por nombre).
 --   Cualquier desvio: «sim-004b: …» y no queda nada.
 --
 -- Ensayado en PostgreSQL 17 local: s04 literal + sim-002 + sim-003 + preparatoria, con un
@@ -613,6 +615,31 @@ BEGIN
   END LOOP;
   IF to_regclass('public.sim_servicio') IS NULL OR to_regclass('public.sim_escrituras_v0') IS NULL THEN
     RAISE EXCEPTION 'sim-004b: faltan tablas de la preparatoria (sim_servicio, sim_escrituras_v0): no se toca nada';
+  END IF;
+  -- RE3-01 (revisor interno de c4d46e3; CTO 17-oct, orden 1-010): los ajustes que cambian la semantica sin tocar el
+  -- catalogo. session_replication_role = replica apaga los disparadores (tambien los de las FK) y row_security = off cambia
+  -- la RLS: efectivos origin y on, y ninguno fijado en pg_db_role_setting para la base o para los roles que ejecutan
+  -- (postgres, authenticator, authenticated, anon, service_role y el ejecutor). SOLO por nombre: no se lee ni se imprime
+  -- ningun valor de pg_db_role_setting (los de Supabase pueden ser secretos). El resto de pg_db_role_setting queda fuera:
+  -- limite declarado
+  SELECT string_agg(a.detalle, '; ' ORDER BY a.nombre) INTO v_txt FROM (
+  select g.nombre, pg_catalog.current_setting(g.nombre) = g.esperado efectivo_bien, f.donde,
+           g.nombre || ': efectivo ' || g.esperado || '=' || (pg_catalog.current_setting(g.nombre) = g.esperado)::text
+           || ' · fijado en pg_db_role_setting: ' || coalesce(f.donde, 'ninguno') detalle
+      from (values ('session_replication_role', 'origin'), ('row_security', 'on')) g(nombre, esperado)
+           left join (select split_part(c.x, '=', 1) nombre,
+             string_agg(case when s.setrole = 0 then 'base' else 'rol ' || r.rolname::text end
+                        || case when s.setdatabase = 0 then ' (en todas las bases)' else '' end, ', '
+                        order by case when s.setrole = 0 then 'base' else 'rol ' || r.rolname::text end) donde
+        from pg_catalog.pg_db_role_setting s left join pg_catalog.pg_roles r on r.oid = s.setrole
+             cross join lateral unnest(s.setconfig) c(x)
+       where (s.setdatabase = 0 or s.setdatabase = (select d.oid from pg_catalog.pg_database d where d.datname = pg_catalog.current_database()))
+         and (s.setrole = 0 or r.rolname in ('postgres', 'authenticator', 'authenticated', 'anon', 'service_role') or r.rolname = current_user)
+         and split_part(c.x, '=', 1) in ('session_replication_role', 'row_security')
+       group by 1) f on f.nombre = g.nombre
+  ) a WHERE NOT a.efectivo_bien OR a.donde IS NOT NULL;
+  IF v_txt IS NOT NULL THEN
+    RAISE EXCEPTION 'sim-004b: ajustes que cambian la semantica (RE3-01): %; no se toca nada', v_txt;
   END IF;
   -- RINV2-03 (CTO 17-oct, orden 1-006): el estado de cada secuencia identity no es catalogo (cambia con el uso normal):
   -- la s16 no lo mide; aqui, antes de cualquier cambio, el siguiente valor que daria (last_value si is_called = false;

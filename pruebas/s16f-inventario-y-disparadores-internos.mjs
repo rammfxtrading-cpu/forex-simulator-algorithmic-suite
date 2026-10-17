@@ -47,6 +47,9 @@ try {
   ver('control: el montaje no cambia (READ ONLY; el informe sale como error)', !r.ok && /informe s16f \(no es un fallo\)/.test(r.err), r.err.slice(0, 200))
   oraculo('S16f', 'el search_path del editor, las 10 familias y las 3 funciones ajenas con cada uno, y acaba en «FIN | s16f | consulta»', ls[0] === 's16f | search_path | "$user", public, extensions' && familias.every(f => de(ls, '{public,extensions}')[f] && de(ls, '{}')[f]) && ls.filter(l => / \| funcion_ajena \| /.test(l)).length === 6 && ls.at(-1) === 'FIN | s16f | consulta', ls.slice(0, 3).join(' / '))
   const ed = de(ls, '{public,extensions}'), va = de(ls, '{}')
+  // RE3-01: los dos ajustes, efectivos y sin fijar, solo por nombre
+  const aj = ls.filter(l => l.startsWith('s16f | ajuste | '))
+  oraculo('S16f', 'los ajustes de RE3-01: session_replication_role y row_security, efectivos y fijados en ninguna parte (solo por nombre)', aj.length === 2 && aj.every(l => /: efectivo (origin|on)=true · fijado en pg_db_role_setting: ninguno$/.test(l)), aj.join(' / '))
   const trgEsperados = [...S4B.matchAll(/^    '([^']*\|fk:[^']*)',?\)?;?$/gm)].map(x => x[1]).sort()
   const trgMedidos = ls.filter(l => l.startsWith('s16f | disparador | ')).map(l => l.slice('s16f | disparador | '.length)).sort()
   oraculo('S16f', 'las filas de los disparadores internos son, una a una, las que espera sim-004b (68: 50 en las 14 tablas y 18 en profiles y auth.users)', trgEsperados.length === 68 && trgMedidos.length === 68 && trgEsperados.every((x, i) => x === trgMedidos[i]), `${trgEsperados.length} esperadas · ${trgMedidos.length} medidas · ${trgMedidos.filter(x => !trgEsperados.includes(x)).slice(0, 2).join(' / ')}`)

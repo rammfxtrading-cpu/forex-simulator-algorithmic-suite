@@ -6,7 +6,8 @@
 -- Mide en produccion el bloque «inventario» (el mismo texto que sim-004b y la s16) con el search_path
 -- del editor y con el vacio, como la s16e, y ademas las filas de los disparadores internos (los de las FK
 -- de las 14 tablas, tambien los que viven en profiles y auth.users) tal como las compara sim-004b, con el
--- search_path vacio. Con su salida, el CTO acredita los valores esperados de sim-004b y de la s16.
+-- search_path vacio; y (RE3-01) session_replication_role y row_security, efectivos y donde estan fijados, solo por
+-- nombre. Con su salida, el CTO acredita los valores esperados de sim-004b y de la s16.
 --
 -- NO cambia nada. Es un bloque DO: no escribe, no hace EXECUTE dinamico y solo cambia el search_path
 -- DENTRO de su transaccion (set_config local), que ademas se deshace al acabar con error. Solo catalogo:
@@ -21,6 +22,7 @@ declare
   v_ed text;
   v_vacio text;
   v_trg text;
+  v_aj text;
   v_tablas oid[] := array(select pg_catalog.to_regclass('public.' || x)::oid from unnest(array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']) x);
 begin
   -- 1 con el search_path del editor, fijado aqui (solo en esta transaccion): asi mide sus md5 aunque el de partida sea
@@ -445,7 +447,25 @@ begin
       from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid = t.tgrelid join pg_catalog.pg_constraint k on k.oid = t.tgconstraint
      where t.tgisinternal and (t.tgrelid = any (v_tablas) or (k.contype = 'f' and k.conrelid = any (v_tablas)))) s;
   perform pg_catalog.set_config('search_path', v_sp, true);
+  -- 4 RE3-01 (CTO 17-oct, orden 1-010): session_replication_role y row_security, efectivos y donde estan fijados en
+  -- pg_db_role_setting, SOLO por nombre (la misma expresion que la s16 y sim-004b; ningun valor se lee ni se imprime)
+  select string_agg('s16f | ajuste | ' || a.detalle, E'\n' order by a.nombre) into v_aj from (
+  select g.nombre, pg_catalog.current_setting(g.nombre) = g.esperado efectivo_bien, f.donde,
+           g.nombre || ': efectivo ' || g.esperado || '=' || (pg_catalog.current_setting(g.nombre) = g.esperado)::text
+           || ' · fijado en pg_db_role_setting: ' || coalesce(f.donde, 'ninguno') detalle
+      from (values ('session_replication_role', 'origin'), ('row_security', 'on')) g(nombre, esperado)
+           left join (select split_part(c.x, '=', 1) nombre,
+             string_agg(case when s.setrole = 0 then 'base' else 'rol ' || r.rolname::text end
+                        || case when s.setdatabase = 0 then ' (en todas las bases)' else '' end, ', '
+                        order by case when s.setrole = 0 then 'base' else 'rol ' || r.rolname::text end) donde
+        from pg_catalog.pg_db_role_setting s left join pg_catalog.pg_roles r on r.oid = s.setrole
+             cross join lateral unnest(s.setconfig) c(x)
+       where (s.setdatabase = 0 or s.setdatabase = (select d.oid from pg_catalog.pg_database d where d.datname = pg_catalog.current_database()))
+         and (s.setrole = 0 or r.rolname in ('postgres', 'authenticator', 'authenticated', 'anon', 'service_role') or r.rolname = current_user)
+         and split_part(c.x, '=', 1) in ('session_replication_role', 'row_security')
+       group by 1) f on f.nombre = g.nombre
+  ) a;
   raise exception using message = E'informe s16f (no es un fallo)\n'
-    || 's16f | search_path | ' || v_sp || E'\n' || v_ed || E'\n' || v_vacio || E'\n' || coalesce(v_trg, 's16f | disparador | NINGUNO') || E'\nFIN | s16f | consulta';
+    || 's16f | search_path | ' || v_sp || E'\n' || v_ed || E'\n' || v_vacio || E'\n' || coalesce(v_trg, 's16f | disparador | NINGUNO') || E'\n' || v_aj || E'\nFIN | s16f | consulta';
 end
 $s16f$;
