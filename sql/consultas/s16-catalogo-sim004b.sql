@@ -515,6 +515,22 @@ filas as (
                    left join pg_catalog.pg_proc p on p.oid = pg_catalog.to_regprocedure(f.firma)
                    left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
             union all
+            -- RE3-02 y RE3-03 (revisor interno de c4d46e3): el permiso EFECTIVO del dueño de las RPC sobre lo que usan sus
+            -- cuerpos: los siete privilegios en las 14 tablas y EXECUTE en las funciones sim_* de public (un REVOKE a si
+            -- mismo las deja en 42501)
+            select 'permiso', 'tabla:' || c.relname || '|dueño_rpc=' || coalesce((select string_agg(pr.p, ',' order by pr.n) from (values ('SELECT', 1), ('INSERT', 2), ('UPDATE', 3), ('DELETE', 4), ('TRUNCATE', 5), ('REFERENCES', 6), ('TRIGGER', 7)) pr(p, n)
+                                                                                  where pg_catalog.has_table_privilege(r.proowner, c.oid, pr.p)), '-')
+              from pg_catalog.pg_class c
+                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config') and c.relkind = 'r'
+            union all
+            select 'permiso', 'funcion:' || p.oid::regprocedure::text || '|dueño_rpc=' || coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::text, 'NO EXISTE')
+              from pg_catalog.pg_proc p
+                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+             where p.pronamespace = 'public'::regnamespace and (p.proname like 'sim\_%' or p.proname = 'enforce_sim_session_limit')
+               and p.proname <> 'sim_escrituras_v0_puerta'  -- la de la puerta (estado 2) es de disparador: no se llama
+            union all
             -- R3E3B-02 (CTO 17-oct): las tres funciones ajenas que llaman los cuerpos, con la ficha de la s16b
             select 'funcion_ajena', f.firma || '|' ||
                    case when p.oid is null then 'NO EXISTE' else
@@ -535,7 +551,7 @@ filas as (
           ('{}', 'columna', 135, '9610bdfa6bce4ff3b95a3d4fafd743b0'),
           ('{}', 'identidad', 4, '472c2271705ab4440fba7bbe0c61ed04'),
           ('{}', 'indice', 31, '79cdc8554026972e2802601707a99bd1'),
-          ('{}', 'permiso', 3, 'd752cfb7c979bde79e2aad35a4434371'),
+          ('{}', 'permiso', 39, '25fc63d1d9d6b85da7fc125969fc6144'),
           ('{}', 'politica', 3, 'ae70c7a2dca8be8f6aa6c6eae4d9754f'),
           ('{}', 'regla', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
           ('{}', 'restriccion', 59, '4f9d1a1af4e93723672d6bba7ae10829'),
@@ -545,7 +561,7 @@ filas as (
           ('{public,extensions}', 'columna', 135, '9610bdfa6bce4ff3b95a3d4fafd743b0'),
           ('{public,extensions}', 'identidad', 4, '472c2271705ab4440fba7bbe0c61ed04'),
           ('{public,extensions}', 'indice', 31, '79cdc8554026972e2802601707a99bd1'),
-          ('{public,extensions}', 'permiso', 3, 'd752cfb7c979bde79e2aad35a4434371'),
+          ('{public,extensions}', 'permiso', 39, '6a3ba7f0b9e33c9e43e91aacd6eeaf3b'),
           ('{public,extensions}', 'politica', 3, 'ae70c7a2dca8be8f6aa6c6eae4d9754f'),
           ('{public,extensions}', 'regla', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
           ('{public,extensions}', 'restriccion', 59, '8c1bcac993492ca83039e80ec6168d01'),

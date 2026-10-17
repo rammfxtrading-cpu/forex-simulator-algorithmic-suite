@@ -7,6 +7,7 @@
  *   · E3R3-01 sobrecargas: digest(bytea,text,integer DEFAULT 0), gen_random_bytes(integer,integer DEFAULT 0) y auth.uid(integer
  *     DEFAULT 0) (las de pgcrypto que hay, digest(text,text) incluida, son las acreditadas: el positivo);
  *   · E3R3-02 permiso efectivo: EXECUTE de auth.uid() retirado a authenticated; el de digest retirado a quien es dueño de las RPC;
+ *     RE3-02/03 (revisor interno de c4d46e3): el dueño de las RPC sin INSERT en sim_recibos o sin EXECUTE en sim_bloquea_alumno;
  *   · E3R3-03 disparadores internos: WHEN (false) en la cascada de sim_recibos, en su check_ins y en la cascada de profiles (el
  *     otro extremo de la FK); y uno diferible;
  *   · E3R3-04 indices: indisready y indislive en sim_recibos_ultimo_avance_key, e indisready en uno no unico (el inventario).
@@ -61,7 +62,7 @@ try {
     const d = nueva(despues)
     const q = s16(d)
     ver(`control: limpio ${despues ? 'con sim-004b aplicada' : 'antes de sim-004b'}: s16 OK (con sobrecarga, permiso y los internos coinciden) y sim-004b ${despues ? 'se reejecuta' : 'aplica'}`,
-      veredicto(q) === 'OK' && /^inventario\|sobrecarga\|n=4 /m.test(q.out) && /^inventario\|permiso\|n=3 /m.test(q.out) && m.uno(d, "select count(*) from pg_proc p join pg_namespace s on s.oid = p.pronamespace where s.nspname = 'extensions' and p.proname = 'digest'") === '2' && aplica(d).ok,
+      veredicto(q) === 'OK' && /^inventario\|sobrecarga\|n=4 /m.test(q.out) && /^inventario\|permiso\|n=39 /m.test(q.out) && m.uno(d, "select count(*) from pg_proc p join pg_namespace s on s.oid = p.pronamespace where s.nspname = 'extensions' and p.proname = 'digest'") === '2' && aplica(d).ok,
       q.out.split('\n').filter(l => /DIFIERE|DE MAS|FALTA/.test(l)).join(' / ').slice(0, 200))
   }
 
@@ -73,6 +74,9 @@ try {
     ['E3R3-01', 'sobrecarga auth.uid(integer DEFAULT 0)', "create function auth.uid(integer default 0) returns uuid language sql stable as $$ select null::uuid $$;"],
     ['E3R3-02', 'EXECUTE de auth.uid() retirado a PUBLIC, anon y authenticated', 'revoke execute on function auth.uid() from public, anon, authenticated;'],
     ['E3R3-02', 'EXECUTE de extensions.digest(bytea,text) retirado a PUBLIC (el dueño de las RPC del montaje no lo es de digest)', 'revoke execute on function extensions.digest(bytea, text) from public;'],
+    // el revisor interno de c4d46e3 (RE3-02, -03): el dueño de las RPC se retira a si mismo lo que usan sus cuerpos (DDL ordinario)
+    ['RE3-02', 'el dueño de las RPC se retira INSERT en sim_recibos', 'revoke insert on public.sim_recibos from pgx;'],
+    ['RE3-03', 'el dueño de las RPC se retira EXECUTE en sim_bloquea_alumno(uuid)', 'revoke execute on function public.sim_bloquea_alumno(uuid) from pgx;'],
     ['E3R3-03', 'WHEN (false) en la cascada de sim_recibos (RI_FKey_cascade_del en sim_sessions)', cuando('public.sim_sessions', 'RI_FKey_cascade_del', 'sim_recibos_session_id_fkey', 'public.sim_recibos')],
     ['E3R3-03', 'WHEN (false) en el check_ins de sim_recibos', cuando('public.sim_recibos', 'RI_FKey_check_ins', 'sim_recibos_session_id_fkey', 'public.sim_recibos')],
     ['E3R3-03', 'WHEN (false) en la cascada de profiles hacia sim_sessions (el otro extremo de la FK)', cuando('public.profiles', 'RI_FKey_cascade_del', 'sim_sessions_user_id_perfil_fkey', 'public.sim_sessions')],
@@ -81,7 +85,7 @@ try {
     ['E3R3-04', 'indislive = false en sim_recibos_ultimo_avance_key', "update pg_index set indislive = false where indexrelid = 'public.sim_recibos_ultimo_avance_key'::regclass;"],
     ['E3R3-04', 'indisready = false en sim_recibos_session_creado_idx (no unico: el inventario)', "update pg_index set indisready = false where indexrelid = 'public.sim_recibos_session_creado_idx'::regclass;"],
   ]
-  ver('control: la familia cubre E3R3-01 (3 sobrecargas), E3R3-02 (2 permisos), E3R3-03 (3 WHEN y un diferible) y E3R3-04 (listo y vivo, unico y no unico)', CASOS.length === 12)
+  ver('control: la familia cubre E3R3-01 (3 sobrecargas), E3R3-02 (2 permisos), RE3-02/03 (el dueño de las RPC), E3R3-03 (3 WHEN y un diferible) y E3R3-04 (listo y vivo, unico y no unico)', CASOS.length === 14)
   for (const [fam, nombre, mutante] of CASOS) {
     for (const despues of [false, true]) {
       const d = nueva(despues)
@@ -120,19 +124,25 @@ try {
   }
   {
     const d0 = nueva(true), d1 = nueva(true)
-    m.pg.psql(CASOS[5][2], d1)
+    m.pg.psql(CASOS[7][2], d1)
     const resto = async d => { await crea(d); const r = await m.rpc(d)('sim_borrar_alumno', { p_user_id: u(1) }); return [http(r), m.uno(d, 'select count(*) from public.sim_sessions'), m.uno(d, 'select count(*) from public.sim_recibos')].join(' ') }
     const r0 = await resto(d0), r1 = await resto(d1)
     ver('control: con la cascada anulada, borrar el alumno da 200 y deja un recibo; limpio, 0 recibos', r0 === '200 0 0' && r1 === '200 0 1', `${r0} / ${r1}`)
   }
   {
     const d0 = nueva(true), d1 = nueva(true)
-    m.pg.psql(CASOS[6][2], d1)
+    m.pg.psql(CASOS[8][2], d1)
     const huerfano = d => m.pg.psql(`insert into public.sim_recibos (session_id, user_id, command_id, tipo, digest, epoca, version_partida, resultado, clase) values ('${u(99)}', '${u(1)}', '${u(44)}', 'crear', repeat('a', 64), 1, 0, 'aceptado', 'economico');`, d)
     const h0 = huerfano(d0), h1 = huerfano(d1)
     ver('control: con el check_ins anulado entra un recibo de una sesion que no existe; limpio, la FK lo rechaza', !h0.ok && /foreign key/.test(h0.err) && h1.ok, `${err1(h0).slice(0, 80)} / ${h1.ok ? 'entra' : err1(h1).slice(0, 80)}`)
   }
-  for (const i of [9, 10]) {
+  {
+    const d0 = nueva(true), d1 = nueva(true)
+    m.pg.psql(CASOS[5][2], d1)
+    const c0 = await crea(d0), c1 = await crea(d1)
+    ver('control: el dueño sin INSERT en sim_recibos → crear da 42501; limpio, 201', http(c0) === 201 && /42501/.test(JSON.stringify(c1)), `${http(c0)} / ${JSON.stringify(c1).slice(0, 100)}`)
+  }
+  for (const i of [11, 12]) {
     const d0 = nueva(true), d1 = nueva(true)
     m.pg.psql(CASOS[i][2], d1)
     const ciclo = async d => { const c = await crea(d), t = await toma(d), k = await checkpoint(d, t.data?.testigo, 5); return [http(c), http(t), http(k)] }
