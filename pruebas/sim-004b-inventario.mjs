@@ -27,20 +27,21 @@ const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const err1 = r => (r.err.split('\n').find(l => /ERROR/.test(l)) || r.err.split('\n')[0] || '').replace(/^.*ERROR:\s+/, '')
 const L = s => `'${s.replace(/'/g, "''")}'`
 
-titulo('procedencia: los valores esperados son los de la s16b de produccion')
+titulo('procedencia: los valores esperados son los de la s16c de produccion')
 const csv = t => t.replace(/\r/g, '').split('\n').filter(Boolean).slice(1).map(l => { const o = []; let c = '', q = false; for (let i = 0; i < l.length; i++) { const ch = l[i]; if (q) { if (ch === '"' && l[i + 1] === '"') { c += '"'; i++ } else if (ch === '"') q = false; else c += ch } else if (ch === '"') q = true; else if (ch === ',') { o.push(c); c = '' } else c += ch } o.push(c); return o })
-const PROD = csv(lee('sql/consultas/salidas/s16b-catalogo-tablas-sim004b-2026-10-17.csv'))
+// la s16c (RINV-01..04): la s16b con el dueño, la RLS de las 3 no protegidas, el esquema del tipo y las identity
+const PROD = csv(lee('sql/consultas/salidas/s16c-catalogo-tablas-sim004b-2026-10-17.csv'))
 const VARIABLES = new Set(['sim_sessions.sim_sessions_terminal_valida', 'sim_eventos.sim_eventos_tipo_check'])
 const ordena = xs => xs.map(x => [Buffer.from(x, 'utf8'), x]).sort((a, b) => Buffer.compare(a[0], b[0])).map(x => x[1])
-const familias = ['columna', 'indice', 'politica', 'regla', 'restriccion', 'tabla']
+const familias = ['columna', 'identidad', 'indice', 'politica', 'regla', 'restriccion', 'tabla']
 const esperado = Object.fromEntries(familias.map(f => {
   const xs = ordena(PROD.filter(r => r[0] === f).map(([, o, d]) => `${o}|${f === 'restriccion' && VARIABLES.has(o) ? d.split(' · ')[0] + ' · (la de sim-004b, segun su estado)' : d}`))
   return [f, [xs.length, createHash('md5').update(xs.join('\n')).digest('hex')]]
 }))
 const fichas = Object.fromEntries(PROD.filter(r => r[0] === 'funcion').map(([, o, d]) => [o, d]))
 for (const [nombre, texto] of [['sim-004b', S4B0], ['s16', S160]]) {
-  oraculo('INV', `${nombre}: los recuentos y md5 de las seis familias son los de la s16b de produccion`, familias.every(f => texto.includes(`(${L(f)}, ${esperado[f][0]}, ${L(esperado[f][1])})`)), familias.map(f => `${f} ${esperado[f].join(' ')}`).join(' / '))
-  oraculo('INV', `${nombre}: las fichas de las tres funciones ajenas son, literales, las de la s16b de produccion`, Object.entries(fichas).length === 3 && Object.entries(fichas).every(([f, d]) => texto.includes(`(${L(f)}, ${L(d)})`)), Object.keys(fichas).join(', '))
+  oraculo('INV', `${nombre}: los recuentos y md5 de las siete familias son los de la s16c de produccion`, familias.every(f => texto.includes(`(${L(f)}, ${esperado[f][0]}, ${L(esperado[f][1])})`)), familias.map(f => `${f} ${esperado[f].join(' ')}`).join(' / '))
+  oraculo('INV', `${nombre}: las fichas de las tres funciones ajenas son, literales, las de la s16c de produccion`, Object.entries(fichas).length === 3 && Object.entries(fichas).every(([f, d]) => texto.includes(`(${L(f)}, ${L(d)})`)), Object.keys(fichas).join(', '))
 }
 const blk = t => { const a = t.indexOf('-- >>> inventario'), b = t.indexOf('-- <<< inventario'); return a >= 0 && b > a ? t.slice(a, b) : null }
 oraculo('INV', 'el bloque «inventario» es el mismo texto, byte a byte, en sim-004b y en s16', blk(S4B0) !== null && blk(S4B0) === blk(S160))
@@ -72,7 +73,7 @@ try {
     const d = nueva(despues)
     const q = s16(d)
     const inv = q.out.split('\n').filter(l => /^(inventario|funcion_ajena)\|/.test(l))
-    ver(`control: limpio ${despues ? 'con sim-004b aplicada' : 'antes de sim-004b'}: las 6 familias y las 3 funciones ajenas coinciden, s16 OK y sim-004b ${despues ? 'se reejecuta' : 'aplica'}`, q.ok && inv.length === 9 && inv.every(l => l.endsWith(' · coincide')) && /^veredicto\|OK\|/m.test(q.out) && aplica(d).ok, inv.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 300))
+    ver(`control: limpio ${despues ? 'con sim-004b aplicada' : 'antes de sim-004b'}: las 7 familias y las 3 funciones ajenas coinciden, s16 OK y sim-004b ${despues ? 'se reejecuta' : 'aplica'}`, q.ok && inv.length === 10 && inv.every(l => l.endsWith(' · coincide')) && /^veredicto\|OK\|/m.test(q.out) && aplica(d).ok, inv.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 300))
   }
 
   titulo('un mutante por familia: s16 DIFIERE en su familia y sim-004b aborta')
@@ -98,8 +99,16 @@ try {
     ['funcion_ajena · extensions.gen_random_bytes con otro cuerpo (el del revisor)', 'extensions.gen_random_bytes(integer)', "create or replace function extensions.gen_random_bytes(integer) returns bytea language sql as $x$ select pg_catalog.decode(pg_catalog.repeat('00', $1), 'hex') $x$;", true, 'despues'],
     ['funcion_ajena · extensions.digest con otro COST', 'extensions.digest(bytea,text)', 'alter function extensions.digest(bytea, text) cost 7;', true, 'despues'],
     ['funcion_ajena · auth.uid() con otro dueño', 'auth.uid()', 'alter function auth.uid() owner to service_role;', true, 'despues'],
+    // el revisor interno de 679d363 (RINV-01..05)
+    ['tabla · RINV-01: sim_sessions con otro dueño (authenticated), quitandole lo que la 4.3 veria (el caso del revisor)', 'tabla', 'alter table public.sim_sessions owner to authenticated; revoke truncate, references, trigger on public.sim_sessions from authenticated;', true, 'despues'],
+    ['tabla · RINV-04: la RLS apagada en user_chart_config (no protegida)', 'tabla', 'alter table public.user_chart_config disable row level security;', false, 'despues'],
+    ['columna · RINV-02: un dominio public.text en sim_sessions.name', 'columna', "create domain public.text as pg_catalog.text check (value <> 'inventada'); alter table public.sim_sessions alter column name type public.text;", false, 'despues'],
+    ['identidad · RINV-03: sim_recibos.id con MAXVALUE 2', 'identidad', 'alter table public.sim_recibos alter column id set maxvalue 2;', false, 'despues'],
+    ['identidad · RINV-03: sim_escrituras_v0.id con INCREMENT BY -1', 'identidad', 'alter table public.sim_escrituras_v0 alter column id set increment by -1 set minvalue -1000000;', false, 'despues'],
+    ['restriccion · RINV-05: sim_trades_side_check cambiada (el mismo nombre y el mismo recuento)', 'restriccion', 'alter table public.sim_trades drop constraint sim_trades_side_check, add constraint sim_trades_side_check check (true);', false, 'despues'],
+    ['politica · RINV-05: la de user_chart_config con otro USING (el mismo recuento)', 'politica', 'alter policy "user owns config" on public.user_chart_config using (true);', false, 'despues'],
   ]
-  ver('control: la familia cubre tabla (herencia, particion), las 6 de columna, restriccion (de mas, quitada), indice (de mas, parcial), regla, politica y las 3 funciones ajenas', FAMILIA.length === 19)
+  ver('control: la familia cubre tabla (herencia, particion, dueño, RLS), las 6 de columna y el dominio, identidad (maximo, incremento), restriccion (de mas, quitada, cambiada), indice (de mas, parcial), regla, politica (de mas, cambiada) y las 3 funciones ajenas', FAMILIA.length === 26)
   for (const [nombre, fam, mutante, su, cuando, antes] of FAMILIA) {
     const d = nueva(cuando === 'despues')
     const mu = su ? m.pg.psql(mutante, d) : m.comoEjecutor(d, mutante)
@@ -144,6 +153,26 @@ try {
     const c = await crea(d, u(2), u(3))
     const t = await m.rpc(d)('sim_tomar_escritor', { p_actor: u(1), p_session_id: u(2), p_command_id: u(4), p_sobre: JSON.stringify({ tipo: 'tomar_escritor' }), p_epoca: 1, p_cliente_id: 'p', p_forzar: true })
     ver('control: con el indice unico de mas, crear da 201 pero tomar falla', c.data?.http === 201 && t.data?.http !== 200, JSON.stringify(t.data ?? t.error).slice(0, 120))
+  }
+  {
+    // RINV-01: con otro dueño, la RLS (no forzada) no se aplica a ese dueño: un alumno lee las sesiones de otro
+    const d = nueva(true)
+    await crea(d, u(2), u(3))
+    m.alumno(d, u(7))
+    const ve = () => m.uno(d, `begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${u(7)}', true); select count(*) from public.sim_sessions where user_id = '${u(1)}'; commit;`).split('\n').filter(x => /^\d+$/.test(x)).at(-1)
+    const antes = ve()
+    m.pg.psql('alter table public.sim_sessions owner to authenticated;', d)
+    ver('control: con authenticated como dueño de sim_sessions, el alumno 7 pasa de ver 0 sesiones ajenas a verlas', antes === '0' && ve() !== '0', `${antes} → ${ve()}`)
+  }
+  {
+    // RINV-04: sin RLS en una no protegida, sus politicas no se aplican
+    const d = nueva(true)
+    m.alumno(d, u(7))
+    m.pg.psql(`insert into public.user_chart_config (user_id, config) values ('${u(1)}', '{}');`, d)
+    const ve = () => m.uno(d, `begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${u(7)}', true); select count(*) from public.user_chart_config where user_id = '${u(1)}'; commit;`).split('\n').filter(x => /^\d+$/.test(x)).at(-1)
+    const antes = ve()
+    m.comoEjecutor(d, 'alter table public.user_chart_config disable row level security;')
+    ver('control: con la RLS apagada en user_chart_config, el alumno 7 pasa de ver 0 configuraciones ajenas a verlas', antes === '0' && ve() !== '0', `${antes} → ${ve()}`)
   }
 } finally { m.cierra() }
 fin()

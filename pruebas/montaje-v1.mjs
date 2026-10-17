@@ -64,7 +64,12 @@ export function montajeV1() {
     return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() }
   }
   function base(db) {
-    const pasos = [pg.psql(`create database ${db}`, 'postgres'), pg.psql(PRODUCCION, db), pg.psql(S2, db), pg.psql(EJECUTOR, db), pgx(S3, db), pgx(PREP, db)]
+    // RINV-01 (CTO 17-oct): en produccion el ejecutor (postgres) es el dueño de las 14 tablas que acredita sim-004b (s04 y
+    // s16c). En el montaje las 7 antiguas las crea el superusuario: pasan al ejecutor, como en produccion
+    const DUENO = `alter table public.sim_sessions owner to pgx; alter table public.sim_trades owner to pgx; alter table public.session_drawings owner to pgx;
+alter table public.session_chart_config owner to pgx; alter table public.sim_drawing_templates owner to pgx; alter table public.user_chart_config owner to pgx;
+alter table public.user_tool_config owner to pgx;`
+    const pasos = [pg.psql(`create database ${db}`, 'postgres'), pg.psql(PRODUCCION, db), pg.psql(S2, db), pg.psql(EJECUTOR, db), pg.psql(DUENO, db), pgx(S3, db), pgx(PREP, db)]
     const malo = pasos.find(x => !x.ok)
     if (malo) throw new Error(`montaje ${db}: ${malo.err.split('\n').find(l => /ERROR/.test(l)) ?? malo.err}`)
     return db
