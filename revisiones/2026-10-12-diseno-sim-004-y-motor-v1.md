@@ -3625,3 +3625,80 @@ No hoy (día de la puerta). Cuando Astra dé el sí a la ronda 9 de la etapa 2 y
 #### q.18.5 La puerta (CTO 16-oct)
 
 Si Ramón no puede correr hoy la s10 a las 19:30 o más tarde, la puerta pasa al **lunes 19-oct, a las 19:30 o más tarde**. **Hasta entonces, del simulador no se despliega nada.**
+
+### q.19 · Etapa 3, ronda 3: E3R2-01 y E3R2-02 (Astra r2, 16-oct) y su revisor interno
+
+Astra r2 (`revisiones-suite/2026-10-16-astra-sim-etapa3-r2.md`): **NO** por E3R2-01 y E3R2-02. E3-01, E3-02 y MCV2-01, cerrados. El borrado legado con su texto de «mantenimiento» es correcto (regla de no regresión, CTO 16-oct): no se toca.
+
+#### q.19.1 E3R2-02: `avanzar` sobre una sesión terminada, sin mercado — `f22531c`
+
+- **Lo que fallaba:** `calcula` leía manifiestos y trozos antes de ver que la sesión ya estaba terminada. Con el mercado caído, un final ya decidido daba 503 `mercado_no_disponible` y no llegaba el recibo.
+- **El arreglo:** la sesión terminada (reto `breach`/`superada`, cartera `breach`/`objetivo`) se resuelve desde el estado guardado **antes** de leer nada.
+  - Detención `{ motivo: 'sesion_terminada' }`, causa con `causaTerminal`.
+  - El horizonte confirmado: en el reto, su horizonte; en la cartera, `confirmadoHasta`, su cursor.
+  - Y sigue por la RPC/CAS.
+  - El resultado es, campo a campo, el del camino largo con el mercado bueno (R3E3-01, comprobado contra el `calcula` de `f252152`).
+- **Pruebas:**
+  - `pruebas/servidor-terminada.mjs`, contra `sim_comando` y `sim_avanzar_fase` reales con sim-004b: cada comando (`avanzar`, `abrir`, `modificar`, `cancelar`, `cerrar`, `checkpoint`) y `avanzar-fase` × los cuatro estados, con un almacén que falla en cualquier lectura. Cero lecturas, el recibo (detención y causa en `avanzar`; rechazo con causa en los económicos; `checkpoint` sin causa) y su repetición. Además, `alcanzado`/`cortado` en el recibo y en el ACK, y la equivalencia con el camino largo. 56 verdes; contra `f252152`: 8 rojos.
+  - `servidor-causa.mjs` §5 llama de verdad a `calcula` con `avanzar`.
+- **Lo que sí lee mercado, y es correcto:** el paso a una fase hija (`avanzar-fase` con `hija_id`), porque la hija nace con su mercado fijado. `avanzar-fase` sobre un reto quemado da 409 `fase_no_superada`, y sobre la última fase superada, 200 `completado`, los dos sin leer.
+
+#### q.19.2 E3R2-01: todos los atributos de `pg_proc` en sim-004b y s16 — `19b3b5e`
+
+- **Lo que fallaba:** la acreditación de funciones no miraba `proisstrict`. Con STRICT en `sim_avanzar_fase`, sim-004b se reejecutaba y la s16 daba OK, pero la última fase (`p_hija_id = NULL`) devolvía SQL NULL sin entrar en la función.
+- **El arreglo, igual en sim-004b (4.4, primera aplicación y reejecución) y en la s16:**
+  - **qué se compara:** `proisstrict`, `proleakproof`, `proparallel`, `prokind`, `proretset`, `prorettype`, los argumentos, `proargmodes`, `proargnames`, `proargdefaults`, `pronargdefaults`, `procost`, `prorows` y el md5 de `pg_get_functiondef`;
+  - **dónde, en la s16:** las 18 conservadas y, con sim-004b aplicada, las 3 sustituidas (antes, su `CREATE OR REPLACE` las vuelve a fijar: probado);
+  - **los valores:** medidos en el montaje con los ficheros ejecutados en producción.
+- **Prueba:** `pruebas/sim-004b-atributos.mjs`.
+  - Un mutante por atributo (los tres STRICT de Astra incluidos), en primera aplicación o en reejecución, cada uno en s16 y en sim-004b.
+  - Los controles limpios.
+  - El control funcional de Astra: con STRICT, la última fase da SQL NULL; sin él, 200 `completado`.
+  - Contra `f252152`: 18 rojos.
+
+#### q.19.3 El revisor interno de `f252152..19b3b5e` (R3E3) — `e203b51`
+
+**Solo estática:** el aislamiento de worktree le impidió ejecutar nada, porque la sesión principal estaba en otro worktree. Sus mutantes eran propuestas; los que se han convertido en prueba tienen su rojo medido.
+- **R3E3-01 (media), arreglado:** las pruebas no comprobaban `alcanzado` ni `cortado` del avance terminal, ni la equivalencia con el camino largo. Ahora sí. Es cobertura, sin rojo previo: el código ya lo cumplía.
+- **R3E3-02 (baja), documentado sin cambio:** un reto guardado `en_curso` con su motor ya en `breach` u `objetivo` no toma el retorno temprano. Es un estado incoherente que el motor no produce; con el mercado, `absorbe` lo cierra en ese avance.
+- **R3E3-03 (baja), arreglado:** la opción de concesión de EXECUTE no contaba (`WITH GRANT OPTION` a `service_role` pasaba). sim-004b y s16 la cuentan, y s16 enseña los receptores de las sustituidas.
+- **R3E3-04 (baja o media), arreglado:** una función de public con el nombre de una acreditada y otra firma (una sobrecarga) no se veía. sim-004b aborta y la s16 tiene la fila `homonimos`.
+- **R3E3-05 (baja), al runbook:** los atributos de `enforce_sim_session_limit` vienen del montaje (s04 midió cuerpo, definer, `search_path` y EXECUTE). Si su fila difiere solo en atributos, es un PARAR por medida que faltaba.
+- **R3E3-06 (baja), documentado:** el mutante de `proargtypes` caza «(no existe)»: `args=` es redundante con `to_regprocedure`, sin consecuencias.
+- **Pruebas:** 4 mutantes más en `sim-004b-atributos` (25 verdes; contra `19b3b5e`: 4 rojos y 1 control roto, la fila nueva).
+- **Lo que intentó sin encontrar nada (por lectura):**
+  - el retorno temprano frente al camino largo;
+  - los demás caminos sobre una sesión terminada;
+  - los mutantes «lee el manifiesto antes» y «no pasa por la RPC»;
+  - la repetición;
+  - los atributos no comparados uno a uno, que van dentro del md5;
+  - la estabilidad del md5 frente al search_path y a la versión menor de PostgreSQL;
+  - la simetría s16 ⇔ sim-004b;
+  - el control funcional STRICT.
+
+#### q.19.4 El revisor ejecutable de `f252152..e203b51` (R3E3B)
+
+Pudo ejecutar todo, con el turno. Sus scripts y salidas, en `revisiones-suite/2026-10-17-sim-etapa3-r3/revisor-interno/`.
+- **R3E3B-03 (baja), arreglado en las pruebas:** dos mutantes del retorno temprano sobrevivían. A usaba el cursor del motor en vez del horizonte del reto; C fijaba `cortado` a true. La prueba siempre tenía horizonte = cursor y `hasta` > alcanzado. El caso nuevo de `servidor-causa` §5 es un reto quemado en un reset de medianoche: horizonte 23:00 y cursor 21:59, con `hasta` a 00:00 y a 22:30. Caza A y C (un rojo cada uno). El código ya estaba bien.
+- **R3E3B-01 (media), PREGUNTA AL CTO, sin cambio:** sim-004b y la s16 no ven cambios de catálogo fuera de `pg_proc` en las 14 tablas que acreditan:
+  - reglas (`pg_rewrite`);
+  - valores por defecto (`pg_attrdef`);
+  - herencia (`pg_inherits`);
+  - restricciones e índices **de más**, porque se buscan los suyos por nombre y no se exige que no haya otros.
+
+  En el montaje con sim-004b aplicada, hechos por el ejecutor (no superusuario), la s16 da OK y la reejecución aplica, pero las RPC cambian:
+  - con una regla `do instead nothing`, crear falla o la tasa no se escribe;
+  - con un valor por defecto en `terminal`, la sesión nace revocada;
+  - con una tabla hija de `sim_recibos`, un recibo falso hace que se repita una clave que no es suya;
+  - con un CHECK o un índice único de más, las RPC fallan.
+
+  Es la misma clase que E3R2-01, fuera de `pg_proc`. El arreglo sería un inventario exacto de esos cinco catálogos en las 14 tablas, en sim-004b y en la s16, con su familia. Es más amplio que lo encargado (E3R2-01/02): lo decide el CTO.
+- **R3E3B-02 (baja), PREGUNTA AL CTO, sin cambio:** las funciones de otros esquemas que llaman los cuerpos (`extensions.digest`, `extensions.gen_random_bytes`, `auth.uid()`) no se acreditan. Cambiarlas exige el dueño de `extensions`/`auth` (en Supabase, `supabase_admin`); el ejecutor no puede. Cerrarlo sería acreditar el sha de su `prosrc` y su dueño.
+- **Lo que intentó sin encontrar nada:**
+  - la condición del retorno temprano es la del motor;
+  - quitar la causa, cambiar la detención o saltarse la RPC lo cazan las pruebas;
+  - no hay otra lectura de mercado sobre una sesión terminada;
+  - el secuestro por search_path, operadores u homónimos de otros esquemas no es posible (cuerpos con `search_path=''` y llamadas calificadas);
+  - `enforce_sim_session_limit` usa operadores con coincidencia exacta en `pg_catalog`;
+  - la simetría s16 ⇔ sim-004b;
+  - el md5, independiente del search_path.

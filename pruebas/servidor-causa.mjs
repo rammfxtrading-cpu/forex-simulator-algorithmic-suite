@@ -120,6 +120,17 @@ titulo('5 · avanzar sobre una sesion terminada (CTO 16-oct, respuesta 4): la mi
     try { av = await CO.calcula({ fila: { estado: guardado(x), date_from: '2025-01-06' }, intencion: { tipo: 'avanzar', carga: { hasta: U('2025-01-07T00:00:00Z'), motivo: 'play' } }, puertos: { almacen: caido } }) } catch (e) { err = e }
     oraculo('CAUSA', `${nombre}: calcula(avanzar) sin leer mercado: aceptado, detencion sesion_terminada, causa ${causa}, sin eventos y el estado tal cual`, !err && lecturas === l0 && av.resultado === 'aceptado' && tx(av.resumen.detencion) === tx({ motivo: 'sesion_terminada' }) && av.resumen.causa === causa && av.eventos.length === 0 && JSON.stringify(av.estado) === CA.serializa(g), err ? String(err.message) : tx({ lecturas: lecturas - l0, r: av.resultado, det: av.resumen.detencion, c: av.resumen.causa, ev: av.eventos.length }))
   }
+  {
+    // R3E3B-03 (revisor interno): el horizonte confirmado de un reto terminado NO es el cursor de su motor. Un reto
+    // quemado en un reset de medianoche: horizonte 23:00, cursor 21:59. alcanzado tiene que ser el horizonte; y con
+    // hasta ≤ alcanzado, cortado = false
+    const r0 = reto()
+    const cursor = U('2025-01-06T21:59:00Z'), horizonte = U('2025-01-06T23:00:00Z')
+    const x = { ...r0, estado: 'breach', horizonte, motor: { ...r0.motor, reloj: { ...r0.motor.reloj, cursor } } }
+    const av = async hasta => CO.calcula({ fila: { estado: guardado(x), date_from: '2025-01-06' }, intencion: { tipo: 'avanzar', carga: { hasta, motivo: 'play' } }, puertos: { almacen: caido } })
+    const lejos = await av(U('2025-01-07T00:00:00Z')), cerca = await av(U('2025-01-06T22:30:00Z'))
+    oraculo('CAUSA', 'reto quemado en un reset (horizonte 23:00, cursor 21:59): alcanzado = el horizonte, no el cursor; cortado true con hasta 00:00 y false con hasta 22:30', lejos.resumen.alcanzado === horizonte && lejos.resumen.cortado === true && cerca.resumen.alcanzado === horizonte && cerca.resumen.cortado === false, tx({ lejos: [lejos.resumen.alcanzado, lejos.resumen.cortado], cerca: [cerca.resumen.alcanzado, cerca.resumen.cortado], horizonte, cursor }))
+  }
   const lanzaT = x => { try { RT.causaTerminal(x); return false } catch { return true } }
   oraculo('CAUSA', 'causaTerminal: un estado que no es terminal conocido (en curso, activo, pausa) lanza', lanzaT(reto()) && lanzaT(base()) && lanzaT({ ...reto(), estado: 'pausa' }) && lanzaT({ ...base(), estado: 'pausa' }))
 }
