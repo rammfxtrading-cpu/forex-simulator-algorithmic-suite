@@ -30,17 +30,18 @@ const L = s => `'${s.replace(/'/g, "''")}'`
 titulo('procedencia: los valores esperados son los de la s16c de produccion')
 const csv = t => t.replace(/\r/g, '').split('\n').filter(Boolean).slice(1).map(l => { const o = []; let c = '', q = false; for (let i = 0; i < l.length; i++) { const ch = l[i]; if (q) { if (ch === '"' && l[i + 1] === '"') { c += '"'; i++ } else if (ch === '"') q = false; else c += ch } else if (ch === '"') q = true; else if (ch === ',') { o.push(c); c = '' } else c += ch } o.push(c); return o })
 // la s16c (RINV-01..04): la s16b con el dueño, la RLS de las 3 no protegidas, el esquema del tipo y las identity
-const PROD = csv(lee('sql/consultas/salidas/s16c-catalogo-tablas-sim004b-2026-10-17.csv'))
+// y la s16d (RINV2-01, -04): la familia «ajeno», de que dependen fuera de pg_catalog
+const PROD = [...csv(lee('sql/consultas/salidas/s16c-catalogo-tablas-sim004b-2026-10-17.csv')), ...csv(lee('sql/consultas/salidas/s16d-dependencias-tablas-sim004b-2026-10-17.csv')).filter(r => r[0] === 'ajeno')]
 const VARIABLES = new Set(['sim_sessions.sim_sessions_terminal_valida', 'sim_eventos.sim_eventos_tipo_check'])
 const ordena = xs => xs.map(x => [Buffer.from(x, 'utf8'), x]).sort((a, b) => Buffer.compare(a[0], b[0])).map(x => x[1])
-const familias = ['columna', 'identidad', 'indice', 'politica', 'regla', 'restriccion', 'tabla']
+const familias = ['ajeno', 'columna', 'identidad', 'indice', 'politica', 'regla', 'restriccion', 'tabla']
 const esperado = Object.fromEntries(familias.map(f => {
   const xs = ordena(PROD.filter(r => r[0] === f).map(([, o, d]) => `${o}|${f === 'restriccion' && VARIABLES.has(o) ? d.split(' · ')[0] + ' · (la de sim-004b, segun su estado)' : d}`))
   return [f, [xs.length, createHash('md5').update(xs.join('\n')).digest('hex')]]
 }))
 const fichas = Object.fromEntries(PROD.filter(r => r[0] === 'funcion').map(([, o, d]) => [o, d]))
 for (const [nombre, texto] of [['sim-004b', S4B0], ['s16', S160]]) {
-  oraculo('INV', `${nombre}: los recuentos y md5 de las siete familias son los de la s16c de produccion`, familias.every(f => texto.includes(`(${L(f)}, ${esperado[f][0]}, ${L(esperado[f][1])})`)), familias.map(f => `${f} ${esperado[f].join(' ')}`).join(' / '))
+  oraculo('INV', `${nombre}: los recuentos y md5 de las ocho familias son los de la s16c y la s16d de produccion`, familias.every(f => texto.includes(`(${L(f)}, ${esperado[f][0]}, ${L(esperado[f][1])})`)), familias.map(f => `${f} ${esperado[f].join(' ')}`).join(' / '))
   oraculo('INV', `${nombre}: las fichas de las tres funciones ajenas son, literales, las de la s16c de produccion`, Object.entries(fichas).length === 3 && Object.entries(fichas).every(([f, d]) => texto.includes(`(${L(f)}, ${L(d)})`)), Object.keys(fichas).join(', '))
 }
 const blk = t => { const a = t.indexOf('-- >>> inventario'), b = t.indexOf('-- <<< inventario'); return a >= 0 && b > a ? t.slice(a, b) : null }
@@ -73,7 +74,7 @@ try {
     const d = nueva(despues)
     const q = s16(d)
     const inv = q.out.split('\n').filter(l => /^(inventario|funcion_ajena)\|/.test(l))
-    ver(`control: limpio ${despues ? 'con sim-004b aplicada' : 'antes de sim-004b'}: las 7 familias y las 3 funciones ajenas coinciden, s16 OK y sim-004b ${despues ? 'se reejecuta' : 'aplica'}`, q.ok && inv.length === 10 && inv.every(l => l.endsWith(' · coincide')) && /^veredicto\|OK\|/m.test(q.out) && aplica(d).ok, inv.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 300))
+    ver(`control: limpio ${despues ? 'con sim-004b aplicada' : 'antes de sim-004b'}: las 8 familias y las 3 funciones ajenas coinciden, s16 OK y sim-004b ${despues ? 'se reejecuta' : 'aplica'}`, q.ok && inv.length === 11 && inv.every(l => l.endsWith(' · coincide')) && /^veredicto\|OK\|/m.test(q.out) && aplica(d).ok, inv.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 300))
   }
 
   titulo('un mutante por familia: s16 DIFIERE en su familia y sim-004b aborta')
@@ -107,8 +108,15 @@ try {
     ['identidad · RINV-03: sim_escrituras_v0.id con INCREMENT BY -1', 'identidad', 'alter table public.sim_escrituras_v0 alter column id set increment by -1 set minvalue -1000000;', false, 'despues'],
     ['restriccion · RINV-05: sim_trades_side_check cambiada (el mismo nombre y el mismo recuento)', 'restriccion', 'alter table public.sim_trades drop constraint sim_trades_side_check, add constraint sim_trades_side_check check (true);', false, 'despues'],
     ['politica · RINV-05: la de user_chart_config con otro USING (el mismo recuento)', 'politica', 'alter policy "user owns config" on public.user_chart_config using (true);', false, 'despues'],
+    // el revisor interno de 15331a9 (RINV2-01, -02, -04): por familias
+    ['ajeno · RINV2-01: un public.now() falso en el valor por defecto de sim_recibos.creado', 'ajeno', 'create function public.now() returns timestamptz language sql stable as $$ select null::timestamptz $$; alter table public.sim_recibos alter column creado set default public.now();', false, 'despues'],
+    ['ajeno · RINV2-01: un public.gen_random_uuid() falso en el valor por defecto de sim_trades.id', 'ajeno', "create function public.gen_random_uuid() returns uuid language sql volatile as $$ select '00000000-0000-0000-0000-000000000000'::uuid $$; alter table public.sim_trades alter column id set default public.gen_random_uuid();", false, 'despues'],
+    ['ajeno · RINV2-04: public.length() en el CHECK de sim_arrendamientos (el texto, igual)', 'ajeno', "create function public.length(text) returns integer language sql immutable as $$ select case when $1 = 'p' then 0 else pg_catalog.length($1) end $$; alter table public.sim_arrendamientos drop constraint sim_arrendamientos_cliente_id_check, add constraint sim_arrendamientos_cliente_id_check check (public.length(cliente_id) >= 1 and public.length(cliente_id) <= 100);", false, 'despues', 'sim_arrendamientos_cliente_id_check'],
+    ['ajeno · un indice de expresion con una funcion de public', 'ajeno', "create function public.f_x(text) returns text language sql immutable as $$ select $1 $$; create index x_expr on public.sim_recibos (public.f_x(tipo));", false, 'despues'],
+    ['columna · RINV2-02: una colacion public."por defecto" no determinista en sim_recibos.digest', 'columna', `create collation public."por defecto" (provider = icu, locale = 'und-u-ks-level2', deterministic = false); alter table public.sim_recibos drop constraint sim_recibos_digest_check; alter table public.sim_recibos alter column digest type text collate public."por defecto";`, false, 'despues', 'sim_recibos_digest_check'],
+    ['columna · RINV2-02: una colacion public."por defecto" determinista (libc C) en sim_sessions.name', 'columna', `create collation public."por defecto" (provider = libc, locale = 'C'); alter table public.sim_sessions alter column name type text collate public."por defecto";`, false, 'despues'],
   ]
-  ver('control: la familia cubre tabla (herencia, particion, dueño, RLS), las 6 de columna y el dominio, identidad (maximo, incremento), restriccion (de mas, quitada, cambiada), indice (de mas, parcial), regla, politica (de mas, cambiada) y las 3 funciones ajenas', FAMILIA.length === 26)
+  ver('control: la familia cubre tabla (herencia, particion, dueño, RLS), las 6 de columna, el dominio y las dos colaciones, identidad (maximo, incremento), restriccion (de mas, quitada, cambiada), indice (de mas, parcial), regla, politica (de mas, cambiada), ajeno (now, gen_random_uuid, length, indice de expresion) y las 3 funciones ajenas', FAMILIA.length === 32)
   for (const [nombre, fam, mutante, su, cuando, antes] of FAMILIA) {
     const d = nueva(cuando === 'despues')
     const mu = su ? m.pg.psql(mutante, d) : m.comoEjecutor(d, mutante)
@@ -173,6 +181,21 @@ try {
     const antes = ve()
     m.comoEjecutor(d, 'alter table public.user_chart_config disable row level security;')
     ver('control: con la RLS apagada en user_chart_config, el alumno 7 pasa de ver 0 configuraciones ajenas a verlas', antes === '0' && ve() !== '0', `${antes} → ${ve()}`)
+  }
+  {
+    // RINV2-01: con el public.now() falso, crear falla (el INSERT de sim_recibos no da creado)
+    const d = nueva(true)
+    m.comoEjecutor(d, 'create function public.now() returns timestamptz language sql stable as $$ select null::timestamptz $$; alter table public.sim_recibos alter column creado set default public.now();')
+    const c = await crea(d, u(2), u(3))
+    ver('control: con el public.now() falso en el valor por defecto, crear ya no crea', c.data?.http !== 201, JSON.stringify(c.data ?? c.error).slice(0, 120))
+  }
+  {
+    // RINV2-04: con public.length() en el CHECK, tomar falla con un cliente_id «p»
+    const d = nueva(true)
+    const c = await crea(d, u(2), u(3))
+    m.comoEjecutor(d, "create function public.length(text) returns integer language sql immutable as $$ select case when $1 = 'p' then 0 else pg_catalog.length($1) end $$; alter table public.sim_arrendamientos drop constraint sim_arrendamientos_cliente_id_check, add constraint sim_arrendamientos_cliente_id_check check (public.length(cliente_id) >= 1 and public.length(cliente_id) <= 100);")
+    const t = await m.rpc(d)('sim_tomar_escritor', { p_actor: u(1), p_session_id: u(2), p_command_id: u(4), p_sobre: JSON.stringify({ tipo: 'tomar_escritor' }), p_epoca: 1, p_cliente_id: 'p', p_forzar: true })
+    ver('control: con public.length() en el CHECK, crear da 201 pero tomar con cliente «p» falla', c.data?.http === 201 && t.data?.http !== 200, JSON.stringify(t.data ?? t.error).slice(0, 120))
   }
 } finally { m.cierra() }
 fin()

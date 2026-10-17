@@ -50,7 +50,7 @@ try {
   // matriz efectiva de los siete privilegios en las 11 protegidas, los receptores de mas en las 7 nuevas
   // y sus 4 secuencias, y ninguna ACL de columna en las 11
   const acl = lineas.filter(l => /^acl_(tabla|receptores|columna)\|/.test(l))
-  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63 + 23 + 43 + 1 + 10, acl.join(' / ').slice(0, 500))
+  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 63 + 23 + 43 + 1 + 11, acl.join(' / ').slice(0, 500))
   oraculo('S16', 'y con eso sim-004b aplica', aplica(d).ok)
   const dp = m.base('s16p')
   const pp = m.comoEjecutor(dp, PUERTA)

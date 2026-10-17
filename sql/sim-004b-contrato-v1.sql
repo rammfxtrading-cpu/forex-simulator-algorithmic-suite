@@ -908,8 +908,11 @@ BEGIN
                    || ' · notnull=' || a.attnotnull::text
                    || ' · identity=' || coalesce(nullif(a.attidentity::text, ''), '-')
                    || ' · generated=' || coalesce(nullif(a.attgenerated::text, ''), '-')
-                   || ' · colacion=' || coalesce((select case when a.attcollation = t.typcollation then 'por defecto' else co.collname::text end
-                                                    from pg_catalog.pg_collation co, pg_catalog.pg_type t where co.oid = a.attcollation and t.oid = a.atttypid), '-')
+                   -- RINV2-02: «por defecto» solo la predeterminada (oid 100); cualquier otra, con esquema, proveedor, determinista y locale
+                   || ' · colacion=' || case when a.attcollation = 0 then '-' when a.attcollation = 100 then 'por defecto'
+                                             else coalesce((select pg_catalog.concat(cn.nspname, '.', co.collname, ' · proveedor=', co.collprovider::text, ' · determinista=', co.collisdeterministic::text,
+                                                                                     ' · locale=', coalesce(co.collcollate, co.colllocale, '-'))
+                                                              from pg_catalog.pg_collation co join pg_catalog.pg_namespace cn on cn.oid = co.collnamespace where co.oid = a.attcollation), 'NO EXISTE') end
                    || ' · defecto=' || coalesce(regexp_replace(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '\mpublic\.', '', 'g'), '-')
               from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
                    join pg_catalog.pg_type ty on ty.oid = a.atttypid join pg_catalog.pg_namespace tn on tn.oid = ty.typnamespace
@@ -943,6 +946,29 @@ BEGIN
              where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
                            'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
             union all
+            -- RINV2-01 y RINV2-04: de que dependen, FUERA de pg_catalog, los valores por defecto, las restricciones y los indices
+            -- (por pg_depend: no depende del texto ni del search_path; un public.now() o un public.length() salen aqui). La s16d
+            select 'ajeno', o.nombre || '|' || pg_catalog.pg_describe_object(dp.refclassid, dp.refobjid, 0)
+              from (select 'pg_catalog.pg_attrdef'::regclass clase, d.oid, c.relname || '.' || a.attname || ' (defecto)' nombre
+                      from pg_catalog.pg_class c join pg_catalog.pg_attrdef d on d.adrelid = c.oid join pg_catalog.pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
+                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+                    union all
+                    select 'pg_catalog.pg_constraint'::regclass, k.oid, c.relname || '.' || k.conname || ' (restriccion)'
+                      from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid = c.oid
+                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+                    union all
+                    select 'pg_catalog.pg_class'::regclass, x.indexrelid, c.relname || '.' || ic.relname || ' (indice)'
+                      from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid = c.oid join pg_catalog.pg_class ic on ic.oid = x.indexrelid
+                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')) o
+                   join pg_catalog.pg_depend dp on dp.classid = o.clase and dp.objid = o.oid
+             where (dp.refclassid = 'pg_catalog.pg_proc'::regclass and (select p.pronamespace from pg_catalog.pg_proc p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
+                or (dp.refclassid = 'pg_catalog.pg_operator'::regclass and (select p.oprnamespace from pg_catalog.pg_operator p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
+                or (dp.refclassid = 'pg_catalog.pg_type'::regclass and (select p.typnamespace from pg_catalog.pg_type p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
+                or (dp.refclassid = 'pg_catalog.pg_collation'::regclass and (select p.collnamespace from pg_catalog.pg_collation p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
+            union all
             select 'regla', c.relname || '.' || w.rulename || '|' || regexp_replace(pg_catalog.pg_get_ruledef(w.oid), '\mpublic\.', '', 'g')
               from pg_catalog.pg_class c join pg_catalog.pg_rewrite w on w.ev_class = c.oid
              where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
@@ -969,6 +995,7 @@ BEGIN
           ) x
         ),
         esp_f(familia, n, h) as (values
+          ('ajeno', 0, 'd41d8cd98f00b204e9800998ecf8427e'),
           ('columna', 135, '9610bdfa6bce4ff3b95a3d4fafd743b0'),
           ('identidad', 4, '472c2271705ab4440fba7bbe0c61ed04'),
           ('indice', 31, '34f45c0e9b412391d3d8b9fea837632a'),
@@ -985,7 +1012,7 @@ BEGIN
         select 'inventario'::text familia, e.familia objeto,
                'n=' || coalesce(m.n, 0) || ' md5=' || coalesce(m.h, pg_catalog.md5(''))
                || case when coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h then ''
-                       else ' (sim-004b espera n=' || e.n || ' md5=' || e.h || '; que fila, en la s16c)' end detalle,
+                       else ' (sim-004b espera n=' || e.n || ' md5=' || e.h || '; que fila, en la s16c o la s16d)' end detalle,
                coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h bien
           from esp_f e left join med_f m on m.familia = e.familia
         union all
@@ -998,7 +1025,7 @@ BEGIN
     ) i WHERE NOT i.bien;
   PERFORM set_config('search_path', v_sp, true);
   IF v_txt IS NOT NULL THEN
-    RAISE EXCEPTION 'sim-004b: el catalogo de las 14 tablas o las funciones ajenas no son las medidas (s16b, 17-oct): %', v_txt;
+    RAISE EXCEPTION 'sim-004b: el catalogo de las 14 tablas o las funciones ajenas no son las medidas (s16c y s16d, 17-oct): %', v_txt;
   END IF;
 END
 $sim_004b$;
