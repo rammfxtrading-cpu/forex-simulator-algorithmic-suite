@@ -60,7 +60,8 @@
 --   · antes de cambiar nada (seccion 0; RINV2-03, CTO 17-oct): el siguiente valor de cada secuencia identity de
 --     las 14 tablas, por encima de max(id) (solo el agregado; tabla vacia, pasa). La s16 no lo mide: no es catalogo.
 --   · antes de cambiar nada (seccion 0; RE3-01, CTO 17-oct): session_replication_role = origin y row_security = on,
---     y ninguno de los dos fijado en pg_db_role_setting para la base o los roles que ejecutan (solo por nombre).
+--     y ninguno de los dos fijado en pg_db_role_setting para la base o los roles que ejecutan (solo por nombre); anon y
+--     authenticated sin BYPASSRLS ni superusuario, y el USAGE de los esquemas que usan (RE4-01).
 --   Cualquier desvio: «sim-004b: …» y no queda nada.
 --
 -- Ensayado en PostgreSQL 17 local: s04 literal + sim-002 + sim-003 + preparatoria, con un
@@ -640,6 +641,28 @@ BEGIN
   ) a WHERE NOT a.efectivo_bien OR a.donde IS NOT NULL;
   IF v_txt IS NOT NULL THEN
     RAISE EXCEPTION 'sim-004b: ajustes que cambian la semantica (RE3-01): %; no se toca nada', v_txt;
+  END IF;
+  -- RE4-01 (revisor interno de d2910e6): los roles del alumno sin BYPASSRLS ni superusuario (ALTER ROLE authenticated
+  -- BYPASSRLS es DDL ordinario para postgres, que tiene ADMIN sobre ellos, s06, y deja ver y escribir lo ajeno); y el USAGE
+  -- de los esquemas que usan: el dueño de las RPC en public y extensions, authenticated en public y auth (sin el, 42501)
+  SELECT string_agg(x.objeto || ': ' || x.detalle, '; ' ORDER BY x.objeto) INTO v_txt FROM (
+  select 'roles del alumno' objeto,
+           coalesce(bool_and(not r.rolsuper and not r.rolbypassrls), false) and count(*) = 2 bien,
+           coalesce(string_agg(r.rolname::text || ': superusuario=' || r.rolsuper::text || ' bypassrls=' || r.rolbypassrls::text, ' · ' order by r.rolname), 'NO EXISTEN') detalle
+      from pg_catalog.pg_roles r where r.rolname in ('anon', 'authenticated')
+    union all
+    select 'uso de esquemas',
+           bool_and(coalesce(u.uso, false)),
+           string_agg(u.quien || ' USAGE ' || u.esquema || '=' || coalesce(u.uso::text, 'NO EXISTE'), ' · ' order by u.quien, u.esquema)
+      from (select 'dueño_rpc' quien, e.esquema, pg_catalog.has_schema_privilege(o.proowner, e.esquema, 'USAGE') uso
+              from (values ('public'), ('extensions')) e(esquema)
+                   left join pg_catalog.pg_proc o on o.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+            union all
+            select 'authenticated', e.esquema, pg_catalog.has_schema_privilege('authenticated', e.esquema, 'USAGE')
+              from (values ('public'), ('auth')) e(esquema)) u
+  ) x WHERE NOT x.bien;
+  IF v_txt IS NOT NULL THEN
+    RAISE EXCEPTION 'sim-004b: roles o esquemas que cambian el acceso (RE4-01): %; no se toca nada', v_txt;
   END IF;
   -- RINV2-03 (CTO 17-oct, orden 1-006): el estado de cada secuencia identity no es catalogo (cambia con el uso normal):
   -- la s16 no lo mide; aqui, antes de cualquier cambio, el siguiente valor que daria (last_value si is_called = false;

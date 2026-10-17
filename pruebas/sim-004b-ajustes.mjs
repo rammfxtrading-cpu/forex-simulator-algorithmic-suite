@@ -12,6 +12,8 @@
  *   · SET en la sesion del ejecutor (session_replication_role con GRANT SET ON PARAMETER, como lo tendria un no superusuario);
  *   · el control funcional: con session_replication_role = replica en la base, borrar el alumno da 200 y deja recibos;
  *     limpio, 0 recibos.
+ *   · RE4-01 (revisor interno de d2910e6): anon y authenticated sin BYPASSRLS ni superusuario, y el USAGE de los esquemas;
+ *     control funcional: con authenticated BYPASSRLS, un alumno ve lo de otro.
  * Los ALTER ROLE son de todo el cluster del montaje: cada caso los deshace al acabar.
  */
 import { readFileSync } from 'node:fs'
@@ -93,6 +95,43 @@ try {
           `${rq.slice(0, 140)} · ${r.ok ? 'sim-004b APLICA' : err1(r).slice(0, 140)}`)
       } finally { m.pg.psql(deshace, 'postgres') }
     }
+  }
+
+  titulo('RE4-01 (revisor interno de d2910e6): los roles del alumno y el uso de los esquemas')
+  const req = (q, o) => q.out.split('\n').find(l => l.startsWith(`requisito|${o}|`)) ?? ''
+  {
+    const d = nueva(true), q = s16(d)
+    ver('control: limpio: «roles del alumno» (sin BYPASSRLS ni superusuario) y «uso de esquemas» coinciden', req(q, 'roles del alumno').endsWith('anon: superusuario=false bypassrls=false · authenticated: superusuario=false bypassrls=false · coincide') && req(q, 'uso de esquemas').endsWith(' · coincide') && !/=false/.test(req(q, 'uso de esquemas')), req(q, 'uso de esquemas'))
+  }
+  for (const [nombre, objeto, pon, quita] of [
+    ['ALTER ROLE authenticated BYPASSRLS', 'roles del alumno', 'alter role authenticated bypassrls;', 'alter role authenticated nobypassrls;'],
+    ['ALTER ROLE anon BYPASSRLS', 'roles del alumno', 'alter role anon bypassrls;', 'alter role anon nobypassrls;'],
+    ['ALTER ROLE authenticated SUPERUSER', 'roles del alumno', 'alter role authenticated superuser;', 'alter role authenticated nosuperuser;'],
+    ['REVOKE USAGE ON SCHEMA auth de authenticated (y de PUBLIC)', 'uso de esquemas', 'revoke usage on schema auth from authenticated, public;', 'grant usage on schema auth to authenticated;'],
+  ]) {
+    for (const despues of [false, true]) {
+      const d = nueva(despues)
+      const cuando = despues ? 'reejecucion' : 'primera aplicacion'
+      const mu = m.pg.psql(pon, d)
+      try {
+        if (!mu.ok) { oraculo('AJ', `${nombre} (${cuando}): el mutante se aplica`, false, err1(mu)); continue }
+        const q = s16(d), r = aplica(d)
+        oraculo('AJ', `RE4-01 · ${nombre} (${cuando}): s16 DIFIERE en «${objeto}» y veredicto DIFIEREN; sim-004b aborta nombrandolo`,
+          q.ok && req(q, objeto).endsWith(' · DIFIERE') && /^DIFIEREN \d+$/.test(veredicto(q)) && !r.ok && err1(r).startsWith('sim-004b: roles o esquemas que cambian el acceso (RE4-01)') && err1(r).includes(objeto),
+          `${req(q, objeto).slice(0, 150)} · ${r.ok ? 'sim-004b APLICA' : err1(r).slice(0, 120)}`)
+      } finally { m.pg.psql(quita, d) }
+    }
+  }
+  {
+    // el caso del revisor: con BYPASSRLS, otro alumno (u9) lee la sesion y el recibo de u1
+    const d = nueva(true)
+    m.alumno(d, u(9)); await crea(d)
+    const ve = () => m.pg.psql(`begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${u(9)}', true); select 'sesiones=' || (select count(*) from public.sim_sessions) || ' recibos=' || (select count(*) from public.sim_recibos); rollback;`, d)
+    const limpio = ve()
+    m.pg.psql('alter role authenticated bypassrls;', d)
+    let mutado
+    try { mutado = ve() } finally { m.pg.psql('alter role authenticated nobypassrls;', d) }
+    ver('control: con authenticated BYPASSRLS, el alumno u9 ve la sesion y el recibo de u1; limpio, nada', limpio.out.includes('sesiones=0 recibos=0') && mutado.out.includes('sesiones=1 recibos=1'), `${limpio.out.slice(-25)} / ${mutado.out.slice(-25)}`)
   }
 
   titulo('control funcional: session_replication_role = replica en la base y el borrado')

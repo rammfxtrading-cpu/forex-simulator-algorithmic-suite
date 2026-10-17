@@ -235,6 +235,24 @@ ajuste as (
      group by 1) f on f.nombre = g.nombre),
 requisito(objeto, bien, detalle) as (
   select a.nombre, a.efectivo_bien and a.donde is null, a.detalle from ajuste a
+  union all
+-- RE4-01 (revisor interno de d2910e6): los roles del alumno sin BYPASSRLS ni superusuario (ALTER ROLE authenticated
+-- BYPASSRLS es DDL ordinario para postgres, que tiene ADMIN sobre ellos, s06, y deja ver y escribir lo ajeno); y el USAGE
+-- de los esquemas que usan: el dueño de las RPC en public y extensions, authenticated en public y auth (sin el, 42501)
+  select 'roles del alumno' objeto,
+         coalesce(bool_and(not r.rolsuper and not r.rolbypassrls), false) and count(*) = 2 bien,
+         coalesce(string_agg(r.rolname::text || ': superusuario=' || r.rolsuper::text || ' bypassrls=' || r.rolbypassrls::text, ' · ' order by r.rolname), 'NO EXISTEN') detalle
+    from pg_catalog.pg_roles r where r.rolname in ('anon', 'authenticated')
+  union all
+  select 'uso de esquemas',
+         bool_and(coalesce(u.uso, false)),
+         string_agg(u.quien || ' USAGE ' || u.esquema || '=' || coalesce(u.uso::text, 'NO EXISTE'), ' · ' order by u.quien, u.esquema)
+    from (select 'dueño_rpc' quien, e.esquema, pg_catalog.has_schema_privilege(o.proowner, e.esquema, 'USAGE') uso
+            from (values ('public'), ('extensions')) e(esquema)
+                 left join pg_catalog.pg_proc o on o.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+          union all
+          select 'authenticated', e.esquema, pg_catalog.has_schema_privilege('authenticated', e.esquema, 'USAGE')
+            from (values ('public'), ('auth')) e(esquema)) u
   union all values
     ('PostgreSQL >= 17', current_setting('server_version_num')::integer >= 170000, current_setting('server_version')),
     ('rol anon', exists (select 1 from pg_roles where rolname = 'anon'), 'existe'),
