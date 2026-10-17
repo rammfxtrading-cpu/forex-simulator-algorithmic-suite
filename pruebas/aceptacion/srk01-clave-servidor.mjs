@@ -62,6 +62,8 @@ titulo('2 · los bordes')
   oraculo('SRK01', 'las dos vacias: el error de ninguna, y hayClaveServidor dice que no', /Falta la clave de servidor/.test(callado(() => getClaveServidor({ SUPABASE_SECRET_KEY: ' ', SUPABASE_SERVICE_ROLE_KEY: '' })).error?.message ?? '')
     && prueba(() => hayClaveServidor({ SUPABASE_SECRET_KEY: ' ', SUPABASE_SERVICE_ROLE_KEY: '' })) === false && prueba(() => hayClaveServidor({ SUPABASE_SECRET_KEY: NUEVA })) === true && prueba(() => hayClaveServidor({ SUPABASE_SERVICE_ROLE_KEY: VIEJA })) === true)
   oraculo('SRK01', 'con un salto de linea al final (pegada en GitHub o Vercel): la nueva, sin el', prueba(() => getClaveServidor({ SUPABASE_SECRET_KEY: NUEVA + '\n' }) === NUEVA))
+  // SRK-REV-02: la VIEJA tambien se recorta (los scripts ya lo hacian: «Invalid Compact JWS»)
+  oraculo('SRK01', 'solo la vieja con un salto de linea al final: la vieja, sin el', prueba(() => getClaveServidor({ SUPABASE_SERVICE_ROLE_KEY: VIEJA + '\n' }) === VIEJA))
   oraculo('SRK01', 'variableClaveServidor da el NOMBRE de la que se usa', prueba(() => variableClaveServidor({ SUPABASE_SECRET_KEY: NUEVA, SUPABASE_SERVICE_ROLE_KEY: VIEJA })) === 'SUPABASE_SECRET_KEY'
     && prueba(() => variableClaveServidor({ SUPABASE_SECRET_KEY: '', SUPABASE_SERVICE_ROLE_KEY: VIEJA })) === 'SUPABASE_SERVICE_ROLE_KEY')
   for (const [d, mala] of [['una publishable', 'sb_publishable_ficticia_0123456789'], ['la service_role vieja (un JWT)', VIEJA], ['otra cosa', 'clave-cualquiera-ficticia']]) {
