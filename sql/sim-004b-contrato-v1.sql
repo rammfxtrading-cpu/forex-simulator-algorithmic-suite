@@ -61,7 +61,8 @@
 --     las 14 tablas, por encima de max(id) (solo el agregado; tabla vacia, pasa). La s16 no lo mide: no es catalogo.
 --   · antes de cambiar nada (seccion 0; RE3-01, CTO 17-oct): session_replication_role = origin y row_security = on,
 --     y ninguno de los dos fijado en pg_db_role_setting para la base o los roles que ejecutan (solo por nombre); anon y
---     authenticated sin BYPASSRLS ni superusuario, y el USAGE de los esquemas que usan (RE4-01).
+--     authenticated sin BYPASSRLS ni superusuario, y el USAGE de los esquemas que usan (RE4-01); y ninguna clave pgrst.*
+--     fijada para la base, authenticator, el dueño de las RPC o los roles miembros de authenticator (1-011; s16g).
 --   Cualquier desvio: «sim-004b: …» y no queda nada.
 --
 -- Ensayado en PostgreSQL 17 local: s04 literal + sim-002 + sim-003 + preparatoria, con un
@@ -624,19 +625,24 @@ BEGIN
   -- ningun valor de pg_db_role_setting (los de Supabase pueden ser secretos). El resto de pg_db_role_setting queda fuera:
   -- limite declarado
   SELECT string_agg(a.detalle, '; ' ORDER BY a.nombre) INTO v_txt FROM (
-  select g.nombre, pg_catalog.current_setting(g.nombre) = g.esperado efectivo_bien, f.donde,
-           g.nombre || ': efectivo ' || g.esperado || '=' || (pg_catalog.current_setting(g.nombre) = g.esperado)::text
+  select g.nombre, coalesce(pg_catalog.current_setting(g.nombre, true) = g.esperado, true) efectivo_bien, f.donde,
+           g.nombre || case when g.esperado is null then '' else ': efectivo ' || g.esperado || '=' || (pg_catalog.current_setting(g.nombre, true) = g.esperado)::text end
            || ' · fijado en pg_db_role_setting: ' || coalesce(f.donde, 'ninguno') detalle
-      from (values ('session_replication_role', 'origin'), ('row_security', 'on')) g(nombre, esperado)
-           left join (select split_part(c.x, '=', 1) nombre,
+      from (values ('session_replication_role', 'origin'), ('row_security', 'on'), ('pgrst.*', null)) g(nombre, esperado)
+           left join (select case when split_part(c.x, '=', 1) like 'pgrst.%' then 'pgrst.*' else split_part(c.x, '=', 1) end nombre,
              string_agg(case when s.setrole = 0 then 'base' else 'rol ' || r.rolname::text end
-                        || case when s.setdatabase = 0 then ' (en todas las bases)' else '' end, ', '
+                        || case when s.setdatabase = 0 then ' (en todas las bases)' else '' end
+                      || case when split_part(c.x, '=', 1) like 'pgrst.%' then ': ' || split_part(c.x, '=', 1) else '' end, ', '
                         order by case when s.setrole = 0 then 'base' else 'rol ' || r.rolname::text end) donde
         from pg_catalog.pg_db_role_setting s left join pg_catalog.pg_roles r on r.oid = s.setrole
              cross join lateral unnest(s.setconfig) c(x)
        where (s.setdatabase = 0 or s.setdatabase = (select d.oid from pg_catalog.pg_database d where d.datname = pg_catalog.current_database()))
-         and (s.setrole = 0 or r.rolname in ('postgres', 'authenticator', 'authenticated', 'anon', 'service_role') or r.rolname = current_user)
-         and split_part(c.x, '=', 1) in ('session_replication_role', 'row_security')
+         -- CTO 17-oct, orden 1-011: y el dueño de las RPC y todo rol miembro de authenticator o del que authenticator sea miembro
+       and (s.setrole = 0 or r.rolname in ('postgres', 'authenticator', 'authenticated', 'anon', 'service_role') or r.rolname = current_user
+            or r.oid = (select p.proowner from pg_catalog.pg_proc p where p.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)'))
+            or exists (select 1 from pg_catalog.pg_roles a where a.rolname = 'authenticator' and r.oid <> a.oid
+                       and (pg_catalog.pg_has_role(r.oid, a.oid, 'MEMBER') or pg_catalog.pg_has_role(a.oid, r.oid, 'MEMBER'))))
+         and (split_part(c.x, '=', 1) in ('session_replication_role', 'row_security') or split_part(c.x, '=', 1) like 'pgrst.%')
        group by 1) f on f.nombre = g.nombre
   ) a WHERE NOT a.efectivo_bien OR a.donde IS NOT NULL;
   IF v_txt IS NOT NULL THEN

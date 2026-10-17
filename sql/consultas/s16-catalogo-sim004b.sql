@@ -13,7 +13,8 @@
 -- Que trae, por este orden (cada fila acaba en «coincide» o en DIFIERE / DE MAS / FALTA):
 --   0 requisito      PostgreSQL >= 17, los roles anon, authenticated y service_role (seccion 0) y el
 --                    search_path del editor (esquemas efectivos {public,extensions}); y session_replication_role
---                    (origin) y row_security (on), ninguno fijado para la base ni los roles que ejecutan (RE3-01)
+--                    (origin) y row_security (on), ninguno fijado para la base ni los roles que ejecutan (RE3-01);
+--                    y ninguna clave pgrst.* fijada para ellos (CTO 17-oct, orden 1-011; s16g: hoy ninguna)
 --   0 sim004b_estado las dos restricciones y los tres cuerpos que cambia sim-004b: «sin aplicar» o
 --                    «aplicada»; si no, A MEDIAS (sim-004b aborta)
 --   0 restriccion    las 25 restricciones de sim-003 que sim-004b compara al pie de la letra (seccion 3)
@@ -219,19 +220,24 @@ tri_med as (
 -- ningun valor de pg_db_role_setting (los de Supabase pueden ser secretos). El resto de pg_db_role_setting queda fuera:
 -- limite declarado
 ajuste as (
-  select g.nombre, pg_catalog.current_setting(g.nombre) = g.esperado efectivo_bien, f.donde,
-         g.nombre || ': efectivo ' || g.esperado || '=' || (pg_catalog.current_setting(g.nombre) = g.esperado)::text
+  select g.nombre, coalesce(pg_catalog.current_setting(g.nombre, true) = g.esperado, true) efectivo_bien, f.donde,
+         g.nombre || case when g.esperado is null then '' else ': efectivo ' || g.esperado || '=' || (pg_catalog.current_setting(g.nombre, true) = g.esperado)::text end
          || ' · fijado en pg_db_role_setting: ' || coalesce(f.donde, 'ninguno') detalle
-    from (values ('session_replication_role', 'origin'), ('row_security', 'on')) g(nombre, esperado)
-         left join (select split_part(c.x, '=', 1) nombre,
+    from (values ('session_replication_role', 'origin'), ('row_security', 'on'), ('pgrst.*', null)) g(nombre, esperado)
+         left join (select case when split_part(c.x, '=', 1) like 'pgrst.%' then 'pgrst.*' else split_part(c.x, '=', 1) end nombre,
            string_agg(case when s.setrole = 0 then 'base' else 'rol ' || r.rolname::text end
-                      || case when s.setdatabase = 0 then ' (en todas las bases)' else '' end, ', '
+                      || case when s.setdatabase = 0 then ' (en todas las bases)' else '' end
+                      || case when split_part(c.x, '=', 1) like 'pgrst.%' then ': ' || split_part(c.x, '=', 1) else '' end, ', '
                       order by case when s.setrole = 0 then 'base' else 'rol ' || r.rolname::text end) donde
       from pg_catalog.pg_db_role_setting s left join pg_catalog.pg_roles r on r.oid = s.setrole
            cross join lateral unnest(s.setconfig) c(x)
      where (s.setdatabase = 0 or s.setdatabase = (select d.oid from pg_catalog.pg_database d where d.datname = pg_catalog.current_database()))
-       and (s.setrole = 0 or r.rolname in ('postgres', 'authenticator', 'authenticated', 'anon', 'service_role') or r.rolname = current_user)
-       and split_part(c.x, '=', 1) in ('session_replication_role', 'row_security')
+       -- CTO 17-oct, orden 1-011: y el dueño de las RPC y todo rol miembro de authenticator o del que authenticator sea miembro
+       and (s.setrole = 0 or r.rolname in ('postgres', 'authenticator', 'authenticated', 'anon', 'service_role') or r.rolname = current_user
+            or r.oid = (select p.proowner from pg_catalog.pg_proc p where p.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)'))
+            or exists (select 1 from pg_catalog.pg_roles a where a.rolname = 'authenticator' and r.oid <> a.oid
+                       and (pg_catalog.pg_has_role(r.oid, a.oid, 'MEMBER') or pg_catalog.pg_has_role(a.oid, r.oid, 'MEMBER'))))
+       and (split_part(c.x, '=', 1) in ('session_replication_role', 'row_security') or split_part(c.x, '=', 1) like 'pgrst.%')
      group by 1) f on f.nombre = g.nombre),
 requisito(objeto, bien, detalle) as (
   select a.nombre, a.efectivo_bien and a.donde is null, a.detalle from ajuste a

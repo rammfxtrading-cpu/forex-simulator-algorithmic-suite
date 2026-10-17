@@ -54,7 +54,7 @@ try {
   // matriz efectiva de los siete privilegios en las 11 protegidas, los receptores de mas en las 7 nuevas
   // y sus 4 secuencias, y ninguna ACL de columna en las 11
   const acl = lineas.filter(l => /^acl_(tabla|receptores|columna)\|/.test(l))
-  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 81 + 23 + 43 + 1 + 11 + 1 + 2 + 2 + 2, acl.join(' / ').slice(0, 500))
+  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 81 + 23 + 43 + 1 + 11 + 1 + 2 + 2 + 2 + 1, acl.join(' / ').slice(0, 500))
   oraculo('S16', 'y con eso sim-004b aplica', aplica(d).ok)
   const dp = m.base('s16p')
   const pp = m.comoEjecutor(dp, PUERTA)
@@ -200,6 +200,6 @@ try {
   }
   oraculo('S16', `aplicada: en las 3 RPC, otro search_path, SECURITY INVOKER o EXECUTE a anon → la s16 dice DIFIEREN y sim-004b aborta (${malosApl.length})`, desApl.length === 0, desApl.join(' · '))
   const filasNuevas = lineas.filter(l => /^(requisito|sim004b_estado|restriccion|indice|funcion_sustituida)\|/.test(l))
-  oraculo('S16', 'y en el montaje: 9 requisito (con el search_path, los dos ajustes de RE3-01, los roles del alumno y el uso de esquemas de RE4-01), 1 sim004b_estado, 25 restriccion, 10 indice y 3 funcion_sustituida, todas «coincide»', filasNuevas.filter(l => l.startsWith('requisito|')).length === 9 && filasNuevas.filter(l => l.startsWith('sim004b_estado|')).length === 1 && filasNuevas.filter(l => l.startsWith('restriccion|')).length === 25 && filasNuevas.filter(l => l.startsWith('indice|')).length === 10 && filasNuevas.filter(l => l.startsWith('funcion_sustituida|')).length === 3 && filasNuevas.every(l => l.endsWith('coincide')), filasNuevas.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 400))
+  oraculo('S16', 'y en el montaje: 10 requisito (con el search_path, los dos ajustes de RE3-01, pgrst.*, los roles del alumno y el uso de esquemas de RE4-01), 1 sim004b_estado, 25 restriccion, 10 indice y 3 funcion_sustituida, todas «coincide»', filasNuevas.filter(l => l.startsWith('requisito|')).length === 10 && filasNuevas.filter(l => l.startsWith('sim004b_estado|')).length === 1 && filasNuevas.filter(l => l.startsWith('restriccion|')).length === 25 && filasNuevas.filter(l => l.startsWith('indice|')).length === 10 && filasNuevas.filter(l => l.startsWith('funcion_sustituida|')).length === 3 && filasNuevas.every(l => l.endsWith('coincide')), filasNuevas.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 400))
 } finally { m.cierra() }
 fin()

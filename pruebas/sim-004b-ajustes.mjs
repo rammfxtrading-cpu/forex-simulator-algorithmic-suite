@@ -78,6 +78,37 @@ try {
     }
   }
 
+  titulo('orden 1-011: ninguna clave pgrst.* fijada (s16g: hoy ninguna en produccion), y los roles miembros de authenticator')
+  // un rol nuevo del que authenticator es miembro (al que PostgREST puede pasar) y otro miembro de authenticator
+  m.pg.psql('create role sim_x nologin; grant sim_x to authenticator; create role sim_y nologin; grant authenticator to sim_y;', 'postgres')
+  const C1011 = [
+    ['ALTER ROLE authenticator SET pgrst.db_pre_request', 'pgrst.*', () => "alter role authenticator set pgrst.db_pre_request = 'public.x';", () => 'alter role authenticator reset pgrst.db_pre_request;'],
+    ['ALTER DATABASE … SET pgrst.db_schemas', 'pgrst.*', d => `alter database ${d} set pgrst.db_schemas = 'public';`, d => `alter database ${d} reset pgrst.db_schemas;`],
+    ['ALTER ROLE sim_x (authenticator es miembro) SET pgrst.db_pre_request', 'pgrst.*', () => "alter role sim_x set pgrst.db_pre_request = 'public.x';", () => 'alter role sim_x reset pgrst.db_pre_request;'],
+    ['ALTER ROLE sim_x (authenticator es miembro) SET session_replication_role', 'session_replication_role', () => 'alter role sim_x set session_replication_role = replica;', () => 'alter role sim_x reset session_replication_role;'],
+    ['ALTER ROLE sim_y (miembro de authenticator) SET row_security', 'row_security', () => 'alter role sim_y set row_security = off;', () => 'alter role sim_y reset row_security;'],
+  ]
+  for (const [nombre, g, pon, quita] of C1011) {
+    for (const despues of [false, true]) {
+      const d = nueva(despues)
+      const cuando = despues ? 'reejecucion' : 'primera aplicacion'
+      const mu = m.pg.psql(pon(d), 'postgres')
+      try {
+        if (!mu.ok) { oraculo('AJ', `${nombre} (${cuando}): el mutante se aplica`, false, err1(mu)); continue }
+        const q = s16(d), rq = q.out.split('\n').find(l => l.startsWith(`requisito|${g}|`)) ?? ''
+        const r = aplica(d)
+        oraculo('AJ', `1-011 · ${nombre} (${cuando}): s16 DIFIERE en «${g}» y veredicto DIFIEREN; sim-004b aborta nombrandolo`,
+          q.ok && rq.endsWith(' · DIFIERE') && /^DIFIEREN \d+$/.test(veredicto(q)) && !r.ok && err1(r).startsWith('sim-004b: ajustes que cambian la semantica (RE3-01)') && err1(r).includes(g) && !/public\.x|'public'/.test(q.out + r.err),
+          `${rq.slice(0, 160)} · ${r.ok ? 'sim-004b APLICA' : err1(r).slice(0, 140)}`)
+      } finally { m.pg.psql(quita(d), 'postgres') }
+    }
+  }
+  {
+    const d = nueva(true), q = s16(d)
+    ver('control: con los roles nuevos sin ajustes, el requisito pgrst.* coincide («ninguno») y s16 OK', (q.out.split('\n').find(l => l.startsWith('requisito|pgrst.*|')) ?? '').endsWith('fijado en pg_db_role_setting: ninguno · coincide') && veredicto(q) === 'OK')
+  }
+  m.pg.psql('revoke sim_x from authenticator; revoke authenticator from sim_y; drop role sim_x; drop role sim_y;', 'postgres')
+
   titulo('el SET en la sesion del ejecutor')
   for (const [g, pre, prep, deshace] of [
     ['session_replication_role', 'set session_replication_role = replica;\n', 'grant set on parameter session_replication_role to pgx;', 'revoke set on parameter session_replication_role from pgx;'],
