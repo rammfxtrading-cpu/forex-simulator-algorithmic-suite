@@ -3731,3 +3731,15 @@ Desde la ronda 4, Astra da dos veredictos separados:
 
 La integración y el despliegue apagado solo necesitan el **SÍ en A**. La integración parte de `main` local (con sus 2 commits de `APLICADOS`, que se suben con ella).
 
+
+#### q.20.5 Lo que añadieron los revisores internos de la ronda 4 y las decisiones del CTO (17 y 18-oct)
+
+- **RE3-02/03** (`cf443e6`): la familia `permiso` suma los siete privilegios efectivos del dueño de las RPC en las 14 tablas y EXECUTE en las funciones `sim_*` y `enforce_sim_session_limit` (un REVOKE a sí mismo las dejaba en 42501).
+- **RE3-01** (`e33120d`; CTO, orden 1-010, opción (a) ampliada): `session_replication_role` efectivo `origin` y `row_security` efectivo `on`, y ninguno fijado en `pg_db_role_setting` para la base o los roles que ejecutan. **Solo por nombre**: no se lee ni se imprime ningún valor, porque los de Supabase pueden ser secretos. Es un requisito en la s16 y un aborto en la sección 0 de sim-004b.
+- **RE4-01 ALTA** (`c271731`): `anon` y `authenticated` sin BYPASSRLS ni superusuario (con `ALTER ROLE authenticated BYPASSRLS` un alumno veía y escribía lo ajeno), y el USAGE de los esquemas que usan.
+- **Orden 1-011** (`a74086c`): ninguna clave `pgrst.*` fijada para la base, authenticator, el dueño de las RPC o los roles miembros de authenticator (en los dos sentidos), y los dos ajustes de RE3-01 sobre ese mismo conjunto. La s16g de producción (18-oct) da 0 ajustes fijados, así que la lista acreditada es «ninguna».
+- **Límites declarados:**
+  - `default_transaction_read_only`, `transaction_isolation` y similares (solo caídas o fallos, sin fuga);
+  - el resto de `pg_db_role_setting`;
+  - lo que solo se reproduzca escribiendo el catálogo de sistema (q.20.3), como `indcheckxmin`;
+  - `quote_all_identifiers` (RINV4-03: solo rojo falso).
