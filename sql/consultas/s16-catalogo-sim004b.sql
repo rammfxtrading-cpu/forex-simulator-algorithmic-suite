@@ -33,6 +33,10 @@
 --   8 veredicto  «OK» (se puede aplicar sim-004b) o «DIFIEREN n» — NO aplicar sim-004b
 -- Los textos van SIN el prefijo «public.» (el editor tiene public en el search_path y sim-004b
 -- compara con search_path vacio: quitarlo hace la salida igual con los dos).
+-- LIMITE DECLARADO (RINV2-03, CTO 17-oct): solo catalogo. El ESTADO de las secuencias identity
+-- (last_value, is_called; un RESTART o un setval) no es catalogo y cambia con el uso normal: esta
+-- consulta NO lo mide. Lo comprueba sim-004b al aplicarse (seccion 0: el siguiente valor de cada
+-- secuencia, por encima de max(id), solo con el agregado) y aborta antes de cambiar nada.
 -- ============================================================================
 with
 puerta as (select to_regprocedure('public.sim_escrituras_v0_puerta()') is not null as hay),

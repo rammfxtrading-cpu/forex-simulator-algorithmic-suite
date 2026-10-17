@@ -57,6 +57,8 @@
 --     lenguaje, SECURITY, volatilidad, proconfig, dueño (el ejecutor) y EXECUTE;
 --   · el inventario exacto de disparadores de las tablas que escriben las RPC.
 --   · RLS NO forzada (relforcerowsecurity = false) en las 14 tablas que acredita (CTO 15-oct, q.16.6).
+--   · antes de cambiar nada (seccion 0; RINV2-03, CTO 17-oct): el siguiente valor de cada secuencia identity de
+--     las 14 tablas, por encima de max(id) (solo el agregado; tabla vacia, pasa). La s16 no lo mide: no es catalogo.
 --   Cualquier desvio: «sim-004b: …» y no queda nada.
 --
 -- Ensayado en PostgreSQL 17 local: s04 literal + sim-002 + sim-003 + preparatoria, con un
@@ -594,6 +596,34 @@ BEGIN
   IF to_regclass('public.sim_servicio') IS NULL OR to_regclass('public.sim_escrituras_v0') IS NULL THEN
     RAISE EXCEPTION 'sim-004b: faltan tablas de la preparatoria (sim_servicio, sim_escrituras_v0): no se toca nada';
   END IF;
+  -- RINV2-03 (CTO 17-oct, orden 1-006): el estado de cada secuencia identity no es catalogo (cambia con el uso normal):
+  -- la s16 no lo mide; aqui, antes de cualquier cambio, el siguiente valor que daria (last_value si is_called = false;
+  -- last_value + incremento si true) debe quedar POR ENCIMA de max(columna). Solo agregados: el max, ninguna fila.
+  -- Tabla vacia: pasa. Una secuencia reiniciada a max(id) o por debajo: aborta y no se toca nada.
+  FOR v_rel, v_def, v_txt IN
+    SELECT pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname), pg_catalog.quote_ident(a.attname),
+           pg_catalog.pg_get_serial_sequence(pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname), a.attname)
+      FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped AND a.attidentity <> ''
+     WHERE n.nspname = 'public' AND c.relname IN ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0',
+           'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config',
+           'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+     ORDER BY 1, 2
+  LOOP
+    DECLARE
+      v_max numeric; v_ult numeric; v_llamada boolean; v_inc numeric;
+    BEGIN
+      IF v_txt IS NULL THEN RAISE EXCEPTION 'sim-004b: %.% es identity y no tiene secuencia: no se toca nada', v_rel, v_def; END IF;
+      SELECT q.seqincrement INTO v_inc FROM pg_catalog.pg_sequence q WHERE q.seqrelid = v_txt::regclass;
+      EXECUTE format('SELECT last_value, is_called FROM %s', v_txt) INTO v_ult, v_llamada;
+      EXECUTE format('SELECT max(%s) FROM %s', v_def, v_rel) INTO v_max;
+      IF v_max IS NOT NULL AND (v_inc IS NULL OR v_inc <= 0
+         OR (CASE WHEN v_llamada THEN v_ult + v_inc ELSE v_ult END) <= v_max) THEN
+        RAISE EXCEPTION 'sim-004b: la secuencia % de %.% daria % y max(%) es %: reiniciada por debajo de lo que hay; no se toca nada',
+          v_txt, v_rel, v_def, CASE WHEN v_llamada THEN v_ult + v_inc ELSE v_ult END, v_def, v_max;
+      END IF;
+    END;
+  END LOOP;
 
   -- ── ¿sin aplicar, aplicada o a medias? ──────────────────────────────────
   v_sp := current_setting('search_path');
