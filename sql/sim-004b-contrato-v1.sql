@@ -692,7 +692,11 @@ BEGIN
    where a.rolname in ('anon', 'authenticated') and r.oid <> a.oid
      and (r.rolname in ('service_role', 'postgres') or r.rolsuper or r.rolbypassrls
           or r.oid = (select o.proowner from pg_catalog.pg_proc o where o.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)'))
-          or r.oid in (select c.relowner from pg_catalog.pg_class c where c.oid in (select pg_catalog.to_regclass('public.' || t) from unnest(array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']) t)))
+          or r.oid in (select c.relowner from pg_catalog.pg_class c where c.oid in (select pg_catalog.to_regclass('public.' || t) from unnest(array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']) t))
+          -- RE5-01 (revisor interno de 4c522cb): y los dueños de lo que usan los cuerpos fuera de las 14: profiles, auth.users
+          -- y auth.uid() (un miembro con INHERIT del dueño de profiles actua como dueño: privilegios y RLS)
+          or r.oid in (select c.relowner from pg_catalog.pg_class c where c.oid in (pg_catalog.to_regclass('public.profiles'), pg_catalog.to_regclass('auth.users')))
+          or r.oid = (select f.proowner from pg_catalog.pg_proc f where f.oid = pg_catalog.to_regprocedure('auth.uid()')))
      and pg_catalog.pg_has_role(a.oid, r.oid, 'MEMBER')
   ) x WHERE NOT x.bien;
   IF v_txt IS NOT NULL THEN

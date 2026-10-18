@@ -79,7 +79,7 @@ try {
   }
 
   titulo('E3R4-02: las pertenencias del alumno (directa o en cadena, con SET o con INHERIT)')
-  const tieneSet = d => m.uno(d, "select pg_has_role('authenticated', 'service_role', 'MEMBER') or pg_has_role('anon', 'service_role', 'MEMBER') or exists (select 1 from pg_roles where rolname in ('x_paso', 'x_salto'))")
+  const tieneSet = d => m.uno(d, "select pg_has_role('authenticated', 'service_role', 'MEMBER') or pg_has_role('anon', 'service_role', 'MEMBER') or exists (select 1 from pg_roles where rolname in ('x_paso', 'x_salto', 'x_perfil'))")
   const PERTENENCIA = [
     // [nombre, otorga, quita, como superusuario]
     ['authenticated → service_role, directo, SET sin INHERIT (Astra)', 'grant service_role to authenticated with inherit false, set true;', 'revoke service_role from authenticated;', false],
@@ -87,6 +87,8 @@ try {
     // (anon → pgx no se puede en el montaje: pgx ya es miembro de anon, y seria circular)
     ['anon → service_role, con INHERIT y sin SET', 'grant service_role to anon with inherit true, set false;', 'revoke service_role from anon;', false],
     ['authenticated → x_salto (nuevo, BYPASSRLS), SET sin INHERIT', 'create role x_salto nologin bypassrls; grant x_salto to authenticated with inherit false, set true;', 'revoke x_salto from authenticated; drop role x_salto;', true],
+    // RE5-01 (revisor interno de 4c522cb): profiles con otro dueño, y authenticated miembro suyo con INHERIT (actua como dueño)
+    ['RE5-01 · authenticated → x_perfil (nuevo dueño de profiles), con INHERIT', 'create role x_perfil nologin; alter table public.profiles owner to x_perfil; grant select, update on public.profiles to pgx; grant x_perfil to authenticated with inherit true, set false;', 'revoke x_perfil from authenticated; alter table public.profiles owner to pgx; drop owned by x_perfil; drop role x_perfil;', true],
   ]
   for (const [nombre, otorga, quita, su] of PERTENENCIA) for (const despues of [false, true]) {
     const d = nueva(despues)
