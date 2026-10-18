@@ -17,6 +17,7 @@ Lo que se ha ejecutado de `sql/` en la base viva, con el informe del propio fich
 | `consultas/s12-trades-sesion-ajena.sql` | **consulta de solo lectura**: filas en sesión ajena o inexistente (4 tablas) y RLS (paso 2) | **sí** · **13/10/2026** (noche), Ramón en el editor; **resumen** del CTO: ver abajo | `4da2df2` · `0ac4ce64c7796f11e38efaaf0b2e256d93e157f3d4c1745b79e63b6b69384c92` |
 | `sim-004a-preparatoria.sql` | etapa 1: cierre atómico `sim_cierre_v0`, registro de escrituras y marcas, `sim_servicio`, `rev_saldo` y sus disparadores, disparador del padre, políticas RESTRICTIVE de `sim_trades`, `session_drawings` y `session_chart_config` (o.16) | **sí** · **13/10/2026, ~19:30**, Ramón en el editor; acaba en `FIN \| sim-004a-preparatoria aplicada`; informe **resumido** por el CTO: ver abajo | `4da2df2` · `060717995e723fdefc043b9cb6fb0f7658943034a3810474adea4a587eb2f6e2` |
 | `consultas/s10-conciliacion.sql` | **consulta de solo lectura**: conciliación del registro y `statement_timeout` (paso 4) | **sí** · **13/10/2026** (noche), tras la preparatoria; **resumen** del CTO: ver abajo | `4da2df2` · `eaa23bc700a44c05ccacd66212195bb5dbbb3aee0ab8d992b7a7606af37c7576` |
+| `sim-004a-puerta.sql` | **la puerta** (m.3, l.1 b): función `sim_escrituras_v0_puerta()` (INVOKER, `search_path` vacío, EXECUTE de nadie) y sus disparadores BEFORE INSERT/UPDATE/DELETE en `sim_sessions` y `sim_trades`. Rechaza escrituras de `authenticated`/`anon` sin la cabecera `x-sim-cliente` | **sí** · **18/10/2026**, Ramón en el editor, una sola pegada (orden 1-030 del CTO; «sí, aplica la puerta» escrito por Ramón en la ventana 1). **Hora del informe, antes del COMMIT: 2026-10-18 14:42:22 UTC (16:42:22 Madrid)**. Informe **literal**: ver abajo | `0e447cd` (sin cambios hasta `af6bbea`) · `10f75d5b55bf98b28a6717741462ab44ac3214ca1694cd9e5190c232cb4ff63c` |
 
 ## s04 · resultado (4-oct-2026)
 
@@ -143,3 +144,47 @@ Solo las cifras: ni ids ni importes. s10 de `3fa2b3f`, con sha256 `eaa23bc7…75
   - s10 lista también `authenticator`, con 8 s.
   - Sin ninguna escritura sin firma, las 72 h se cuentan desde la instalación (13-oct, hacia las 19:30): **lo antes posible para la puerta, el 16-oct hacia las 19:30**. Hace falta una s10 de esa hora o posterior con A = 0, y el sí del CTO.
 - **16-oct, 20:32 (Madrid):** la s10 de la puerta: **A = 0**. Veredicto: se cumple la condición de la s10 para la puerta; falta el sí de Ramón.
+
+## La puerta · 18-oct-2026 (orden 1-030 del CTO, con Ramón delante)
+
+**Antes, la s10 fresca.** La de `main` (`eaa23bc7…`), envuelta en el portapapeles en `BEGIN READ ONLY … ROLLBACK` sin tocar su cuerpo. Hora del servidor: 14:41:31 UTC.
+- `estado`: registro instalado (puerta NO activa).
+- 4404 filas, **0 sin firma de alumno**, 4404 firmadas, 0 de `service_role` y 0 otras; la primera es del 13-oct 18:13:14 UTC.
+- **A = 0**: 3 filas `alumno`, todas con `sin firma 72 h=0` y versión firmada `etapa1-1`.
+- C = D = E = 0.
+- Volumen del 18-oct hasta esa hora: 55 filas.
+- `timeout`: authenticated y authenticator 8 s, anon 3 s.
+- La regla m.3 (a) se cumple.
+
+**La puerta, informe LITERAL:**
+
+```
+seccion,detalle
+estado,registro + puerta
+disparador,sim_sessions · sim_escrituras_v0_puerta · enabled=O
+disparador,sim_trades · sim_escrituras_v0_puerta · enabled=O
+funcion,"sim_escrituras_v0_puerta() · definer=false · search_path="""" · sha256 fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883"
+hora del informe (antes del COMMIT),2026-10-18 14:42:22 UTC
+FIN,sim-004a-puerta aplicada
+```
+
+**La hora de activación (m.3) es la del COMMIT**, que va justo después de las 14:42:22 UTC. El DO comprobó, antes del COMMIT:
+- las definiciones exactas de los disparadores del estado 2;
+- el cuerpo, invoker y `search_path` de la función;
+- que no tiene receptores aparte del dueño.
+
+**Después, la segunda s10**, a las 14:54:41 UTC: más de 2 × `statement_timeout` (16 s) después, envuelta igual.
+- `estado`: **registro + puerta**.
+- 4404 filas, 0 sin firma de alumno.
+- **A = 0**, C = D = E = 0.
+- `timeout` sin cambios.
+
+**Y la s16 completa** (`fec760e`, `934615d4…`; su envoltura la dio Astra por conforme en S16RO). La acreditación de la puerta la fijó el CTO en la orden 1-031: el DO más la s16, **no la s16p**.
+- **Veredicto OK**: 218 filas, 216 «coincide», con la función y los 2 disparadores de la puerta.
+- `sim004b_estado`: sin aplicar.
+- **Igual línea a línea a la esperada «con puerta»** (`revisiones-suite/2026-10-18-sim-etapa5-esperadas/s16-esperada-con-puerta.txt`), salvo dos columnas informativas: la versión del servidor (17.6) y el concedente de la ACL cruda (`postgres`, frente al `pgx` del montaje).
+- La salida literal está en `revisiones-suite/2026-10-18-sim-etapa5-esperadas/produccion/s16-con-puerta-2026-10-18.csv` (sha256 `c30d9d04…`).
+
+**Desde aquí:**
+- **la s10 diaria ya no hace falta para la puerta;**
+- sim-004a-preparatoria, si se reejecuta, reconoce el estado 2.
