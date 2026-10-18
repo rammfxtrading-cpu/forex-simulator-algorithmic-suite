@@ -121,6 +121,39 @@ titulo('2b · SRK-01: caracteres que no valen en una cabecera HTTP (Astra; CTO, 
     oraculo('SRK01', 'CONTROL de la medida: con una clave de forma normal, la misma ruta SÍ llega al transporte (el doble) y sin fuga',
       bien.llegadas >= 1 && bien.fuga === false, JSON.stringify(bien))
   }
+  // SRKR2-REV-01: un HANDLER REAL de pages/api (pages/api/challenge/status.js, GET), con la nueva Y con la vieja malformadas (LF y CR),
+  // en un proceso aparte con el SDK real y un transporte doble (construye el Request nativo y no manda nada): error fijo y
+  // CERO rastro de la clave en console.* ni en stderr. Control: con la clave normal, el handler llega al transporte
+  {
+    const { spawnSync } = await import('node:child_process')
+    const { fileURLToPath: aRuta } = await import('node:url')
+    const R = aRuta(new globalThis.URL('../../', import.meta.url))
+    const CODIGO = [
+      "import fs from 'node:fs'; import { registerHooks } from 'node:module'; import { pathToFileURL, fileURLToPath } from 'node:url'",
+      "registerHooks({ resolve(s, c, next) { if (s.startsWith('.') && c.parentURL && !c.parentURL.includes('/node_modules/')) { const u = new URL(s, c.parentURL); if (!/\\.(c|m)?js$/.test(u.pathname) && fs.existsSync(fileURLToPath(u) + '.js')) return next(u.href + '.js', c) } return next(s, c) } })",
+      'const R = ' + JSON.stringify(R) + '; const M = process.env.MARCA',
+      "let llegadas = 0; globalThis.fetch = async (u, i) => { llegadas++; new Request(u, i); return new Response(JSON.stringify({ message: 'no' }), { status: 401, headers: { 'content-type': 'application/json' } }) }",
+      "const logs = []; for (const k of ['log', 'error', 'warn', 'info', 'debug']) console[k] = (...v) => logs.push(v.map((x) => x?.stack || (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(' '))",
+      "process.stderr.write = (c) => { logs.push(String(c)); return true }",
+      "let error = '', respuesta = null",
+      "try { const { default: h } = await import(pathToFileURL(R + " + JSON.stringify('pages/api/challenge/status.js') + ").href); const res = { statusCode: 200, setHeader() { return this }, getHeader() {}, status(n) { this.statusCode = n; return this }, json(x) { respuesta = x; return this }, send(x) { respuesta = x; return this }, end(x) { respuesta = x ?? respuesta; return this } };",
+      "  await h({ method: " + JSON.stringify('GET') + ", headers: { authorization: 'Bearer TOKEN_FICTICIO', host: 'localhost', 'content-type': 'application/json' }, query: {}, body: {}, cookies: {}, socket: { remoteAddress: '127.0.0.1' } }, res); await new Promise((r) => setTimeout(r, 50)) } catch (e) { error = String(e?.stack ?? e) }",
+      "process.stdout.write(JSON.stringify({ fuga: logs.some((l) => l.includes(M)) || error.includes(M) || JSON.stringify(respuesta ?? '').includes(M), escritos: logs.length, error: error.split('\\n')[0].split(M).join('«MARCA»'), llegadas }))",
+    ].join('\n')
+    const hijo = (variable, clave, marca) => {
+      const h = spawnSync(process.execPath, ['--input-type=module', '-e', CODIGO], { cwd: R, encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: process.env.HOME ?? '/tmp', NEXT_PUBLIC_SUPABASE_URL: 'https://ficticio.invalid', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-ficticia', [variable]: clave, MARCA: marca } })
+      try { return JSON.parse(h.stdout) } catch { return { roto: (h.stderr || h.stdout).split(marca).join('«MARCA»').slice(0, 300) } }
+    }
+    const MARCAS = { SUPABASE_SECRET_KEY: 'sb_secret_' + 'FICTICIA_HANDLER_12345', SUPABASE_SERVICE_ROLE_KEY: 'eyJ' + 'FICTICIA_HANDLER.falsa.firma' }
+    for (const [variable, marca] of Object.entries(MARCAS)) for (const [d, cola] of [['LF', '\nFICTICIA_COLA'], ['CR', '\rFICTICIA_COLA']]) {
+      const x = hijo(variable, marca + cola, marca)
+      oraculo('SRK01', `handler real pages/api/challenge/status.js con ${variable} y un ${d} interior: error fijo, cero rastro en console.* y stderr, sin llegar al transporte`,
+        x.fuga === false && x.llegadas === 0 && new RegExp(variable + ' tiene caracteres no v[aá]lidos').test(x.error ?? ''), JSON.stringify(x))
+    }
+    const bien = hijo('SUPABASE_SECRET_KEY', MARCAS.SUPABASE_SECRET_KEY, MARCAS.SUPABASE_SECRET_KEY)
+    oraculo('SRK01', 'CONTROL: con la clave normal, el handler real SÍ llega al transporte (el doble) y sin fuga', bien.llegadas >= 1 && bien.fuga === false, JSON.stringify(bien))
+  }
 }
 
 titulo('3 · los scripts REALES: actualizar-diario.js (en seco) con el entorno de Actions, y restore-2026.js con el .env.local')
