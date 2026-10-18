@@ -9,5 +9,11 @@
   "cartera": 84,
   "marca": 9,
   "huecos": 24,
-  "documentos": 9
+  "documentos": 9,
+  "conversion": 13,
+  "suite": 21,
+  "ambiguedad-conversion": 5,
+  "tramos-propiedad": 1,
+  "tramos-fuentes": 17,
+  "sesion-terminada": 8
 }

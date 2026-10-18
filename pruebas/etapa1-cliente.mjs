@@ -344,8 +344,9 @@ try {
     const g = await llama(h, { method: 'GET' })
     resp.push(`${rt}: ${r.estado} ${JSON.stringify(r.cuerpo)} / ${g.estado} · ${db.log.length + db.auth.length} ops`)
   }
-  oraculo('API-503', 'los 5 /api/sim/* responden 503 { ok:false, http:503, motivo:"mantenimiento" } a todo, sin tocar la base ni la autenticacion',
-    resp.every(x => /: 503 \{"ok":false,"http":503,"motivo":"mantenimiento"\} \/ 503 · 0 ops$/.test(x)), resp.join(' | '))
+  // CTO 16-oct: apagado (sin el interruptor) es motivo "apagado", distinto de "mantenimiento"
+  oraculo('API-503', 'los 5 /api/sim/* responden 503 { ok:false, http:503, motivo:"apagado" } a todo, sin tocar la base ni la autenticacion',
+    resp.every(x => /: 503 \{"ok":false,"http":503,"motivo":"apagado"\} \/ 503 · 0 ops$/.test(x)), resp.join(' | '))
   const res = (await opcional('lib/sim/respuestas.js'))?.interpretaBorrado
   oraculo('D6-respuestas', 'd6: 200→quitar, 410→quitar y lo dice, 403→solo lectura, 426→recargar, 503→mantenimiento, otro→error',
     !!res && res(200, { ok: true }).accion === 'quitar' && res(410, {}).accion === 'quitar' && /ya estaba borrada/.test(res(410, {}).texto) && res(403, {}).accion === 'solo_lectura'

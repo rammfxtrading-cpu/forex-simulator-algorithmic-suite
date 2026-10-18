@@ -1,0 +1,26 @@
+Failed to run sql query: ERROR:  P0001: informe s16e (no es un fallo)
+s16e | search_path | "\$user", public, extensions
+s16e | {public,extensions} | funcion_ajena | auth.uid() | functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0
+s16e | {public,extensions} | funcion_ajena | extensions.digest(bytea,text) | functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+s16e | {public,extensions} | funcion_ajena | extensions.gen_random_bytes(integer) | functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+s16e | {public,extensions} | inventario | ajeno | n=0 md5=d41d8cd98f00b204e9800998ecf8427e
+s16e | {public,extensions} | inventario | columna | n=135 md5=9610bdfa6bce4ff3b95a3d4fafd743b0
+s16e | {public,extensions} | inventario | identidad | n=4 md5=472c2271705ab4440fba7bbe0c61ed04
+s16e | {public,extensions} | inventario | indice | n=31 md5=6f248b06ad3aac95b276fc24a00ecb88
+s16e | {public,extensions} | inventario | politica | n=3 md5=ae70c7a2dca8be8f6aa6c6eae4d9754f
+s16e | {public,extensions} | inventario | regla | n=0 md5=d41d8cd98f00b204e9800998ecf8427e
+s16e | {public,extensions} | inventario | restriccion | n=59 md5=8c1bcac993492ca83039e80ec6168d01
+s16e | {public,extensions} | inventario | tabla | n=14 md5=a9b56cc77c3da41b455e0250b489e0aa
+s16e | {} | funcion_ajena | auth.uid() | functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0
+s16e | {} | funcion_ajena | extensions.digest(bytea,text) | functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+s16e | {} | funcion_ajena | extensions.gen_random_bytes(integer) | functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+s16e | {} | inventario | ajeno | n=0 md5=d41d8cd98f00b204e9800998ecf8427e
+s16e | {} | inventario | columna | n=135 md5=9610bdfa6bce4ff3b95a3d4fafd743b0
+s16e | {} | inventario | identidad | n=4 md5=472c2271705ab4440fba7bbe0c61ed04
+s16e | {} | inventario | indice | n=31 md5=6f248b06ad3aac95b276fc24a00ecb88
+s16e | {} | inventario | politica | n=3 md5=ae70c7a2dca8be8f6aa6c6eae4d9754f
+s16e | {} | inventario | regla | n=0 md5=d41d8cd98f00b204e9800998ecf8427e
+s16e | {} | inventario | restriccion | n=59 md5=4f9d1a1af4e93723672d6bba7ae10829
+s16e | {} | inventario | tabla | n=14 md5=a9b56cc77c3da41b455e0250b489e0aa
+FIN | s16e | consulta
+CONTEXT:  PL/pgSQL function inline_code_block line 345 at RAISE

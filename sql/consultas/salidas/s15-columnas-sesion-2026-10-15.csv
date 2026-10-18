@@ -1,0 +1,28 @@
+seccion,objeto,detalle
+columna,id,existe · uuid
+columna,user_id,existe · uuid
+columna,name,existe · text
+columna,pair,existe · text
+columna,timeframe,existe · text
+columna,date_from,existe · date
+columna,date_to,existe · date
+columna,capital,existe · numeric
+columna,balance,existe · numeric
+columna,status,existe · text
+columna,created_at,existe · timestamp with time zone
+columna,last_timestamp,existe · bigint
+columna,challenge_type,existe · text
+columna,challenge_phase,existe · integer
+columna,challenge_parent_id,existe · uuid
+columna,motor_version,existe · smallint
+columna,epoca,existe · integer
+columna,version,existe · bigint
+columna,terminal,existe · text
+columna,legado,existe · boolean
+columna,legado_snapshot,existe · jsonb
+columna,mercado,existe · jsonb
+columna,creada_por_rpc,existe · boolean
+columna,rev_saldo,existe · bigint
+sobra,"escritor, estado",no las pide el cliente
+veredicto,OK,estan las 24 columnas que pide el cliente
+FIN,s15,consulta

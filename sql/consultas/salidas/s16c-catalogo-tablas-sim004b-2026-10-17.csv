@@ -1,0 +1,253 @@
+seccion,objeto,detalle
+tabla,session_chart_config,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,session_drawings,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_alumnos,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_arrendamientos,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_drawing_templates,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor · rls=true · forzada=false
+tabla,sim_escrituras_v0,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_escrituras_v0_marcas,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_eventos,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_recibos,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_servicio,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_sessions,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,sim_trades,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor
+tabla,user_chart_config,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor · rls=true · forzada=false
+tabla,user_tool_config,relkind=r · persistencia=p · particion=false · hijas=0 · padres=- · particionada=false · dueño=ejecutor · rls=true · forzada=false
+columna,session_chart_config.config,tipo=jsonb · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto='{}'::jsonb
+columna,session_chart_config.id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=gen_random_uuid()
+columna,session_chart_config.session_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,session_chart_config.updated_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=now()
+columna,session_chart_config.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,session_drawings.data,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto='[]'::text
+columna,session_drawings.id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=gen_random_uuid()
+columna,session_drawings.pair,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,session_drawings.session_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,session_drawings.updated_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=now()
+columna,session_drawings.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_alumnos.creado,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=now()
+columna,sim_alumnos.siguiente_avance_desde,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_alumnos.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_arrendamientos.cliente_id,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_arrendamientos.hasta,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_arrendamientos.session_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_arrendamientos.testigo_hash,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_arrendamientos.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_drawing_templates.config,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_drawing_templates.created_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=now()
+columna,sim_drawing_templates.data,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_drawing_templates.id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=gen_random_uuid()
+columna,sim_drawing_templates.name,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_drawing_templates.tool_key,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_drawing_templates.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0.cliente,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_escrituras_v0.columnas,tipo=text[] · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_escrituras_v0.delta,tipo=numeric · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0.en,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0.id,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=a · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0.operacion,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_escrituras_v0.pnl,tipo=numeric · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0.rol_guc,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_escrituras_v0.rol_jwt,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_escrituras_v0.session_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0.tabla,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_escrituras_v0.trade_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0.xact,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_escrituras_v0_marcas.escritura_id,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0_marcas.id,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=a · generated=- · colacion=- · defecto=-
+columna,sim_escrituras_v0_marcas.xact,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_eventos.command_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_eventos.datos,tipo=jsonb · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_eventos.id,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=d · generated=- · colacion=- · defecto=-
+columna,sim_eventos.ordinal,tipo=integer · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_eventos.seq,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_eventos.session_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_eventos.t_mercado,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_eventos.tipo,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_eventos.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_recibos.clase,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_recibos.command_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_recibos.creado,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=now()
+columna,sim_recibos.digest,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_recibos.epoca,tipo=integer · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_recibos.id,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=d · generated=- · colacion=- · defecto=-
+columna,sim_recibos.motivo,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_recibos.resultado,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_recibos.resumen,tipo=jsonb · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_recibos.session_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_recibos.tipo,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_recibos.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_recibos.version_partida,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_recibos.version_resultante,tipo=bigint · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_servicio.cambiado_en,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_servicio.id,tipo=boolean · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=true
+columna,sim_servicio.mantenimiento,tipo=boolean · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_servicio.version_minima,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_sessions.balance,tipo=numeric · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=10000
+columna,sim_sessions.capital,tipo=numeric · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=10000
+columna,sim_sessions.challenge_parent_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.challenge_phase,tipo=integer · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.challenge_type,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_sessions.creada_por_rpc,tipo=boolean · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=false
+columna,sim_sessions.created_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=now()
+columna,sim_sessions.date_from,tipo=date · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.date_to,tipo=date · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.epoca,tipo=integer · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=0
+columna,sim_sessions.escritor,tipo=jsonb · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.estado,tipo=jsonb · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=gen_random_uuid()
+columna,sim_sessions.last_timestamp,tipo=bigint · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.legado,tipo=boolean · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=false
+columna,sim_sessions.legado_snapshot,tipo=jsonb · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.mercado,tipo=jsonb · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.motor_version,tipo=smallint · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=0
+columna,sim_sessions.name,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_sessions.pair,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_sessions.rev_saldo,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=0
+columna,sim_sessions.status,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto='active'::text
+columna,sim_sessions.terminal,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_sessions.timeframe,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_sessions.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_sessions.version,tipo=bigint · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=0
+columna,sim_trades.ambigua,tipo=boolean · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.bruto_micro,tipo=bigint · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.causa_ambiguedad,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_trades.closed_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.comision_micro,tipo=bigint · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.conversion,tipo=jsonb · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.created_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=now()
+columna,sim_trades.entry_price,"tipo=numeric(10,5) · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.evento_id,tipo=bigint · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.exit_price,"tipo=numeric(10,5) · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=gen_random_uuid()
+columna,sim_trades.lots,"tipo=numeric(10,2) · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.motor_version,tipo=smallint · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=0
+columna,sim_trades.neto_micro,tipo=bigint · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.notes,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_trades.opened_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.pair,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_trades.pnl,"tipo=numeric(10,2) · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.result,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_trades.risk_amount,"tipo=numeric(10,2) · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.risk_percent,"tipo=numeric(5,2) · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.rr,"tipo=numeric(10,2) · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.session_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.session_type,tipo=text · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_trades.side,tipo=text · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_trades.sl_price,"tipo=numeric(10,5) · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.spread_micro,tipo=bigint · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.swap_micro,tipo=bigint · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-
+columna,sim_trades.tags,tipo=text[] · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=por defecto · defecto=-
+columna,sim_trades.tp_price,"tipo=numeric(10,5) · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=-"
+columna,sim_trades.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,user_chart_config.config,tipo=jsonb · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto='{}'::jsonb
+columna,user_chart_config.id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=gen_random_uuid()
+columna,user_chart_config.updated_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=now()
+columna,user_chart_config.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+columna,user_tool_config.config,tipo=jsonb · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto='{}'::jsonb
+columna,user_tool_config.id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=gen_random_uuid()
+columna,user_tool_config.updated_at,tipo=timestamp with time zone · tipo_esquema=pg_catalog · notnull=false · identity=- · generated=- · colacion=- · defecto=now()
+columna,user_tool_config.user_id,tipo=uuid · tipo_esquema=pg_catalog · notnull=true · identity=- · generated=- · colacion=- · defecto=-
+restriccion,session_chart_config.session_chart_config_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,session_chart_config.session_chart_config_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,session_chart_config.session_chart_config_session_id_key,u · UNIQUE (session_id) · validada=true · diferible=false/false
+restriccion,session_chart_config.session_chart_config_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,session_drawings.session_drawings_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,session_drawings.session_drawings_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,session_drawings.session_drawings_session_id_pair_key,"u · UNIQUE (session_id, pair) · validada=true · diferible=false/false"
+restriccion,session_drawings.session_drawings_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_alumnos.sim_alumnos_pkey,p · PRIMARY KEY (user_id) · validada=true · diferible=false/false
+restriccion,sim_alumnos.sim_alumnos_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_arrendamientos.sim_arrendamientos_cliente_id_check,c · CHECK (((length(cliente_id) >= 1) AND (length(cliente_id) <= 100))) · validada=true · diferible=false/false
+restriccion,sim_arrendamientos.sim_arrendamientos_pkey,p · PRIMARY KEY (session_id) · validada=true · diferible=false/false
+restriccion,sim_arrendamientos.sim_arrendamientos_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_arrendamientos.sim_arrendamientos_testigo_hash_check,c · CHECK ((testigo_hash ~ '^[0-9a-f]{64}$'::text)) · validada=true · diferible=false/false
+restriccion,sim_drawing_templates.sim_drawing_templates_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,sim_drawing_templates.sim_drawing_templates_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_escrituras_v0.sim_escrituras_v0_operacion_check,"c · CHECK ((operacion = ANY (ARRAY['INSERT'::text, 'UPDATE'::text, 'DELETE'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_escrituras_v0.sim_escrituras_v0_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,sim_escrituras_v0.sim_escrituras_v0_tabla_check,"c · CHECK ((tabla = ANY (ARRAY['sim_sessions'::text, 'sim_trades'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_escrituras_v0_marcas.sim_escrituras_v0_marcas_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,sim_eventos.sim_eventos_ordinal_check,c · CHECK ((ordinal >= 0)) · validada=true · diferible=false/false
+restriccion,sim_eventos.sim_eventos_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,sim_eventos.sim_eventos_seq_check,c · CHECK ((seq >= 1)) · validada=true · diferible=false/false
+restriccion,sim_eventos.sim_eventos_session_command_ordinal_key,"u · UNIQUE (session_id, command_id, ordinal) · validada=true · diferible=false/false"
+restriccion,sim_eventos.sim_eventos_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_eventos.sim_eventos_session_seq_key,"u · UNIQUE (session_id, seq) · validada=true · diferible=false/false"
+restriccion,sim_eventos.sim_eventos_tipo_check,"c · CHECK ((tipo = ANY (ARRAY['orden_creada'::text, 'orden_modificada'::text, 'orden_cancelada'::text, 'fill'::text, 'cierre'::text, 'reset_diario'::text, 'breach'::text, 'fase_superada'::text, 'fin_de_datos'::text, 'posicion_modificada'::text, 'no_valorable'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_recibos.sim_recibos_clase_check,"c · CHECK ((clase = ANY (ARRAY['economico'::text, 'ultimo_avance'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_recibos.sim_recibos_clase_tipo,"c · CHECK (((clase = 'economico'::text) OR (tipo = ANY (ARRAY['avanzar'::text, 'checkpoint'::text])))) · validada=true · diferible=false/false"
+restriccion,sim_recibos.sim_recibos_digest_check,c · CHECK ((digest ~ '^[0-9a-f]{64}$'::text)) · validada=true · diferible=false/false
+restriccion,sim_recibos.sim_recibos_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,sim_recibos.sim_recibos_resultado_check,"c · CHECK ((resultado = ANY (ARRAY['aceptado'::text, 'rechazado'::text, 'conflicto'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_recibos.sim_recibos_session_command_key,"u · UNIQUE (session_id, command_id) · validada=true · diferible=false/false"
+restriccion,sim_recibos.sim_recibos_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_recibos.sim_recibos_tipo_check,"c · CHECK ((tipo = ANY (ARRAY['abrir'::text, 'modificar'::text, 'cancelar'::text, 'cerrar'::text, 'avanzar'::text, 'checkpoint'::text, 'crear'::text, 'tomar_escritor'::text, 'avanzar_fase'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_servicio.sim_servicio_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,sim_servicio.sim_servicio_una_fila,c · CHECK (id) · validada=true · diferible=false/false
+restriccion,sim_servicio.sim_servicio_version_minima_check,"c · CHECK ((version_minima ~ '^[1-9][0-9]{0,8}$'::text)) · validada=true · diferible=false/false"
+restriccion,sim_sessions.sim_sessions_challenge_parent_id_fkey,f · FOREIGN KEY (challenge_parent_id) REFERENCES sim_sessions(id) ON DELETE SET NULL · validada=true · diferible=false/false
+restriccion,sim_sessions.sim_sessions_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,sim_sessions.sim_sessions_terminal_valida,"c · CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY['borrada'::text, 'revocada'::text])))) · validada=true · diferible=false/false"
+restriccion,sim_sessions.sim_sessions_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_sessions.sim_sessions_user_id_perfil_fkey,f · FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_sessions.sim_sessions_v1_coherente,"c · CHECK (((motor_version = ANY (ARRAY[0, 1])) AND (epoca >= 0) AND (version >= 0) AND ((motor_version = 0) OR (creada_por_rpc AND (((estado IS NOT NULL) AND (mercado IS NOT NULL)) OR (NOT (terminal IS DISTINCT FROM 'borrada'::text))))) AND ((NOT legado) OR (motor_version = 0)))) · validada=true · diferible=false/false"
+restriccion,sim_trades.sim_trades_evento_id_fkey,f · FOREIGN KEY (evento_id) REFERENCES sim_eventos(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_trades.sim_trades_evento_id_key,u · UNIQUE (evento_id) · validada=true · diferible=false/false
+restriccion,sim_trades.sim_trades_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,sim_trades.sim_trades_result_check,"c · CHECK ((result = ANY (ARRAY['WIN'::text, 'LOSS'::text, 'BREAKEVEN'::text, 'OPEN'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_trades.sim_trades_session_id_fkey,f · FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_trades.sim_trades_session_type_check,"c · CHECK ((session_type = ANY (ARRAY['asia'::text, 'london'::text, 'nyam'::text, 'nypm'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_trades.sim_trades_side_check,"c · CHECK ((side = ANY (ARRAY['BUY'::text, 'SELL'::text]))) · validada=true · diferible=false/false"
+restriccion,sim_trades.sim_trades_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,sim_trades.sim_trades_v1_coherente,c · CHECK ((((motor_version = 0) AND (evento_id IS NULL)) OR ((motor_version = 1) AND (evento_id IS NOT NULL) AND (bruto_micro IS NOT NULL) AND (neto_micro IS NOT NULL) AND (comision_micro IS NOT NULL) AND (spread_micro IS NOT NULL) AND (swap_micro IS NOT NULL) AND (ambigua IS NOT NULL)))) · validada=true · diferible=false/false
+restriccion,user_chart_config.user_chart_config_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,user_chart_config.user_chart_config_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,user_chart_config.user_chart_config_user_id_key,u · UNIQUE (user_id) · validada=true · diferible=false/false
+restriccion,user_tool_config.user_tool_config_pkey,p · PRIMARY KEY (id) · validada=true · diferible=false/false
+restriccion,user_tool_config.user_tool_config_user_id_fkey,f · FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE · validada=true · diferible=false/false
+restriccion,user_tool_config.user_tool_config_user_id_key,u · UNIQUE (user_id) · validada=true · diferible=false/false
+indice,session_chart_config.session_chart_config_pkey,CREATE UNIQUE INDEX session_chart_config_pkey ON session_chart_config USING btree (id)
+indice,session_chart_config.session_chart_config_session_id_key,CREATE UNIQUE INDEX session_chart_config_session_id_key ON session_chart_config USING btree (session_id)
+indice,session_drawings.session_drawings_pkey,CREATE UNIQUE INDEX session_drawings_pkey ON session_drawings USING btree (id)
+indice,session_drawings.session_drawings_session_id_pair_key,"CREATE UNIQUE INDEX session_drawings_session_id_pair_key ON session_drawings USING btree (session_id, pair)"
+indice,sim_alumnos.sim_alumnos_pkey,CREATE UNIQUE INDEX sim_alumnos_pkey ON sim_alumnos USING btree (user_id)
+indice,sim_arrendamientos.sim_arrendamientos_pkey,CREATE UNIQUE INDEX sim_arrendamientos_pkey ON sim_arrendamientos USING btree (session_id)
+indice,sim_arrendamientos.sim_arrendamientos_user_id_idx,CREATE INDEX sim_arrendamientos_user_id_idx ON sim_arrendamientos USING btree (user_id)
+indice,sim_drawing_templates.sim_drawing_templates_pkey,CREATE UNIQUE INDEX sim_drawing_templates_pkey ON sim_drawing_templates USING btree (id)
+indice,sim_escrituras_v0.sim_escrituras_v0_pkey,CREATE UNIQUE INDEX sim_escrituras_v0_pkey ON sim_escrituras_v0 USING btree (id)
+indice,sim_escrituras_v0.sim_escrituras_v0_sesion_xact_idx,"CREATE INDEX sim_escrituras_v0_sesion_xact_idx ON sim_escrituras_v0 USING btree (session_id, xact)"
+indice,sim_escrituras_v0_marcas.sim_escrituras_v0_marcas_escritura_idx,CREATE INDEX sim_escrituras_v0_marcas_escritura_idx ON sim_escrituras_v0_marcas USING btree (escritura_id)
+indice,sim_escrituras_v0_marcas.sim_escrituras_v0_marcas_pkey,CREATE UNIQUE INDEX sim_escrituras_v0_marcas_pkey ON sim_escrituras_v0_marcas USING btree (id)
+indice,sim_eventos.sim_eventos_pkey,CREATE UNIQUE INDEX sim_eventos_pkey ON sim_eventos USING btree (id)
+indice,sim_eventos.sim_eventos_session_command_ordinal_key,"CREATE UNIQUE INDEX sim_eventos_session_command_ordinal_key ON sim_eventos USING btree (session_id, command_id, ordinal)"
+indice,sim_eventos.sim_eventos_session_seq_key,"CREATE UNIQUE INDEX sim_eventos_session_seq_key ON sim_eventos USING btree (session_id, seq)"
+indice,sim_recibos.sim_recibos_pkey,CREATE UNIQUE INDEX sim_recibos_pkey ON sim_recibos USING btree (id)
+indice,sim_recibos.sim_recibos_session_command_key,"CREATE UNIQUE INDEX sim_recibos_session_command_key ON sim_recibos USING btree (session_id, command_id)"
+indice,sim_recibos.sim_recibos_session_creado_idx,"CREATE INDEX sim_recibos_session_creado_idx ON sim_recibos USING btree (session_id, creado)"
+indice,sim_recibos.sim_recibos_ultimo_avance_key,CREATE UNIQUE INDEX sim_recibos_ultimo_avance_key ON sim_recibos USING btree (session_id) WHERE (clase = 'ultimo_avance'::text)
+indice,sim_servicio.sim_servicio_pkey,CREATE UNIQUE INDEX sim_servicio_pkey ON sim_servicio USING btree (id)
+indice,sim_sessions.sim_sessions_pkey,CREATE UNIQUE INDEX sim_sessions_pkey ON sim_sessions USING btree (id)
+indice,sim_sessions.sim_sessions_una_hija_v1_key,CREATE UNIQUE INDEX sim_sessions_una_hija_v1_key ON sim_sessions USING btree (challenge_parent_id) WHERE ((motor_version = 1) AND (challenge_parent_id IS NOT NULL))
+indice,sim_sessions.sim_sessions_user_id_idx,CREATE INDEX sim_sessions_user_id_idx ON sim_sessions USING btree (user_id)
+indice,sim_trades.sim_trades_evento_id_key,CREATE UNIQUE INDEX sim_trades_evento_id_key ON sim_trades USING btree (evento_id)
+indice,sim_trades.sim_trades_pkey,CREATE UNIQUE INDEX sim_trades_pkey ON sim_trades USING btree (id)
+indice,sim_trades.sim_trades_session_id_idx,CREATE INDEX sim_trades_session_id_idx ON sim_trades USING btree (session_id)
+indice,sim_trades.sim_trades_user_id_closed_idx,"CREATE INDEX sim_trades_user_id_closed_idx ON sim_trades USING btree (user_id, closed_at)"
+indice,user_chart_config.user_chart_config_pkey,CREATE UNIQUE INDEX user_chart_config_pkey ON user_chart_config USING btree (id)
+indice,user_chart_config.user_chart_config_user_id_key,CREATE UNIQUE INDEX user_chart_config_user_id_key ON user_chart_config USING btree (user_id)
+indice,user_tool_config.user_tool_config_pkey,CREATE UNIQUE INDEX user_tool_config_pkey ON user_tool_config USING btree (id)
+indice,user_tool_config.user_tool_config_user_id_key,CREATE UNIQUE INDEX user_tool_config_user_id_key ON user_tool_config USING btree (user_id)
+politica,sim_drawing_templates.Users manage own templates,PERMISSIVE · ALL · {public} · using=(auth.uid() = user_id) · check=-
+politica,user_chart_config.user owns config,PERMISSIVE · ALL · {public} · using=(auth.uid() = user_id) · check=-
+politica,user_tool_config.user owns tool config,PERMISSIVE · ALL · {public} · using=(auth.uid() = user_id) · check=-
+identidad,sim_escrituras_v0.id,tipo=bigint · inicio=1 · incremento=1 · minimo=1 · maximo=9223372036854775807 · cache=1 · ciclo=false · dueño=ejecutor
+identidad,sim_escrituras_v0_marcas.id,tipo=bigint · inicio=1 · incremento=1 · minimo=1 · maximo=9223372036854775807 · cache=1 · ciclo=false · dueño=ejecutor
+identidad,sim_eventos.id,tipo=bigint · inicio=1 · incremento=1 · minimo=1 · maximo=9223372036854775807 · cache=1 · ciclo=false · dueño=ejecutor
+identidad,sim_recibos.id,tipo=bigint · inicio=1 · incremento=1 · minimo=1 · maximo=9223372036854775807 · cache=1 · ciclo=false · dueño=ejecutor
+funcion,auth.uid(),functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0
+funcion,"extensions.digest(bytea,text)",functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+funcion,extensions.gen_random_bytes(integer),functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+resumen,quien,"postgres · search_path=""\$user"", public, extensions"
+resumen,recuentos,14 tablas · 135 columnas · 4 identidades · 59 restricciones · 31 indices · 0 reglas
+FIN,s16c,consulta

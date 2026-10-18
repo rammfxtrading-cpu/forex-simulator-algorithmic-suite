@@ -1,0 +1,10 @@
+seccion,objeto,detalle
+rol,anon,"de la lista, authenticator es miembro"
+rol,authenticated,"de la lista, authenticator es miembro"
+rol,authenticator,de la lista
+rol,postgres,"dueño de las RPC, miembro de authenticator"
+rol,service_role,"de la lista, authenticator es miembro"
+rol,supabase_admin,miembro de authenticator
+rol,supabase_storage_admin,miembro de authenticator
+resumen,recuentos,7 roles · 0 ajustes fijados (solo nombres)
+FIN,s16g,consulta

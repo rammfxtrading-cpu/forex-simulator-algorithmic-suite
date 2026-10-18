@@ -8,6 +8,7 @@ import ErrorCarga from '../components/ErrorCarga'
 import { leerTodo, porColumnas } from '../lib/paginado'
 import { tradesDeUsuario } from '../lib/tradesEstables'
 import { sinLapidas } from '../lib/sim/legado'
+import { COLUMNAS_SESION } from '../lib/sim/columnas'
 import AppSidebar from '../components/AppSidebar'
 import { MC_MAX_SIMS, MC_MAX_TRADES, deriveParams, runMontecarlo } from '../lib/metrics/montecarlo'
 import Estrellas from '../components/Estrellas'
@@ -74,7 +75,7 @@ export default function Analytics() {
   async function loadData(userId) {
     const [rs, rt] = await Promise.all([
       // bloque D, punto 5: por clave (created_at, id); el orden de siempre, despues
-      leerTodo(() => supabase.from('sim_sessions').select('*', { count: 'exact' }).eq('user_id', userId),
+      leerTodo(() => supabase.from('sim_sessions').select(COLUMNAS_SESION, { count: 'exact' }).eq('user_id', userId),
         { ordena: porColumnas([['created_at', 'desc'], ['id', 'asc']]) }),
       // bloque E, punto 3: los trades en UNA sentencia (sql/sim-002)
       tradesDeUsuario(supabase, userId, { ordena: porColumnas([['opened_at', 'asc'], ['id', 'asc']]) }),

@@ -1,0 +1,100 @@
+Failed to run sql query: ERROR:  P0001: informe s16f (no es un fallo)
+s16f | search_path | "\$user", public, extensions
+s16f | {public,extensions} | funcion_ajena | auth.uid() | functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0
+s16f | {public,extensions} | funcion_ajena | extensions.digest(bytea,text) | functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+s16f | {public,extensions} | funcion_ajena | extensions.gen_random_bytes(integer) | functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+s16f | {public,extensions} | inventario | ajeno | n=0 md5=d41d8cd98f00b204e9800998ecf8427e
+s16f | {public,extensions} | inventario | columna | n=135 md5=9610bdfa6bce4ff3b95a3d4fafd743b0
+s16f | {public,extensions} | inventario | identidad | n=4 md5=472c2271705ab4440fba7bbe0c61ed04
+s16f | {public,extensions} | inventario | indice | n=31 md5=79cdc8554026972e2802601707a99bd1
+s16f | {public,extensions} | inventario | permiso | n=39 md5=6a3ba7f0b9e33c9e43e91aacd6eeaf3b
+s16f | {public,extensions} | inventario | politica | n=3 md5=ae70c7a2dca8be8f6aa6c6eae4d9754f
+s16f | {public,extensions} | inventario | regla | n=0 md5=d41d8cd98f00b204e9800998ecf8427e
+s16f | {public,extensions} | inventario | restriccion | n=59 md5=8c1bcac993492ca83039e80ec6168d01
+s16f | {public,extensions} | inventario | sobrecarga | n=4 md5=df3ad2088d0f399ac318d9e1346413b4
+s16f | {public,extensions} | inventario | tabla | n=14 md5=a9b56cc77c3da41b455e0250b489e0aa
+s16f | {} | funcion_ajena | auth.uid() | functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0
+s16f | {} | funcion_ajena | extensions.digest(bytea,text) | functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+s16f | {} | funcion_ajena | extensions.gen_random_bytes(integer) | functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0
+s16f | {} | inventario | ajeno | n=0 md5=d41d8cd98f00b204e9800998ecf8427e
+s16f | {} | inventario | columna | n=135 md5=9610bdfa6bce4ff3b95a3d4fafd743b0
+s16f | {} | inventario | identidad | n=4 md5=472c2271705ab4440fba7bbe0c61ed04
+s16f | {} | inventario | indice | n=31 md5=79cdc8554026972e2802601707a99bd1
+s16f | {} | inventario | permiso | n=39 md5=25fc63d1d9d6b85da7fc125969fc6144
+s16f | {} | inventario | politica | n=3 md5=ae70c7a2dca8be8f6aa6c6eae4d9754f
+s16f | {} | inventario | regla | n=0 md5=d41d8cd98f00b204e9800998ecf8427e
+s16f | {} | inventario | restriccion | n=59 md5=4f9d1a1af4e93723672d6bba7ae10829
+s16f | {} | inventario | sobrecarga | n=4 md5=df3ad2088d0f399ac318d9e1346413b4
+s16f | {} | inventario | tabla | n=14 md5=a9b56cc77c3da41b455e0250b489e0aa
+s16f | disparador | auth.users|fk:session_chart_config_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | auth.users|fk:session_chart_config_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | auth.users|fk:session_drawings_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_drawings · indice=auth.users_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | auth.users|fk:session_drawings_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_drawings · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | auth.users|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_drawing_templates · indice=auth.users_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | auth.users|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_drawing_templates · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | auth.users|fk:sim_sessions_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_sessions · indice=auth.users_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | auth.users|fk:sim_sessions_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | auth.users|fk:sim_trades_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_trades · indice=auth.users_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | auth.users|fk:sim_trades_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_trades · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | auth.users|fk:user_chart_config_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.user_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | auth.users|fk:user_chart_config_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.user_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | auth.users|fk:user_tool_config_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.user_tool_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | auth.users|fk:user_tool_config_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.user_tool_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.profiles|fk:sim_alumnos_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_alumnos · indice=public.profiles_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.profiles|fk:sim_alumnos_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_alumnos · indice=public.profiles_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.profiles|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_sessions · indice=public.profiles_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.profiles|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.profiles_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.session_chart_config|fk:session_chart_config_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.session_chart_config|fk:session_chart_config_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.session_drawings|fk:session_drawings_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.session_drawings|fk:session_drawings_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.session_drawings|fk:session_drawings_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.session_drawings|fk:session_drawings_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_alumnos|fk:sim_alumnos_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.profiles · indice=public.profiles_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_alumnos|fk:sim_alumnos_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.profiles · indice=public.profiles_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_eventos|fk:sim_eventos_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_eventos|fk:sim_eventos_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_eventos|fk:sim_trades_evento_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_trades · indice=public.sim_eventos_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.sim_eventos|fk:sim_trades_evento_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_trades · indice=public.sim_eventos_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_recibos|fk:sim_recibos_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_recibos|fk:sim_recibos_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_chart_config · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_chart_config · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_drawings · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_drawings · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_arrendamientos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.sim_sessions|fk:sim_arrendamientos_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_arrendamientos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:sim_eventos_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_eventos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.sim_sessions|fk:sim_eventos_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_eventos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:sim_recibos_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_recibos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.sim_sessions|fk:sim_recibos_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_recibos · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|"RI_FKey_setnull_del"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.sim_sessions|fk:sim_sessions_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_sessions|fk:sim_sessions_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.profiles · indice=public.profiles_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_sessions|fk:sim_sessions_user_id_perfil_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.profiles · indice=public.profiles_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.sim_trades · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O
+s16f | disparador | public.sim_sessions|fk:sim_trades_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.sim_trades · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_eventos · indice=public.sim_eventos_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_trades|fk:sim_trades_evento_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_eventos · indice=public.sim_eventos_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_trades|fk:sim_trades_session_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=public.sim_sessions · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.user_chart_config|fk:user_chart_config_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | disparador | public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O
+s16f | disparador | public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O
+s16f | ajuste | row_security: efectivo on=true · fijado en pg_db_role_setting: ninguno
+s16f | ajuste | session_replication_role: efectivo origin=true · fijado en pg_db_role_setting: ninguno
+FIN | s16f | consulta
+CONTEXT:  PL/pgSQL function inline_code_block line 451 at RAISE

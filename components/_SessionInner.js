@@ -43,6 +43,7 @@ import { fijaSaldoConfirmado } from '../lib/sim/cierre'
 import { useCola } from '../lib/sim/cola'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
+import { COLUMNAS_SESION } from '../lib/sim/columnas'
 import CloseModal from './CloseModal'
 import PositionOverlay from './PositionOverlay'
 import SessionTopBar from './SessionTopBar'
@@ -714,7 +715,7 @@ export default function SessionPage(){
     // nueva de challenge arranca el replay en la fecha donde quedó el challenge
     // anterior, porque resumeReal lo prioriza sobre date_from.
     clearCurrentTime()
-    supabase.from('sim_sessions').select('*').eq('id',id).maybeSingle().then(async ({data, error})=>{
+    supabase.from('sim_sessions').select(COLUMNAS_SESION).eq('id',id).maybeSingle().then(async ({data, error})=>{
       // C04 (4-oct-2026): antes, sin datos se quitaba el cargador y la pagina se
       // quedaba esperando velas para siempre. Ahora se dice que pasa.
       if(error){setErrorSesion('No se ha podido cargar la sesión. Comprueba tu conexión y vuelve a intentarlo.');setLoading(false);return}

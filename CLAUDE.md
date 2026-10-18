@@ -173,7 +173,11 @@ Si propones añadir tests automáticos para alguna pieza nueva, **avísame prime
 - Sin tests automáticos
 - Sin linter estricto
 
-Importante: el plugin `lightweight-charts-line-tools-core` **viene de un fork en GitHub**, no de npm oficial. Si necesitas modificarlo, hay que usar `patch-package` (ya está en devDependencies).
+Importante: los plugins `lightweight-charts-line-tools-*` **vienen de forks en GitHub** (`github:difurious/...`), no de npm oficial. `patch-package` **no** está instalado. Lo que se usa en la app:
+- `core`, `lines` y `long-short-position`: las copias de `vendor/<plugin>/dist/`, que `next.config.js` mete por alias de webpack (no las de `node_modules`);
+- `rectangle` y `path`: las de `node_modules` (el fork de GitHub);
+- `fib-retracement`: el fichero suelto `lightweight-charts-line-tools-fib-retracement.js` de la raíz del repo, importado por ruta relativa.
+Para modificar un plugin se toca su copia en `vendor/` (o el fichero de la raíz). Usar `patch-package` sería una dependencia nueva (regla 3.4).
 
 ---
 
