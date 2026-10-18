@@ -50,8 +50,9 @@ try {
     ver(`control: limpio ${despues ? 'con sim-004b aplicada' : 'antes de sim-004b'}: los dos requisitos coinciden («fijado en: ninguno»), s16 OK y sim-004b ${despues ? 'se reejecuta' : 'aplica'}`,
       rq.length === 2 && rq.every(l => l.endsWith('fijado en pg_db_role_setting: ninguno · coincide')) && veredicto(q) === 'OK' && aplica(d).ok, rq.join(' / '))
   }
+  // GR1-02: en la s16, calificada (= any (array[…])); en el DO de sim-004b, como estaba
   ver('control: ningun valor de pg_db_role_setting en la s16 ni en sim-004b (solo el nombre: split_part(…, \'=\', 1))',
-    [S16, S4B].every(t => (t.match(/pg_db_role_setting s /g) || []).length === 1 && /split_part\(c\.x, '=', 1\) in \('session_replication_role', 'row_security'\)/.test(t) && !/split_part\(c\.x, '=', 2\)/.test(t)))
+    [S16, S4B].every(t => (t.match(/pg_db_role_setting s /g) || []).length === 1 && /split_part\(c\.x, '=', 1\) (?:in \(|OPERATOR\(pg_catalog\.=\) any \(array\[)'session_replication_role', 'row_security'[\])]/.test(t) && !/split_part\(c\.x, '=', 2\)/.test(t)))
 
   titulo('cada mutante: s16 DIFIEREN (en su requisito) y sim-004b aborta nombrandolo')
   const ROLES = ['postgres', 'authenticator', 'authenticated', 'anon', 'service_role', 'pgx']
