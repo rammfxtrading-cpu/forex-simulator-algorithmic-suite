@@ -36,7 +36,8 @@ export async function resolve(spec, ctx, next) {
     // 2-018: la clave de servidor de la app. Bajo `env -i` no hay ninguna (el arnes lo exige) y la real daria el
     // error de «falta la clave» al cargar lib/authApi.js; el doble usa la REAL si hay alguna variable y, si no, una
     // ficticia (pruebas/clave-servidor-falsa.mjs). La real se prueba en aceptacion/srk01-clave-servidor.mjs
-    if (spec === './claveServidor.cjs' && fileURLToPath(ctx.parentURL) === REPO + 'lib/authApi.js') return { url: url('clave-servidor-falsa.mjs'), shortCircuit: true }
+    // (tambien desde las copias de lib/ que hacen los mutantes, p. ej. .pruebas/mutantes/servidor/lib/authApi.js)
+    if (spec === './claveServidor.cjs' && /\/lib\/authApi\.js$/.test(fileURLToPath(ctx.parentURL))) return { url: url('clave-servidor-falsa.mjs'), shortCircuit: true }
     if (spec === 'dukascopy-node') return { url: url('proveedor-falso.mjs'), shortCircuit: true }
     if (spec === 'react' || spec === 'react/jsx-runtime' || spec === 'react/jsx-dev-runtime') return { url: url('react-falso.mjs'), shortCircuit: true }
     if (NEXT[spec]) return { url: 'falso:' + NEXT[spec], shortCircuit: true }

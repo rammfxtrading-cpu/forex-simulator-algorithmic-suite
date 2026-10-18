@@ -105,7 +105,9 @@ titulo('3 · los scripts REALES: actualizar-diario.js (en seco) con el entorno d
 
 titulo('4 · los workflows: la nueva junto a la vieja, en el mismo env')
 for (const f of ['mercado-diario.yml', 'actualizar-velas.yml']) {
-  const texto = fuente('.github/workflows/' + f)
+  // contra el codigo auditado (historicas.sh) la copia no trae .github: sin el fichero, ROJO, no excepcion
+  let texto = ''
+  try { texto = fuente('.github/workflows/' + f) } catch { texto = '' }
   let wf = null
   try { wf = YAML.parse(texto) } catch { wf = null }
   const envs = [...Object.values(wf?.jobs ?? {}).map((j) => j.env ?? {}), ...Object.values(wf?.jobs ?? {}).flatMap((j) => (j.steps ?? []).map((p) => p.env ?? {}))]
