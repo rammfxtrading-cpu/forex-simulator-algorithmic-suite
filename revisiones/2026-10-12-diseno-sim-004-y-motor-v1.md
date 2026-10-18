@@ -351,13 +351,13 @@ Cada etapa se puede desplegar sola y la puede verificar Astra por separado.
 |---|---|---|---|---|
 | 0 | Integrar `main` en `auditoria-simulador` | los 39 commits de `main` (mercado diario `.json.gz`, workflow). Conflictos no medidos | tanda entera; diff de `lib/mercado` y `pages/api/candles.js` contra `main` | no |
 | 1 | Cliente: lápidas y legado entendidos (d1, d2 y d3 para legado, d6 parcial) + endpoints `/api/sim/*` desplegados **apagados** (503) | sin cambio de esquema; no hay lápidas ni legado todavía, así que es inocuo | pruebas de cliente con el doble; URL de `/api/sim/*` → 503; un alumno no ve diferencia | no |
-| 2 | Publicador de mercado v1 (e.2) y lista de huecos aceptados | bucket privado `mercado/v1`, manifiestos y trozos; el diario no cambia | relectura y sha de cada trozo publicado; manifiesto contra el `.json.gz` día a día; tamaño frente a Storage (≈ 60 MB, spec § 7.3; el bucket está en ≈ 745 MB, mercado diario 11-oct) | **a confirmar**: cabe hoy en 1 GB, pero con poco margen |
+| 2 | Publicador de mercado v1 (e.2) y lista de huecos aceptados | bucket privado `mercado/v1`, manifiestos y trozos; el diario no cambia | relectura y sha de cada trozo publicado; manifiesto contra el `.json.gz` día a día; tamaño frente a Storage (≈ 60 MB, spec § 7.3; el bucket está en ≈ 745 MB, mercado diario 11-oct) | **ya no aplica:** Supabase está en Pro desde el 13-oct (p) |
 | 3 | `lib/servidor/` + endpoints completos, probados en el ensayo (e.4) | código sin desplegar o desplegado apagado | tanda: endpoint → RPC real en el montaje literal; A18–A26 por la URL | no |
 | 4 | **sim-004 ensayado** (c) | `sql/sim-004` escrito, sin aplicar | montaje literal + sim-003 + sim-004, dos veces; A25; cliente viejo durante el `LOCK`; s08 sobre el montaje | no |
 | 5 | **Corte en producción** (c.7: mantenimiento → sim-004 → s08 → encender v1) | sim-004 aplicado, cliente v1 (d4–d8), endpoints encendidos | informe de sim-004 y s08 literales; una sesión v1 de prueba (alumno de pruebas) de punta a punta; ningún alumno con escrituras rechazadas inesperadas | **sí: spec § 12.7, «la v1 no se habilita sin Supabase Pro»** |
 | 6 | Retirada de `challenge/create` y `challenge/advance`; wipe por `sim_borrar_alumno` | código | URL llamadas directamente (§ 7.0): ninguna escribe | sí (va con v1) |
 
-**Pro, según lo que consta en el repo:**
+**Pro, según lo que consta en el repo** (**corregido 13-oct, p:** Supabase está en Pro desde el 13-oct, 8 GB de base y 100 GB de Storage; lo que sigue es el razonamiento previo):
 - base de 500 MB en el plan gratuito frente a 8 GB en Pro (diseño-persistencia § 9.3, consultado el 7-oct);
 - Storage: 1 GB frente a 100 GB (spec § 7.3);
 - la condición expresa de spec § 12.7.
@@ -977,7 +977,7 @@ Resultado exigido: **s10 los detecta**, y si el corte se lanza igual, **aborta**
    - El caso S4R2-01 necesita una **primera** escritura confirmada (el UPDATE), y esa sí queda registrada.
    - **No veo un caso que pase,** pero esto es lectura: es para Astra y para el ensayo de la etapa 4 (g).
 6. **Cascadas.** Un DELETE de sesión que arrastra sus trades dispara el registro también en `sim_trades`, con la misma cabecera y el mismo rol. Es correcto: cuenta como escritura de ese cliente.
-7. **Volumen.** El cliente de hoy guarda el progreso periódicamente (`usePairData.js:25`) y al pausar (`_SessionInner.js:1104`). Cada guardado es una fila del registro. Con 5 alumnos es poco, pero hay que medirlo en la etapa 1 (filas/día) frente a la base gratuita, antes de Pro. Se borra con el corte.
+7. **Volumen.** El cliente de hoy guarda el progreso periódicamente (`usePairData.js:25`) y al pausar (`_SessionInner.js:1104`). Cada guardado es una fila del registro. Con 5 alumnos es poco, pero hay que medirlo en la etapa 1 (filas/día) frente a la base gratuita, antes de Pro. Se borra con el corte. (**Corregido 13-oct, p:** Supabase está en Pro desde el 13-oct, 8 GB de base.)
 8. **Permisos de la tabla de registro.** RLS sin políticas y sin grants:
    - un alumno no puede leer quién escribió ni borrar su rastro;
    - `service_role` tampoco (bypassrls no basta sin grant);
@@ -2437,3 +2437,818 @@ Están en `pruebas/astra-intercalados.mjs` y `pruebas/astra-pg.mjs`. **Las condi
 **Runbook:**
 - **s11 y s12** (pasos previos) **y la guarda de la preparatoria** confirman RLS activa en las cuatro tablas.
 - **Si s11 o s12 dicen `rls=false` o `NO EXISTE` en alguna,** se para y decide el CTO: sin RLS, las políticas nuevas existirían sin aplicarse.
+
+---
+
+## p · etapa 2: el publicador del mercado v1 (CTO, 13-oct)
+
+**Decisiones del CTO (13-oct, noche):** plan aprobado; un solo bucket privado `mercado` con prefijo `v1/`; manifiestos con nombre inmutable y **un único puntero mutable que se escribe el último**; los días cortos aceptados **dentro del manifiesto**; **Q1 = (a):** un día con un hueco de más de 15 minutos sin revisar **se retiene** y no se publica (hasta entonces, `fin_de_datos`). Supabase está en **Pro desde el 13-oct** (8 GB de base, 100 GB de Storage): corrige § f («a confirmar», «cabe hoy en 1 GB»), k.3.7 y la estimación del registro (`revisiones-suite/2026-10-14-sim-etapa1-registro-retencion-y-diario.md` § 1); la purga del registro sigue después de la puerta y de su segunda s10 limpia. **Ninguna política sobre `storage.objects` ni grant de Storage sin el sí explícito del CTO** (p.7).
+
+Rama `etapa2-simulador`, desde `main` `3fa2b3f`. La etapa 2 no depende de la puerta.
+
+### p.1 El trozo v2 (`9709d3d`)
+
+`lib/motor/binario.mjs`, versión 2: cabecera de 20 bytes (`h` u8 ≤ 64 y un reservado) y, después de las velas, 6 bytes por hueco aceptado: minuto del día (su primer minuto ausente), minutos (16..2.879, y minuto + minutos ≤ 2.879: como mucho hasta la última vela posible del día siguiente), motivo (0 festivo, 1 cambio_de_sesion, 2 corte_del_proveedor) y un 0. Ordenados, sin solaparse, sin tapar ninguna vela del trozo; codificar y decodificar validan lo mismo (C6-06). **Así se cierra i.4.1 / S4-03:** los huecos aceptados viven en el trozo y el manifiesto los fija por el sha del trozo; no hay una segunda lista mutable. La versión 1 no se publicó nunca y ya no se lee.
+
+**Ubicación canónica de un hueco** (S4-11): el trozo del día de su **primer minuto ausente**, también si cruza la medianoche. **Es definitivo** cuando se conoce la vela siguiente **y el día de esa vela está completo** (p.4 c).
+
+**Medido en la copia local verificada** (`~/copias-suite/2026-10-05-mercado`, 9 pares, 2024–2026; solo velas): **139 huecos interiores de más de 15 minutos** (de 10 a 25 por par), **37 cruzan la medianoche**, **ninguno pasa de 2.879 minutos**, **ningún precio fuera de la rejilla** de ticks, ningún día sin mercado con velas. (La spec § 14 cita 98 de 31.859 con la medición del 9-oct; la diferencia sale de la definición: aquí cuentan los interiores con el horario de Nueva York y sin cerrados. Lo que manda es la lista del informe, p.5.)
+
+### p.2 El manifiesto@2
+
+```
+{ esquema: 'mercado-manifiesto@2', par, version, digitos,
+  anterior: <huella del manifiesto anterior> | null,
+  dias: [{ dia, sha256, nombre, velas, primera, ultima, availableAt }],
+  cerrados: ['AAAA-MM-DD', …],
+  cortos_aceptados: [{ dia, velas, motivo }],
+  aceptaciones: { lineas, sha256 },
+  huella }
+```
+
+- **Sin `huecos_aceptados`:** están en los trozos (p.1). `creaManifiesto` comprueba que **cada hueco de cada trozo existe tal cual** en las velas de los trozos (mismo inicio, mismos minutos, interior), salvo el que empieza tras la última vela del último día: ese se comprueba en la versión siguiente (p.3) y en la fuente, que solo acepta un hueco si coincide en inicio y minutos.
+- **`frontera`** = el último día con trozo. Entre el primer día y la frontera, **todo día con mercado tiene trozo** (cobertura contigua) y ningún día sin mercado lo tiene.
+- **`cortos_aceptados`:** los de `lib/mercado/dias-aceptados.mjs` del par (CTO 6-oct) **y los días de mercado reducido** (`FESTIVOS_MMDD`: 25-dic, 1-ene; CTO 6-oct: «no se les exige el umbral») que no llegan al umbral, con sus velas y el motivo «mercado reducido». Es la misma regla del actualizador, escrita en el manifiesto para que la fuente no tenga otra (C6-04: un día corto solo vale si el manifiesto lo declara). **Para el CTO:** si no quiere que los festivos entren solos, se quitan y quedan retenidos como cualquier día corto.
+- **`cerrados`:** `CIERRES_CONFIRMADOS` de `lib/mercado/calidad.mjs` dentro del rango (hoy, ninguno).
+- **`aceptaciones`:** el ancla del fichero de aceptaciones (p.6) con el que se publicó: número de líneas y sha256 de esos bytes.
+- **`version`** = `v1.<k>`, con k = la de `anterior` + 1 (la raíz, `v1.1`). La sesión fija `PAR@v1.<k>:huella` (A26).
+- **`huella`** = sha256 del contenido canónico, todo menos `huella`.
+
+### p.3 La continuación (decisión 2 de h; S4-03)
+
+`esContinuacion(anterior, nuevo)` → `null` o el motivo del **incidente**:
+- mismo `par` y `digitos`; `nuevo.anterior` = `anterior.huella` cuando son consecutivos (para una cadena se comprueba cada eslabón);
+- **prefijo idéntico:** las entradas de `dias` de `anterior` son, una a una e idénticas, las primeras de `nuevo`;
+- los días nuevos, **estrictamente después de la frontera** de `anterior`;
+- `cerrados` y `cortos_aceptados` hasta esa frontera, **idénticos**; los nuevos, después;
+- el ancla de aceptaciones **crece**: `nuevo.aceptaciones.lineas` ≥ las de `anterior` (que el prefijo sea el mismo lo comprueba el publicador, que tiene el fichero: p.6).
+
+**El estado de la sesión** (S4-03): `versiones.mercado[par]` sigue siendo la **raíz** fijada al crear; `versiones.mercado_efectivo[par]`, si existe, la **versión efectiva**. La fuente acepta la efectiva (y la raíz mientras no haya efectiva). `continuaVersiones(versiones, par, { raiz, actual, nuevo })` comprueba la raíz y la continuación desde la efectiva actual y devuelve las versiones nuevas; quién la llama (el endpoint, dentro del sobre, con el recibo) es de la etapa 3. Sin efectiva, el estado serializado es el de siempre.
+
+### p.4 Qué día se publica
+
+El publicador recorre cada par **por calendario, desde el día siguiente a la frontera** (o el primer día de datos) y **se para en el primer día con mercado que no se pueda publicar**. Nada después de un día retenido se publica: publicarlo y luego el retenido sería una adición interior (incidente). Un día se publica si:
+1. **Completo** con la regla del actualizador (`estadoDia` de `calidad.mjs`): umbral de laborable, domingo y mercado reducido con velas en su última hora, o en la lista de días cortos aceptados del par.
+2. **Codificable:** precios en la rejilla, OHLC y volumen válidos (los de `binario.codifica`).
+3. **Hueco final definitivo:** existe una vela posterior a su última vela, y el día de esa vela está completo. (Así el viernes espera al domingo: un día de retraso. Es lo que hace definitivo un hueco que cruza la medianoche.)
+4. **Todos sus huecos de más de 15 minutos** (los que empiezan en él) **están aceptados** en el fichero de aceptaciones, con el mismo inicio y los mismos minutos.
+
+Un día sin mercado (sábado) o cerrado no lleva trozo. **El día anterior a la frontera vigente nunca se republica:** el publicador regenera desde el `.json.gz` los trozos ya publicados y exige que su sha sea el del manifiesto vigente. **Si uno cambia, es incidente:** ese par no publica nada y el informe lo dice (h, nota 3).
+
+### p.5 El informe de huecos (Q1)
+
+Cada pasada (también en simulacro) escribe un **informe legible, sin datos de alumnos** (solo velas): por par, cada hueco interior de más de 15 minutos de **todo** el rango de datos —no solo hasta el primer retenido, para revisarlos de una vez— con:
+- par, día, minuto de inicio (UTC y Nueva York), duración y día de la semana;
+- **estado:** aceptado (con su línea del fichero), pendiente, o aceptación que no coincide (con los minutos reales);
+- **vecinos:** la vela anterior y la siguiente (hora y precio), y **los otros pares con un hueco que se solapa** (si todos lo tienen, apunta a sesión o festivo; si es uno solo, al proveedor). El motivo lo pone el CTO: el informe no lo adivina.
+
+Y por par: frontera publicada, días que se publicarían, primer día retenido y por qué, incidentes.
+
+### p.6 El fichero de aceptaciones (Q1)
+
+`lib/mercado/huecos-aceptados.jsonl`, **de solo añadir**, una línea JSON por registro:
+- `{"tipo":"aceptacion","par","inicio":"AAAA-MM-DDTHH:MMZ","minutos","motivo","fecha":"AAAA-MM-DD","nota"}`: la decide el CTO; `motivo` de la lista de tres; `fecha`, el día de la aceptación; `nota`, el porqué en texto.
+- `{"tipo":"publicacion","par","manifiesto","lineas","prefijo","trozos":[{"inicio","dia","sha256"}]}`: se añade **después** de publicar (el publicador la escribe en local con `--anota`; entra por commit): qué manifiesto usó estas aceptaciones, el ancla (`lineas`, `prefijo` = sha256 de los primeros `lineas` renglones) y el **sha del trozo resultante** de cada aceptación.
+
+**Inmutable después de publicar,** por dos vías:
+- **En el repositorio:** cada registro `publicacion` lleva el sha de los renglones anteriores. Borrar o editar cualquier aceptación ya publicada cambia ese prefijo: `validaAceptaciones` lo rechaza y la tanda queda en rojo (prueba permanente sobre el fichero real).
+- **En Storage:** el manifiesto publicado lleva el ancla. El publicador **no publica** si el fichero actual no empieza por los renglones exactos del ancla del manifiesto vigente de cada par (y el verificador lo comprueba).
+
+Antes de publicar, una aceptación se corrige con otra línea (la última del mismo `par` e `inicio` manda); después, ya no.
+
+### p.7 Storage
+
+**Bucket `mercado`, privado.** Rutas:
+- trozos: `v1/<PAR>/<AAAA>/<MM>/<DD>.<sha>.bin.br` (brotli de `zlib`; `sha` del binario sin comprimir);
+- manifiestos: `v1/<PAR>/manifiestos/v1.<k>.<huella>.json`;
+- **el puntero:** `v1/actual.json` = `{ esquema: 'mercado-puntero@1', pares: { PAR: { version, huella, ruta } } }`, el único objeto que se reescribe.
+
+**Orden:** cerrojo (`v1/_cerrojo.json`, subida sin `upsert`, como `_cerrojos/` de `forex-data`) → trozos nuevos sin `upsert` (si ya existe, se descarga y se comprueba el sha: reintentos idempotentes) → **relectura y sha de cada trozo** → manifiestos sin `upsert` → relectura → **el puntero, el último** → relectura del puntero → se suelta el cerrojo. Si algo falla antes del puntero, el puntero anterior sigue valiendo y lo subido queda huérfano e inofensivo (nombres con su sha). Un lector **nunca** lee `actual.json` salvo para crear una sesión (la raíz) o resolver una continuación; después, solo nombres inmutables.
+
+**Sin políticas.** Lo usa solo `service_role` (publicador, verificador y, en la etapa 3, los endpoints), que no pasa por la RLS. Sin políticas sobre `storage.objects` para `mercado`, `authenticated` y `anon` no leen nada. **La migración no crea ni cambia políticas ni grants**; aborta si alguna política existente de `storage.objects` podría aplicarse a `mercado` (p.8).
+
+### p.8 SQL nuevo (preparado, sin aplicar)
+
+- **`sql/mercado-001-bucket.sql`:** crea el bucket privado `mercado` (`file_size_limit` 5 MB; sin tipos MIME). Idempotente: si existe con la misma forma, no toca nada; si existe con otra (público, otro límite), **aborta**. Aborta también si alguna política de `storage.objects` no está **restringida a un `bucket_id` concreto distinto de `mercado`**: esa podría abrir el bucket nuevo, y la decide el CTO. **⚠️ Sustituido en p.12.1** (Astra E2-01: la guarda textual era evadible): lista blanca que falla cerrada y sonda empírica. Patrón del editor de Supabase: `DO` + informe en texto + `raise exception`. Ensayada en el PostgreSQL local (dos veces, y con cada guarda en rojo).
+- **`sql/consultas/s14-mercado-storage.sql`:** solo lectura. Los buckets (id, público, límite), las políticas de `storage.objects` con su veredicto (restringida a otro bucket / a revisar) y, del bucket `mercado`: objetos, bytes, el puntero y los manifiestos por par.
+
+### p.9 Scripts, verificador y workflow
+
+- **`scripts/mercado-v1-publica.mjs`:** por defecto **simulacro**: lee la copia local (`--base`) y no escribe nada en ningún sitio salvo el informe. Leer los `.json.gz` del bucket necesita `--descarga-autorizada` (regla del CTO del 5-oct: hasta el 2-nov no se descarga un anual sin su sí). Publicar necesita `--publica` y las claves en el entorno (lo lanza Ramón o el CTO).
+- **`scripts/mercado-v1-verifica.mjs`:** solo lectura. Por par: el manifiesto del puntero; cada trozo descargado, descomprimido, con su sha (nombre = manifiesto = contenido) y decodificado; la cadena `anterior` y la continuación; **el manifiesto contra el `.json.gz` (o la copia local) día a día**; los tamaños contra el listado de Storage; ningún hueco de más de 15 minutos sin aceptar; y el ancla de aceptaciones.
+- **Workflow:** después, cuando la publicación manual esté verificada.
+
+### p.10 Lo que no cambia
+
+El diario (`forex-data`, `/api/candles`, `actualizar-diario`) no se toca. Nada en uso importa el motor ni el mercado v1 hasta la etapa 3.
+
+### p.11 Autorrevisión adversaria de la etapa 2 (`9709d3d..ff461d3`)
+
+**Corregido durante la revisión:**
+- **El cerrojo subido sin respuesta** (BF-03 del diario): ahora se mira y solo se sigue si es el nuestro (`aacf6ab`).
+- **La inmutabilidad en el repositorio depende de anotar la publicación** (`--anota` y commit): sin el registro `publicacion`, la prueba permanente no ve si se edita una aceptación publicada (solo lo ve el ancla de Storage). El verificador lo señala como problema hasta que se anota (`ff461d3`).
+
+**Lo que queda, con su consecuencia:**
+1. **El hueco final es definitivo si el día de la vela siguiente no gana velas al principio.** El actualizador solo repide días pendientes (y domingos), así que no debería pasar; si pasa, no es silencioso: el publicador regenera ese trozo con otro sha (incidente) y la fuente detiene (el hueco ya no coincide).
+2. **El ancla cubre el fichero entero:** también fija los bytes de aceptaciones aún no publicadas (de otros pares o días). Corregirlas antes de publicar se hace **añadiendo** una línea (la última manda), nunca editando.
+3. **Un hueco con minuto + minutos > 2.879** sale como «no_codificable» y no como «hueco_fuera_de_formato» (el mensaje es menos claro; el día se retiene igual). Medido: ninguno pasa de 1.445 minutos.
+4. **La primera publicación** sube unos 2.200 trozos uno a uno, con subida y relectura: no he medido cuánto tarda. Es manual; el workflow viene después.
+5. **El cerrojo de `mercado` no caduca** (como el de `forex-data`) y no hay todavía un `liberar-cerrojo` para él: si un publicador muere, hoy se libera desde el panel. Pendiente si el CTO lo quiere. **→ Hecho en p.12.4.**
+6. **No comprobado:** que el editor de Supabase deje a `postgres` insertar en `storage.buckets` (p.8).
+7. **La guarda de políticas es conservadora y textual** (literal `bucket_id = '<x>'`, sin `OR`, `<>`, `!=`, `NOT` ni `ANY`): una política correcta escrita de otra forma aborta y la decide el CTO; no he encontrado una abierta que pase. **→ Falso: Astra encontró dos (`IS FALSE` y `CASE`), E2-01; ver p.12.1.**
+8. **Etapas siguientes:** la RPC y sim-004b tienen que admitir `versiones.mercado_efectivo` en el estado (etapa 3–4); y los endpoints leerán `mercado` con `service_role` (etapa 3).
+
+**Para el CTO:**
+- **Los festivos en `cortos_aceptados`** (p.2): entran solos por la regla del 6-oct. Si no los quiere así, se quitan y quedan retenidos como cualquier día corto. **→ Decidido el 14-oct: solo con su línea `corto` (p.12.5).**
+- **La lista real de huecos** (spec § 14: «sobre los datos actuales»): el informe de `revisiones-suite/2026-10-14-mercado-v1-informe-huecos.md` es **indicativo** (2024–2025 de la copia del 5-oct y 2026 del arranque del 10-oct): **130 huecos de más de 15 minutos**, todos pendientes; los 9 pares se retienen el 9-oct-2024 por el mismo hueco de 66 minutos a las 23:05 UTC. La definitiva necesita datos actuales: o `--descarga-autorizada` (los 27 anuales de `forex-data`, unos 117 MB; regla del 5-oct: con su sí) o una copia local nueva.
+
+### p.12 Etapa 2, ronda 2 (Astra «no» a `99df01e`; CTO 14-oct)
+
+Astra: `revisiones-suite/2026-10-14-astra-mercado-v1-etapa2.md` (E2-01 alto; E2-02, E2-03, E2-04 medios; E2-05 bajo). El CTO cierra los cinco y decide sobre mi parada (datos 2024–2025, festivos, `liberar-cerrojo`). Commits: `e52571d` E2-01 · `74ae205` E2-02..E2-05 · `b5c247e` `liberar-cerrojo` · `b5340ce` festivos · `ab42e1e` datos (descarga y confirmación de la copia) · este, p.12. Sus contrapruebas Node quedan permanentes en `pruebas/astra-e2-contrapruebas.mjs` (condiciones de sus oráculos intactas; cambian disparadores y controles, explicado en su cabecera); sus dos políticas SQL, en `pruebas/mercado-001-bucket.mjs`.
+
+**p.12.1 E2-01 — mercado-001 y s14: lista blanca que falla cerrada + sonda.**
+- **Capa 1, lista blanca.** Una política de `storage.objects` solo es RECONOCIDA si cada expresión suya, tal como la guarda PostgreSQL (`pg_policies`), es exactamente `(bucket_id = '<b>'::text)` o una conjunción de nivel superior `((A) AND (B) [AND …])` con algún término exactamente así; `<b>` sin comillas dentro y distinto de `mercado`, y la expresión no nombra `'mercado'`. La expresión que el comando exige tiene que existir (USING en SELECT/UPDATE/DELETE/ALL; WITH CHECK en INSERT). Lo demás —`IS FALSE`, `CASE`, `OR`, `NOT`, funciones o subconsultas alrededor, la comparación al revés, `ANY`, `COLLATE`, una conjunción anidada, sin expresión, también las RESTRICTIVE— es NO RECONOCIDA y la migración aborta. El análisis es estructural, no por palabras: un recorrido carácter a carácter (profundidad de paréntesis fuera de comillas) da el «esqueleto» del nivel superior, que tiene que ser `(() AND () …)`. Es el **mismo bloque de texto** en `sql/mercado-001-bucket.sql` y en `sql/consultas/s14-mercado-storage.sql` (la prueba lo compara byte a byte).
+- **Capa 2, sonda.** Con el bucket ya insertado, dentro de la transacción: un centinela inventado en `mercado`; como `anon` y como `authenticated` (`SET LOCAL ROLE` + `request.jwt.claims` con un `sub` aleatorio, dueño del centinela): un SELECT del centinela y un UPDATE y un DELETE **a ciegas** de la tabla (sin WHERE: con WHERE, PostgreSQL exige además las políticas SELECT y una UPDATE/DELETE abierta no se vería; **medido** en el PostgreSQL local), cada uno en su subtransacción deshecha; luego, como el rol de partida, si el centinela fue leído, marcado o borrado. Alcance → aborta. Un error que no sea la falta de permiso sobre `storage.objects`/`storage` → aborta «sonda no concluyente» (p. ej. un disparador por sentencia en DELETE). Se comprueba que el centinela no queda y que el rol vuelve. Sin políticas ni grants.
+- **s14** enseña, por política, orden, PERMISSIVE/RESTRICTIVE, roles, veredicto («reconocida: solo `<b>`» / «NO RECONOCIDA: mercado-001 abortaría») y el **texto** de su USING y su WITH CHECK (UUID y correos enmascarados); además, los disparadores de `storage.objects` y las constancias de `v1/_liberados/`.
+- **Pruebas:** 24 negativos permanentes (los dos de Astra, sus variantes en WITH CHECK —INSERT, UPDATE con OR, ALL con NOT—, OR, NOT y otras formas) abortan y s14 los marca NO RECONOCIDA; 9 positivos aplican; con la capa 1 anulada por un mutante, la sonda sola aborta ante 6 políticas abiertas (también UPDATE, DELETE y las del dueño); el disparador por sentencia da «no concluyente»; como el `postgres` no superusuario de s06 aplica. Contra `99df01e`: 49 en rojo.
+
+**p.12.2 E2-02 — incierto desde el intento del puntero.** `publica` marca INCIERTO **antes** de subir `v1/actual.json` y solo lo quita al confirmar la relectura exacta; cualquier excepción en ese tramo (la subida, un 503 al releer tras un PUT correcto, una relectura nula o distinta) conserva el cerrojo y sale como error propio con `incierto`, el id del cerrojo y la instrucción de reconciliar. La orden no anota (aunque se pida `--anota`), enseña el puntero esperado y los registros `publicacion` pendientes para anotarlos por commit **solo si** el verificador muestra que el puntero es el nuevo, y acaba en código 3.
+
+**p.12.3 E2-03 — el dueño del cerrojo es un UUID por ejecución.** Ficha `{ id, dueno, desde }`: `id` = `randomUUID()` (la orden lo genera y lo enseña antes de publicar); descripción y fecha, metadatos. Es nuestro solo si los bytes, con nuestro id, son los nuestros: al adquirirlo sin respuesta, al soltarlo. Además (autorrevisión): soltar el cerrojo ya no puede tapar el resultado; si releerlo o borrarlo falla tras publicar, `cerrojoSuelto: false` (la orden: código 3 y cómo liberarlo); tras un fallo, sale el error original con el aviso de que el cerrojo sigue.
+
+**p.12.4 E2-04 y `liberar-cerrojo`.**
+- **E2-04:** un JSON ilegible de Storage es `json_ilegible` (puntero, manifiesto) sin el mensaje del parser; un manifiesto o puntero con forma ajena, `manifiesto_invalido`/`puntero_invalido` sin repetir su contenido; lo que hace el almacén, envuelto (`enAlmacen`: «clase código»); `arrayBuffer()` dentro del saneador de las dependencias reales; los errores de `lib/mercado/` son propios (`errorPropio`); en la frontera del log (las órdenes y el verificador) todo pasa por `texto()`. La ficha de un cerrojo ajeno se enseña solo con los campos de forma esperada (UUID, descripción `[\w .:@-]{1,80}`, fecha ISO).
+- **`scripts/mercado-v1-liberar-cerrojo.mjs`** (lógica en `lib/mercado/liberar-v1.mjs`): **sin caducidad** (BD-01). Simulacro por defecto: enseña id, dueño, fecha, antigüedad y el sha256 de la ficha. Libera solo con `--confirmo <clave>` (el id; si la ficha no tiene un id válido, 16 hex de su sha256). Antes de borrar, relee (si cambió, no borra) y deja **constancia** en `v1/_liberados/<cuando>.<clave>.json` (sin upsert; si no puede, no borra); después comprueba que ya no está. Con `CI`/`GITHUB_ACTIONS`, nada. Escrito en rojo primero.
+
+**p.12.5 E2-05 y festivos.**
+- **E2-05:** `esContinuacion` exige el mismo sha256 del ancla si el número de líneas no cambia. Documentado (en `esContinuacion` y `continuaVersiones`) que la continuación **no acredita por sí sola** el fichero de aceptaciones: con un ancla que crece solo ve que crece; el prefijo lo comprueban publicador y verificador contra el fichero.
+- **Festivos (decisión 2):** registro nuevo `{ tipo: 'corto', par, dia, velas, motivo, fecha, nota }` en `lib/mercado/huecos-aceptados.jsonl`; solo 25-dic y 1-ene; `motivo` = `mercado reducido (regla de Ramón del 6-oct)` exacto; `velas` 1..1.439 (mínimo exigido). El planificador retiene «festivo_sin_aceptar» un festivo corto sin su línea (o con menos velas) y lleva al manifiesto las velas y el motivo de la línea. Corregir con otra línea el corto de un festivo ya publicado da incidente (los cortos hasta la frontera no cambian). `estadoDia` (compartido con el diario) no se toca. **Escritas ya las 45** (5 festivos × 9 pares, velas medidas en la base del 14-oct).
+
+**p.12.6 Datos (decisión 1).** `scripts/mercado-v1-confirma-copia.mjs` (lógica `lib/mercado/copia-v1.mjs`): solo `info()` (18 del `.json.gz`, que no existe, y 18 del `.json`), ninguna descarga. Resultado (14-oct 00:20): los 18 anuales 2024–2025 miden lo mismo en Storage, en el listado del 4-oct y en la copia del 5-oct, con `lastModified` idéntico al milisegundo y la copia cuadrando con su `.sha256`. Base de trabajo: `~/copias-suite/2026-10-14-mercado-v1-base-b52730` (2024–2025 de la copia, 2026 de la descarga del 13-oct; 27 sha256 verificados). La descarga (`scripts/mercado-v1-descarga.mjs`) sigue bajando solo `.json.gz`: para 2024–2025 no sirve (son `.json`) y se usa la copia confirmada.
+
+**p.12.7 Autorrevisión adversaria (lo que queda, con su consecuencia).**
+1. ~~La sonda a ciegas toca, y deshace, las filas que una política abra a `anon`/`authenticated` […]. Nada persiste (subtransacción deshecha). Si en producción hay una política así, la capa 1 aborta antes; s14 la enseña.~~ **Corregido el 14-oct (Astra E2R2-02, CTO): era falso.** La capa 1 admite políticas de escritura de otros buckets, y lo que hacen sus disparadores no siempre se deshace: Astra midió una secuencia que avanzó de `1|f` a `4|t` con la fila restaurada. El rollback deshace los cambios transaccionales de filas, no los efectos no transaccionales del código que se ejecuta. Lo que queda ahora, en p.13.2.
+2. **Un disparador por sentencia en DELETE** (Supabase ha añadido en versiones recientes uno que prohíbe el DELETE directo; **no comprobado** si este proyecto lo tiene) dejaría la sonda «no concluyente» y la migración abortaría siempre. s14 lista los disparadores: mirarlo antes.
+3. **La sonda no prueba INSERT** (el CTO pidió SELECT/UPDATE/DELETE); las políticas INSERT las cubre la capa 1.
+4. **Fuera de la sonda:** funciones del esquema `storage` con SECURITY DEFINER que lean `objects` (p. ej. las de listado), y operadores `=` redefinidos en el `search_path`. Ninguna está comprobada; la capa 1 no las ve. **Lo segundo lo demostró Astra (E2R2-01) y queda cerrado en p.13.1.**
+5. **La capa 1 es estricta a propósito:** una RESTRICTIVE sin bucket o una política correcta escrita de otra forma aborta; según s04 (10-oct) producción no tiene políticas en `storage.objects`, pero eso hay que volver a verlo con s14.
+6. **Un festivo en viernes no sale nunca «completo»** con la regla del domingo de `estadoDia` (el viernes cierra a las 22:00 UTC en invierno; la regla pide velas desde las 23:00 UTC): el **25-dic-2026 y el 1-ene-2027 son viernes**. Preexistente, no lo toco (lo comparte el diario): lo decide el CTO antes de diciembre. **Cerrado el 14-oct (CTO), en el commit siguiente a `3d1c0a9`:** el mercado reducido en viernes pide velas en su última hora con mercado según el horario (21:00 UTC en invierno), no desde las 23:00; de domingo a jueves esa hora es la de las 23:00 y nada cambia (`pruebas/estadodia-festivo-viernes.mjs`: regresión de todos los días de 2024 a 2028 contra la regla anterior, el diario y el publicador; en la base real, 9.140 días sin ningún cambio). **Sigue abierto:** un festivo en viernes cuyas velas acaben antes del cierre (o sin ninguna: es probable en un 1-ene en viernes, si sigue el patrón medido de lunes a jueves, sin velas hasta la reapertura de las 22:00 UTC, que en viernes no hay; no está medido) sigue pendiente; solo lo completa la lista de días cortos (`dias-aceptados.mjs`) o un cierre confirmado, que decide el CTO con el dato. **CTO 14-oct: se decide en diciembre con el dato real; fecha de revisión: 20-dic-2026** (antes del 25-dic-2026 y del 1-ene-2027, los dos viernes).
+7. **Los detalles del planificador** (`incidente`, `retenido.detalle`) llevan mensajes del motor sobre la copia local verificada; no son errores ajenos y no pasan por `texto()`.
+8. **Si el proceso muere entre el PUT del puntero y su relectura**, no hay mensaje: queda el cerrojo, y `liberar-cerrojo` pide comprobar antes; el verificador dice qué puntero hay.
+
+### p.13 · Etapa 2, ronda 3: E2R2-01..E2R2-05 (14-oct)
+
+Astra dijo NO a `cd99f06` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-r2.md`). El CTO cierra los cinco hallazgos. Sus contrapruebas son permanentes: las Node en `pruebas/astra-e2r2-contrapruebas.mjs` y las SQL en `pruebas/mercado-001-bucket.mjs`, secciones 6 y 7.
+
+**p.13.1 · E2R2-01: la identidad del operador.** El texto `bucket_id = 'x'::text` no dice qué operador ejecuta PostgreSQL: con `search_path=public,pg_catalog`, un `public.=(text,text)` se escribe igual (medido: `pg_get_expr` lo pone sin calificar). Ahora la lista blanca solo da por reconocida una política si se acredita en tres sitios, y falla cerrado ante lo demás:
+- **Contexto (`ctx`):**
+  - `mercado-001` fija `search_path = pg_catalog, pg_temp` antes de inspeccionar, para que `pg_get_expr` califique cualquier operador ajeno (sale `OPERATOR(public.=)`).
+  - s14, que es una sola SELECT y no puede fijarlo, comprueba que el `search_path` empiece por `pg_catalog`; si no, «NO ACREDITADO».
+  - Además, en los dos:
+    - ningún operador `=` fuera de `pg_catalog` acepta `text`, `varchar`, `bpchar`, `name`, `unknown`, un dominio sobre ellos o un pseudotipo;
+    - `pg_catalog.=(text,text)` es `texteq`;
+    - `storage.objects.bucket_id` es `text` con la colación por defecto, y esa colación es determinista.
+  - Si algo falla, ninguna política queda reconocida y la migración aborta con «no se puede acreditar la lista blanca», aunque no haya políticas.
+- **El texto:** el de siempre (p.12), escrito con ese contexto. Una conversión (`::varchar`), un `COLLATE` o un operador calificado distinto rompen la forma.
+- **El árbol (`pg_policy.polqual`/`polwithcheck`):**
+  - todos sus `:opno` son operadores de `pg_catalog`;
+  - está `texteq`;
+  - no hay listas de operadores (`:opnos`).
+
+  No depende del `search_path`. Con un mutante que anula el contexto y la lista de operadores, el árbol sigue rechazando la política de Astra.
+
+**Negativo común** (migración y s14): el operador falso de Astra con su política INSERT, con su `search_path` y con el de siempre. Variantes:
+- operador sin políticas;
+- dominio;
+- `name`;
+- `varchar` contra `text`;
+- polimórfico;
+- otro esquema;
+- columna con colación `C`;
+- colación ICU no determinista con `'MERCADO'`;
+- conversiones `varchar`.
+
+Positivos:
+- `OPERATOR(pg_catalog.=)` escrito a mano;
+- un `=` ajeno de otros tipos (`point`), que no molesta.
+
+**p.13.2 · E2R2-02: los efectos de la sonda.**
+- **Precondición nueva, en el mismo bloque:** si alguna política UPDATE, DELETE o ALL de `storage.objects`, de cualquier bucket, se aplica a `anon`, `authenticated` o `public` (directamente o por pertenencia, `pg_has_role`), la migración aborta con la lista antes de la sonda. s14 la enseña en la sección `escritura`. Con el escenario de Astra (política ALL de forex-data y disparador con secuencia), ahora aborta y la secuencia no se mueve.
+- **La sonda:** SELECT del centinela, y UPDATE y DELETE solo del centinela (`WHERE id = <su id>`).
+- **Límites:**
+  - `SET LOCAL statement_timeout = '30s'` y `lock_timeout = '5s'` delante del DO. Valen si el editor lo ejecuta todo en una transacción, que es lo que hace con un texto de varias órdenes; **no está comprobado en el editor**. En psql sin BEGIN no hacen nada.
+  - Medido en local: un `statement_timeout` puesto dentro del DO no limita el DO.
+  - `lock_timeout = 5s` también dentro del DO, donde sí vale. Medido: con `storage.buckets` bloqueada 20 s por otra sesión, aborta a los 5 s.
+  - El informe dice los límites que vio.
+- **Lo que queda (sustituye a p.12.7.1):**
+  - El INSERT del centinela dispara todos los disparadores de INSERT, **por fila y por sentencia** (corregido el 14-oct, Astra E2R3-03: faltaba el de sentencia; medido, una secuencia avanza).
+  - El UPDATE y el DELETE disparan todos los disparadores **por sentencia** de UPDATE y DELETE, aunque no alcancen ninguna fila.
+  - Lo transaccional se deshace; lo que no lo es (una secuencia, una llamada fuera de la base), no. Medido: con un BEFORE UPDATE por sentencia de función ajena, la secuencia avanza.
+  - Por eso s14 enseña cada disparador con el esquema de su función («función de storage» o «FUNCIÓN AJENA»). Desde p.14.3, el runbook **para ante cualquier disparador** de `storage.objects` hasta que el CTO lo acredite como estándar y sin efectos externos.
+  - Qué disparadores son «los estándar de Supabase» lo confirma el CTO con la salida de s14. No hay una lista comprobada contra este proyecto.
+
+**p.13.3 · E2R2-03: el liberador y la congelación.** Storage no borra condicionalmente, así que el DELETE del cerrojo puede llevarse otro cerrojo puesto después de la última lectura (el intercalado de Astra). Diseño del CTO:
+- **`v1/_congelado`:** de solo inserción. Es también la exclusión entre liberadores: si existe, el liberador no arranca.
+- **El liberador, con `--confirmo`:**
+  1. Congela con su UUID.
+  2. Lee el cerrojo dos veces; las dos tienen que ser el que enseñó.
+  3. Deja constancia.
+  4. Borra el cerrojo y comprueba que ya no está.
+  5. Retira su congelación (relee y solo la suya), también si algo falló por el camino.
+
+  Si no puede retirarla, código 3 y la orden `--descongela <id>`, también nueva, para una congelación de una liberación muerta. El simulacro enseña la congelación si la hay.
+- **El publicador:**
+  - Justo después de tomar su cerrojo y antes de escribir nada, mira la congelación. Si existe, o no se puede leer, suelta su cerrojo y no publica («congelado», código 3 en la orden).
+  - **Añadido de la autorrevisión:** después relee su cerrojo y exige que siga siendo el suyo. Sin esto, si la lectura de la congelación de B llega cuando el liberador ya ha borrado el cerrojo de B y retirado su congelación, B publicaría sin exclusión. La prueba 2 de `pruebas/mercado-v1-congelacion.mjs` lo reproduce, y el mutante sin la relectura da rojo.
+- **El oráculo literal de Astra** («el cerrojo B se conserva») no se puede cumplir sin borrado condicional. La garantía del CTO es otra: quien toma el cerrojo durante una liberación no escribe nada. Probado:
+  - con el intercalado de Astra, con un publicador real;
+  - con un publicador vivo que suelta su cerrojo durante la liberación;
+  - con la lectura retrasada.
+- **Lo que no cubre:**
+  - Liberar el cerrojo de un publicador que sigue vivo y ya pasó su comprobación; para eso está la confirmación humana de que el dueño murió.
+  - Dos personas con `--descongela` a la vez sobre una congelación que no está muerta: el borrado de la congelación tampoco es condicional. `--descongela` es para una liberación muerta, y la hace una sola persona.
+
+**p.13.4 · E2R2-04: la frontera del CLI.**
+- **Los cinco scripts** `scripts/mercado-v1-*.mjs` (todos menos `-dependencias`, que es un módulo) corren dentro de `frontera()` (`lib/mercado/frontera-cli.mjs`): un error que llegue ahí, también uno sin capturar o una promesa rechazada, sale como mensaje propio o como «clase código», con código 3.
+- **El listado del script de confirmación**, ilegible o que no sea JSON: «listado_ilegible», código 3, sin su contenido ni el mensaje del parser.
+- **El dueño del cerrojo (y de la congelación):** solo se enseña si es un valor propio conocido (`mercado-v1-publica`, `mercado-v1-liberar-cerrojo`). Si no, «(ajeno)» y los 16 primeros hex de su sha256.
+
+**p.13.5 · E2R2-05: los cortos efectivos.** El planificador, con manifiesto anterior, recalcula los cortos aceptados efectivos de los días ya publicados y los compara con los del manifiesto. Lo hace antes de cualquier salida `sin_cambios`, y si difieren hay incidente. El verificador lo hereda porque replanifica desde el manifiesto vigente. Con el escenario de Astra, los dos lo ven.
+
+**p.13.6 · Autorrevisión adversaria.**
+1. **Mutantes** (publicador sin la congelación, sin la relectura del cerrojo, sin comparar los cortos): cada uno da rojo en al menos una prueba. El mutante sin congelación deja la prueba de congelación sin terminar (código 13), no con un rojo limpio.
+2. **La carrera de la lectura retrasada** (p.13.3) la encontré al escribir la prueba del publicador vivo. Cerrada con la relectura.
+3. **s14 con un operador polimórfico ajeno:** antes de fijar la comparación de `polroles` a `OPERATOR(pg_catalog.=)`, s14 fallaba con «operator is not unique». Ahora da su veredicto. Otros operadores sin calificar del bloque se resuelven en `pg_catalog` mientras el `search_path` empiece por él, que es lo que comprueba `ctx`. Con otro `search_path`, s14 dice «NO ACREDITADO»; en el peor caso falla con error, nunca da un veredicto falso que yo haya visto.
+4. **No comprobado contra producción:**
+   - qué operadores `=` ajenos hay (extensiones);
+   - qué políticas de escritura hay;
+   - qué disparadores tiene `storage.objects`;
+   - si el editor ejecuta el texto en una sola transacción.
+
+   Lo dicen s14 y la fila `limites` del informe.
+
+### p.14 · Etapa 2, ronda 4: E2R3-01..E2R3-03 (14-oct)
+
+Astra dijo NO a `a25a1d9` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-r3.md`). Cerrados E2R2-02, 04, 05 y `1871c43`. El CTO cierra los tres hallazgos nuevos. Su contraprueba Node `delete-tardio.mjs` es ya la prueba permanente `pruebas/astra-e2r3-delete-tardio.mjs`, y está en verde. Sus casos SQL de la ronda 3 están en `pruebas/mercado-001-bucket.mjs`, sección 8.
+
+**p.14.1 · E2R3-01: el cerrojo pasa a la base (decisión técnica del CTO).** El DELETE de Storage es por ruta. Un DELETE incierto (timeout del cliente con la petición todavía en el servidor) podía llegar tarde y borrar el cerrojo de otro publicador: Astra lo reprodujo con dos «publicado» y un par perdido del puntero.
+
+**`sql/mercado-000-cerrojo.sql`** (nuevo, sin aplicar):
+- **La tabla `public.mercado_cerrojo`,** una fila por recurso:
+  - `recurso` text PK, con CHECK `= 'mercado/v1'`;
+  - `dueno` uuid not null;
+  - `desde` timestamptz not null default `now()`;
+  - `descripcion` text not null, con CHECK de forma cerrada `^[a-z0-9][a-z0-9-]{0,39}$`.
+- **Acceso:** RLS activa y sin políticas. Se quita todo a PUBLIC, `anon`, `authenticated` y `service_role` (el default ACL de Supabase, medido en s06, daba todo a los tres), y se da a `service_role` solo SELECT, INSERT y DELETE.
+- **Nombre:** `mercado_cerrojo` no aparece en ninguno de los repos que comparten la base ni en el montaje literal de s04. La migración aborta igualmente si en el catálogo real está ocupado (relación, índice de la clave o tipo).
+- **Idempotente y atómica:**
+  - si la tabla ya existe con esta forma, no la toca;
+  - si existe con otra forma (columnas, restricciones, RLS, políticas, disparadores, índices, permisos de tabla o de columna), aborta con «mercado-000:».
+  - La comprobación de forma corre también recién creada.
+- **Contexto:** `SET LOCAL` y, dentro del DO, `search_path` y `lock_timeout` fijos, como `mercado-001`.
+- **Va en el runbook antes de `mercado-001`.**
+
+**El protocolo** (`lib/mercado/publica-v1.mjs`, `liberar-v1.mjs` y el puerto real en `scripts/mercado-v1-dependencias.mjs`):
+- **Adquirir:** INSERT; un 23505 es «cerrojo puesto». Sin respuesta, se relee: es nuestro solo si su dueño es nuestro UUID.
+- **Justo antes del puntero:** SELECT del cerrojo. Si su dueño ya no es nuestro UUID, **no se escribe el puntero** y se para. Los trozos y manifiestos ya subidos son inmutables (por sha) y no cambian nada publicado.
+- **Soltar:** `DELETE … WHERE recurso = 'mercado/v1' AND dueno = <uuid de la ejecución>`. Un DELETE tardío solo puede borrar la fila de su propio dueño.
+- **Liberar a mano:** `--confirmo <uuid>`.
+  1. Relee: tiene que ser ese dueño.
+  2. Deja la constancia en `v1/_liberados/` como hasta ahora (esquema `mercado-liberacion@2`, con el recurso).
+  3. Hace el DELETE condicional. Si se pierde la respuesta y la fila sigue, código 3; repetir es inocuo.
+
+**La congelación de Storage (E2R2-03) se retira.** Hacía falta porque el DELETE por ruta podía llevarse el cerrojo de otro: la congelación impedía que quien lo tomaba durante la liberación escribiera. Con el DELETE condicional ese caso no existe:
+- el DELETE del liberador (o uno tardío) solo borra la fila de su dueño, que tiene un UUID por ejecución, así que nunca la de un publicador posterior;
+- dos liberadores a la vez sobre el mismo dueño son inocuos: uno borra la fila y el otro 0 filas;
+- un publicador que tome el cerrojo durante una liberación lo conserva.
+
+Lo que la congelación cubría además (no publicar mientras alguien libera) ya no protege nada. Con ella se van `v1/_congelado`, `--descongela`, la comprobación del publicador y su relectura, y `pruebas/mercado-v1-congelacion.mjs`. La sustituye `pruebas/mercado-v1-cerrojo.mjs`.
+
+**Residuales:**
+- **El que se mantiene (CTO):** liberar por error a un dueño vivo, protegido por la confirmación. *(Corregido en p.15.4, Astra r4.)* Su efecto queda acotado **solo si el vivo pierde el cerrojo antes de su comprobación previa al puntero**: entonces no escribe el puntero (prueba 2 de `mercado-v1-cerrojo.mjs`) y solo le quedan trozos y manifiestos inmutables, que no cambian nada publicado. **Si lo pierde entre esa comprobación y el PUT, sí puede escribir el puntero** sin ser dueño, y sobrescribir el de otro: la comprobación y el PUT no son una transacción entre la base y Storage. Esa ventana es el residual aceptado; «el vivo no escribe el puntero» no es una garantía absoluta.
+- **Nuevo, y que falla cerrado:** un INSERT de adquisición incierto que llega tarde deja una fila con el UUID de una ejecución que ya se rindió. Nadie publica hasta liberarla a mano (prueba en `mercado-v1-storage.mjs`).
+
+**p.14.2 · E2R3-02: s14 y el sombreado de catálogos.** El inventario de s14 nombraba `pg_class`, `pg_trigger`, `pg_proc` y `pg_namespace` sin calificar: una tabla temporal `pg_trigger` con `search_path=pg_temp,…` ocultaba los disparadores. Ahora:
+- **Catálogos y funciones:** todos los catálogos del inventario, y las funciones de catálogo que usa (`to_regclass`, `aclexplode`), van como `pg_catalog.…`.
+- **Contexto:** `ctx` exige que el **primer** esquema de `current_schemas(true)`, también uno temporal, sea `pg_catalog`. Con un esquema temporal delante, «NO ACREDITADO»: hay que ejecutarlo en una sesión nueva.
+- **`mercado-001`:** fija `pg_catalog, pg_temp`, así que no le afecta. Medido: en la misma sesión con la tabla temporal, aplica igual.
+- **Negativo permanente:** el caso de Astra.
+
+**p.14.3 · E2R3-03: INSERT por sentencia.**
+- **p.13.2 corregido:** el INSERT del centinela dispara también los de INSERT por sentencia.
+- **s14:** enseña cada disparador con lenguaje, SECURITY DEFINER y md5 del cuerpo (12 hex), y una fila `disparador | (resumen)`. Con cualquier disparador en `storage.objects`, el resumen dice «PARAR hasta que el CTO acredite cada uno como estándar de Supabase y sin efectos externos».
+- **El runbook:** para ante cualquier disparador no acreditado. El esquema `storage` no se toma como garantía.
+
+**p.14.4 · Autorrevisión adversaria.**
+1. **Mutantes** (medidos; evidencias en `revisiones-suite/2026-10-14-mercado-v1-etapa2-r4/`):
+   - **El publicador sin la comprobación antes del puntero:** 3 rojos en `mercado-v1-cerrojo.mjs`.
+   - **El puerto real con el DELETE sin la condición del dueño:** 1 rojo en `mercado-v1-cerrojo.mjs`, sección 5.
+   - **Lo que ninguno pone en rojo:** `astra-e2r3-delete-tardio.mjs` y `mercado-v1-storage.mjs`, porque usan el doble del cerrojo, que lleva la condición dentro.
+
+   La condición del puerto real la vigilan la sección 5 (lo que pide a PostgREST) y `mercado-000-cerrojo.mjs` (la semántica en PostgreSQL).
+2. **Huecos del puerto real** (`cerrojoDe`, supabase-js/PostgREST): no se ensaya contra PostgREST, solo su semántica SQL contra PostgreSQL (`pruebas/mercado-000-cerrojo.mjs`) y la lógica con el doble. Supone tres cosas que no se han comprobado contra Supabase:
+   - que PostgREST devuelve `code: '23505'` en la clave repetida;
+   - que `delete().eq().eq().select()` devuelve las filas borradas;
+   - que `service_role` ve `public.mercado_cerrojo`. El esquema `public` lo expone PostgREST; anon y authenticated no tienen permisos.
+3. **La tabla está en `public`,** que PostgREST expone. Sin grants ni políticas para `anon` y `authenticated` (probado: permission denied en las cuatro órdenes), no la leen ni la escriben. Lo que s14 enseña: RLS, políticas, disparadores y permisos de la tabla.
+4. **s14 no puede leer la fila del cerrojo:** sería una consulta a una tabla que puede no existir, y s14 es una sola SELECT sin EXECUTE. El cerrojo vigente lo enseña el simulacro de `liberar-cerrojo`.
+
+
+### p.15 · Etapa 2, ronda 5: E2R4-01 y E2R4-02 (14-oct)
+
+Astra dijo NO a `f294c70` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-r4.md`) por E2R4-01 (medio). E2R3-01, 02 y 03 quedan cerrados, y el protocolo del cerrojo está bien. El CTO cierra E2R4-01 y E2R4-02, corrige p.14.1 y añade el ciclo de prueba contra PostgREST.
+
+**p.15.1 · E2R4-01: `mercado-000` acredita permisos efectivos, no solo el ACL directo.** El caso de Astra:
+1. Un rol `heredado` que `authenticated` hereda recibe TRUNCATE por los privilegios por defecto del creador.
+2. `mercado-000` lo daba por bueno: solo miraba los grants directos de cuatro roles.
+3. Con eso, `authenticated` vaciaba la tabla, porque TRUNCATE no pasa por la RLS.
+
+La guarda, en primera aplicación (la creación se deshace entera) y en cada reejecución:
+- **Herencia y pertenencias:** los privilegios de un rol cuentan como suyos y como los de cualquier rol del que sea miembro, con herencia o sin ella (solo SET ROLE: `pg_has_role(…, 'MEMBER')`). `has_table_privilege` a secas no ve las de solo SET ROLE.
+- **PUBLIC, `anon` y `authenticated`:** ninguno de SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES y TRIGGER. También MAINTAIN, en PostgreSQL 17 o posterior; no sabemos qué versión tiene Supabase, y la comprobación vale en las dos.
+- **`service_role`:**
+  - efectivos, exactamente SELECT, INSERT y DELETE;
+  - en su ACL directo, lo mismo;
+  - sin opción de conceder.
+- **En el ACL, nadie más que el dueño y `service_role`.** A un destinatario ajeno no se le revoca a ciegas: se aborta y se lista.
+- **El error dice** cada rol con cada privilegio y los privilegios por defecto del creador (`pg_default_acl`, en `public` y globales).
+- **El informe de una aplicación buena añade dos filas:**
+  - `efectivos`: PUBLIC, `anon`, `authenticated` y `service_role`, y los ajenos;
+  - `por defecto`: los privilegios por defecto del creador.
+
+**Negativos permanentes** (`pruebas/mercado-000-cerrojo.mjs`, sección 6):
+- **El de Astra:** TRUNCATE por defecto a `heredado`, en primera aplicación, con su control (en ese montaje, `authenticated` sí vacía una tabla nueva).
+- **Variantes en primera aplicación:** UPDATE y TRIGGER por defecto.
+- **Variantes en reejecución:**
+  - TRUNCATE, UPDATE y TRIGGER concedidos después a `heredado`;
+  - un grant a PUBLIC;
+  - un grant a un rol que `authenticated` solo puede tomar con SET ROLE;
+  - `anon` miembro de `service_role` sin herencia, sin ningún grant ajeno (lo caza solo la regla de pertenencias);
+  - `service_role` miembro del dueño;
+  - TRUNCATE y MAINTAIN directos a `service_role`;
+  - `service_role` con opción de conceder.
+
+**s14:**
+- **La fila del cerrojo:**
+  - enseña las reglas;
+  - los permisos directos de todos los destinatarios (no solo de los tres roles);
+  - los efectivos, con la misma regla;
+  - «permisos acreditados» o «PERMISOS NO ACREDITADOS … PARAR».
+- **Dos filas nuevas:**
+  - `pertenencias`: de qué roles son miembros `anon`, `authenticated` y `service_role`;
+  - `por defecto`: los privilegios por defecto de quien corre s14, que es quien correrá `mercado-000`. Si sin la tabla dan algo a un rol que `mercado-000` no revoca, dice «OTROS ROLES … PARAR».
+- **Pruebas:** `pruebas/mercado-001-bucket.mjs`, sección 9.
+
+**p.15.2 · E2R4-02: reglas de reescritura.** La guarda de forma rechaza cualquier fila de `pg_rewrite` sobre la tabla. Negativo: la regla `DO INSTEAD NOTHING` de Astra en reejecución, con su control: con la regla, el INSERT de `service_role` «funciona» y no deja fila.
+
+**p.15.3 · El ciclo de prueba contra PostgREST** (`scripts/mercado-v1-prueba-cerrojo.mjs` y `lib/mercado/prueba-cerrojo-v1.mjs`; runbook, paso 3-bis: tras `mercado-001` y s14, y antes de publicar nada; ver p.15.7).
+- **Qué comprueba:** con el puerto real (`cerrojoDe`), lo que p.14.4.2 suponía sin haberlo visto.
+- **Cómo se ejecuta:** simulacro por defecto; `--ejecuta`; nada con CI.
+- **El ciclo:**
+  1. Si ya hay un cerrojo, no se prueba ni se toca.
+  2. INSERT P → ok.
+  3. INSERT Q → «existe» (23505).
+  4. SELECT → P.
+  5. DELETE condicional con Q → 0 filas, y P sigue.
+  6. DELETE con P → 1 fila.
+  7. SELECT → no hay.
+- **Si algo no cuadra,** para en ese paso y relee una vez: dice qué queda, medido. No libera nada. Un cerrojo de prueba que quede falla cerrado: nadie publica hasta liberarlo.
+- **La descripción** `mercado-v1-prueba` entra en `DUENOS`, para que el liberador la enseñe.
+- **Pruebas:** `pruebas/mercado-v1-prueba-cerrojo.mjs`, 21 oráculos. Incluyen:
+  - la secuencia exacta de órdenes a PostgREST con el puerto real;
+  - un error ajeno saneado;
+  - la respuesta perdida del primer INSERT;
+  - el humo del script, sin `--ejecuta`, que leería claves.
+- **Mutantes:** un paso 2 que acepta cualquier respuesta da 2 rojos; un paso 4 que no mira nada da 1.
+- **Lo que no prueba:** el transporte real. Eso es justo lo que comprueba el paso 3-bis.
+
+**p.15.4 · p.14.1 corregido.** «El vivo no escribe el puntero» solo vale si pierde el cerrojo **antes** de su comprobación previa al puntero. Si lo pierde entre esa comprobación y el PUT, sí puede escribirlo. Esa ventana es el residual ya aceptado: la base y Storage no comparten transacción. Corregidos p.14.1 y la cabecera de `pruebas/mercado-v1-cerrojo.mjs`.
+
+**p.15.5 · Fase 8.** Anotado, sin hacer nada (`revisiones-suite/2026-10-14-fase8-pendiente-truncate-en-public.md`):
+- En Supabase, `anon` y `authenticated` suelen tener TRUNCATE en las tablas de `public` por los privilegios por defecto.
+- TRUNCATE salta la RLS, aunque PostgREST no lo expone.
+- En la fase 8, una consulta de solo lectura de toda la base.
+
+p.14.4.3 («no la leen ni la escriben») era cierto solo por los grants directos; lo que lo acredita ahora es p.15.1.
+
+**p.15.6 · Autorrevisión adversaria.**
+1. **La prueba permanente aprobaba en vacío.**
+   - **El fallo:** en el montaje de s04, la foto del catálogo de `pruebas/mercado-000-cerrojo.mjs` fallaba con «operator is not unique: text || "char"» y devolvía una cadena vacía. Todos sus «nada cambia» de la ronda 4 se cumplían sin mirar nada.
+   - **Cómo salió:** con el `startsWith('-')` del negativo de Astra.
+   - **El arreglo:**
+     - casts explícitos;
+     - si la consulta falla, la prueba se para;
+     - un control positivo: la foto ve la tabla y su ACL.
+   - **Con la foto buena,** todos los «nada cambia» siguen en verde.
+2. **Las pertenencias son del clúster, no de cada base.**
+   - Las pruebas nuevas las quitan después de cada caso, con un control de que no queda ninguna.
+   - Así salió a la luz una pertenencia anterior que sobrevivía: `alumnos` de E2R2-02, en `mercado-001-bucket.mjs`. Se quita al empezar la sección 9.
+3. **Dependencia de entorno.** Si en Supabase `service_role`, `anon` o `authenticated` son miembros de algún rol con privilegios en la tabla, `mercado-000` aborta. Falla cerrado y lo lista. La fila `pertenencias` de s14 lo deja ver antes de aplicar.
+4. **El informe y la guarda calculan los efectivos por separado:** el informe corre fuera del DO. Los vigilan los mismos oráculos: limpio, reejecución limpia y abortos.
+5. **El ciclo iba antes de `mercado-001`** («tras mercado-000»). Si dejaba un cerrojo de prueba, el liberador no podía escribir su constancia hasta que existiera el bucket. Lo resuelve p.15.7.
+6. **Contraste contra `f294c70`:**
+   - las pruebas nuevas de `mercado-000` dan 18 rojos con el SQL anterior;
+   - las de s14, 8 rojos con el s14 anterior.
+
+   Evidencias en `revisiones-suite/2026-10-14-mercado-v1-etapa2-r5/`.
+
+**p.15.7 · Decisión del CTO (14-oct): el orden del runbook.** El ciclo de prueba del cerrojo pasa detrás de `mercado-001`. Así, si un cerrojo de prueba se queda colgado, se libera en el acto, porque el liberador ya tiene el bucket para su constancia. El orden:
+
+s14 → `mercado-000` → `mercado-001` → s14 → ciclo de prueba (paso 3-bis) → primera publicación.
+
+Además, si s14 enseña que `anon`, `authenticated` o `service_role` pertenecen a algún rol (la fila `pertenencias` con algo distinto de `-`), el runbook para antes de aplicar nada, y el CTO comprueba qué permisos tiene ese rol.
+
+### p.16 · Etapa 2, ronda 6: E2R5-01 y E2R5-02 (14-oct)
+
+Astra dijo NO a `4ad33a6` (`revisiones-suite/2026-10-14-astra-mercado-v1-etapa2-r5.md`):
+- **Cerrados:** E2R4-02, el oráculo de la foto del catálogo y la regresión de E2R3.
+- **E2R4-01:** parcial por E2R5-01.
+- **E2R5-02:** bajo.
+
+Lo hecho sigue lo que propone Astra; el CTO no dio una regla aparte.
+
+**p.16.1 · E2R5-01: quien puede actuar como el dueño.** El dueño de una tabla puede volver a concederse cualquier privilegio aunque su ACL esté revocado, y `has_table_privilege` no lo ve. El caso de Astra:
+1. Se cambia el dueño a `dueno_ficticio` y se le revoca todo.
+2. `authenticated` (o `service_role`) es miembro de ese rol, sin herencia y con SET ROLE.
+3. La reejecución acreditaba la tabla.
+4. Después, `authenticated` tomaba el rol del dueño, se concedía TRUNCATE y vaciaba la tabla.
+
+**El arreglo:**
+- **`mercado-000`:** aborta si `anon`, `authenticated` o `service_role` son miembros del rol dueño (`pg_has_role(…, relowner, 'MEMBER')`, con herencia o solo SET ROLE), y lo dice: «X puede actuar como el dueño (rol)».
+- **s14:** la fila del cerrojo enseña `dueño=…`. Si alguno de los tres puede actuar como él, dice «PERMISOS NO ACREDITADOS (pueden actuar como el dueño: …)».
+
+**Pruebas permanentes:**
+- `mercado-000-cerrojo.mjs`: las dos variantes de Astra (`authenticated` y `service_role`), con el control de que la escalada es real en el montaje.
+- `mercado-001-bucket.mjs`, sección 9: la variante en s14.
+
+**La contraprueba de Astra** (`propias-pg.mjs`, solo con las rutas cambiadas) da 0 fallos contra el SQL nuevo, en sus doce casos.
+
+En producción, el dueño será `postgres`, del que no son miembros los tres roles (Supabase concede al revés: `postgres` es miembro de ellos). Si no fuera así, aborta y lo lista.
+
+**p.16.2 · E2R5-02: el ciclo no promete limpiar.** Se conserva la parada: al fallar después del INSERT de P, deja el cerrojo a propósito y no intenta un DELETE que podría quedar también incierto. Queda dicho:
+- en el código;
+- en el simulacro;
+- en el mensaje al parar: no se sigue con el runbook hasta liberarlo y ver «No hay cerrojo»;
+- en el runbook, paso 3-bis: recuperación a mano por UUID, y el paso 4 no empieza sin un ciclo con código 0.
+
+**Pruebas:** dos oráculos nuevos en `mercado-v1-prueba-cerrojo.mjs`, que suma 23.
+
+Una limpieza automática condicionada al propio UUID, con relectura y estado incierto, como la que Astra menciona como alternativa, no se hace. **Decisión del CTO (14-oct): no.** Se queda la parada con recuperación manual por UUID.
+
+**p.16.3 · E2R5-01 completo: decisión del CTO (14-oct).** `mercado-000`, en primera aplicación y en reejecución, y s14:
+1. **El dueño de `mercado_cerrojo` es quien ejecuta** (`current_user`), y quien ejecuta no es `anon`, `authenticated`, `service_role` ni `authenticator`. Si no, aborta con «el dueño es X y no quien ejecuta (Y)» o «quien ejecuta es X, un rol de la API».
+2. **«Puede actuar como el dueño»** incluye a `authenticator`, porque PostgREST entra con él y toma el rol del JWT. Usa `pg_has_role(rol, dueño, 'MEMBER')`, que cubre herencia, SET y cadenas. Si `authenticator` no existe, `mercado-000` no tiene nada que mirar y s14 lo dice («no existe (en Supabase debería: avisar al CTO)»).
+3. **Atributos:**
+   - `anon` y `authenticated`, sin SUPERUSER, CREATEROLE ni BYPASSRLS;
+   - `service_role`, sin SUPERUSER ni CREATEROLE. Su BYPASSRLS se informa y no aborta.
+4. **El informe de `mercado-000`** añade la fila `roles`.
+5. **s14:**
+   - la fila del cerrojo da «PERMISOS NO ACREDITADOS (… roles: motivo)» con cualquiera de los tres puntos, nunca «permisos acreditados»;
+   - la fila nueva `cerrojo | roles`, antes y después de aplicar, enseña el dueño (o el que será, quien ejecuta), los atributos y `authenticator`, y acaba en «· PARAR: motivo».
+
+**Negativos permanentes** (`mercado-000-cerrojo.mjs`, sección 6; `mercado-001-bucket.mjs`, sección 9):
+- el dueño cambiado a otro rol, con y sin ACL;
+- `authenticator` miembro del dueño, en primera aplicación y en reejecución;
+- una cadena de dos niveles hasta el dueño;
+- `authenticated` con BYPASSRLS;
+- `anon` con CREATEROLE;
+- `service_role` con CREATEROLE;
+- la migración ejecutada como `anon`.
+
+**Contraste contra `22cbde1`:** 11 rojos en `mercado-000` y 7 en s14. **La cadena de dos niveles ya salía en verde contra `22cbde1`:** `pg_has_role(…, 'MEMBER')` sigue las cadenas. Queda como negativo permanente, pero no fue un rojo previo.
+
+**El montaje del ensayo** crea un `authenticator` como el de un Supabase estándar: `noinherit login`, miembro de `anon`, `authenticated` y `service_role`, y no del dueño. Así el caso limpio comprueba que no hay falso positivo. Lo mismo con el ejecutor `pgx` de s06, que no es superusuario y es miembro de los tres con ADMIN.
+
+**Consulta de solo lectura, razonada sin ejecutarla, para un Supabase estándar** (es la misma lógica que la fila `cerrojo | roles` de s14):
+
+```sql
+select current_user,
+       (select string_agg(rolname || ':' || rolsuper || '/' || rolcreaterole || '/' || rolbypassrls, ' ' order by rolname)
+          from pg_roles where rolname in ('anon', 'authenticated', 'service_role')),
+       to_regrole('authenticator') is not null,
+       pg_has_role('authenticator', current_user, 'MEMBER'),
+       (select string_agg(u, ',') from unnest(array['anon', 'authenticated', 'service_role']) u where pg_has_role(u, current_user, 'MEMBER'));
+```
+
+| Qué | Lo esperado | De dónde sale |
+|---|---|---|
+| `current_user` (el dueño que será) | `postgres` | **Medido**, s06 del 12-oct: ejecutor del editor `postgres`, current_user y session_user |
+| Atributos | `anon:false/false/false`, `authenticated:false/false/false`, `service_role:false/false/true` | **Medido**, s06: anon y authenticated sin superuser, createrole ni bypassrls; service_role con bypassrls, sin superuser ni createrole |
+| `anon`, `authenticated` o `service_role` miembros de `postgres` | ninguno (`null`) | **Medido**, s06: la única membresía entre esos roles es `postgres` → los tres (postgres es miembro de ellos, no al revés) |
+| `authenticator` existe | `true` | **Razonado, no medido:** en Supabase existe siempre (PostgREST entra con él) |
+| `authenticator` miembro de `postgres` | `false` | **Razonado, no medido:** en un Supabase estándar, `authenticator` es miembro de `anon`, `authenticated` y `service_role`, y estos no lo son de `postgres` (medido). Le quedaría una pertenencia directa a `postgres` u otra cadena que s06 no miró |
+
+**Lo que dudo, y lo verá la s14 previa del runbook:** las dos filas de `authenticator`. En el paso 1, la fila `cerrojo | roles` tiene que decir «authenticator: no puede actuar como el dueño». Si dice «no existe» o «PUEDE ACTUAR COMO EL DUEÑO», se para. El resto está medido en producción.
+
+**Autorrevisión adversaria:**
+1. **Pertenencia solo con ADMIN OPTION** (PostgreSQL 16 o posterior, sin INHERIT ni SET): `pg_has_role(…, 'MEMBER')` la cuenta como pertenencia, así que aborta. Es lo prudente: quien tiene ADMIN sobre el rol puede concedérselo.
+2. **Atributos de `authenticator`:** no se comprueban; no estaban en la decisión. Con CREATEROLE, desde PostgreSQL 16 solo administra los roles que crea, no el dueño. Queda anotado, no abortado.
+3. **`pertenencias` no lista las de `authenticator`:** en Supabase siempre es miembro de los tres, y la regla del runbook («parar si no es `-`») pararía siempre. Lo que importa de `authenticator` (si puede llegar al dueño) está en `roles`.
+4. **El ensayo crea `authenticator` en el clúster entero:** la única cadena hacia el dueño que se prueba es la que ya da su pertenencia a `authenticated`. Por eso, con el dueño sin ACL y `authenticated` que puede tomarlo, s14 también nombra a `authenticator`. Es lo correcto: en Supabase, `authenticator` llega a todo lo que llegan `anon`, `authenticated` y `service_role`.
+
+### p.17 · Etapa 2, ronda 7: protect_delete, los disparadores de storage.buckets y el inventario de s14 (14-oct, noche)
+
+**Lo que pasó.** El CTO autorizó aplicar hoy hasta el ciclo de prueba. La s14 de producción (Ramón, 14-oct; `sql/consultas/salidas/s14-mercado-storage-2026-10-14-antes.csv`) salió como se esperaba salvo una fila: `disparador | (resumen) | 2 en storage.objects (1 por sentencia) … PARAR`. Se paró. La s14b (`sql/consultas/s14b-disparadores-storage.sql`, salida en `salidas/s14b-disparadores-storage-2026-10-14.csv`) enseñó:
+- `storage.protect_delete` (md5 `998d324ea2b1abc49351e8c2367b5796`): BEFORE DELETE **por sentencia** en `storage.objects` (y en `storage.buckets`); lanza 42501 «Direct deletion from storage tables is not allowed. Use the Storage API instead.» salvo que `storage.allow_delete_query` valga `'true'`. SECURITY INVOKER, dueño `supabase_storage_admin`, sin proconfig.
+- `storage.update_updated_at_column` (md5 `7596e66a7698d5a6b5129c5ce9b24c5f`): BEFORE UPDATE por fila, pone `updated_at`.
+- Cinco disparadores en `storage.buckets` que s14 no inventariaba (hueco de s14): `enforce_bucket_name_length_trigger`, `protect_bucket_control_insert`, `protect_bucket_control_update`, `protect_bucket_control_update_role` y `protect_buckets_delete`.
+- `anon` y `authenticated` tienen SELECT, INSERT, UPDATE y DELETE en `storage.objects`, USAGE en `storage` y EXECUTE de `protect_delete`; `storage.allow_delete_query` sin valor; nada fijado por base o rol.
+
+**El CTO acreditó** las dos funciones de `storage.objects` (estándar de Supabase, sin efectos externos) y los privilegios de anon/authenticated (bloqueados por la RLS). **No acreditó** los cinco de `storage.buckets` (s14c, `sql/consultas/s14c-disparadores-buckets.sql`). Hoy no se aplica nada.
+
+#### p.17.1 · Qué hacía mercado-001 (9476ac1) con protect_delete
+
+Medido en local con los cuerpos de producción byte a byte (`pruebas/storage-supabase.mjs`, md5 comprobado en el montaje) y los grants de Supabase:
+- La sonda hace, como `anon` y como `authenticated`, un DELETE del centinela. `protect_delete` es por sentencia: se dispara aunque la RLS no deje ver ninguna fila y lanza su 42501 antes de que la RLS actúe.
+- Ese 42501 no tiene el mensaje «permission denied for table objects», así que la sonda lo cuenta como duda: **`mercado-001: sonda no concluyente: anon DELETE: 42501 Direct deletion … ; no se crea nada`**. Es un **aborto atómico**: el DO revierte el INSERT del bucket y el centinela; nada queda. Ni falso verde ni verde real: con el Storage de producción, 9476ac1 **no podría aplicarse nunca**.
+- El falso verde existe si un disparador lanzara 42501 con el mensaje exacto de permisos (el ensayo puntual `m001-protect` lo construyó a mano): la sonda lo contaría como «no alcanza» sin haber probado la RLS. Con el `protect_delete` real no pasa, porque su mensaje es otro.
+
+#### p.17.2 · El arreglo (CTO 14-oct), en `sql/mercado-001-bucket.sql`, sin aplicar
+
+1. **La sonda exige** que `protect_objects_delete` exista en `storage.objects` con su forma (BEFORE DELETE, por sentencia, `storage.protect_delete`) y habilitado (`tgenabled` O o A). Si no, aborta: no sería el Storage medido.
+2. **Si `storage.allow_delete_query` ya vale `'true'` al empezar**, aborta: `protect_delete` estaría apagado para toda la sesión. (No lo pidió el CTO; es falla cerrada. Ver p.17.4.)
+3. **Solo para la sentencia DELETE del centinela**, dentro de su subtransacción y ya como `anon`/`authenticated`: `set_config('storage.allow_delete_query', 'true', true)`, el DELETE, y se repone el valor anterior justo después. La subtransacción se deshace igual, y con ella el ajuste. Así lo que se prueba es la RLS, como hace la API de Storage.
+4. **Un 42501 con el mensaje de `protect_delete` nunca cuenta como «la RLS bloquea»:** va a «sonda no concluyente», con su texto.
+5. **Tras la sonda, si el ajuste vale `'true'`, aborta.** El informe tiene una fila nueva: `ajuste | storage.allow_delete_query al terminar = «…»`, y «ES TRUE: PARAR» si lo fuera.
+
+**Choque con la especificación (para el CTO):** el CTO pidió una fila que demuestre que el ajuste «vuelve a ser NULL». En PostgreSQL no es posible en la misma sesión: una vez que un ajuste personalizado se ha fijado, al deshacerse vuelve a `''` (vacío), no a NULL; `set_config(…, null, true)` también deja `''`. Medido en PostgreSQL 17 local. `protect_delete` trata `''` igual que NULL (`COALESCE('', 'false') != 'true'`: bloquea). La fila dice el valor real (`«»`) y la prueba exige que no sea `'true'` **y** que un DELETE directo siguiente, en la misma sesión, lo pare `protect_delete`. Si el CTO prefiere otra forma de demostrarlo, se cambia.
+
+#### p.17.3 · s14 con storage.buckets y la acreditación
+
+- El inventario de disparadores cubre `storage.objects` y `storage.buckets` (estos como `buckets.<nombre>`).
+- Cada disparador dice «acreditado (CTO 14-oct)» solo si coinciden tabla, nombre, definición exacta (`pg_get_triggerdef`), `tgenabled = 'O'` y el md5 **completo** del cuerpo de su función con la lista `acreditados` de s14 (hoy, los dos de `storage.objects` de la s14b); si no, «NO ACREDITADO».
+- De cada función no acreditada de `storage.buckets` sale su cuerpo línea a línea.
+- El resumen: `storage.objects: N (P por sentencia) · storage.buckets: M · sin acreditar: K`, con PARAR si K > 0. Lo esperado hoy en producción: `storage.buckets: 5 · sin acreditar: 5` → PARAR hasta que el CTO acredite los de buckets (s14c) y la acreditación entre por commit en la lista.
+- Runbook: paso 0 nuevo (s14b y s14c) antes de la s14, y las expectativas nuevas de s14 y de `mercado-001`.
+
+#### p.17.4 · Autorrevisión adversaria
+
+1. **`set_config` como `anon`.** `storage.allow_delete_query` es un ajuste personalizado sin definir (lo enseña la s14b: sin valor); cualquier rol puede fijarlo. Si en producción estuviera definido como solo para superusuario, el `set_config` fallaría con 42501 «permission denied to set parameter» → «sonda no concluyente». Falla cerrado; no lo he podido medir sin aplicar.
+2. **Falso verde residual.** Un disparador ajeno que lanzara 42501 con el mensaje exacto «permission denied for table objects» seguiría pareciendo «no alcanza». Lo cubre el inventario de s14: cualquier disparador no acreditado es PARAR antes de aplicar. No lo cubre `mercado-001` por sí sola.
+3. **`tgenabled = 'A'`.** `mercado-001` acepta `protect_objects_delete` habilitado SIEMPRE; s14 solo acredita con `'O'` (el medido). Con `'A'`, s14 diría NO ACREDITADO y el runbook pararía: más estricto, no menos.
+4. **`pg_get_triggerdef` depende del `search_path`.** Con `storage` en el `search_path` del editor, la definición saldría sin calificar y s14 diría NO ACREDITADO. Falla cerrado.
+5. **El ajuste ya `'true'` al empezar** aborta. No lo pidió el CTO; si no lo quiere, se quita (una guarda).
+6. **El INSERT del bucket** dispara los cinco de `storage.buckets`. La sonda no los prueba: los acredita el CTO con la s14c. `protect_bucket_control_insert` recibe `'service_role'` como argumento y `mercado-001` inserta como `postgres`: si esa función rechaza a quien no sea `service_role`, `mercado-001` abortaría atómicamente. Lo dirá su cuerpo (s14c).
+7. **El montaje de las pruebas** lleva ahora los dos disparadores reales en todos los casos (sin ellos, `mercado-001` aborta por la guarda 1). Los casos que no llevan los grants de Supabase sobre `storage` siguen viendo «permission denied» antes que `protect_delete`, y eso también se acepta como «no alcanza». Las pruebas de la sección 10 usan los grants de Supabase, que son los medidos.
+8. **Contraste:** las pruebas nuevas contra el SQL de 9476ac1 dan 38 rojos (y 2 controles rotos, de los mutantes que no existen en el SQL viejo): todos los positivos de `mercado-001` pasan a «sonda no concluyente», que es lo que habría pasado en producción.
+
+**mercado-000 y los privilegios por defecto (pregunta 2 del CTO).** Por código: en la primera creación, `revoke all on table public.mercado_cerrojo from public, anon, authenticated, service_role` y `grant select, insert, delete … to service_role`, y después la guarda de permisos efectivos. Los privilegios por defecto dan a la tabla nueva los ocho privilegios para los tres roles (y para el dueño), y el `revoke` se los quita antes de comprobar, así que no aborta por ellos. Cobertura permanente: `pruebas/mercado-000-cerrojo.mjs`, sección 1 (montaje con `alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role`, ejecutando como superusuario; oráculo «permisos: solo service_role … (el default ACL de Supabase quitado)»). **Hueco:** la sección 5 (no superusuario, `pgx`) no tiene privilegios por defecto propios, así que la combinación exacta de producción (ejecutor no superusuario con su propio default ACL, incluida la entrada explícita del dueño) **no es una prueba permanente**. La comprobé con un ensayo puntual: la fila «por defecto» de s14 coincide carácter a carácter con la de producción (cambiando el nombre del rol), `mercado-000` aplica, el ACL final es `{pgx=arwdDxtm/pgx,service_role=ard/pgx}`, `anon` y `authenticated` sin ningún privilegio efectivo, y la reejecución da los mismos efectivos. Convertirlo en prueba permanente es una línea de montaje; lo decide el CTO.
+
+#### p.17.5 · Decisiones del CTO tras la s14c (14-oct, noche) y lo que cambió
+
+La s14c de producción (`sql/consultas/salidas/s14c-disparadores-buckets-2026-10-14.csv`; los cuatro cuerpos, reconstruidos del CSV, dan exactamente sus md5 completos) enseñó las tres funciones de `storage.buckets`. Ninguna tiene efectos externos. `protect_bucket_control_columns('service_role')` solo actúa en un INSERT si trae valores de ciclo de vida, y `mercado-001` no los trae; `postgres` es además miembro de `service_role` (s06). Quedó una duda: `type` (`storage.buckettype`) y `versioning_status` son NOT NULL y `mercado-001` no los rellena; sus valores por defecto no salen en la s14c.
+
+1. **Acreditados los cinco disparadores de `storage.buckets`**, por su md5 COMPLETO, en la lista `acreditados` de s14 (commit aparte). Si un md5 cambia, s14 dice NO ACREDITADO y PARAR. El montaje de las pruebas lleva ahora los siete disparadores con sus funciones byte a byte (`pruebas/storage-supabase.mjs`, generado de las salidas literales; md5 comprobado en el montaje) y las dos columnas de ciclo de vida (jsonb y uuid, que admiten NULL). **`type`, `versioning_status` y los valores por defecto no se han añadido**: los dirá la s14d; no se inventan.
+2. **s14d** (`sql/consultas/s14d-columnas-buckets.sql`, solo lectura): cada columna de `storage.buckets` con tipo, NOT NULL y valor por defecto (`pg_get_expr`), el resumen de las NOT NULL sin valor por defecto, los valores del enum `storage.buckettype` y, añadido por la prueba funcional de 3a, los privilegios de quien ejecuta en `storage.buckets` y `storage.objects`. Ramón la corre después de la s10 del día. Con la salida, el CTO decide si `mercado-001` fija `type`, y se añaden esas columnas al montaje.
+3. **a) La prueba funcional sustituye a «vuelve a NULL».** Tras la sonda, dentro del DO y como quien ejecuta, un DELETE directo de una fila que no existe (`id = gen_random_uuid()`) tiene que fallar con el error de `protect_delete` (es por sentencia: salta sin filas). Si no falla, aborta («NO lo para protect_delete»); si falla por otra cosa, también («fallo por otra cosa»). La fila del informe `ajuste` desaparece; la nueva es `protect_delete | tras la sonda, un DELETE directo de prueba … vuelve a proteger · md5 acreditado …`. La guarda del valor `'true'` se queda (no estorba).
+   **b) El md5 completo de `protect_delete`** (la función de `protect_objects_delete`) tiene que ser `998d324ea2b1abc49351e8c2367b5796` antes de la sonda; si no, «protect_delete ha cambiado: re-acreditar», sin aplicar nada. Cierra dentro de `mercado-001` el falso verde de p.17.4, punto 2, para la función medida.
+   **c) `mercado-000` como no superusuario con el default ACL de producción** es prueba permanente (sección 5): aplica, su fila «por defecto» es la de la s14 de producción cambiando el nombre del rol, el ACL final es solo dueño y `service_role=ard`, sin efectivos para anon, authenticated ni PUBLIC, y la reejecución da lo mismo. Con un mutante sin el `revoke`, `mercado-000` aborta en ese escenario.
+   **d) «Propiedad de tramos»** es de la etapa 3; va a su agente.
+
+**Autorrevisión adversaria de p.17.5:**
+1. **La prueba funcional necesita DELETE en `storage.objects` para quien ejecuta.** Si `postgres` no lo tuviera, el DELETE fallaría por permisos (42501 «permission denied for table objects») antes del disparador, y `mercado-001` abortaría («fallo por otra cosa»). Falla cerrado, pero impediría aplicar: no está medido; lo dice la s14d (fila `privilegios`), y el runbook para si falta. Ensayado con `pgx` sin DELETE.
+2. **El md5 solo se exige a `protect_delete`.** Las funciones de `storage.buckets` y `update_updated_at_column` las vigila s14 (acreditación por md5), no `mercado-001`. Es lo que pidió el CTO; un cambio de Supabase en ellas entre la s14 y `mercado-001` no lo vería `mercado-001`. La ventana es la de una pegada a la siguiente.
+3. **El DELETE de prueba dispara todos los disparadores por sentencia de DELETE en `storage.objects`.** Hoy, solo `protect_objects_delete` (acreditado). Uno nuevo no acreditado lo pararía antes la s14 del paso 1.
+4. **El montaje sin `type` ni `versioning_status`.** El INSERT del bucket en local no ve esas columnas; en producción, sin valor por defecto, fallaría (aborto atómico). Pendiente de la s14d.
+5. **Contraste:** `pruebas/mercado-001-bucket.mjs` contra el SQL de `4af51ef` (mercado-001 y s14): **13 rojos**, 0 controles rotos. En `mercado-001`: PD-01 (la fila del informe), PD-06 (las dos de la prueba funcional) y PD-07 (el md5). En s14: los nueve de la acreditación de `storage.buckets`. Para 3c, `mercado-000` sin su `revoke` aborta en el escenario no superusuario. Logs en `revisiones-suite/2026-10-14-mercado-v1-etapa2-r7/`.
+
+### p.18 · Etapa 2, ronda 8: E2R7-01, el contexto de las funciones acreditadas, y la s14d (15-oct)
+
+**Origen.** Astra r7 (`revisiones-suite/2026-10-15-astra-mercado-v1-etapa2-r7.md`), NO por E2R7-01: con el cuerpo, el md5 y la definición del disparador intactos, `ALTER FUNCTION storage.enforce_bucket_name_length() SET search_path = public, pg_catalog` y un `public.length(text)` sintético hacen que el INSERT del bucket de `mercado-001` ejecute código no acreditado, con s14 diciendo «todos acreditados». Variante: `SECURITY DEFINER` en `protect_bucket_control_columns`. Decisión del CTO (15-oct): la acreditación compara también lenguaje, SECURITY INVOKER/DEFINER, dueño, proconfig completo, volatilidad y firma, de la función a la que apunta cada disparador; cualquier diferencia, NO ACREDITADO y PARAR en s14, y `mercado-001` aborta.
+
+**p.18.1 · Qué se compara.** La lista `acreditados` lleva, por disparador: tabla, nombre, `pg_get_triggerdef`, md5 completo de `prosrc` y la ficha de la función: `lanname`, `prosecdef` (INVOKER/DEFINER), `pg_get_userbyid(proowner)`, `proconfig::text` (o `-`), `provolatile` y la firma `esquema.nombre(argumentos de identidad) returns resultado`. La función es la de `tgfoid` (la que de verdad ejecuta el disparador), no una buscada por nombre. Los valores son los medidos: s14b (protect_delete, update_updated_at_column) y s14c (las tres de buckets); la firma `() returns trigger` de `update_updated_at_column` no la imprimió la s14b, pero PostgreSQL no admite otra para una función de disparador (sin argumentos declarados, devuelve `trigger`).
+
+**p.18.2 · Un solo bloque, dos sitios.** Los CTE `acreditados`, `fichas` y `veredictos` van entre `-- >>> acreditados` y `-- <<< acreditados`, el mismo texto en s14 y en `mercado-001` (prueba byte a byte, como el clasificador). En s14, las dos consultas que antes repetían el join (la fila de cada disparador y el resumen) leen ahora `veredictos`: no pueden divergir. `veredictos.difiere` nombra lo que no coincide (`definicion`, `habilitado`, `md5`, `lenguaje`, `seguridad`, `dueño`, `proconfig`, `volatilidad`, `firma`, o «no esta en la lista acreditada»); la fila de s14 enseña la ficha y acaba en «NO ACREDITADO (difiere: …)».
+
+**p.18.3 · mercado-001.** Antes de insertar el bucket (y por tanto antes de que se dispare ninguno de `storage.buckets`) y antes de la sonda: primero las dos guardas de `protect_delete` que ya había (`protect_objects_delete` presente con su forma; md5 acreditado: «re-acreditar»), adelantadas desde después del INSERT; luego el bloque: si algún disparador de la lista no coincide en todo, aborta «disparadores de storage NO ACREDITADOS: <cuál> (difiere: <qué>)». Los disparadores que no están en la lista no abortan en `mercado-001` (comportamiento anterior, sin cambio): los para s14 y, en `storage.objects`, la sonda. Esa línea la decide el CTO si quiere ampliarla (ver p.18.6).
+
+**p.18.4 · La s14d (15-oct, después de la s10).** NOT NULL sin valor por defecto: solo `id` y `name`; `type` `'STANDARD'::storage.buckettype`; `versioning_status` `'DISABLED'::text`; enum STANDARD, ANALYTICS, VECTOR; `postgres` con los cuatro privilegios en las dos tablas (la prueba funcional de p.17.5 no abortará por permisos). El montaje lleva esas columnas como en producción (`TIPO_Y_VERSIONADO`), con un control contra la salida literal; el bucket de `mercado-001`, sin fijarlas, sale STANDARD/DISABLED. Si `mercado-001` fija `type`: lo decide el CTO; no se ha cambiado.
+
+**p.18.5 · Pruebas (sección 11 de `pruebas/mercado-001-bucket.mjs`).** Control: la ficha de cada una de las cinco funciones en el montaje es la literal de la s14b/s14c (el montaje las pasa a `supabase_storage_admin`). Positivo: los siete acreditados. Negativos permanentes, cada uno en s14 (NO ACREDITADO con el campo exacto, los demás acreditados, PARAR) y en `mercado-001` (aborta nombrándolos, nada cambia): los dos de Astra (search_path `public, pg_catalog` con `public.length` sintético; SECURITY DEFINER), otro dueño, un proconfig añadido sin cambiar el cuerpo (a una que ya tenía y a `protect_delete`, que no tenía), otra volatilidad, SECURITY DEFINER en `protect_delete` con el md5 igual. En el caso de Astra, una secuencia (que no se deshace) demuestra que la función sintética no llega a ejecutarse: `mercado-001` aborta antes del INSERT. **Rojo previo:** con el SQL de `52f5d39`, 16 rojos y 0 controles rotos.
+
+**p.18.6 · Autorrevisión.**
+1. **Cambio de comportamiento:** `protect_objects_delete` habilitado SIEMPRE (`tgenabled = 'A'`) aplicaba (p.17, «O o A»); ahora aborta, porque la acreditación del CTO exige `O` y «cualquier diferencia» aborta. Es más estricto (falla cerrada); el oráculo PD-05 se ha cambiado en consecuencia. Lo señalo al CTO.
+2. **Disparadores fuera de la lista:** `mercado-001` no aborta por ellos (sí s14). Si el CTO quiere que `mercado-001` aborte también ante un disparador no listado (como hace s14), es una línea; no lo he hecho sin su decisión.
+3. **Un disparador acreditado que desaparece** no es «diferencia» en el bloque (no hay fila que comparar): s14 lo deja ver en el recuento (`storage.buckets: 4`) y el runbook espera 5; `mercado-001` solo exige `protect_objects_delete`. Sin cambio.
+4. **Lo que no cubre la ficha:** las funciones que llaman las funciones acreditadas resueltas por un `search_path` que no cambia (p. ej. `length` con `proconfig` `-` se resuelve con el `search_path` de quien ejecuta: en `mercado-001`, `pg_catalog, pg_temp`, fijado al empezar), `proisstrict`/`proleakproof`/`proparallel` (no pedidos; no afectan a una función de disparador), y los privilegios EXECUTE (no cuentan para disparadores).
+5. **La firma** no tiene negativo propio: cambiarla sin cambiar `pg_get_triggerdef` exigiría otra función con el mismo nombre en el mismo esquema, que el disparador no puede referir sin cambiar su definición.
+
+**p.18.7 · type y versioning_status (CTO 15-oct, con la s14d).** Con lo medido (`type` por defecto `'STANDARD'::storage.buckettype`, `versioning_status` por defecto `'DISABLED'::text`, los dos NOT NULL; el enum STANDARD, ANALYTICS, VECTOR), aplica la rama «tiene valor por defecto y es STANDARD»: `mercado-001` **no** fija `type` ni toca `versioning_status`. No se ha dado la parada «NOT NULL sin valor por defecto».
+- **Postcondición** en `mercado-001`, justo después del INSERT del bucket y antes de la sonda: la fila creada se lee como jsonb (así, una columna que no existiera daría NULL y este mismo mensaje) y tiene que tener `type = 'STANDARD'`, `versioning_status = 'DISABLED'` y `lifecycle_configuration` y `lifecycle_configuration_generation` a NULL. Si no, aborta todo con «el bucket creado no es el esperado (type=…, versioning_status=…, …)». El informe tiene la fila `postcondicion`.
+- **s14:** las filas `columnas-bucket` acreditan el valor por defecto de `type` y de `versioning_status` (`pg_get_expr`, literal como lo dio la s14d) y los valores del enum en su orden; si no coinciden, «NO ACREDITADO (s14d: …): PARAR».
+- **Pruebas (sección 12):** el positivo (s14 acredita, `mercado-001` aplica con la fila `postcondicion`, el INSERT no nombra `type` ni `versioning_status`) y los negativos permanentes: el valor por defecto de `type` cambiado, otro valor de `versioning_status`, el enum sin STANDARD (en s14 y en `mercado-001`) y una columna de ciclo de vida con valor por defecto (en `mercado-001`). **Rojo previo:** con el SQL de `33ae3d7`, 9 rojos y 0 controles rotos.
+- **Autorrevisión.**
+  1. La postcondición se aplica solo cuando `mercado-001` inserta, como dijo el CTO. Si el bucket ya existía con la forma comprobada (segunda ejecución), su `type` y su `versioning_status` no se exigen: el informe los enseña y s14 los acredita como valor por defecto, no como valor de la fila. Exigirlos también ahí es una línea; queda para el CTO.
+  2. `pg_get_expr` califica el tipo según el `search_path` de quien ejecuta. En el editor, con el `search_path` de la s14d, sale `'STANDARD'::storage.buckettype`. Con `storage` en el `search_path` saldría sin calificar y la fila diría NO ACREDITADO: es una falla cerrada.
+  3. La rama «sin valor por defecto, o distinto de STANDARD → fijarlo» no está en el código porque no es el caso medido. Si cambiara, s14 para antes y, si no, la postcondición aborta.
+
+**p.18.8 · Decisiones del CTO sobre la autorrevisión (15-oct).**
+1. **`tgenabled = 'A'` que aborta (p.18.6, 1):** aceptado.
+2. **Disparadores fuera de la lista (p.18.6, 2):** `mercado-001` también aborta, igual que s14 manda PARAR: es fallar cerrado. El filtro del aborto pasa de `v.en_lista and not v.acreditado` a `not v.acreditado`. Mensaje: «disparadores de storage NO ACREDITADOS: <cuál> (difiere: no esta en la lista acreditada)», antes del INSERT, así que su función no llega a correr.
+   - Las pruebas de la defensa propia de la sonda frente a esos disparadores (E2-01, E2R2-02, E2R3-02/03, PD-04) siguen, pero con el mutante `M1listaAbierta`: una sola línea, con su control. Con el SQL real esa defensa queda detrás de la guarda nueva.
+   - Negativos (sección 13): un BEFORE INSERT nuevo en `storage.buckets`, otro en `storage.objects` y uno nuevo pero desactivado. Una secuencia demuestra que su función no corre.
+3. **La postcondición se exige siempre**, también si el bucket ya existía (reejecución). Va después del `if` del bucket y su mensaje es «el bucket mercado no es el esperado (…)».
+   - Negativos (sección 13): reejecución con el bucket ya creado y `type` cambiado a ANALYTICS, o `versioning_status` a ENABLED, o el ciclo de vida puesto.
+   - Positivo: la reejecución con el bucket intacto, con su fila `postcondicion`.
+
+**Rojo previo:** con el SQL de `cb8bb10`, 10 rojos y 1 control roto.
+- Rojos genuinos: los 3 de fuera de la lista y los 3 de la reejecución.
+- Por el mensaje renombrado: 4 de la sección 12.
+- Control roto: el mutante de lista abierta, que no existe en el SQL viejo.
+
+### p.19 · Etapa 2, ronda 9: Astra r8 (E2R8-01, E2R8-02) y la presencia exacta (15-oct)
+
+Astra r8 (`revisiones-suite/2026-10-15-astra-mercado-v1-etapa2-r8.md`): **NO**. E2R7-01 queda cerrado en sus dos reproducciones (174 oráculos), pero hay dos falsos «acreditado». Decisiones del CTO (15-oct), con el método nuevo: cada arreglo con su familia (generada o con semilla fija y anotada) y un revisor adversario interno, que no ha escrito el código, antes del encargo.
+
+**p.19.1 · E2R8-02, el enum ambiguo.** Hasta ahora s14 comparaba `string_agg(enumlabel, ',')` con `'STANDARD,ANALYTICS,VECTOR'`, así que dos etiquetas, `STANDARD` y `ANALYTICS,VECTOR`, se acreditaban como las tres.
+- Ahora se compara el **array exacto** `array_agg(enumlabel::text ORDER BY enumsortorder)` con `array['STANDARD', 'ANALYTICS', 'VECTOR']::text[]`, y se hace **con el operador de pg_catalog** (`operator(pg_catalog.=)`). Un `=` ajeno de `text[]` en `public` ganaría por tipo exacto a `anyarray = anyarray` aunque pg_catalog vaya delante en el search_path.
+- **En s14:** la fila `columnas-bucket | storage.buckettype` enseña el array (`{STANDARD,ANALYTICS,VECTOR}`; una etiqueta con coma o comillas sale entre comillas) y dice «acreditado (s14d, 15-oct)» o «NO ACREDITADO (s14d: {STANDARD,ANALYTICS,VECTOR}): PARAR».
+- **En `mercado-001`:** la misma expresión, byte a byte (una prueba lo compara), **antes del INSERT**. Si no coincide, aborta: «el enum storage.buckettype no es el acreditado: <array>; …». El caso de la sección 12 «enum sin STANDARD» aborta ahora por el enum y no por la postcondición.
+- **Límite (pregunta al CTO):** las mismas etiquetas en el mismo orden con otros números de `enumsortorder` (por ejemplo 10, 20, 30) dan el mismo array y se acreditan. Lo fija una prueba. Si el CTO quiere que esos números paren también, hay que medirlos, porque la s14d no los midió.
+
+**p.19.2 · Presencia exacta (CTO 15-oct, tras el informe de Astra).** El conjunto de disparadores de `storage.buckets` y `storage.objects` tiene que ser **exactamente** el acreditado.
+- Ni uno más: eso ya lo cubría `veredictos` desde `ed96d3e`.
+- **Ni uno menos:** el bloque compartido añade el CTE `faltan`, con los de la lista que no están en su tabla.
+  - En s14, cada uno sale como «FALTA: no esta en storage.<tabla> · NO ACREDITADO (difiere: falta)» y cuenta en «sin acreditar», así que el resumen manda PARAR. Sin ninguno faltan los siete, y ya no existe el resumen «ninguno».
+  - En `mercado-001`, el aborto antes del INSERT los nombra con «(difiere: falta)». Si el que falta es `protect_objects_delete`, aborta antes su guarda propia.
+- **El caso de Astra** (`enforce_bucket_name_length_trigger` borrado, «buckets: 4 · sin acreditar: 0» y `mercado-001` aplicaba) ahora da «storage.buckets: 4 · sin acreditar: 1 … PARAR» y aborta.
+- **El mutante `M1listaAbierta`** (solo el filtro `en_lista`) sigue abortando por uno que falta. Hay un control para ello.
+
+**p.19.3 · El comentario de la postcondición** (`mercado-001`, Astra r8): ya no promete el mensaje. Al retirar una columna de ciclo de vida se puede abortar antes, en el INSERT, dentro de un disparador acreditado que lee NEW («record "new" has no field …»). Falla cerrado igual.
+
+**p.19.4 · Familias (`pruebas/mercado-001-bucket.mjs`, sección 14).**
+- **Presencia:** cada uno de los siete borrado, generado de la lista; 4 pares borrados elegidos con la semilla fija `20261015`; uno renombrado (falta el suyo y sobra otro); y el escenario literal de Astra. Cada caso se comprueba en s14 (fila FALTA y resumen) y en `mercado-001` (aborto y nada cambia).
+- **Enum:**
+  - el caso de Astra;
+  - reordenadas;
+  - una añadida (ADD VALUE);
+  - una quitada;
+  - una renombrada (RENAME VALUE);
+  - el orden numérico cambiado (`enumsortorder` de VECTOR a 0.5, que reordena);
+  - un dominio en vez de un enum;
+  - **16 variantes generadas con la semilla fija `20261016`**, con un pozo de etiquetas que incluye minúsculas, espacios, comas, comillas, llaves y `NULL`;
+  - el `=` ajeno de `text[]`.
+
+  Todas dan PARAR en s14 y aborto en `mercado-001`. Hay además el límite del orden numérico igual, y la comparación del texto idéntico en los dos ficheros.
+
+**Rojo previo:** la prueba nueva contra el SQL de `ed96d3e` da **82 rojos y 2 controles rotos** (`revisiones-suite/2026-10-15-mercado-v1-etapa2-r9/rojos/`).
+- Los genuinos son los de presencia (salvo los de `protect_objects_delete` en `mercado-001`, que ya paraba su guarda) y los de E2R8-02.
+- Por formato: la fila del enum, y el resumen «ninguno», que ahora es PARAR.
+- Los dos controles rotos son del mutante, cuya línea cambia.
+- Los 6 rojos de E2-01/E2R2-02/E2R3-02/E2R3-03/PD-04 vienen del mutante, que con el SQL viejo no se aplica.
+
+**p.19.5 · Revisor adversario interno sobre `d4c9532`** (un subagente que no escribió el código). Lo que encontró, ya arreglado:
+- **R9-01 (medio): nadie comprobaba que la columna `type` fuera DE tipo `storage.buckettype`.** Con `type text not null default 'STANDARD'::storage.buckettype`, `pg_get_expr` imprime el mismo valor por defecto, así que s14 lo acreditaba todo y `mercado-001` aplicaba.
+  - Lo mismo pasaba con un dominio sobre el enum (con `CHECK` o sin él).
+  - Con otro enum en `public`, s14 paraba por el valor por defecto, pero `mercado-001` aplicaba.
+
+  **Arreglo:** el `atttypid` de la columna tiene que ser `to_regtype('storage.buckettype')`, con `operator(pg_catalog.=)`. Es la misma expresión en s14 (fila nueva `columnas-bucket | type (su tipo) | …`) y en `mercado-001` (antes del INSERT y del enum: «la columna type de storage.buckets no es del tipo storage.buckettype (es …)»).
+
+  **Familia:** text con el mismo valor por defecto, varchar, el dominio sobre el enum con `CHECK` y sin él, otro enum en `public` y otro en `storage` con las mismas etiquetas.
+- **R9-02 (bajo, pruebas): «antes del INSERT» no se medía.** Un mutante con la guarda del enum tras el INSERT dejaba la prueba en verde.
+
+  **Arreglo:** una columna testigo en `storage.buckets` con `default nextval(...)`. No es un disparador, así que no toca la lista. Cualquier INSERT la consume, y la secuencia no se deshace con el aborto. Los oráculos de `mercado-001` de presencia, enum y tipo exigen el testigo sin consumir, y un control construye el mutante del revisor y comprueba que el testigo lo caza.
+- **R9-03 (informativo):** el control del mutante de lista abierta con un disparador que falta exige ya el mensaje «(difiere: falta)».
+- **Además:** `::pg_catalog.text` en las expresiones del enum. El revisor vio que el `::text` sin calificar dependía del search_path; no daba un falso verde, pero ya no depende.
+
+**Rojo previo:** la prueba nueva contra el SQL de `d4c9532` da 15 rojos y 0 controles rotos (`rojos/mercado-001-bucket-revisor-contra-d4c9532.txt`).
+
+**Lo que intentó el revisor sin encontrar nada:**
+- **Enum:** reordenar, añadir, quitar o renombrar etiquetas; la coma dentro de una etiqueta; un enum vacío; un dominio con ese nombre; un `=` ajeno de `text[]`; un tipo con el mismo nombre en otro esquema o en `pg_temp`; y un dominio `public.text` con colación no determinista (s14 entera falla y `mercado-001` aborta).
+- **Presencia:**
+  - uno de los siete marcado `tgisinternal`: sale FALTA, lo que cierra la variante de E2R8-01 sobre un acreditado;
+  - uno desactivado;
+  - el mismo nombre movido a la otra tabla;
+  - `storage.buckets` renombrada y recreada con LIKE;
+  - `storage.buckets` convertida en vista.
+
+  No caben duplicados. El resumen cuenta bien, y `M1listaAbierta` no enmascara nada.
+- **Fuera de alcance, anotado:** los disparadores en particiones (si `storage.buckets` fuera particionada) y las reglas (`pg_rewrite`) en `storage.buckets`, que equivalen a un disparador adicional que no ve ninguna guarda.
+
+**p.19.6 · E2R8-01 (disparadores internos): PARADO.** La regla del CTO admite solo internos de `pg_catalog` de la familia `RI_FKey_*`, «con la tabla y la restricción esperadas». Pero los internos de `storage.buckets` y `storage.objects` **no se han medido nunca en producción**: s14b, s14c y s14 los excluyen. Pregunta al CTO: medirlos antes con una consulta de solo lectura (s14e) y acreditar la lista exacta, o admitirlos por coherencia con `pg_constraint` sin lista cerrada.
+
+### p.20 · Etapa 2, ronda 9: cierre de E2R8-01 y E2R8-02 (CTO 16-oct, con la s14e de producción)
+
+**p.20.1 · Las decisiones del CTO (16-oct).**
+1. **Internos: opción (a).** Se miden antes (la s14e) y se acredita la lista exacta, con su función, tabla y restricción. Cualquier interno fuera de la lista da PARAR y aborta. **Exacta en las dos direcciones:** uno de más o uno de menos (una FK quitada) da PARAR, igual que los siete externos.
+2. **El orden numérico del enum queda como límite.** Se acreditan las etiquetas y su orden exactos; los valores de `enumsortorder`, no (la prueba del límite de p.19.4 se queda tal cual).
+3. **Reglas (`pg_rewrite`) en `storage.buckets` y `storage.objects`:** entran en la presencia exacta. Lo esperado es ninguna; cualquiera da PARAR y aborta.
+
+**p.20.2 · La s14e de producción (Ramón, 16-oct, después de la s10 de la puerta; literal en `sql/consultas/salidas/s14e-internos-storage-2026-10-16.csv`).**
+- Las dos tablas, `relkind=r`, sin particiones ni hijas. **0 reglas.**
+- **8 internos**, todos de `pg_catalog`, lenguaje `internal`, `habilitado=O`, por fila, de tres FK a `storage.buckets(id)` (`on delete`/`on update` NO ACTION, no diferibles, validadas):
+
+| Tabla | Función | Restricción | Tabla relacionada | Momento |
+|---|---|---|---|---|
+| buckets | `RI_FKey_noaction_del` | `objects_bucketId_fkey` | `storage.objects` | AFTER DELETE |
+| buckets | `RI_FKey_noaction_upd` | `objects_bucketId_fkey` | `storage.objects` | AFTER UPDATE |
+| buckets | `RI_FKey_noaction_del` | `s3_multipart_uploads_bucket_id_fkey` | `storage.s3_multipart_uploads` | AFTER DELETE |
+| buckets | `RI_FKey_noaction_upd` | `s3_multipart_uploads_bucket_id_fkey` | `storage.s3_multipart_uploads` | AFTER UPDATE |
+| buckets | `RI_FKey_noaction_del` | `s3_multipart_uploads_parts_bucket_id_fkey` | `storage.s3_multipart_uploads_parts` | AFTER DELETE |
+| buckets | `RI_FKey_noaction_upd` | `s3_multipart_uploads_parts_bucket_id_fkey` | `storage.s3_multipart_uploads_parts` | AFTER UPDATE |
+| objects | `RI_FKey_check_ins` | `objects_bucketId_fkey` | `storage.buckets` | AFTER INSERT |
+| objects | `RI_FKey_check_upd` | `objects_bucketId_fkey` | `storage.buckets` | AFTER UPDATE |
+
+**p.20.3 · Reglas (`67ed21f`).** En el bloque compartido entran los CTE `reglas` (cada fila de `pg_rewrite` de las dos tablas) y `otros` (lo que no es un disparador de la lista y tampoco se acredita).
+- **`mercado-001`** aborta antes del INSERT, con «regla <nombre> (difiere: regla <evento> · habilitada=<x>: no se acredita ninguna)».
+- **s14:**
+  - cada regla sale como NO ACREDITADO;
+  - la fila `(reglas)` las cuenta;
+  - el resumen las suma a «sin acreditar» (PARAR).
+- **Pruebas (sección 15):** una familia generada y exhaustiva:
+  - 2 tablas × INSERT/UPDATE/DELETE × (ALSO con efecto, INSTEAD NOTHING);
+  - una desactivada en cada tabla;
+  - una con el nombre de un disparador acreditado;
+  - el positivo y el control de una regla en otra tabla.
+- **Rojo contra `502a3fc`:** 32 rojos y 1 control roto (la fila nueva).
+
+**p.20.4 · Internos (`78023ca`).** En el bloque compartido:
+- **`internos_acreditados`:** los ocho de p.20.2, por función, tabla, restricción, tabla relacionada y momento.
+- **`internos`:** los de `tgisinternal`, con su ficha.
+- **`internos_veredicto`:** acreditado si coincide en esos cinco campos y además tiene `habilitado='O'`, lenguaje `internal` y restricción de tipo `f`.
+- **En `otros`:** cada interno no acreditado («no esta en la lista de internos acreditados») y cada acreditado sin su interno («falta»). El nombre `RI_ConstraintTrigger_…` lleva un oid y no se usa.
+- **s14:**
+  - los ocho, como «acreditado (s14e, 16-oct)»;
+  - la fila `(internos)`: «storage.objects: 2 · storage.buckets: 6 · acreditados: 8 de 8», o PARAR;
+  - el resumen cuenta los no acreditados.
+- **`mercado-001`:** aborta antes del INSERT nombrándolos.
+- **El montaje** (`REALES`) lleva la FK con su nombre de producción y las dos tablas `s3_*`. Un control comprueba que la s14e sobre el montaje da, sin el oid, las 16 filas de la salida literal.
+- **Pruebas (sección 16):**
+  - el positivo;
+  - 9 casos:
+    - cada una de las tres FK quitada;
+    - una FK de más con `ON DELETE CASCADE`;
+    - `objects_bucketId_fkey` con otra acción;
+    - la misma, renombrada;
+    - un interno desactivado;
+    - **los dos escenarios de Astra r8:** un BEFORE INSERT propio con efecto, marcado interno; y `enforce_bucket_name_length_trigger` marcado interno.
+
+  Cada uno da PARAR en s14 (con su recuento exacto) y aborto en `mercado-001`, con el testigo y el efecto sin consumir y nada cambiado. (En `78023ca` iba además el límite de la FK diferible; tras el revisor es un negativo: p.20.7.)
+- **Rojo contra `67ed21f`:** 21 rojos y 0 controles rotos.
+
+**p.20.5 · Límites declarados.**
+- **Lo acreditado de un interno** (tras el revisor, p.20.7): función, tabla, restricción, tabla relacionada, momento, habilitado, lenguaje y tipo, su forma (sin WHEN, argumentos ni columnas; tablas, índice y diferible de su restricción) y la definición de la FK medida. No se comparan `confmatchtype` (la s14e no lo midió) ni la ficha de las funciones internas (`proconfig`, dueño…), que solo un superusuario cambia.
+- **El orden numérico del enum** (decisión 2).
+- **Las particiones:** la s14e midió que no hay, y ni s14 ni `mercado-001` las inventarían.
+- **Un superusuario que reescriba `pg_catalog` a voluntad** queda fuera de lo que puede certificar una consulta (Astra r8).
+
+**p.20.6 · Tandas.** `67ed21f`: la prueba sola, 294 verdes. `78023ca`: 315 verdes; la tanda completa, 115 pruebas, código 0, con el turno de máquina.
+
+**p.20.7 · El revisor adversario interno (sobre `502a3fc..78023ca`).** Un subagente que no escribió el código; sus scripts, en `revisiones-suite/2026-10-16-mercado-v1-etapa2-r9b/revisor-interno/`.
+- **R9I-01 (alta), arreglado:** la lista de internos se comparaba como conjunto y por la tupla (tabla, función, restricción, relacionada, momento). Un **gemelo** de `RI_FKey_check_ins` creado a mano, marcado interno y colgado de `objects_bucketId_fkey`, pasaba de dos formas:
+  - **duplicado:** «acreditados: 9 de 8: la lista exacta», y `mercado-001` aplicaba;
+  - **sustituto, con WHEN de usuario:** «8 de 8», y el WHEN se ejecutaba en la sonda.
+
+  **Arreglo**, en el bloque compartido:
+  - la **forma** de un interno: sin WHEN, sin argumentos ni columnas, las tablas, el índice y lo diferible de **su** restricción, y la FK tal como la midió la s14e (`(bucket_id) → storage.buckets (id)`, NO ACTION en los dos sentidos, no diferible, validada);
+  - la **cuenta exacta**: cada entrada, con exactamente un interno (0: «falta»; 2 o más: «repetido»);
+  - «(internos)» dice PARAR si no cuadra.
+- **R9I-02 (baja; solo s14), arreglado:** un `||` (text, name) de `public` disfrazaba en s14 un CASCADE de NO ACTION; `mercado-001`, con su search_path, abortaba igual. **Arreglo:** lo nuevo del bloque (reglas e internos) usa `pg_catalog.concat` y `operator(pg_catalog.…)`. El resto del bloque, de antes (`fichas.firma`), sigue con la protección de `ctx`.
+- **R9I-03 (baja), arreglado:** la definición de la FK no se comparaba. Ahora sí (columnas, acciones, diferible, validada). **Cambio:** la FK diferible, que en `78023ca` era un límite declarado, ahora da PARAR (la s14e midió `diferible=false`).
+- **Familia nueva (sección 16):**
+  - 7 gemelos generados: exacto (repetido), con WHEN con efecto, con argumentos, con columnas, con otra tabla relacionada, diferible, y el sustituto;
+  - la FK diferible;
+  - el `||` ajeno.
+- **Lo que intentó sin encontrar nada:**
+  - el bloque, idéntico en los dos ficheros;
+  - la guarda, antes del INSERT (medido con testigo y efecto);
+  - un `RI_FKey_*` de otro esquema (se exige el esquema y el lenguaje `internal`);
+  - las dos direcciones sin duplicados;
+  - la partición interno / no interno, completa;
+  - las reglas desactivadas, de vistas o de otras tablas;
+  - `=`, `like` y las conversiones nuevas resuelven en `pg_catalog`;
+  - E2R8-02.
+- **Informativo, sin cambio:** `proconfig`, `prosecdef`, `prosrc` y dueño de las funciones internas no se comparan (solo un superusuario puede cambiarlos; el lenguaje `internal` y el esquema sí).
+
+**p.20.8 · La familia de atributos de pg_proc (CTO 16-oct, la de E3R2-01 de Astra) y la s14f de producción.**
+- **La decisión:** la acreditación de funciones de s14 y `mercado-001` cubre todos los atributos de `pg_proc` que cambian la ejecución, no solo el cuerpo. Se comparan el md5 de `pg_get_functiondef` completo (incluye STRICT, LEAKPROOF, PARALLEL, COST, ROWS y SET) y, de forma explícita, `proisstrict`, `proleakproof`, `proparallel`, `prokind`, `proretset`, `prorettype`, los argumentos (`pronargs`), `proargmodes`, `proargnames`, `proargdefaults`, `pronargdefaults`, `procost` y `prorows`, además de lo de E2R7-01 (lenguaje, `prosecdef`, dueño, `proconfig`, `provolatile`, firma).
+- **La medida:** la s14b y la s14c no medían esos atributos. Se escribió `sql/consultas/s14f-atributos-funciones-storage.sql` (solo lectura, una SELECT; prueba `pruebas/s14f-atributos-funciones-storage.mjs`), y Ramón la corrió el 16-oct. La salida literal está en `sql/consultas/salidas/s14f-atributos-funciones-storage-2026-10-16.csv`. Las cinco funciones tienen todos los atributos por defecto (`prokind=f`, sin conjunto, `trigger`, sin argumentos, sin STRICT ni LEAKPROOF, PARALLEL `u`, COST 100, ROWS 0). Sus md5 de `pg_get_functiondef` coinciden con los del montaje.
+- **En el bloque compartido:**
+  - la columna `atributos` de `acreditados`, con los valores de la s14f;
+  - el campo `atributos` de `fichas`, calculado con `pg_catalog.concat` y calificado (R9I-02);
+  - «atributos» en `veredictos.difiere`.
+
+  Un cambio en la propia función (cuerpo, SECURITY, `proconfig` o volatilidad) mueve también el md5 de `pg_get_functiondef`: su «difiere» suma «atributos». El dueño no entra en `pg_get_functiondef`.
+- **Lo que no aplica a una función de disparador, y por qué:**
+  - **Argumentos:** una función de disparador no tiene argumentos declarados (`CREATE TRIGGER` exige `RETURNS trigger` sin argumentos). Por eso `proargtypes`/`pronargs`, `proargmodes`, `proargnames`, `proargdefaults` y `pronargdefaults` solo se pueden alterar tocando el catálogo.
+  - **Conjuntos:** no devuelve un conjunto, así que `proretset` y `prorows` tampoco (ALTER rechaza ROWS).
+  - **Sin efecto en la ejecución:** STRICT no la cambia (no hay argumentos SQL que puedan ser NULL), y LEAKPROOF, PARALLEL y COST solo afectan al planificador.
+
+  Todos se comparan igual, para fallar cerrado.
+- **Pruebas (sección 17 de `pruebas/mercado-001-bucket.mjs`):**
+  - un mutante por atributo (los 16 y uno que solo cambia `pg_get_functiondef`: SUPPORT) sobre `storage.enforce_bucket_name_length`; los no admitidos por DDL, tocando el catálogo. Cada uno da PARAR en s14 y aborto en `mercado-001` antes del INSERT, con el testigo sin consumir;
+  - el control: la s14f sobre el montaje da, fila a fila, la salida literal de producción.
+- **Tanda de la prueba:** 367 verdes.
+
+**p.20.9 · El revisor adversario interno sobre `78023ca..3913df6` (R9J).** Pudo ejecutarlo todo, con el turno; sus scripts, en `revisiones-suite/2026-10-16-mercado-v1-etapa2-r9b/revisor-interno/`.
+- **R9J-01 (media), arreglado:** la definición medida de la FK no incluía sus operadores de igualdad (`conpfeqop`, `conppeqop`, `conffeqop`), que son los que ejecuta el RI.
+  - **El caso:** con `conpfeqop` apuntando, por catálogo, a un `=` ajeno con efecto, s14 decía «8 de 8» y `mercado-001` aplicaba; el efecto se ejecutaba en el INSERT del centinela, dentro de un interno acreditado.
+  - **Arreglo:** los tres operadores tienen que ser `pg_catalog.=(text,text)`, y el índice de la FK, el de la clave primaria de `storage.buckets`.
+- **R9J-02 (baja), arreglado en las pruebas:** tres partes de la forma (el índice, `convalidated` y la columna de la FK) no tenían prueba (un mutante que las quitaba dejaba 367 verdes). Familia nueva: el sustituto con otro índice, la FK NOT VALID y la FK sobre otra columna; con R9J-01, 4 casos más en la sección 16.
+- **Rojo contra `3913df6`:** 2 (R9J-01 en s14 y en `mercado-001`). Los otros tres ya los paraba el código; ahora tienen prueba. `pruebas/mercado-001-bucket.mjs`: 375 verdes.
+- **Lo que intentó sin encontrar nada:**
+  - el bloque, idéntico en los dos ficheros;
+  - `pg_get_functiondef` cubre STRICT, LEAKPROOF, PARALLEL, SECURITY, SET, SUPPORT, TRANSFORM, VARIADIC, WINDOW, los argumentos y el cuerpo; ROWS, COST, dueño y lenguaje van aparte;
+  - lo que queda sin calificar en el bloque (`=` entre text/oid y el CASE sobre `"char"`) tiene coincidencia exacta en `pg_catalog`. El `||` de `firma`, de antes, solo puede hacer que falle;
+  - `tgargs` con `tgnargs` 0, `tgoldtable`/`tgnewtable`, `tgparentid`, un `tgfoid` homónimo en otro esquema y restricciones duplicadas: ninguno da un falso acreditado;
+  - los mutantes obvios (atributos fuera de `difiere`, la cuenta en una dirección, la guarda tras el INSERT) los cazan las pruebas.

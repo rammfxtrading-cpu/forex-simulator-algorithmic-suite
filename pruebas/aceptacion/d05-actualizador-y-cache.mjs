@@ -31,7 +31,7 @@
 import { titulo, ver, oraculo, fin, escenario, perfil, A, tok, proveedor, importa, db, guardado } from '../lib.mjs'
 import { llama } from '../supabase-falso.mjs'
 import { diaM1 } from '../proveedor-falso.mjs'
-import { correScript, ejecucionesScripts } from '../script-falso.mjs'
+import { correScript, controlH06 } from '../script-falso.mjs'
 const DIA = 86400
 const velasDe = (dia, n = 1440) => diaM1(dia, n).map(c => ({ time: c.timestamp / 1000, open: c.open, high: c.high, low: c.low, close: c.close, volume: 1 }))
 const enDia = (arr, dia) => arr.filter(v => new Date(v.time * 1000).toISOString().startsWith(dia)).length
@@ -107,5 +107,6 @@ const c4 = await llama(candles, { method: 'GET', token: tok(A), query: { ...q, p
 oraculo('D05', 'sin cache y con la version caida, se lee lo vigente y no se va al proveedor', c4.estado === 200 && c4.cuerpo?.count === 1440 && proveedor.llamadas.length === 0, `estado ${c4.estado}; ${c4.cuerpo?.count ?? '-'} velas; ${proveedor.llamadas.length} al proveedor`)
 db.falla = null
 
-ver('control (H06): todos los scripts terminaron (veredicto o exit), ninguno por timeout', ejecucionesScripts.length > 0 && ejecucionesScripts.every(e => e.terminoPor !== 'timeout'), JSON.stringify(ejecucionesScripts.map(e => e.terminoPor + ':' + e.codigo)))
+// H06 (CTO 15-oct): con la repeticion por carga, dicha en la salida (pruebas/script-falso.mjs, controlH06)
+controlH06(ver)
 fin()

@@ -1,0 +1,110 @@
+seccion,objeto,detalle
+funcion,storage.enforce_bucket_lifecycle_service_role(),existe · plpgsql · SECURITY INVOKER · dueño=supabase_storage_admin · proconfig=search_path=pg_catalog · devuelve=trigger · volatilidad=v · md5 del cuerpo 7691066f4111 (completo 7691066f4111610b457b74bdead6e80b) · lineas=20 · la usan: buckets.protect_bucket_control_update_role
+cuerpo,storage.enforce_bucket_lifecycle_service_role 001,
+cuerpo,storage.enforce_bucket_lifecycle_service_role 002,BEGIN
+cuerpo,storage.enforce_bucket_lifecycle_service_role 003,"  IF current_user::text IS DISTINCT FROM TG_ARGV[0]"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 004,"     AND ("
+cuerpo,storage.enforce_bucket_lifecycle_service_role 005,"       OLD.lifecycle_configuration IS DISTINCT FROM NEW.lifecycle_configuration"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 006,"       OR OLD.lifecycle_configuration_generation IS DISTINCT FROM NEW.lifecycle_configuration_generation"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 007,"     ) THEN"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 008,"    -- AFTER runs only after caller RLS has accepted the proposed row. The API"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 009,"    -- recognizes this specific error after rolling back its permission probe;"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 010,"    -- direct non-service writes still fail and cannot persist the change."
+cuerpo,storage.enforce_bucket_lifecycle_service_role 011,"    RAISE EXCEPTION 'bucket control columns may only be changed by the configured storage service role'"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 012,"      USING ERRCODE = 'PST01',"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 013,"            SCHEMA = TG_TABLE_SCHEMA,"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 014,"            TABLE = TG_TABLE_NAME,"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 015,"            CONSTRAINT = TG_NAME;"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 016,"  END IF;"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 017,
+cuerpo,storage.enforce_bucket_lifecycle_service_role 018,"  RETURN NULL;"
+cuerpo,storage.enforce_bucket_lifecycle_service_role 019,END;
+cuerpo,storage.enforce_bucket_lifecycle_service_role 020,
+funcion,storage.enforce_bucket_name_length(),existe · plpgsql · SECURITY INVOKER · dueño=supabase_storage_admin · proconfig=- · devuelve=trigger · volatilidad=v · md5 del cuerpo bd3d77a2603f (completo bd3d77a2603f7f344035a81def5502fa) · lineas=8 · la usan: buckets.enforce_bucket_name_length_trigger
+cuerpo,storage.enforce_bucket_name_length 001,
+cuerpo,storage.enforce_bucket_name_length 002,begin
+cuerpo,storage.enforce_bucket_name_length 003,"    if length(new.name) > 100 then"
+cuerpo,storage.enforce_bucket_name_length 004,"        raise exception 'bucket name ""%"" is too long (% characters). Max is 100.', new.name, length(new.name);"
+cuerpo,storage.enforce_bucket_name_length 005,"    end if;"
+cuerpo,storage.enforce_bucket_name_length 006,"    return new;"
+cuerpo,storage.enforce_bucket_name_length 007,end;
+cuerpo,storage.enforce_bucket_name_length 008,
+funcion,storage.protect_bucket_control_columns(),"existe · plpgsql · SECURITY INVOKER · dueño=supabase_storage_admin · proconfig=search_path=pg_catalog · devuelve=trigger · volatilidad=v · md5 del cuerpo 787041545267 (completo 7870415452678f5aa85f91dde952ef12) · lineas=49 · la usan: buckets.protect_bucket_control_insert, buckets.protect_bucket_control_update"
+cuerpo,storage.protect_bucket_control_columns 001,
+cuerpo,storage.protect_bucket_control_columns 002,DECLARE
+cuerpo,storage.protect_bucket_control_columns 003,"  configuration_changed boolean;"
+cuerpo,storage.protect_bucket_control_columns 004,BEGIN
+cuerpo,storage.protect_bucket_control_columns 005,"  IF TG_OP = 'INSERT' THEN"
+cuerpo,storage.protect_bucket_control_columns 006,"    IF NEW.lifecycle_configuration IS NOT NULL"
+cuerpo,storage.protect_bucket_control_columns 007,"       OR NEW.lifecycle_configuration_generation IS NOT NULL THEN"
+cuerpo,storage.protect_bucket_control_columns 008,"      IF NOT pg_has_role(current_user, TG_ARGV[0], 'MEMBER') THEN"
+cuerpo,storage.protect_bucket_control_columns 009,"        RAISE EXCEPTION 'only members of the configured storage service role may insert lifecycle policy state'"
+cuerpo,storage.protect_bucket_control_columns 010,"          USING ERRCODE = '42501',"
+cuerpo,storage.protect_bucket_control_columns 011,"                HINT = format("
+cuerpo,storage.protect_bucket_control_columns 012,"                  'Insert with both lifecycle columns NULL and configure lifecycle through the Storage API afterward, or insert as a member of %I.',"
+cuerpo,storage.protect_bucket_control_columns 013,"                  TG_ARGV[0]"
+cuerpo,storage.protect_bucket_control_columns 014,"                );"
+cuerpo,storage.protect_bucket_control_columns 015,"      END IF;"
+cuerpo,storage.protect_bucket_control_columns 016,"    END IF;"
+cuerpo,storage.protect_bucket_control_columns 017,
+cuerpo,storage.protect_bucket_control_columns 018,"    RETURN NEW;"
+cuerpo,storage.protect_bucket_control_columns 019,"  END IF;"
+cuerpo,storage.protect_bucket_control_columns 020,
+cuerpo,storage.protect_bucket_control_columns 021,"  configuration_changed ="
+cuerpo,storage.protect_bucket_control_columns 022,"    OLD.lifecycle_configuration IS DISTINCT FROM NEW.lifecycle_configuration"
+cuerpo,storage.protect_bucket_control_columns 023,"    OR OLD.lifecycle_configuration_generation IS DISTINCT FROM NEW.lifecycle_configuration_generation;"
+cuerpo,storage.protect_bucket_control_columns 024,
+cuerpo,storage.protect_bucket_control_columns 025,"  IF NOT configuration_changed THEN"
+cuerpo,storage.protect_bucket_control_columns 026,"    RETURN NEW;"
+cuerpo,storage.protect_bucket_control_columns 027,"  END IF;"
+cuerpo,storage.protect_bucket_control_columns 028,
+cuerpo,storage.protect_bucket_control_columns 029,"  IF NEW.type IS DISTINCT FROM 'STANDARD' THEN"
+cuerpo,storage.protect_bucket_control_columns 030,"    RAISE EXCEPTION 'bucket versioning and lifecycle controls require a Standard bucket'"
+cuerpo,storage.protect_bucket_control_columns 031,"      USING ERRCODE = '0A000';"
+cuerpo,storage.protect_bucket_control_columns 032,"  END IF;"
+cuerpo,storage.protect_bucket_control_columns 033,
+cuerpo,storage.protect_bucket_control_columns 034,"  IF NEW.lifecycle_configuration IS NULL"
+cuerpo,storage.protect_bucket_control_columns 035,"     AND NEW.lifecycle_configuration_generation IS NULL THEN"
+cuerpo,storage.protect_bucket_control_columns 036,"    RETURN NEW;"
+cuerpo,storage.protect_bucket_control_columns 037,"  END IF;"
+cuerpo,storage.protect_bucket_control_columns 038,
+cuerpo,storage.protect_bucket_control_columns 039,"  IF NEW.lifecycle_configuration IS NULL"
+cuerpo,storage.protect_bucket_control_columns 040,"     OR NEW.lifecycle_configuration_generation IS NULL"
+cuerpo,storage.protect_bucket_control_columns 041,"     OR OLD.lifecycle_configuration IS NOT DISTINCT FROM NEW.lifecycle_configuration"
+cuerpo,storage.protect_bucket_control_columns 042,"     OR OLD.lifecycle_configuration_generation IS NOT DISTINCT FROM NEW.lifecycle_configuration_generation THEN"
+cuerpo,storage.protect_bucket_control_columns 043,"    RAISE EXCEPTION 'a changed lifecycle policy requires a new non-null generation'"
+cuerpo,storage.protect_bucket_control_columns 044,"      USING ERRCODE = '22023';"
+cuerpo,storage.protect_bucket_control_columns 045,"  END IF;"
+cuerpo,storage.protect_bucket_control_columns 046,
+cuerpo,storage.protect_bucket_control_columns 047,"  RETURN NEW;"
+cuerpo,storage.protect_bucket_control_columns 048,END;
+cuerpo,storage.protect_bucket_control_columns 049,
+funcion,storage.protect_delete(),"existe · plpgsql · SECURITY INVOKER · dueño=supabase_storage_admin · proconfig=- · devuelve=trigger · volatilidad=v · md5 del cuerpo 998d324ea2b1 (completo 998d324ea2b1abc49351e8c2367b5796) · lineas=11 · la usan: buckets.protect_buckets_delete, objects.protect_objects_delete"
+cuerpo,storage.protect_delete 001,
+cuerpo,storage.protect_delete 002,BEGIN
+cuerpo,storage.protect_delete 003,"    -- Check if storage.allow_delete_query is set to 'true'"
+cuerpo,storage.protect_delete 004,"    IF COALESCE(current_setting('storage.allow_delete_query', true), 'false') != 'true' THEN"
+cuerpo,storage.protect_delete 005,"        RAISE EXCEPTION 'Direct deletion from storage tables is not allowed. Use the Storage API instead.'"
+cuerpo,storage.protect_delete 006,"            USING HINT = 'This prevents accidental data loss from orphaned objects.',"
+cuerpo,storage.protect_delete 007,"                  ERRCODE = '42501';"
+cuerpo,storage.protect_delete 008,"    END IF;"
+cuerpo,storage.protect_delete 009,"    RETURN NULL;"
+cuerpo,storage.protect_delete 010,END;
+cuerpo,storage.protect_delete 011,
+ajuste,storage.allow_delete_query,lo lee storage.protect_delete · current_setting en esta sesion = (sin valor: NULL)
+ajuste,(resumen),"las funciones leen ajustes: arriba, cada uno"
+columna,storage.buckets.id,text not null
+columna,storage.buckets.name,text not null
+columna,storage.buckets.owner,uuid
+columna,storage.buckets.created_at,timestamp with time zone
+columna,storage.buckets.updated_at,timestamp with time zone
+columna,storage.buckets.public,boolean
+columna,storage.buckets.avif_autodetection,boolean
+columna,storage.buckets.file_size_limit,bigint
+columna,storage.buckets.allowed_mime_types,text[]
+columna,storage.buckets.owner_id,text
+columna,storage.buckets.type,storage.buckettype not null
+columna,storage.buckets.versioning_status,text not null
+columna,storage.buckets.lifecycle_configuration,jsonb
+columna,storage.buckets.lifecycle_configuration_generation,uuid
+FIN,s14c,consulta

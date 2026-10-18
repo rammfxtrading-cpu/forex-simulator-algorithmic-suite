@@ -48,10 +48,15 @@ function trozo(par, d, precio) {
 }
 const plano = p => () => p
 const sinMin = (p, desde, n) => i => (i >= desde && i < desde + n ? null : p)   // n minutos ausentes desde el minuto «desde»
+// etapa 2 (diseño p.1): los huecos aceptados van DENTRO del trozo del dia de su primer minuto
+function conHuecos(par, ts, lista = []) {
+  return ts.map(t => { const d = B.decodifica(t.buffer); return { dia: t.dia, buffer: B.codifica(par, d.dia, d.velas, lista.filter(h => h.inicio.slice(0, 10) === t.dia)) } })
+}
 function fuentes(def, huecosAceptados = {}) {   // def: { PAR: [trozos] }
   const out = {}, mercado = {}
-  for (const [par, ts] of Object.entries(def)) {
-    const m = MF.creaManifiesto({ par, version: 'v1', trozos: ts, ...(huecosAceptados[par] ? { huecosAceptados: huecosAceptados[par] } : {}) })
+  for (const [par, ts0] of Object.entries(def)) {
+    const ts = conHuecos(par, ts0, huecosAceptados[par])
+    const m = MF.creaManifiesto({ par, version: 'v1', trozos: ts })
     out[par] = FU.creaFuente({ manifiesto: m, fijado: MF.fija(m), leeTrozo: d => ts.find(t => t.dia === d)?.buffer ?? null })
     mercado[par] = MF.fija(m)
   }
@@ -159,12 +164,12 @@ oraculo('P7-01', 'aceptado: sin detencion, TP a las 10:01 y GBPUSD plano', g.r?.
 oraculo('P7-01', 'marca en el estado (par, inicio, minutos, motivo) y un evento hueco_aceptado; tras serializar y avanzar mas, ni se pierde ni se repite', enTexto(g.r?.estado?.huecos_aceptados) === enTexto([{ inicio: `${MA}T10:01Z`, minutos: 16, motivo: 'corte_del_proveedor', par: 'GBPUSD' }]) && de(g.r.eventos, 'hueco_aceptado').length === 1 && de(g.r.eventos, 'hueco_aceptado')[0].par === 'GBPUSD' && de(g.otra.eventos, 'hueco_aceptado').length === 0 && enTexto(g.otra.estado.huecos_aceptados) === enTexto(g.r.estado.huecos_aceptados), g.error ?? enTexto([g.r?.estado?.huecos_aceptados, de(g.r?.eventos, 'hueco_aceptado'), g.otra?.estado?.huecos_aceptados]))
 oraculo('P7-01', 'en el reto tambien: sin detencion, horizonte en el destino y la marca en el estado del motor', g.rr?.detencion === null && g.rr.reto.horizonte === T1000 + 30 * 60 && g.rr.reto.motor.huecos_aceptados?.length === 1 && de(g.rr.eventos, 'hueco_aceptado').length === 1, g.error ?? enTexto([g.rr?.detencion, g.rr?.reto?.motor?.huecos_aceptados]))
 
-titulo('5 · la lista del manifiesto: explicita, validada y versionada')
-const ts16 = GB(sinMin('1.30000', 601, 16))
-oraculo('P7-01', 'un hueco aceptado que no existe en los trozos (inicio o minutos distintos): el manifiesto no se crea', lanza(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: ts16, huecosAceptados: [{ inicio: `${MA}T10:02Z`, minutos: 16, motivo: 'festivo' }] })) && lanza(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: ts16, huecosAceptados: [{ inicio: `${MA}T10:01Z`, minutos: 17, motivo: 'festivo' }] })))
-oraculo('P7-01', 'motivo fuera de la lista (festivo, cambio_de_sesion, corte_del_proveedor) o de 15 minutos o menos: no se crea', lanza(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: ts16, huecosAceptados: [{ inicio: `${MA}T10:01Z`, minutos: 16, motivo: 'porque si' }] })) && lanza(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: GB(sinMin('1.30000', 601, 10)), huecosAceptados: [{ inicio: `${MA}T10:01Z`, minutos: 10, motivo: 'festivo' }] })))
-const m0 = corre(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: ts16 })), m1 = corre(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: ts16, huecosAceptados: acept })), mv = corre(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: ts16, huecosAceptados: [] }))
-oraculo('P7-01', 'la lista entra en la huella (otra lista, otra version fijada); vacia, la huella es la de siempre', !!m0?.huella && !!m1?.huella && m0.huella !== m1.huella && mv.huella === m0.huella && enTexto(m1.huecos_aceptados) === enTexto(acept) && !lanza(() => MF.validaManifiesto(m1)), enTexto([m0?.huella?.slice(0, 8), m1?.huella?.slice(0, 8), mv?.huella?.slice(0, 8), m1?.error]))
+titulo('5 · los huecos aceptados: en el trozo, validados y versionados (etapa 2, diseño p.1)')
+const ts16 = GB(sinMin('1.30000', 601, 16)), ts20 = GB(sinMin('1.30000', 601, 20))
+oraculo('P7-01', 'un hueco aceptado que no existe asi en las velas (10:02 o 16 min dentro de uno de 20): el manifiesto no se crea', lanza(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: conHuecos('GBPUSD', ts20, [{ inicio: `${MA}T10:02Z`, minutos: 16, motivo: 'festivo' }]) })) && lanza(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: conHuecos('GBPUSD', ts20, [{ inicio: `${MA}T10:01Z`, minutos: 16, motivo: 'festivo' }]) })) && !lanza(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: conHuecos('GBPUSD', ts20, [{ inicio: `${MA}T10:01Z`, minutos: 20, motivo: 'festivo' }]) })))
+oraculo('P7-01', 'motivo fuera de la lista (festivo, cambio_de_sesion, corte_del_proveedor) o de 15 minutos o menos: el trozo no se codifica', lanza(() => conHuecos('GBPUSD', ts16, [{ inicio: `${MA}T10:01Z`, minutos: 16, motivo: 'porque si' }])) && lanza(() => conHuecos('GBPUSD', GB(sinMin('1.30000', 601, 10)), [{ inicio: `${MA}T10:01Z`, minutos: 10, motivo: 'festivo' }])))
+const m0 = corre(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: ts16 })), m1 = corre(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: conHuecos('GBPUSD', ts16, acept) })), mv = corre(() => MF.creaManifiesto({ par: 'GBPUSD', version: 'v1', trozos: conHuecos('GBPUSD', ts16, []) }))
+oraculo('P7-01', 'el hueco entra en el sha del trozo y en la huella (otro hueco, otra version fijada); sin huecos, la huella es la de siempre', !!m0?.huella && !!m1?.huella && m0.huella !== m1.huella && mv.huella === m0.huella && enTexto(B.decodifica(conHuecos('GBPUSD', ts16, acept)[1].buffer).huecos) === enTexto(acept) && !lanza(() => MF.validaManifiesto(m1)), enTexto([m0?.huella?.slice(0, 8), m1?.huella?.slice(0, 8), mv?.huella?.slice(0, 8), m1?.error]))
 
 titulo('6 · motor de un par, medianoche y fin de semana')
 const h = corre(() => {
@@ -223,8 +228,8 @@ const kc = corre(() => {
 })
 oraculo('P7C-01', 'cartera, los dos pares sin velas: avanzar a 10:05 ya marca (cursor 10:00); reanudar en 10:10 y 10:20 no repite; paso = salto', kc.c5?.detencion === null && kc.c5.estado.reloj.cursor === T1000 && marcasDe(kc.c5.estado) === dosMarcas && de(kc.c5.eventos, 'hueco_aceptado').length === 2 && de(kc.c10.eventos, 'hueco_aceptado').length === 0 && de(kc.c20.eventos, 'hueco_aceptado').length === 0 && CA.serializa(kc.c20.estado) === CA.serializa(kc.salto.estado), kc.error ?? enTexto([kc.c5?.estado?.huecos_aceptados, de(kc.c10?.eventos, 'hueco_aceptado'), de(kc.c20?.eventos, 'hueco_aceptado')]))
 const k1 = corre(() => {
-  const ts = EU(sinMin('1.10000', 601, 16))
-  const m = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: ts, huecosAceptados: acept })
+  const ts = conHuecos('EURUSD', EU(sinMin('1.10000', 601, 16)), acept)
+  const m = MF.creaManifiesto({ par: 'EURUSD', version: 'v1', trozos: ts })
   const fu = FU.creaFuente({ manifiesto: m, fijado: MF.fija(m), leeTrozo: dd => ts.find(t => t.dia === dd)?.buffer ?? null })
   const motor = () => M.crea({ par: 'EURUSD', costes: cero, capital: '100000', mercado: MF.fija(m) })
   let e = FU.avanza(motor(), T1000, fu, { desde: S0(L) }).estado

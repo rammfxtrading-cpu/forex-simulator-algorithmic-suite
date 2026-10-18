@@ -1,0 +1,40 @@
+seccion,objeto,detalle
+funcion,storage.protect_delete,existe · plpgsql · SECURITY INVOKER · dueño=supabase_storage_admin · proconfig=- · volatilidad=v · md5 del cuerpo 998d324ea2b1 (completo 998d324ea2b1abc49351e8c2367b5796) · lineas=11
+cuerpo,storage.protect_delete 001,
+cuerpo,storage.protect_delete 002,BEGIN
+cuerpo,storage.protect_delete 003,"    -- Check if storage.allow_delete_query is set to 'true'"
+cuerpo,storage.protect_delete 004,"    IF COALESCE(current_setting('storage.allow_delete_query', true), 'false') != 'true' THEN"
+cuerpo,storage.protect_delete 005,"        RAISE EXCEPTION 'Direct deletion from storage tables is not allowed. Use the Storage API instead.'"
+cuerpo,storage.protect_delete 006,"            USING HINT = 'This prevents accidental data loss from orphaned objects.',"
+cuerpo,storage.protect_delete 007,"                  ERRCODE = '42501';"
+cuerpo,storage.protect_delete 008,"    END IF;"
+cuerpo,storage.protect_delete 009,"    RETURN NULL;"
+cuerpo,storage.protect_delete 010,END;
+cuerpo,storage.protect_delete 011,
+funcion,storage.update_updated_at_column,existe · plpgsql · SECURITY INVOKER · dueño=supabase_storage_admin · proconfig=- · volatilidad=v · md5 del cuerpo 7596e66a7698 (completo 7596e66a7698d5a6b5129c5ce9b24c5f) · lineas=6
+cuerpo,storage.update_updated_at_column 001,
+cuerpo,storage.update_updated_at_column 002,BEGIN
+cuerpo,storage.update_updated_at_column 003,"    NEW.updated_at = now();"
+cuerpo,storage.update_updated_at_column 004,"    RETURN NEW; "
+cuerpo,storage.update_updated_at_column 005,END;
+cuerpo,storage.update_updated_at_column 006,
+disparador,buckets.enforce_bucket_name_length_trigger,CREATE TRIGGER enforce_bucket_name_length_trigger BEFORE INSERT OR UPDATE OF name ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_name_length() · tgenabled=O (se dispara: origin/local)
+disparador,buckets.protect_bucket_control_insert,CREATE TRIGGER protect_bucket_control_insert BEFORE INSERT ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns('service_role') · tgenabled=O (se dispara: origin/local)
+disparador,buckets.protect_bucket_control_update,"CREATE TRIGGER protect_bucket_control_update BEFORE UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.protect_bucket_control_columns() · tgenabled=O (se dispara: origin/local)"
+disparador,buckets.protect_bucket_control_update_role,"CREATE TRIGGER protect_bucket_control_update_role AFTER UPDATE OF lifecycle_configuration, lifecycle_configuration_generation ON storage.buckets FOR EACH ROW EXECUTE FUNCTION storage.enforce_bucket_lifecycle_service_role('service_role') · tgenabled=O (se dispara: origin/local)"
+disparador,buckets.protect_buckets_delete,CREATE TRIGGER protect_buckets_delete BEFORE DELETE ON storage.buckets FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete() · tgenabled=O (se dispara: origin/local)
+disparador,buckets.(funcion),enforce_bucket_name_length_trigger → storage.enforce_bucket_name_length · plpgsql · md5 del cuerpo bd3d77a2603f
+disparador,buckets.(funcion),protect_bucket_control_insert → storage.protect_bucket_control_columns · plpgsql · md5 del cuerpo 787041545267
+disparador,buckets.(funcion),protect_bucket_control_update → storage.protect_bucket_control_columns · plpgsql · md5 del cuerpo 787041545267
+disparador,buckets.(funcion),protect_bucket_control_update_role → storage.enforce_bucket_lifecycle_service_role · plpgsql · md5 del cuerpo 7691066f4111
+disparador,buckets.(funcion),protect_buckets_delete → storage.protect_delete · plpgsql · md5 del cuerpo 998d324ea2b1
+disparador,objects.protect_objects_delete,CREATE TRIGGER protect_objects_delete BEFORE DELETE ON storage.objects FOR EACH STATEMENT EXECUTE FUNCTION storage.protect_delete() · tgenabled=O (se dispara: origin/local)
+disparador,objects.update_objects_updated_at,CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column() · tgenabled=O (se dispara: origin/local)
+disparador,(resumen),storage.objects: 2 · storage.buckets: 5
+ajuste,storage.allow_delete_query,lo lee storage.protect_delete · current_setting en esta sesion = (sin valor: NULL)
+ajuste fijado,(resumen),ningun ajuste storage.* fijado por base o por rol
+ajuste,session_replication_role,origin
+ajuste,(resumen),"las funciones leen ajustes: arriba, cada uno"
+privilegios,anon en storage.objects,"SELECT,INSERT,UPDATE,DELETE · USAGE en storage=si · EXECUTE de storage.protect_delete=si"
+privilegios,authenticated en storage.objects,"SELECT,INSERT,UPDATE,DELETE · USAGE en storage=si · EXECUTE de storage.protect_delete=si"
+FIN,s14b,consulta

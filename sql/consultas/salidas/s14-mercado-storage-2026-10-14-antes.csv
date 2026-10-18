@@ -1,0 +1,16 @@
+seccion,objeto,detalle
+bucket,forex-data,public=true · file_size_limit=- · allowed_mime_types=- · objetos=27 · bytes=745687517
+bucket,hub-producto-imagenes,"public=true · file_size_limit=5242880 · allowed_mime_types={image/jpeg,image/png,image/webp} · objetos=0 · bytes=0"
+bucket,mercado,NO EXISTE
+cerrojo,pertenencias,anon: - · authenticated: - · service_role: -
+cerrojo,por defecto,"postgres: en public: anon=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE; authenticated=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE; postgres=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE; service_role=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE · global: -"
+cerrojo,public.mercado_cerrojo,NO EXISTE (mercado-000 sin aplicar); el nombre esta libre
+cerrojo,roles,dueño que sera (quien ejecuta)=postgres · anon: - · authenticated: - · service_role: BYPASSRLS (el de Supabase: se informa) · authenticator: no puede actuar como el dueño
+disparador,(resumen),2 en storage.objects (1 por sentencia): la sonda de mercado-001 los dispara; PARAR hasta que el CTO acredite cada uno como estandar de Supabase y sin efectos externos
+contexto,lista blanca,acreditada: search_path empieza por pg_catalog; ningun operador = ajeno que acepte texto; texteq; bucket_id text con la colacion por defecto
+disparador,protect_objects_delete,BEFORE DELETE · POR SENTENCIA · storage.protect_delete · funcion de storage · plpgsql · md5 del cuerpo 998d324ea2b1
+rls,storage.objects,rls=true
+disparador,update_objects_updated_at,BEFORE UPDATE · por fila · storage.update_updated_at_column · funcion de storage · plpgsql · md5 del cuerpo 7596e66a7698
+politica,(ninguna),storage.objects no tiene politicas
+escritura,(ninguna),"ninguna politica UPDATE/DELETE/ALL aplicable a anon, authenticated o public"
+FIN,s14,consulta
