@@ -3743,3 +3743,18 @@ La integración y el despliegue apagado solo necesitan el **SÍ en A**. La integ
   - el resto de `pg_db_role_setting`;
   - lo que solo se reproduzca escribiendo el catálogo de sistema (q.20.3), como `indcheckxmin`;
   - `quote_all_identifiers` (RINV4-03: solo rojo falso).
+
+### q.21 · Etapa 3, ronda 5 (solo B): E3R4-01/02 y RE5-01 (18-oct)
+
+**A** (las etapas 2 y 3 integradas, con v1 apagado) está **en producción** desde el 18-oct a las 02:43 (`af6bbea`, integración de `4c18399` + `314c0c5` + `c006934`; orden 1-016). Esta ronda es solo **B**, el certificado para encender. Va en commits nuevos sobre `etapa3-simulador` después de `c006934`; el ancla de A no se mueve.
+
+- **E3R4-01, «permiso en profiles»:** es la única relación de fuera de las 14 que tocan los cuerpos de las RPC y sus auxiliares (inventario de sim-003, la preparatoria, la puerta y sim-004b). El dueño de las RPC necesita SELECT de `id`, `plan` y `simulador_activo`, y UPDATE en alguna columna, porque `sim_bloquea_alumno` la lee con FOR KEY SHARE. Va por columna y sin conceder nada.
+- **E3R4-02, «pertenencias del alumno»:** anon y authenticated no alcanzan, por ninguna pertenencia (`pg_has_role … MEMBER`: directa o en cadena, con SET o con INHERIT), ningún rol de este conjunto:
+  - service_role, postgres y el dueño de las RPC;
+  - los superusuarios y los roles con BYPASSRLS;
+  - los dueños de las 14 tablas;
+  - y, desde **RE5-01**, los dueños de `profiles`, `auth.users` y `auth.uid()`. Un miembro con INHERIT del dueño de `profiles` actuaba como su dueño: se activaba el acceso y cambiaba perfiles ajenos.
+
+  El sentido authenticator → roles de petición no cuenta.
+- **s16h** (solo lectura): mide en producción las pertenencias de anon y authenticated, con sus opciones, y los privilegios del dueño en `profiles`. No bloquea; entra en el próximo paquete.
+- **Límite declarado (RE5-02):** FORCE RLS en `profiles`. El dueño de las RPC (postgres, BYPASSRLS) lo ignora, y quitárselo exige superusuario.
