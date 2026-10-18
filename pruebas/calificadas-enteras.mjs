@@ -31,11 +31,11 @@ const INFORME = S4B.slice(S4B.lastIndexOf('\n-- INFORME (solo lectura)'))
 titulo('1 · en el texto: calificadas enteras')
 // fuera de comentarios y de cadenas ('…', E'…', $x$…$x$), y sin los OPERATOR(pg_catalog.x) ya calificados
 const codigo = t => t.replace(/\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, "''").replace(/--[^\n]*/g, '').replace(/[Ee]?'(?:[^']|'')*'/g, "''")
-const SINTAXIS = new Set(['coalesce', 'exists', 'any', 'all', 'array', 'values', 'select', 'from', 'where', 'and', 'or', 'not', 'as', 'on', 'join', 'union', 'then', 'else', 'when', 'over', 'filter', 'lateral', 'in', 'by', 'with', 'using'])
+const SINTAXIS = new Set(['coalesce', 'exists', 'any', 'all', 'array', 'values', 'select', 'from', 'where', 'and', 'or', 'not', 'as', 'on', 'join', 'union', 'then', 'else', 'when', 'over', 'filter', 'lateral', 'in', 'by', 'with', 'using', 'extract'])   // extract(campo from x): sintaxis, se resuelve en pg_catalog
 function sinCalificar(t) {
   const c = codigo(t), mal = []
   // fuera los ya calificados, count(*) y select *: lo que quede de [=<>!~|+-*/] es un operador por su nombre
-  const sinOp = c.replace(/OPERATOR\(pg_catalog\.[^)\s]+\)/g, ' ').replace(/\(\s*\*\s*\)/g, '( )').replace(/\bselect\s+\*/gi, 'select ')
+  const sinOp = c.replace(/OPERATOR\(pg_catalog\.[^)\s]+\)/g, ' ').replace(/\(\s*\*\s*\)/g, '( )').replace(/\bselect\s+\*/gi, 'select ').replace(/\b[a-z_]+\.\*/gi, 'x')
   for (const m of sinOp.matchAll(/(\|\||<>|!=|<=|>=|!~|~~|[=<>~+\-*\/])/g)) mal.push(`operador ${m[1]}`)
   for (const m of c.matchAll(/::\s*(?!pg_catalog\.)([A-Za-z_"][\w"]*)/g)) mal.push(`conversion ::${m[1]}`)
   // los nombres de las CTE y de los alias de columnas (nombre(a, b) as) no son llamadas

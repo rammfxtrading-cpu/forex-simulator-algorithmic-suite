@@ -299,10 +299,10 @@ rollback;`)
     oraculo('MUT-' + desc.replace(/\W+/g, '-'), `mutante «${desc}» → s10 cambia (lo caza ${lo})`, rm.ok && JSON.stringify(mira(rm)) !== JSON.stringify(mira(r2)), `${JSON.stringify(mira(r2))} → ${JSON.stringify(mira(rm))} ${err1(rm)}`)
   }
   const anomalias = x => x.filas.filter(f => f[0] === 'anomalia').length
-  mutaS10('DELETE de trade sin mirar la transaccion', 'and s.session_id = f.session_id and s.xact = f.xact', 'and s.session_id = f.session_id', x => clases(x, C.delLuego), 'L-delete-trade-otra-xact')
-  mutaS10('<> en lugar de IS DISTINCT FROM en las anomalias', 'where e.rol_jwt is distinct from e.rol_guc', 'where e.rol_jwt <> e.rol_guc', anomalias, 'A-tres-caminos')
+  mutaS10('DELETE de trade sin mirar la transaccion', 'and s.session_id OPERATOR(pg_catalog.=) f.session_id and s.xact OPERATOR(pg_catalog.=) f.xact', 'and s.session_id OPERATOR(pg_catalog.=) f.session_id', x => clases(x, C.delLuego), 'L-delete-trade-otra-xact')
+  mutaS10('<> en lugar de IS DISTINCT FROM en las anomalias', 'where not coalesce(e.rol_jwt OPERATOR(pg_catalog.=) e.rol_guc, e.rol_jwt is null and e.rol_guc is null)', 'where e.rol_jwt OPERATOR(pg_catalog.<>) e.rol_guc', anomalias, 'A-tres-caminos')
   mutaS10('ignorar el delta 0 que menciona balance (sin dudosos)', "then 'dudoso: delta 0, menciona balance, sin pareja'", "then 'nada'", x => clases(x, C.pausa), 'L-pausa')
-  mutaS10('solo cuenta authenticated', "where e.cliente = 'sin-firma' and e.rol_jwt in ('authenticated', 'anon')", "where e.cliente = 'sin-firma' and e.rol_jwt in ('authenticated')", x => clases(x, C.anon), 'A-anon')
+  mutaS10('solo cuenta authenticated', "where e.cliente OPERATOR(pg_catalog.=) 'sin-firma' and e.rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated', 'anon'])", "where e.cliente OPERATOR(pg_catalog.=) 'sin-firma' and e.rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated'])", x => clases(x, C.anon), 'A-anon')
 } finally {
   pg.cierra()
 }

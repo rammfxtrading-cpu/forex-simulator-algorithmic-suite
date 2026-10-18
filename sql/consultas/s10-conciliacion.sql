@@ -78,7 +78,7 @@ sinfirma as (
            when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and f.operacion OPERATOR(pg_catalog.=) 'UPDATE'
                 and exists (select 1 from public.sim_escrituras_v0_marcas m where m.escritura_id OPERATOR(pg_catalog.=) f.id) then 'dudoso: delta 0, menciona balance, sin pareja'
            when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and f.operacion OPERATOR(pg_catalog.=) 'UPDATE' then 'nada: no menciona balance (m.1)'
-           when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and f.operacion OPERATOR(pg_catalog.=) 'INSERT' and f.delta is distinct from 0 then 'incidencia: sesion creada con balance distinto de capital'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and f.operacion OPERATOR(pg_catalog.=) 'INSERT' and not coalesce(f.delta OPERATOR(pg_catalog.=) 0, f.delta is null and 0 is null) then 'incidencia: sesion creada con balance distinto de capital'
            when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' then 'nada'
            when f.tabla OPERATOR(pg_catalog.=) 'sim_trades' and f.operacion OPERATOR(pg_catalog.=) 'INSERT' then 'incidencia: INSERT de trade sin pareja'
            when f.tabla OPERATOR(pg_catalog.=) 'sim_trades' and f.operacion OPERATOR(pg_catalog.=) 'DELETE'
