@@ -112,7 +112,8 @@ try {
     ['funcion_ajena · extensions.digest con otro COST', 'extensions.digest(bytea,text)', 'alter function extensions.digest(bytea, text) cost 7;', true, 'despues'],
     ['funcion_ajena · auth.uid() con otro dueño', 'auth.uid()', 'alter function auth.uid() owner to service_role;', true, 'despues'],
     // el revisor interno de 679d363 (RINV-01..05)
-    ['tabla · RINV-01: sim_sessions con otro dueño (authenticated), quitandole lo que la 4.3 veria (el caso del revisor)', 'tabla', 'alter table public.sim_sessions owner to authenticated; revoke truncate, references, trigger on public.sim_sessions from authenticated;', true, 'despues'],
+    ['tabla · RINV-01: sim_sessions con otro dueño (authenticated), quitandole lo que la 4.3 veria (el caso del revisor)', 'tabla', 'alter table public.sim_sessions owner to authenticated; revoke truncate, references, trigger on public.sim_sessions from authenticated;', true, 'despues', 'pertenencias del alumno'],
+    // (desde E3R5-01, sim-004b lo para antes, en su seccion 0: authenticated ES dueño de una de las 14, un rol privilegiado)
     ['tabla · RINV-04: la RLS apagada en user_chart_config (no protegida)', 'tabla', 'alter table public.user_chart_config disable row level security;', false, 'despues'],
     ['columna · RINV-02: un dominio public.text en sim_sessions.name', 'columna', "create domain public.text as pg_catalog.text check (value <> 'inventada'); alter table public.sim_sessions alter column name type public.text;", false, 'despues'],
     ['identidad · RINV-03: sim_recibos.id con MAXVALUE 2', 'identidad', 'alter table public.sim_recibos alter column id set maxvalue 2;', false, 'despues'],
