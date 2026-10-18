@@ -109,6 +109,8 @@ try {
     ['anon, dueño directo de profiles', d => { m.pg.psql('grant create on schema public to anon;', d); const r = m.comoEjecutor(d, 'alter table public.profiles owner to anon;'); m.pg.psql('revoke create on schema public from anon;', d); return r }],
     ['authenticated, dueño directo de auth.users', d => m.pg.psql('alter table auth.users owner to authenticated;', d)],
     ['authenticated, dueño directo de auth.uid() (control: tambien lo ve la ficha de la funcion ajena)', d => m.pg.psql('alter function auth.uid() owner to authenticated;', d)],
+    // RE6-01 (revisor interno de 09492b0): el dueño de un esquema puede sustituir lo que hay dentro (extensions.digest)
+    ['RE6-01 · authenticated, dueño del esquema extensions', d => m.pg.psql('alter schema extensions owner to authenticated;', d)],
   ]
   for (const [nombre, pon] of DUENO) for (const despues of [false, true]) {
     const d = nueva(despues), mu = pon(d)
@@ -121,7 +123,7 @@ try {
     const d0 = nueva(true), d1 = nueva(true)
     DUENO[0][1](d1)
     const c0 = cruza(d0), c1 = cruza(d1)
-    ver('control funcional: con authenticated dueño de profiles, u9 lee y cambia el perfil de u1; limpio, no lo ve ni lo cambia', c1.ok && c1.out.includes('lee=1') && c1.out.includes('cambia=1') && (!c0.ok || (c0.out.includes('lee=0') && !c0.out.includes('cambia=1'))), `${c1.out.replace(/\n/g, ' ').slice(-40)} / ${(c0.out + err1(c0)).replace(/\n/g, ' ').slice(-60)}`)
+    ver('control funcional: con authenticated dueño de profiles, u9 lee y cambia el perfil de u1; limpio, no lo ve ni lo cambia', c1.ok && c1.out.includes('lee=1') && c1.out.includes('cambia=1') && ((!c0.ok && /42501|permission denied/.test(c0.err)) || (c0.ok && c0.out.includes('lee=0') && !c0.out.includes('cambia=1'))), `${c1.out.replace(/\n/g, ' ').slice(-40)} / ${(c0.out + err1(c0)).replace(/\n/g, ' ').slice(-60)}`)
   }
   {
     // el control funcional de Astra: u9, como authenticated, con y sin la pertenencia

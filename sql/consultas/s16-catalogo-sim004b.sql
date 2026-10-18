@@ -280,7 +280,7 @@ requisito(objeto, bien, detalle) as (
   -- superusuario, con BYPASSRLS o dueño de alguna de las 14 tablas. El sentido authenticator → roles de peticion es otro
   -- y sigue valiendo
   select 'pertenencias del alumno', count(*) = 0,
-         coalesce(string_agg(a.rolname::text || case when a.oid = r.oid then ' es el mismo un rol privilegiado (dueño directo)' else ' → ' || r.rolname::text end, ', ' order by a.rolname, r.rolname), 'ninguna')
+         coalesce(string_agg(a.rolname::text || case when a.oid = r.oid then ' es él mismo un rol privilegiado (dueño directo)' else ' → ' || r.rolname::text end, ', ' order by a.rolname, r.rolname), 'ninguna')
     from pg_catalog.pg_roles a cross join pg_catalog.pg_roles r
    where a.rolname in ('anon', 'authenticated')
      and (r.rolname in ('service_role', 'postgres') or r.rolsuper or r.rolbypassrls
@@ -289,7 +289,10 @@ requisito(objeto, bien, detalle) as (
           -- RE5-01 (revisor interno de 4c522cb): y los dueños de lo que usan los cuerpos fuera de las 14: profiles, auth.users
           -- y auth.uid() (un miembro con INHERIT del dueño de profiles actua como dueño: privilegios y RLS)
           or r.oid in (select c.relowner from pg_catalog.pg_class c where c.oid in (pg_catalog.to_regclass('public.profiles'), pg_catalog.to_regclass('auth.users')))
-          or r.oid = (select f.proowner from pg_catalog.pg_proc f where f.oid = pg_catalog.to_regprocedure('auth.uid()')))
+          or r.oid = (select f.proowner from pg_catalog.pg_proc f where f.oid = pg_catalog.to_regprocedure('auth.uid()'))
+          -- RE6-01 (revisor interno de 09492b0): y los dueños de los esquemas public, extensions y auth (el dueño de un esquema
+          -- puede borrar y sustituir lo que hay dentro, p. ej. extensions.digest)
+          or r.oid in (select n.nspowner from pg_catalog.pg_namespace n where n.nspname in ('public', 'extensions', 'auth')))
      -- E3R5-01 (Astra r5): o ES el rol privilegiado (p. ej. dueño directo de profiles), no solo miembro de otro
      and (a.oid = r.oid or pg_catalog.pg_has_role(a.oid, r.oid, 'MEMBER'))
   union all values
