@@ -32,5 +32,11 @@ try {
     const l1 = filas(corre())
     oraculo('S16h', 'la concesion directa authenticated → x_paso con sus opciones, service_role alcanzado (dos saltos) y el SELECT que falta en profiles', prep.ok && l1.some(l => /^miembro\|authenticated → x_paso\|admin=false · inherit=false · set=true · concedido_por=pgx$/.test(l)) && l1.some(l => l === 'alcanza|authenticated → service_role|MEMBER (directa o en cadena, con SET o con INHERIT)') && l1.some(l => /^profiles\|.*SELECT id=false plan=false simulador_activo=false/.test(l)), (prep.err || l1.join(' / ')).slice(0, 400))
   } finally { m.comoEjecutor(d, 'revoke x_paso from authenticated; revoke service_role from x_paso; drop role x_paso; grant select on public.profiles to pgx;') }
+  // E3R5-01: authenticated, dueño directo de profiles (sin ninguna pertenencia): sale como «ES el mismo rol»
+  m.pg.psql('grant create on schema public to authenticated;', d); const own = m.comoEjecutor(d, 'alter table public.profiles owner to authenticated;'); m.pg.psql('revoke create on schema public from authenticated;', d)
+  try {
+    const l2 = filas(corre())
+    oraculo('S16h', 'E3R5-01: con authenticated dueño directo de profiles, sale «alcanza|authenticated → authenticated|ES el mismo rol (dueño directo)»', own.ok && l2.includes('alcanza|authenticated → authenticated|ES el mismo rol (dueño directo)'), (own.err || l2.filter(l => l.startsWith('alcanza|') || l.startsWith('profiles|')).join(' / ')).slice(0, 300))
+  } finally { m.pg.psql('alter table public.profiles owner to pgx;', d) }
 } finally { m.cierra() }
 fin()

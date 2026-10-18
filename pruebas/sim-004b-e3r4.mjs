@@ -10,6 +10,8 @@
  *     INHERIT (los de Astra), anon con INHERIT y sin SET a service_role, y authenticated con un rol nuevo con BYPASSRLS. Limpieza por el mismo
  *     otorgante y control pg_has_role = false despues. Control funcional de Astra: con la pertenencia, el alumno u9 hace SET
  *     ROLE service_role y lee el recibo de u1; limpio, SET ROLE falla y lee 0.
+ *   · E3R5-01 (Astra r5): el alumno que ES el dueño directo de profiles (authenticated y anon), de auth.users o de auth.uid();
+ *     control funcional: con authenticated dueño de profiles, u9 lee y cambia el perfil de u1.
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -98,6 +100,28 @@ try {
       if (!mu.ok) { oraculo('E3R4-02', `${nombre}: el mutante se aplica`, false, err1(mu)); continue }
       caso('E3R4-02', nombre, 'pertenencias del alumno', d, despues ? 'reejecucion' : 'primera aplicacion')
     } finally { ej(quita); ver(`control: tras «${nombre}», la limpieza por el mismo otorgante deja sin pertenencia`, tieneSet(d) === 'f') }
+  }
+  titulo('E3R5-01 (Astra r5): el alumno que ES el dueño directo de una dependencia externa')
+  // el cambio de dueño, por DDL ordinario como lo prepara Astra: CREATE temporal en public al destinatario y el ALTER como el
+  // ejecutor (miembro del destinatario); auth.users y auth.uid(), como superusuario (en el montaje los posee postgres)
+  const DUENO = [
+    ['authenticated, dueño directo de profiles', d => { m.pg.psql('grant create on schema public to authenticated;', d); const r = m.comoEjecutor(d, 'alter table public.profiles owner to authenticated;'); m.pg.psql('revoke create on schema public from authenticated;', d); return r }],
+    ['anon, dueño directo de profiles', d => { m.pg.psql('grant create on schema public to anon;', d); const r = m.comoEjecutor(d, 'alter table public.profiles owner to anon;'); m.pg.psql('revoke create on schema public from anon;', d); return r }],
+    ['authenticated, dueño directo de auth.users', d => m.pg.psql('alter table auth.users owner to authenticated;', d)],
+    ['authenticated, dueño directo de auth.uid() (control: tambien lo ve la ficha de la funcion ajena)', d => m.pg.psql('alter function auth.uid() owner to authenticated;', d)],
+  ]
+  for (const [nombre, pon] of DUENO) for (const despues of [false, true]) {
+    const d = nueva(despues), mu = pon(d)
+    if (!mu.ok) { oraculo('E3R5-01', `${nombre}: el mutante se aplica`, false, err1(mu)); continue }
+    caso('E3R5-01', nombre, 'pertenencias del alumno', d, despues ? 'reejecucion' : 'primera aplicacion')
+  }
+  {
+    // lectura y escritura cruzadas sinteticas: u9, como authenticated, lee y cambia el perfil de u1
+    const cruza = d => m.pg.psql(`begin; set local role authenticated; select set_config('request.jwt.claim.sub', '${u(9)}', true); select 'lee=' || count(*) from public.profiles where id = '${u(1)}'; update public.profiles set simulador_activo = true where id = '${u(1)}'; select 'cambia=' || count(*) from public.profiles where id = '${u(1)}' and simulador_activo; rollback;`, d)
+    const d0 = nueva(true), d1 = nueva(true)
+    DUENO[0][1](d1)
+    const c0 = cruza(d0), c1 = cruza(d1)
+    ver('control funcional: con authenticated dueño de profiles, u9 lee y cambia el perfil de u1; limpio, no lo ve ni lo cambia', c1.ok && c1.out.includes('lee=1') && c1.out.includes('cambia=1') && (!c0.ok || (c0.out.includes('lee=0') && !c0.out.includes('cambia=1'))), `${c1.out.replace(/\n/g, ' ').slice(-40)} / ${(c0.out + err1(c0)).replace(/\n/g, ' ').slice(-60)}`)
   }
   {
     // el control funcional de Astra: u9, como authenticated, con y sin la pertenencia

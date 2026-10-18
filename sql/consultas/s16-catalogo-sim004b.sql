@@ -280,9 +280,9 @@ requisito(objeto, bien, detalle) as (
   -- superusuario, con BYPASSRLS o dueño de alguna de las 14 tablas. El sentido authenticator → roles de peticion es otro
   -- y sigue valiendo
   select 'pertenencias del alumno', count(*) = 0,
-         coalesce(string_agg(a.rolname::text || ' → ' || r.rolname::text, ', ' order by a.rolname, r.rolname), 'ninguna')
+         coalesce(string_agg(a.rolname::text || case when a.oid = r.oid then ' es el mismo un rol privilegiado (dueño directo)' else ' → ' || r.rolname::text end, ', ' order by a.rolname, r.rolname), 'ninguna')
     from pg_catalog.pg_roles a cross join pg_catalog.pg_roles r
-   where a.rolname in ('anon', 'authenticated') and r.oid <> a.oid
+   where a.rolname in ('anon', 'authenticated')
      and (r.rolname in ('service_role', 'postgres') or r.rolsuper or r.rolbypassrls
           or r.oid = (select o.proowner from pg_catalog.pg_proc o where o.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)'))
           or r.oid in (select c.relowner from pg_catalog.pg_class c where c.oid in (select pg_catalog.to_regclass('public.' || t) from unnest(array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']) t))
@@ -290,7 +290,8 @@ requisito(objeto, bien, detalle) as (
           -- y auth.uid() (un miembro con INHERIT del dueño de profiles actua como dueño: privilegios y RLS)
           or r.oid in (select c.relowner from pg_catalog.pg_class c where c.oid in (pg_catalog.to_regclass('public.profiles'), pg_catalog.to_regclass('auth.users')))
           or r.oid = (select f.proowner from pg_catalog.pg_proc f where f.oid = pg_catalog.to_regprocedure('auth.uid()')))
-     and pg_catalog.pg_has_role(a.oid, r.oid, 'MEMBER')
+     -- E3R5-01 (Astra r5): o ES el rol privilegiado (p. ej. dueño directo de profiles), no solo miembro de otro
+     and (a.oid = r.oid or pg_catalog.pg_has_role(a.oid, r.oid, 'MEMBER'))
   union all values
     ('PostgreSQL >= 17', current_setting('server_version_num')::integer >= 170000, current_setting('server_version')),
     ('rol anon', exists (select 1 from pg_roles where rolname = 'anon'), 'existe'),

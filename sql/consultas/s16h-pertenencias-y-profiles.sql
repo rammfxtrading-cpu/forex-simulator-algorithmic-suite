@@ -30,8 +30,9 @@ filas as (
          'admin=' || m.admin_option::text || ' · inherit=' || m.inherit_option::text || ' · set=' || m.set_option::text || ' · concedido_por=' || pg_catalog.pg_get_userbyid(m.grantor) detalle
     from pg_catalog.pg_auth_members m join alumno a on a.oid = m.member join pg_catalog.pg_roles g on g.oid = m.roleid
   union all
-  select 2, 'alcanza', a.rolname || ' → ' || p.rolname, 'MEMBER (directa o en cadena, con SET o con INHERIT)'
-    from alumno a cross join privilegiado p where p.oid <> a.oid and pg_catalog.pg_has_role(a.oid, p.oid, 'MEMBER')
+  -- E3R5-01 (Astra r5): tambien si el alumno ES el rol privilegiado (dueño directo), no solo miembro de otro
+  select 2, 'alcanza', a.rolname || ' → ' || p.rolname, case when a.oid = p.oid then 'ES el mismo rol (dueño directo)' else 'MEMBER (directa o en cadena, con SET o con INHERIT)' end
+    from alumno a cross join privilegiado p where a.oid = p.oid or pg_catalog.pg_has_role(a.oid, p.oid, 'MEMBER')
   union all
   select 3, 'profiles', 'dueño de las RPC (' || coalesce((select pg_catalog.pg_get_userbyid(o) from dueno), 'NO EXISTE') || ')',
          'SELECT id=' || coalesce(pg_catalog.has_column_privilege((select o from dueno), 'public.profiles', 'id', 'SELECT')::text, '-')
