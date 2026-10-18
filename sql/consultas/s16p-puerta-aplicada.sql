@@ -17,7 +17,12 @@
 -- o con la funcion SECURITY DEFINER o con otro search_path. Ahora cada una de esas da A MEDIAS. Se mide por los
 -- campos del catalogo (tgfoid, tgtype, tgqual…), no por el texto, que depende del search_path del editor.
 --
--- NO cambia nada: una sola SELECT de catalogo, sin escrituras ni EXECUTE ni set_config, DENTRO de una transaccion
+-- ALCANCE (RG-01 del revisor interno): acredita que los objetos de la puerta son exactos, no que bloquee. Otros
+-- disparadores de las mismas tablas, hijas por herencia o reglas podrian rodearla: eso lo inventaria la s16 completa,
+-- que es la que acredita la puerta (orden 1-031 del CTO).
+--
+-- NO cambia nada: una sola SELECT de catalogo, precedida de SET LOCAL search_path (se deshace con el ROLLBACK), sin
+-- escrituras ni EXECUTE ni set_config, DENTRO de una transaccion
 -- READ ONLY real (regla del LEEME del buzon, 18-oct). Si se pega por partes, o el editor la ejecuta fuera de esa
 -- transaccion, la guarda la hace fallar cerrada con el mensaje «s16p: pegala ENTERA…», sin dar datos. Ningun dato de
 -- alumnos. Ensayada (pruebas/s16p-puerta-aplicada.mjs). Ramon la pega ENTERA en el editor SQL de Supabase cuando el CTO
@@ -61,13 +66,14 @@ trg as (select c.relname tabla,
                || ' · interno=' || t.tgisinternal::text
                || ' · restriccion=' || (t.tgconstraint <> 0)::text
                || ' · tgenabled=' || t.tgenabled::text detalle,
-               t.tgfoid = (select f.oid from fn f) and t.tgtype = 31 and t.tgqual is null
+               t.tgname = 'sim_escrituras_v0_puerta' and t.tgfoid = (select f.oid from fn f) and t.tgtype = 31 and t.tgqual is null
                and t.tgattr = ''::pg_catalog.int2vector and t.tgnargs = 0 and not t.tgisinternal and t.tgconstraint = 0
                and t.tgenabled = 'O' exacto
           from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid = t.tgrelid
-         where c.relnamespace = 'public'::pg_catalog.regnamespace
-           -- por su nombre, y tambien cualquier otro disparador que llame a la funcion de la puerta
-           and (t.tgname = 'sim_escrituras_v0_puerta' or t.tgfoid = (select f.oid from fn f))),
+         -- por su nombre en public, y tambien cualquier otro disparador, de CUALQUIER esquema, que llame a la funcion de
+         -- la puerta (RG-02 del revisor interno)
+         where (c.relnamespace = 'public'::pg_catalog.regnamespace and t.tgname = 'sim_escrituras_v0_puerta')
+            or t.tgfoid = (select f.oid from fn f)),
 fn_bien as (select coalesce((select f.sha = 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883'
                                     and f.ficha = 'plpgsql|definer=false|v|search_path=""|ret=trigger|args=0|dueño=ejecutor'
                                     and f.ejecutan = 'nadie' from fn f), false) ok),
@@ -88,7 +94,7 @@ filas as (
                    and (select count(*) from trg) = 2
                    and (select count(*) from trg t where t.exacto and t.tabla in ('sim_sessions', 'sim_trades')) = 2
                    and (select count(distinct t.tabla) from trg t) = 2
-              then 'APLICADA'
+              then 'APLICADA (los objetos de sim-004a-puerta, exactos; que bloquee lo acredita la s16 completa)'
               when (select count(*) from fn) = 0 and (select count(*) from trg) = 0 then 'SIN APLICAR'
               else 'A MEDIAS: PARAR (decide el CTO)' end
   union all

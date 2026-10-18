@@ -7,7 +7,8 @@
 -- funciones sim_escrituras_v0_parejas y sim_escrituras_v0_canonico, que solo
 -- ejecuta el dueño: se pega como postgres en el editor).
 --
--- NO cambia nada: es UNA sola SELECT, DENTRO de una transaccion READ ONLY real
+-- NO cambia nada: es UNA sola SELECT, precedida de SET LOCAL search_path (se
+-- deshace con el ROLLBACK), DENTRO de una transaccion READ ONLY real
 -- (regla del LEEME del buzon, 18-oct; orden 1-029): BEGIN READ ONLY al principio
 -- y ROLLBACK al final. Si se pega por partes, o el editor la ejecuta fuera de esa
 -- transaccion, la guarda la hace fallar cerrada con el mensaje «s10: pegala

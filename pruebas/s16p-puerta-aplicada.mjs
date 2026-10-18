@@ -6,7 +6,9 @@
  *     disparadores «exacto»
  *   4 S16RO-01: la familia de Astra (otra funcion con el mismo nombre de disparador, solo INSERT, WHEN(false), AFTER,
  *     FOR EACH STATEMENT, SECURITY DEFINER, otro search_path) y las de antes (sin un disparador, desactivado, otro
- *     cuerpo), mas UPDATE OF una columna, EXECUTE a anon y un tercer disparador que llama a la puerta: todas A MEDIAS.
+ *     cuerpo), mas UPDATE OF una columna, EXECUTE a anon, un tercer disparador que llama a la puerta, y (RG-06, RG-02)
+ *     un argumento, ENABLE ALWAYS / REPLICA, dos en sim_sessions y ninguno en sim_trades, otro nombre en sim_trades y
+ *     un disparador en otro esquema que la llama: todas A MEDIAS.
  *     Control funcional: con la puerta exacta, un UPDATE de alumno sin x-sim-cliente se rechaza; con las tres de Astra
  *     que lo dejan pasar, pasa (por eso tienen que salir A MEDIAS). Cada desvio, en una transaccion que se deshace
  */
@@ -16,6 +18,7 @@ import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
 import { montajeV1 } from './montaje-v1.mjs'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
+const APL = 'APLICADA (los objetos de sim-004a-puerta, exactos; que bloquee lo acredita la s16 completa)'   // RG-01
 const S16P = lee(process.env.S16P_FICHERO || 'sql/consultas/s16p-puerta-aplicada.sql'), PUERTA = lee('sql/sim-004a-puerta.sql')
 titulo('1 · solo lectura')
 const sin = S16P.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''")
@@ -41,7 +44,7 @@ try {
   oraculo('S16p', 'tras la puerta: la funcion con su cuerpo y su ficha (plpgsql, INVOKER, VOLATILE, search_path vacio, trigger, sin argumentos, dueño = ejecutor, nadie mas la ejecuta) «exacta»; sus 2 disparadores «exacto» (llaman a la puerta, tgtype 31, sin WHEN, columnas ni argumentos, activos); APLICADA',
     r1.ok && fn1 === 'funcion|public.sim_escrituras_v0_puerta()|existe · cuerpo sha256=fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883 (el de sim-004a-puerta) · plpgsql|definer=false|v|search_path=""|ret=trigger|args=0|dueño=ejecutor · la ejecutan ademas del dueño: nadie · exacta'
     && ['sim_sessions', 'sim_trades'].every(t => l1.includes(`disparador|public.${t}.sim_escrituras_v0_puerta|llama a la puerta · tgtype=31 · when=no · columnas=ninguna · args=0 · interno=false · restriccion=false · tgenabled=O · exacto`))
-    && veredicto(r1) === 'APLICADA', (r1.err || l1.join(' / ')).slice(0, 600))
+    && veredicto(r1) === APL, (r1.err || l1.join(' / ')).slice(0, 600))
   titulo('4 · S16RO-01: la familia de Astra y las demas, A MEDIAS; y el control funcional')
   const uid = 'aaaaaaaa-0000-4000-8000-000000000001', sid = 'bbbbbbbb-0000-4000-8000-000000000001'
   m.alumno('sp1', uid, {})
@@ -65,6 +68,13 @@ try {
     ['un tercer disparador que llama a la puerta', 'create trigger otro_con_la_puerta before update on public.sim_drawing_templates for each row execute function public.sim_escrituras_v0_puerta()'],
     ['sin el disparador de sim_trades', 'drop trigger sim_escrituras_v0_puerta on public.sim_trades'],
     ['con el de sim_sessions desactivado', 'alter table public.sim_sessions disable trigger sim_escrituras_v0_puerta'],
+    // RG-06 y RG-02 (revisor interno): las ramas de «exacto» y del veredicto que no se ensayaban
+    ['con un argumento', `${T} before insert or update or delete on public.sim_sessions for each row execute function public.sim_escrituras_v0_puerta('x')`],
+    ['ENABLE ALWAYS', 'alter table public.sim_sessions enable always trigger sim_escrituras_v0_puerta'],
+    ['ENABLE REPLICA', 'alter table public.sim_sessions enable replica trigger sim_escrituras_v0_puerta'],
+    ['dos en sim_sessions y ninguno en sim_trades', 'drop trigger sim_escrituras_v0_puerta on public.sim_trades; create trigger z_otra_puerta before insert or update or delete on public.sim_sessions for each row execute function public.sim_escrituras_v0_puerta()'],
+    ['en sim_trades, otro nombre en lugar del suyo', 'drop trigger sim_escrituras_v0_puerta on public.sim_trades; create trigger z_otra_puerta before insert or update or delete on public.sim_trades for each row execute function public.sim_escrituras_v0_puerta()'],
+    ['un disparador en una tabla de OTRO esquema que llama a la puerta', 'create temporary table h_otro (x integer); create trigger h_otro_puerta before insert on h_otro for each row execute function public.sim_escrituras_v0_puerta()'],
     ['con otro cuerpo', "create or replace function public.sim_escrituras_v0_puerta() returns trigger language plpgsql set search_path = '' as $f$ begin return new; end $f$"],
   ]
   const cuerpo = S16P.replace(/^begin read only;$/m, '').replace(/^rollback;$/m, '')
@@ -74,8 +84,8 @@ try {
     if (!(r.ok && veredicto(r) === 'A MEDIAS: PARAR (decide el CTO)')) mal.push(`${que}: ${r.err ? r.err.slice(0, 120) : veredicto(r)}`)
     if (funcional) { const w = escribe(ddl); if (w.ok && /99990/.test(w.out)) pasan.push(que) }
   }
-  oraculo('S16p', `S16RO-01: los ${desvios.length} desvios (los 7 de Astra, los 3 de antes y 3 mas) dan A MEDIAS`, mal.length === 0, mal.join(' · '))
+  oraculo('S16p', `S16RO-01: los ${desvios.length} desvios (los 7 de Astra, los 3 de antes y los demas) dan A MEDIAS`, mal.length === 0, mal.join(' · '))
   ver('control funcional: con las 3 de Astra (otra funcion, solo INSERT, WHEN(false)) el UPDATE sin cabecera PASA: por eso no pueden salir APLICADA', pasan.length === 3, pasan.join(', '))
-  ver('control: tras todo, la puerta sigue APLICADA (cada desvio se deshizo) y el UPDATE sin cabecera se sigue rechazando', veredicto(corre(d)) === 'APLICADA' && !escribe().ok)
+  ver('control: tras todo, la puerta sigue APLICADA (cada desvio se deshizo) y el UPDATE sin cabecera se sigue rechazando', veredicto(corre(d)) === APL && !escribe().ok)
 } finally { m.cierra() }
 fin()

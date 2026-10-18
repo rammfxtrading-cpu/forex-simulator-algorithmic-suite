@@ -32,7 +32,14 @@ const sinSet = t => t.split('\n').filter(l => l !== SET_LOCAL).join('\n')
 titulo('1 · en el texto')
 const guarda = t => (/guarda as \(select [\s\S]*?end ok\),/.exec(t) ?? [''])[0]
 oraculo('GUARDA', 'las cuatro: la guarda compara con OPERATOR(pg_catalog.=), concatena con OPERATOR(pg_catalog.||) y convierte con ::pg_catalog.bool; ningun «=», «||» ni «::boolean» sin calificar dentro de ella',
-  Object.values(Q).every(t => { const g = guarda(t).replace(/--.*$/gm, '').replace(/'[^']*'/g, "''"); return g && /OPERATOR\(pg_catalog\.=\)/.test(g) && (g.match(/OPERATOR\(pg_catalog\.\|\|\)/g) || []).length === 2 && /::pg_catalog\.bool\b/.test(g) && !/(^|[^)])\s=\s/.test(g) && !/(^|[^)])\s\|\|\s/.test(g) && !/::boolean/.test(g) }),
+  Object.values(Q).every(t => {
+    const g = guarda(t).replace(/--.*$/gm, '').replace(/'[^']*'/g, "''")
+    // RG-05: quitados los OPERATOR(pg_catalog.…), las funciones pg_catalog.x( y la conversion ::pg_catalog.bool, no
+    // puede quedar ningun =, ||, :: ni ningun identificador seguido de «(» (una funcion sin calificar)
+    const resto = g.replace(/OPERATOR\(pg_catalog\.(=|\|\|)\)/g, ' ').replace(/pg_catalog\.[a-z_]+\(/g, '(').replace(/::pg_catalog\.bool\b/g, ' ')
+    return g && /OPERATOR\(pg_catalog\.=\)/.test(g) && (g.match(/OPERATOR\(pg_catalog\.\|\|\)/g) || []).length === 2 && /::pg_catalog\.bool\b/.test(g)
+      && !/=|\|\||::/.test(resto) && !/\b(?!(as|else|when|then|select|case|end)\b)[a-z_][a-z_0-9.]*\s*\(/i.test(resto)
+  }),
   Object.entries(Q).filter(([, t]) => !/OPERATOR\(pg_catalog\.=\)/.test(guarda(t))).map(([k]) => k).join(', '))
 oraculo('GUARDA', `s10, s16h y s16p: «${SET_LOCAL}» justo tras su BEGIN READ ONLY; la s16 no lo lleva (exige el search_path del editor, RINV3-01)`,
   ['s10', 's16h', 's16p'].every(k => Q[k].includes(`begin read only;\n-- S10RO-01: lo primero, el search_path de pg_catalog (LEEME): nada de la consulta resuelve en otro esquema por su nombre\n${SET_LOCAL}\nwith\n`)) && !Q.s16.includes(SET_LOCAL))
@@ -78,9 +85,12 @@ create function public.h_efecto() returns integer language plpgsql volatile as $
 create or replace function public.sim_escrituras_v0_parejas(p_session_id uuid) returns table (orden integer, escritura_update bigint, escritura_insert bigint)
   language plpgsql stable set search_path = '' as $f$ begin perform public.h_efecto(); return; end $f$`
   const efecto = []
-  for (const [hq, ddl] of Object.entries(HOMONIMOS)) {
-    const r = m.comoEjecutor(d, `begin;\n${ddl};\n${EFECTO};\n${ALTERADO}\n${cuerpo(Q.s10)}\nrollback;`)
-    if (r.ok || /EFECTO_EJECUTADO/.test(r.err + r.out) || !r.err.includes('s10: pegala ENTERA')) efecto.push(`${hq}: ${r.ok ? 'PASA' : ''}${/EFECTO_EJECUTADO/.test(r.err + r.out) ? ' EFECTO EJECUTADO' : ''}`)
+  // RG-04 (revisor interno): tambien sin su SET LOCAL, que es el caso real si se pega sin el BEGIN (fuera de una
+  // transaccion el SET LOCAL solo avisa): asi los homonimos y el search_path alterado si alcanzan a la guarda
+  for (const [hq, ddl] of Object.entries(HOMONIMOS)) for (const [vq, c] of [['tal cual', cuerpo(Q.s10)], ['sin su SET LOCAL', sinSet(cuerpo(Q.s10))]]) {
+    if (vq === 'sin su SET LOCAL' && !Q.s10.includes(SET_LOCAL)) continue
+    const r = m.comoEjecutor(d, `begin;\n${ddl};\n${EFECTO};\n${ALTERADO}\n${c}\nrollback;`)
+    if (r.ok || /EFECTO_EJECUTADO/.test(r.err + r.out) || !r.err.includes('s10: pegala ENTERA')) efecto.push(`${hq} · ${vq}: ${r.ok ? 'PASA' : ''}${/EFECTO_EJECUTADO/.test(r.err + r.out) ? ' EFECTO EJECUTADO' : ''}`)
   }
   oraculo('GUARDA', 'S10RO-01: con = o || homonimos, sin READ ONLY y las parejas llamando a una funcion que escribe: la s10 falla en la guarda ANTES del efecto (sin «EFECTO_EJECUTADO»)', efecto.length === 0, efecto.join(' · '))
   // control positivo del doble: el mismo cuerpo SIN el filtro de la guarda ejecuta el efecto (el doble funciona)

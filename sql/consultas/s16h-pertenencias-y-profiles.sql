@@ -10,7 +10,8 @@
 --   3 profiles    el dueño de las RPC: SELECT de id, plan y simulador_activo; UPDATE en alguna columna; y en la tabla
 --   4 resumen
 --
--- NO cambia nada: una sola SELECT, sin escrituras ni EXECUTE ni set_config, DENTRO de una transaccion READ ONLY real
+-- NO cambia nada: una sola SELECT, precedida de SET LOCAL search_path (se deshace con el ROLLBACK), sin escrituras ni
+-- EXECUTE ni set_config, DENTRO de una transaccion READ ONLY real
 -- (regla del LEEME del buzon, 18-oct: BEGIN READ ONLY al principio y ROLLBACK al final). Si se pega por partes, o el
 -- editor la ejecuta fuera de esa transaccion, la guarda la hace fallar cerrada con el mensaje «s16h: pegala ENTERA…»,
 -- sin dar datos. Solo catalogo y funciones de privilegio: ningun dato de alumnos. Ensayada (pruebas/s16h-…mjs). Ramon la
