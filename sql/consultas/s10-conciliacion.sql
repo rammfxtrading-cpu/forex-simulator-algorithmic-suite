@@ -7,8 +7,12 @@
 -- funciones sim_escrituras_v0_parejas y sim_escrituras_v0_canonico, que solo
 -- ejecuta el dueño: se pega como postgres en el editor).
 --
--- NO cambia nada: es UNA sola SELECT. Ensayada dentro de una transaccion
--- READ ONLY sobre el montaje literal (pruebas/s10-conciliacion.mjs).
+-- NO cambia nada: es UNA sola SELECT, DENTRO de una transaccion READ ONLY real
+-- (regla del LEEME del buzon, 18-oct; orden 1-029): BEGIN READ ONLY al principio
+-- y ROLLBACK al final. Si se pega por partes, o el editor la ejecuta fuera de esa
+-- transaccion, la guarda la hace fallar cerrada con el mensaje «s10: pegala
+-- ENTERA…», sin dar datos (como la s16 y la s16h). Ensayada sobre el montaje
+-- literal (pruebas/s10-conciliacion.mjs).
 -- Se pega entera en el editor SQL de Supabase y se devuelve el resultado
 -- COMPLETO: va a revisiones-suite tal cual. Acaba en «FIN | s10 | consulta».
 --
@@ -39,7 +43,15 @@
 --                    (puerta activa + segunda lectura, n.1)
 --  10 service_role   escrituras de servidor, aparte: no cuentan (k.4 d)
 -- ============================================================================
-with sinfirma as (
+begin read only;
+with
+-- la guarda: falla cerrada si no estamos dentro de la transaccion READ ONLY
+guarda as (select case when pg_catalog.current_setting('transaction_read_only') = 'on' then true
+                       -- el texto depende de un valor de ejecucion: si fuera constante, PostgreSQL lo convertiria al
+                       -- planificar y la guarda saltaria siempre
+                       else ('s10: pegala ENTERA, con su BEGIN READ ONLY y su ROLLBACK (transaction_read_only='
+                             || pg_catalog.current_setting('transaction_read_only') || ')')::boolean end ok),
+sinfirma as (
   select e.* from public.sim_escrituras_v0 e where e.cliente = 'sin-firma' and e.rol_jwt in ('authenticated', 'anon')
 ), sesiones as (
   select distinct session_id from sinfirma where session_id is not null
@@ -149,4 +161,5 @@ select seccion, objeto, detalle from (
     from public.sim_escrituras_v0 e where e.rol_jwt = 'service_role' group by e.user_id
   union all
   select 11, 0, 'FIN', 's10', 'consulta'
-) x order by o, objeto, o2;
+) x where (select g.ok from guarda g) order by o, objeto, o2;
+rollback;

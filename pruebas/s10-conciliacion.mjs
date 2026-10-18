@@ -25,7 +25,11 @@ import { BIN, hayPostgres, cluster } from './pg-ensayo.mjs'
 import { PRODUCCION } from './estado-s04.mjs'
 if (!hayPostgres()) { ver(`PostgreSQL 17 en ${BIN}: NO hay, la prueba no se ha ejecutado`, false); fin() }
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
-const S10 = lee('sql/consultas/s10-conciliacion.sql')
+// orden 1-029: el fichero ENTERO lleva su BEGIN READ ONLY … ROLLBACK con guarda; S10 es su cuerpo (la SELECT), para
+// meterlo en las transacciones READ ONLY de la prueba y de los mutantes. Si la envoltura no esta exactamente una vez, revienta
+const S10_ENTERA = lee('sql/consultas/s10-conciliacion.sql')
+if ((S10_ENTERA.match(/^begin read only;$/gm) || []).length !== 1 || !/\nrollback;\n?$/.test(S10_ENTERA)) throw new Error('s10: la envoltura BEGIN READ ONLY … ROLLBACK no esta exactamente una vez')
+const S10 = S10_ENTERA.replace(/^begin read only;\n/m, '').replace(/\nrollback;\n?$/, '\n')
 const pg = cluster()
 const psqlEn = pg.psql
 pg.psql = (q, db = 'p') => psqlEn(q, db)
@@ -162,6 +166,17 @@ try {
     r.ok && r.filas.at(-1)?.join('|') === 'FIN|s10|consulta'
     && ['hora', 'timeout', 'estado', 'volumen', 'alumno', 'pareja', 'incidencia', 'dudoso', 'anomalia', 'foto', 'service_role'].every(sec => r.filas.some(f => f[0] === sec)),
     err1(r) || r.filas.at(-1)?.join('|'))
+  // la envoltura (orden 1-029): el fichero ENTERO, tal cual, da exactamente las mismas filas; por partes, falla cerrada
+  const ent = pgx(S10_ENTERA), filasEnt = ent.out.split('\n').filter(l => l && !/^(BEGIN|ROLLBACK)$/.test(l))
+  oraculo('S10-envoltura', 'ENTERA, tal cual (BEGIN READ ONLY … ROLLBACK): las mismas filas que el cuerpo en READ ONLY, hasta el FIN', ent.ok && filasEnt.join('\n') === r.filas.map(f => f.join('|')).join('\n'), err1(ent) || `${filasEnt.length} frente a ${r.filas.length}`)
+  const partes = [
+    ['sin su BEGIN READ ONLY', S10_ENTERA.replace(/^begin read only;$/m, '')],
+    ['solo la SELECT', S10],
+    ['BEGIN ordinario + la SELECT', `begin;\n${S10}\nrollback;`],
+    ['BEGIN READ WRITE + la SELECT', `begin read write;\n${S10}\nrollback;`],
+    ['BEGIN READ ONLY + ROLLBACK y despues la SELECT', `begin read only;\nrollback;\n${S10}`],
+  ].map(([que, t]) => [que, pgx(t)])
+  oraculo('S10-envoltura', 'por partes (sin BEGIN, solo la SELECT, BEGIN ordinario, READ WRITE, o la SELECT tras el ROLLBACK): error «s10: pegala ENTERA…» y ninguna fila', partes.every(([, x]) => !x.ok && /s10: pegala ENTERA/.test(x.err) && !/FIN\|s10|hora\|/.test(x.out)), partes.filter(([, x]) => x.ok || !/s10: pegala ENTERA/.test(x.err) || /FIN\|s10|hora\|/.test(x.out)).map(([q]) => q).join(' · '))
   const nUltimo = pg.psql('select count(*) || max(id) from public.sim_escrituras_v0').out
   ver('el registro no cambia por correr s10', pg.psql('select count(*) || max(id) from public.sim_escrituras_v0').out === nUltimo)
 
