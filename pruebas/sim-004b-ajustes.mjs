@@ -148,7 +148,7 @@ try {
         if (!mu.ok) { oraculo('AJ', `${nombre} (${cuando}): el mutante se aplica`, false, err1(mu)); continue }
         const q = s16(d), r = aplica(d)
         oraculo('AJ', `RE4-01 · ${nombre} (${cuando}): s16 DIFIERE en «${objeto}» y veredicto DIFIEREN; sim-004b aborta nombrandolo`,
-          q.ok && req(q, objeto).endsWith(' · DIFIERE') && /^DIFIEREN \d+$/.test(veredicto(q)) && !r.ok && err1(r).startsWith('sim-004b: roles o esquemas que cambian el acceso (RE4-01)') && err1(r).includes(objeto),
+          q.ok && req(q, objeto).endsWith(' · DIFIERE') && /^DIFIEREN \d+$/.test(veredicto(q)) && !r.ok && err1(r).startsWith('sim-004b: roles o esquemas que cambian el acceso (RE4-01') && err1(r).includes(objeto),
           `${req(q, objeto).slice(0, 150)} · ${r.ok ? 'sim-004b APLICA' : err1(r).slice(0, 120)}`)
       } finally { m.pg.psql(quita, d) }
     }

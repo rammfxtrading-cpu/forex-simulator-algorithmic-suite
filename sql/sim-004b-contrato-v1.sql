@@ -666,9 +666,37 @@ BEGIN
             union all
             select 'authenticated', e.esquema, pg_catalog.has_schema_privilege('authenticated', e.esquema, 'USAGE')
               from (values ('public'), ('auth')) e(esquema)) u
+  union all
+  -- E3R4-01 (Astra r4): el permiso efectivo minimo del dueño de las RPC sobre la unica relacion de fuera de las 14 que
+  -- tocan sus cuerpos y auxiliares (public.profiles: lee id, plan y simulador_activo, y sim_bloquea_alumno la bloquea FOR
+  -- KEY SHARE, que exige UPDATE en alguna columna). Por columna. No se concede nada: si falta, DIFIERE / aborta
+  select 'permiso en profiles',
+         coalesce(pg_catalog.has_column_privilege(o.proowner, 'public.profiles', 'id', 'SELECT')
+                  and pg_catalog.has_column_privilege(o.proowner, 'public.profiles', 'plan', 'SELECT')
+                  and pg_catalog.has_column_privilege(o.proowner, 'public.profiles', 'simulador_activo', 'SELECT')
+                  and pg_catalog.has_any_column_privilege(o.proowner, 'public.profiles', 'UPDATE'), false),
+         'dueño_rpc SELECT(id, plan, simulador_activo)='
+         || coalesce((pg_catalog.has_column_privilege(o.proowner, 'public.profiles', 'id', 'SELECT')
+                      and pg_catalog.has_column_privilege(o.proowner, 'public.profiles', 'plan', 'SELECT')
+                      and pg_catalog.has_column_privilege(o.proowner, 'public.profiles', 'simulador_activo', 'SELECT'))::text, 'NO EXISTE')
+         || ' · UPDATE en alguna columna (FOR KEY SHARE)=' || coalesce(pg_catalog.has_any_column_privilege(o.proowner, 'public.profiles', 'UPDATE')::text, 'NO EXISTE')
+    from (select 1) x left join pg_catalog.pg_proc o on o.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+  union all
+  -- E3R4-02 (Astra r4): anon y authenticated no pueden alcanzar, por pertenencia (directa o en cadena, con SET o con
+  -- INHERIT: pg_has_role MEMBER las cubre todas), ni service_role ni postgres ni el dueño de las RPC ni ningun rol
+  -- superusuario, con BYPASSRLS o dueño de alguna de las 14 tablas. El sentido authenticator → roles de peticion es otro
+  -- y sigue valiendo
+  select 'pertenencias del alumno', count(*) = 0,
+         coalesce(string_agg(a.rolname::text || ' → ' || r.rolname::text, ', ' order by a.rolname, r.rolname), 'ninguna')
+    from pg_catalog.pg_roles a cross join pg_catalog.pg_roles r
+   where a.rolname in ('anon', 'authenticated') and r.oid <> a.oid
+     and (r.rolname in ('service_role', 'postgres') or r.rolsuper or r.rolbypassrls
+          or r.oid = (select o.proowner from pg_catalog.pg_proc o where o.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)'))
+          or r.oid in (select c.relowner from pg_catalog.pg_class c where c.oid in (select pg_catalog.to_regclass('public.' || t) from unnest(array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']) t)))
+     and pg_catalog.pg_has_role(a.oid, r.oid, 'MEMBER')
   ) x WHERE NOT x.bien;
   IF v_txt IS NOT NULL THEN
-    RAISE EXCEPTION 'sim-004b: roles o esquemas que cambian el acceso (RE4-01): %; no se toca nada', v_txt;
+    RAISE EXCEPTION 'sim-004b: roles o esquemas que cambian el acceso (RE4-01, E3R4-01, E3R4-02): %; no se toca nada', v_txt;
   END IF;
   -- RINV2-03 (CTO 17-oct, orden 1-006): el estado de cada secuencia identity no es catalogo (cambia con el uso normal):
   -- la s16 no lo mide; aqui, antes de cualquier cambio, el siguiente valor que daria (last_value si is_called = false;
