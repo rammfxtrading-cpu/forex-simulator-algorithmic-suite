@@ -17,6 +17,12 @@
 -- o con la funcion SECURITY DEFINER o con otro search_path. Ahora cada una de esas da A MEDIAS. Se mide por los
 -- campos del catalogo (tgfoid, tgtype, tgqual…), no por el texto, que depende del search_path del editor.
 --
+-- GR1-01 (Astra, 18-oct; regresion de RG-02): con la busqueda en cualquier esquema, contaba la pareja por el NOMBRE de
+-- la tabla, y una tabla TEMPORAL llamada sim_sessions con su disparador exacto pasaba por la de public (y salia
+-- impresa como «public.»). Ahora la pareja se acredita por tgrelid = la tabla de public (to_regclass), y cada
+-- disparador sale con su esquema y su tabla reales; los de otras tablas que llamen a la puerta siguen en el
+-- inventario para rechazarlos.
+--
 -- ALCANCE (RG-01 del revisor interno): acredita que los objetos de la puerta son exactos, no que bloquee. Otros
 -- disparadores de las mismas tablas, hijas por herencia o reglas podrian rodearla: eso lo inventaria la s16 completa,
 -- que es la que acredita la puerta (orden 1-031 del CTO).
@@ -55,7 +61,9 @@ fn as (select p.oid,
                          where a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner), 'nadie') ejecutan
          from pg_catalog.pg_proc p join pg_catalog.pg_language l on l.oid = p.prolang
         where p.oid = pg_catalog.to_regprocedure('public.sim_escrituras_v0_puerta()')),
-trg as (select c.relname tabla,
+-- GR1-01: las dos tablas de public por su oid (to_regclass no falla si no estan: NULL, y nada casa con NULL)
+pareja as (select pg_catalog.to_regclass('public.sim_sessions') ses, pg_catalog.to_regclass('public.sim_trades') tra),
+trg as (select n.nspname::text || '.' || c.relname::text tabla, t.tgrelid,
                -- lo que el disparador hace de verdad, por los campos del catalogo
                case when t.tgfoid = (select f.oid from fn f) then 'llama a la puerta'
                     else 'llama a OTRA funcion: ' || t.tgfoid::pg_catalog.regprocedure::text end
@@ -68,8 +76,11 @@ trg as (select c.relname tabla,
                || ' · tgenabled=' || t.tgenabled::text detalle,
                t.tgname = 'sim_escrituras_v0_puerta' and t.tgfoid = (select f.oid from fn f) and t.tgtype = 31 and t.tgqual is null
                and t.tgattr = ''::pg_catalog.int2vector and t.tgnargs = 0 and not t.tgisinternal and t.tgconstraint = 0
-               and t.tgenabled = 'O' exacto
+               and t.tgenabled = 'O'
+               -- GR1-01: y en una de las DOS tablas de public, por su oid, no por su nombre
+               and (t.tgrelid = (select pa.ses from pareja pa) or t.tgrelid = (select pa.tra from pareja pa)) exacto
           from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid = t.tgrelid
+               join pg_catalog.pg_namespace n on n.oid = c.relnamespace
          -- por su nombre en public, y tambien cualquier otro disparador, de CUALQUIER esquema, que llame a la funcion de
          -- la puerta (RG-02 del revisor interno)
          where (c.relnamespace = 'public'::pg_catalog.regnamespace and t.tgname = 'sim_escrituras_v0_puerta')
@@ -86,14 +97,16 @@ filas as (
                           || case when (select b.ok from fn_bien b) then ' · exacta' else ' · NO es la de sim-004a-puerta' end
                      from fn f), 'no existe') detalle
   union all
-  select 2, 'disparador', 'public.' || t.tabla || '.sim_escrituras_v0_puerta',
+  -- GR1-01: el esquema y la tabla reales (una temporal sale como pg_temp_N.sim_sessions, no como public)
+  select 2, 'disparador', t.tabla || '.sim_escrituras_v0_puerta',
          t.detalle || case when t.exacto then ' · exacto' else ' · NO es el de sim-004a-puerta' end from trg t
   union all
   select 3, 'veredicto', 'puerta',
          case when (select b.ok from fn_bien b)
                    and (select count(*) from trg) = 2
-                   and (select count(*) from trg t where t.exacto and t.tabla in ('sim_sessions', 'sim_trades')) = 2
-                   and (select count(distinct t.tabla) from trg t) = 2
+                   -- GR1-01: los dos exactos, uno en cada tabla de public, por su oid
+                   and (select count(*) from trg t where t.exacto and t.tgrelid = (select pa.ses from pareja pa)) = 1
+                   and (select count(*) from trg t where t.exacto and t.tgrelid = (select pa.tra from pareja pa)) = 1
               then 'APLICADA (los objetos de sim-004a-puerta, exactos; que bloquee lo acredita la s16 completa)'
               when (select count(*) from fn) = 0 and (select count(*) from trg) = 0 then 'SIN APLICAR'
               else 'A MEDIAS: PARAR (decide el CTO)' end

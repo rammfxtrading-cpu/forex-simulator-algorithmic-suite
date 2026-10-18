@@ -9,6 +9,9 @@
  *     cuerpo), mas UPDATE OF una columna, EXECUTE a anon, un tercer disparador que llama a la puerta, y (RG-06, RG-02)
  *     un argumento, ENABLE ALWAYS / REPLICA, dos en sim_sessions y ninguno en sim_trades, otro nombre en sim_trades y
  *     un disparador en otro esquema que la llama: todas A MEDIAS.
+ *     GR1-01 (Astra, guardas r1): las tres SUSTITUCIONES por una tabla temporal homonima (sim_sessions, sim_trades y
+ *     las dos) con el disparador exacto: A MEDIAS, y cada disparador sale con su esquema real (pg_temp_N), no «public.».
+ *     Con a6bb3a5 daban APLICADA (rojo previo: S16P_FICHERO con el SQL de a6bb3a5).
  *     Control funcional: con la puerta exacta, un UPDATE de alumno sin x-sim-cliente se rechaza; con las tres de Astra
  *     que lo dejan pasar, pasa (por eso tienen que salir A MEDIAS). Cada desvio, en una transaccion que se deshace
  */
@@ -55,6 +58,8 @@ try {
   const ctl = escribe()
   ver('control funcional: con la puerta exacta, el UPDATE sin cabecera se rechaza', !ctl.ok && /escritura sin x-sim-cliente rechazada/.test(ctl.err), ctl.err || ctl.out)
   const T = 'drop trigger sim_escrituras_v0_puerta on public.sim_sessions; create trigger sim_escrituras_v0_puerta'
+  // una tabla temporal con el nombre de la de public y el disparador EXACTO (nombre, funcion, tgtype 31, activo)
+  const TEMP = t => `create temporary table ${t} (x integer); create trigger sim_escrituras_v0_puerta before insert or update or delete on pg_temp.${t} for each row execute function public.sim_escrituras_v0_puerta()`
   const desvios = [
     ['otra funcion, mismo nombre de disparador', `create function public.otra_noop() returns trigger language plpgsql as $f$ begin return new; end $f$; ${T} before insert or update or delete on public.sim_sessions for each row execute function public.otra_noop()`, true],
     ['solo INSERT', `${T} before insert on public.sim_sessions for each row execute function public.sim_escrituras_v0_puerta()`, true],
@@ -75,6 +80,10 @@ try {
     ['dos en sim_sessions y ninguno en sim_trades', 'drop trigger sim_escrituras_v0_puerta on public.sim_trades; create trigger z_otra_puerta before insert or update or delete on public.sim_sessions for each row execute function public.sim_escrituras_v0_puerta()'],
     ['en sim_trades, otro nombre en lugar del suyo', 'drop trigger sim_escrituras_v0_puerta on public.sim_trades; create trigger z_otra_puerta before insert or update or delete on public.sim_trades for each row execute function public.sim_escrituras_v0_puerta()'],
     ['un disparador en una tabla de OTRO esquema que llama a la puerta', 'create temporary table h_otro (x integer); create trigger h_otro_puerta before insert on h_otro for each row execute function public.sim_escrituras_v0_puerta()'],
+    // GR1-01 (Astra): SUSTITUIR el de public por uno exacto en una tabla temporal con el mismo nombre
+    ['GR1-01: sim_sessions sustituida por una temporal homonima', `drop trigger sim_escrituras_v0_puerta on public.sim_sessions; ${TEMP('sim_sessions')}`, true],
+    ['GR1-01: sim_trades sustituida por una temporal homonima', `drop trigger sim_escrituras_v0_puerta on public.sim_trades; ${TEMP('sim_trades')}`],
+    ['GR1-01: las dos sustituidas por temporales homonimas', `drop trigger sim_escrituras_v0_puerta on public.sim_sessions; drop trigger sim_escrituras_v0_puerta on public.sim_trades; ${TEMP('sim_sessions')}; ${TEMP('sim_trades')}`, true],
     ['con otro cuerpo', "create or replace function public.sim_escrituras_v0_puerta() returns trigger language plpgsql set search_path = '' as $f$ begin return new; end $f$"],
   ]
   const cuerpo = S16P.replace(/^begin read only;$/m, '').replace(/^rollback;$/m, '')
@@ -84,8 +93,16 @@ try {
     if (!(r.ok && veredicto(r) === 'A MEDIAS: PARAR (decide el CTO)')) mal.push(`${que}: ${r.err ? r.err.slice(0, 120) : veredicto(r)}`)
     if (funcional) { const w = escribe(ddl); if (w.ok && /99990/.test(w.out)) pasan.push(que) }
   }
-  oraculo('S16p', `S16RO-01: los ${desvios.length} desvios (los 7 de Astra, los 3 de antes y los demas) dan A MEDIAS`, mal.length === 0, mal.join(' · '))
-  ver('control funcional: con las 3 de Astra (otra funcion, solo INSERT, WHEN(false)) el UPDATE sin cabecera PASA: por eso no pueden salir APLICADA', pasan.length === 3, pasan.join(', '))
+  oraculo('S16p', `S16RO-01 y GR1-01: los ${desvios.length} desvios (los 7 de Astra, los 3 de antes, las 3 sustituciones por homonimas y los demas) dan A MEDIAS`, mal.length === 0, mal.join(' · '))
+  ver('control funcional: con las 3 de Astra (otra funcion, solo INSERT, WHEN(false)) y las 2 sustituciones de sim_sessions el UPDATE sin cabecera PASA: por eso no pueden salir APLICADA', pasan.length === 5, pasan.join(', '))
+  {
+    // GR1-01: lo que se imprime es el esquema REAL (antes, «public.» delante de una temporal)
+    const ddl = `drop trigger sim_escrituras_v0_puerta on public.sim_sessions; ${TEMP('sim_sessions')}`
+    const r = m.comoEjecutor(d, `begin;\n${ddl};\nset transaction read only;\n${cuerpo}\nrollback;`), l = filas(r)
+    const disp = l.filter(x => x.startsWith('disparador|'))
+    oraculo('S16p', 'GR1-01: con sim_sessions sustituida, el disparador de la temporal sale como pg_temp_N.sim_sessions (no exacto) y el de public.sim_trades, exacto',
+      r.ok && disp.some(x => /^disparador\|pg_temp_\d+\.sim_sessions\.sim_escrituras_v0_puerta\|.* · NO es el de sim-004a-puerta$/.test(x)) && disp.some(x => /^disparador\|public\.sim_trades\.sim_escrituras_v0_puerta\|.* · exacto$/.test(x)) && !disp.some(x => x.startsWith('disparador|public.sim_sessions.')), disp.join(' / ').slice(0, 400))
+  }
   ver('control: tras todo, la puerta sigue APLICADA (cada desvio se deshizo) y el UPDATE sin cabecera se sigue rechazando', veredicto(corre(d)) === APL && !escribe().ok)
 } finally { m.cierra() }
 fin()
