@@ -10,11 +10,20 @@
 --   3 profiles    el dueño de las RPC: SELECT de id, plan y simulador_activo; UPDATE en alguna columna; y en la tabla
 --   4 resumen
 --
--- NO cambia nada: UNA sola SELECT, sin escrituras ni EXECUTE ni set_config. Solo catalogo y funciones de privilegio:
--- ningun dato de alumnos. Ensayada en READ ONLY (pruebas/s16h-pertenencias-y-profiles.mjs). Ramon la pega como postgres
--- en el editor SQL de Supabase cuando el CTO la pida. Acaba en «FIN | s16h | consulta».
+-- NO cambia nada: una sola SELECT, sin escrituras ni EXECUTE ni set_config, DENTRO de una transaccion READ ONLY real
+-- (regla del LEEME del buzon, 18-oct: BEGIN READ ONLY al principio y ROLLBACK al final). Si se pega por partes, o el
+-- editor la ejecuta fuera de esa transaccion, la guarda la hace fallar cerrada con el mensaje «s16h: pegala ENTERA…»,
+-- sin dar datos. Solo catalogo y funciones de privilegio: ningun dato de alumnos. Ensayada (pruebas/s16h-…mjs). Ramon la
+-- pega ENTERA como postgres en el editor SQL de Supabase cuando el CTO la pida. Acaba en «FIN | s16h | consulta».
 -- ============================================================================
+begin read only;
 with
+-- la guarda: falla cerrada si no estamos dentro de la transaccion READ ONLY
+guarda as (select case when pg_catalog.current_setting('transaction_read_only') = 'on' then true
+                       -- el texto depende de un valor de ejecucion: si fuera constante, PostgreSQL lo convertiria al
+                       -- planificar y la guarda saltaria siempre
+                       else ('s16h: pegala ENTERA, con su BEGIN READ ONLY y su ROLLBACK (transaction_read_only='
+                             || pg_catalog.current_setting('transaction_read_only') || ')')::boolean end ok),
 dueno as (select p.proowner o from pg_catalog.pg_proc p where p.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')),
 alumno as (select r.oid, r.rolname from pg_catalog.pg_roles r where r.rolname in ('anon', 'authenticated')),
 privilegiado as (
@@ -52,4 +61,5 @@ select seccion, objeto, detalle from (
          || (select count(*) from filas where seccion = 'alcanza')::text || ' roles privilegiados alcanzados'
   union all
   select 5, 'FIN', 's16h', 'consulta'
-) x order by o, objeto collate "C", detalle collate "C";
+) x where (select g.ok from guarda g) order by o, objeto collate "C", detalle collate "C";
+rollback;
