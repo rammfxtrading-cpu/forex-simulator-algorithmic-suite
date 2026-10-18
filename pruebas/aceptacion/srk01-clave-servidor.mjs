@@ -75,6 +75,54 @@ titulo('2 · los bordes')
   oraculo('SRK01', 'el error de ninguna no lleva nada del entorno', /Falta la clave de servidor/.test(n.error?.message ?? '') && sinClave(n.error.message + (n.error.stack ?? ''), NUEVA, VIEJA))
 }
 
+titulo('2b · SRK-01: caracteres que no valen en una cabecera HTTP (Astra; CTO, 2-036)')
+{
+  // tras recortar, solo ASCII visible (0x21–0x7E): lo demás, error fijo y sin valor; si la nueva está y es inválida, NO cae a la vieja
+  const MALOS = [['un LF interior', '\nFICTICIA_COLA'], ['un CR', '\rFICTICIA_COLA'], ['un NUL', '\u0000FICTICIA_COLA'], ['un TAB', '\tFICTICIA_COLA'], ['un espacio interior', ' FICTICIA_COLA'], ['una «ñ»', 'ñ'], ['un emoji', '\u{1F511}']]
+  for (const [d, cola] of MALOS) {
+    const mala = NUEVA + cola
+    const r = callado(() => getClaveServidor({ SUPABASE_SECRET_KEY: mala, SUPABASE_SERVICE_ROLE_KEY: VIEJA }))
+    oraculo('SRK01', `la nueva con ${d}: error fijo, no cae a la vieja, sin el valor ni un trozo y sin escribir nada`,
+      r.error instanceof Error && /SUPABASE_SECRET_KEY tiene caracteres no v[aá]lidos para una cabecera HTTP/.test(r.error.message) && sinClave(r.error.message + (r.error.stack ?? ''), mala, VIEJA) && r.escrito.length === 0, r.error?.message)
+    const malaV = VIEJA + cola
+    const v = callado(() => getClaveServidor({ SUPABASE_SERVICE_ROLE_KEY: malaV }))
+    oraculo('SRK01', `la vieja con ${d}: error fijo, sin el valor ni un trozo y sin escribir nada`,
+      v.error instanceof Error && /SUPABASE_SERVICE_ROLE_KEY tiene caracteres no v[aá]lidos para una cabecera HTTP/.test(v.error.message) && sinClave(v.error.message + (v.error.stack ?? ''), malaV) && v.escrito.length === 0, v.error?.message)
+  }
+  oraculo('SRK01', 'CONTROL: la nueva y la vieja de forma normal siguen pasando',
+    callado(() => getClaveServidor({ SUPABASE_SECRET_KEY: NUEVA })).valor === NUEVA && callado(() => getClaveServidor({ SUPABASE_SERVICE_ROLE_KEY: VIEJA })).valor === VIEJA, '')
+  // la CONSOLA de la ruta real, como la midió Astra: un proceso aparte con el módulo real y el SDK real; el transporte es
+  // un doble que construye el Request nativo (y no manda nada). Con el LF interior: ni rastro de la clave en la consola
+  {
+    const { spawnSync } = await import('node:child_process')
+    const { fileURLToPath: aRuta } = await import('node:url')
+    const R = aRuta(new globalThis.URL('../../', import.meta.url))
+    const marca = 'sb_secret_' + 'FICTICIA_CONSOLA_12345'
+    const ACCION = "const m = await import(pathToFileURL(R + 'lib/authApi.js').href); await m.requireUser({ headers: { authorization: 'Bearer TOKEN_FICTICIO' } }, { status() { return this }, json() { return this } })"
+    const CODIGO = [
+      "import fs from 'node:fs'; import { registerHooks } from 'node:module'; import { pathToFileURL, fileURLToPath } from 'node:url'",
+      "registerHooks({ resolve(s, c, next) { if (s.startsWith('.') && c.parentURL && !c.parentURL.includes('/node_modules/')) { const u = new URL(s, c.parentURL); if (!/\\.(c|m)?js$/.test(u.pathname) && fs.existsSync(fileURLToPath(u) + '.js')) return next(u.href + '.js', c) } return next(s, c) } })",
+      'const R = ' + JSON.stringify(R) + '; const M = process.env.MARCA',
+      "let llegadas = 0; globalThis.fetch = async (u, i) => { llegadas++; new Request(u, i); throw new Error('el doble del transporte no manda nada') }",
+      "const logs = []; for (const k of ['log', 'error', 'warn', 'info', 'debug']) console[k] = (...v) => logs.push(v.map((x) => x?.stack || String(x)).join(' '))",
+      "let error = ''",
+      'try { ' + ACCION + ' } catch (e) { error = String(e?.stack ?? e) }',
+      "process.stdout.write(JSON.stringify({ fuga: logs.some((l) => l.includes(M)) || error.includes(M), escritos: logs.length, error: error.split('\\n')[0].split(M).join('«MARCA»'), llegadas }))",
+    ].join('\n')
+    const hijo = (clave) => {
+      const h = spawnSync(process.execPath, ['--input-type=module', '-e', CODIGO], { cwd: R, encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: process.env.HOME ?? '/tmp', NEXT_PUBLIC_SUPABASE_URL: 'https://ficticio.invalid', SUPABASE_SECRET_KEY: clave, MARCA: marca } })
+      try { return JSON.parse(h.stdout) } catch { return { roto: (h.stderr || h.stdout).split(marca).join('«MARCA»').slice(0, 300) } }
+    }
+    const mal = hijo(marca + '\nFICTICIA_COLA')
+    oraculo('SRK01', 'consola de lib/authApi.js real (su cliente y requireUser, con el SDK) con el LF interior (el caso de Astra): ni rastro de la clave, error fijo y sin llegar al transporte',
+      mal.fuga === false && mal.llegadas === 0 && /SUPABASE_SECRET_KEY tiene caracteres no v[aá]lidos/.test(mal.error ?? ''), JSON.stringify(mal))
+    const bien = hijo(marca)
+    oraculo('SRK01', 'CONTROL de la medida: con una clave de forma normal, la misma ruta SÍ llega al transporte (el doble) y sin fuga',
+      bien.llegadas >= 1 && bien.fuga === false, JSON.stringify(bien))
+  }
+}
+
 titulo('3 · los scripts REALES: actualizar-diario.js (en seco) con el entorno de Actions, y restore-2026.js con el .env.local')
 {
   const usada = async (env, script = 'scripts/actualizar-diario.js') => {
