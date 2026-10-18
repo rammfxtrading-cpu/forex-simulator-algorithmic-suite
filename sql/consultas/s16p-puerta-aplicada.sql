@@ -33,6 +33,10 @@
 -- transaccion, la guarda la hace fallar cerrada con el mensaje «s16p: pegala ENTERA…», sin dar datos. Ningun dato de
 -- alumnos. Ensayada (pruebas/s16p-puerta-aplicada.mjs). Ramon la pega ENTERA en el editor SQL de Supabase cuando el CTO
 -- la pida. Acaba en «FIN | s16p | consulta».
+-- F8 (bateria de familias, informe 1-036; orden 1-041): pegada sin su BEGIN, el SET LOCAL no hace nada, y un =
+-- homonimo con RESTRICT = eqsel se ejecutaba al PLANIFICAR, antes de la guarda. Ahora todo el cuerpo va calificado con
+-- pg_catalog (operadores, IN → = any (array[…]), NOT IN → <> all, LIKE → ~~, IS DISTINCT FROM → coalesce, funciones,
+-- conversiones, catalogos), como la s16 (GR1-02): no depende del SET LOCAL. Mismo pg_get_viewdef que la de a6bb3a5.
 -- ============================================================================
 begin read only;
 -- S10RO-01: lo primero, el search_path de pg_catalog (LEEME): nada de la consulta resuelve en otro esquema por su nombre
@@ -50,69 +54,69 @@ fn as (select p.oid,
               pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') sha,
               -- la ficha, como la escribe sim-004a-puerta: plpgsql, INVOKER, VOLATILE, search_path vacio, devuelve
               -- trigger, sin argumentos, y su dueño es quien la ejecuta (en el editor, postgres)
-              l.lanname || '|definer=' || p.prosecdef::text || '|' || p.provolatile::text
-              || '|' || coalesce(pg_catalog.array_to_string(p.proconfig, ','), '-')
-              || '|ret=' || pg_catalog.format_type(p.prorettype, null) || '|args=' || p.pronargs::text
-              || '|dueño=' || case when p.proowner = (select r.oid from pg_catalog.pg_roles r where r.rolname = current_user)
+              l.lanname OPERATOR(pg_catalog.||) '|definer=' OPERATOR(pg_catalog.||) p.prosecdef::pg_catalog.text OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||) p.provolatile::pg_catalog.text
+              OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||) coalesce(pg_catalog.array_to_string(p.proconfig, ','), '-')
+              OPERATOR(pg_catalog.||) '|ret=' OPERATOR(pg_catalog.||) pg_catalog.format_type(p.prorettype, null) OPERATOR(pg_catalog.||) '|args=' OPERATOR(pg_catalog.||) p.pronargs::pg_catalog.text
+              OPERATOR(pg_catalog.||) '|dueño=' OPERATOR(pg_catalog.||) case when p.proowner OPERATOR(pg_catalog.=) (select r.oid from pg_catalog.pg_roles r where r.rolname OPERATOR(pg_catalog.=) current_user)
                                    then 'ejecutor' else pg_catalog.pg_get_userbyid(p.proowner) end ficha,
               -- quien puede ejecutarla, aparte del dueño (un disparador no necesita EXECUTE: lo esperado es nadie)
-              coalesce((select pg_catalog.string_agg(case when a.grantee = 0 then 'PUBLIC' else pg_catalog.pg_get_userbyid(a.grantee) end, ',' order by a.grantee)
+              coalesce((select pg_catalog.string_agg(case when a.grantee OPERATOR(pg_catalog.=) 0 then 'PUBLIC' else pg_catalog.pg_get_userbyid(a.grantee) end, ',' order by a.grantee)
                           from pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) a
-                         where a.privilege_type = 'EXECUTE' and a.grantee <> p.proowner), 'nadie') ejecutan
-         from pg_catalog.pg_proc p join pg_catalog.pg_language l on l.oid = p.prolang
-        where p.oid = pg_catalog.to_regprocedure('public.sim_escrituras_v0_puerta()')),
+                         where a.privilege_type OPERATOR(pg_catalog.=) 'EXECUTE' and a.grantee OPERATOR(pg_catalog.<>) p.proowner), 'nadie') ejecutan
+         from pg_catalog.pg_proc p join pg_catalog.pg_language l on l.oid OPERATOR(pg_catalog.=) p.prolang
+        where p.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('public.sim_escrituras_v0_puerta()')),
 -- GR1-01: las dos tablas de public por su oid (to_regclass no falla si no estan: NULL, y nada casa con NULL)
 pareja as (select pg_catalog.to_regclass('public.sim_sessions') ses, pg_catalog.to_regclass('public.sim_trades') tra),
-trg as (select n.nspname::text || '.' || c.relname::text tabla, t.tgrelid,
+trg as (select n.nspname::pg_catalog.text OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) c.relname::pg_catalog.text tabla, t.tgrelid,
                -- lo que el disparador hace de verdad, por los campos del catalogo
-               case when t.tgfoid = (select f.oid from fn f) then 'llama a la puerta'
-                    else 'llama a OTRA funcion: ' || t.tgfoid::pg_catalog.regprocedure::text end
-               || ' · tgtype=' || t.tgtype::text
-               || ' · when=' || case when t.tgqual is null then 'no' else 'SI' end
-               || ' · columnas=' || case when t.tgattr = ''::pg_catalog.int2vector then 'ninguna' else t.tgattr::text end
-               || ' · args=' || t.tgnargs::text
-               || ' · interno=' || t.tgisinternal::text
-               || ' · restriccion=' || (t.tgconstraint <> 0)::text
-               || ' · tgenabled=' || t.tgenabled::text detalle,
-               t.tgname = 'sim_escrituras_v0_puerta' and t.tgfoid = (select f.oid from fn f) and t.tgtype = 31 and t.tgqual is null
-               and t.tgattr = ''::pg_catalog.int2vector and t.tgnargs = 0 and not t.tgisinternal and t.tgconstraint = 0
-               and t.tgenabled = 'O'
+               case when t.tgfoid OPERATOR(pg_catalog.=) (select f.oid from fn f) then 'llama a la puerta'
+                    else 'llama a OTRA funcion: ' OPERATOR(pg_catalog.||) t.tgfoid::pg_catalog.regprocedure::pg_catalog.text end
+               OPERATOR(pg_catalog.||) ' · tgtype=' OPERATOR(pg_catalog.||) t.tgtype::pg_catalog.text
+               OPERATOR(pg_catalog.||) ' · when=' OPERATOR(pg_catalog.||) case when t.tgqual is null then 'no' else 'SI' end
+               OPERATOR(pg_catalog.||) ' · columnas=' OPERATOR(pg_catalog.||) case when t.tgattr OPERATOR(pg_catalog.=) ''::pg_catalog.int2vector then 'ninguna' else t.tgattr::pg_catalog.text end
+               OPERATOR(pg_catalog.||) ' · args=' OPERATOR(pg_catalog.||) t.tgnargs::pg_catalog.text
+               OPERATOR(pg_catalog.||) ' · interno=' OPERATOR(pg_catalog.||) t.tgisinternal::pg_catalog.text
+               OPERATOR(pg_catalog.||) ' · restriccion=' OPERATOR(pg_catalog.||) (t.tgconstraint OPERATOR(pg_catalog.<>) 0)::pg_catalog.text
+               OPERATOR(pg_catalog.||) ' · tgenabled=' OPERATOR(pg_catalog.||) t.tgenabled::pg_catalog.text detalle,
+               t.tgname OPERATOR(pg_catalog.=) 'sim_escrituras_v0_puerta' and t.tgfoid OPERATOR(pg_catalog.=) (select f.oid from fn f) and t.tgtype OPERATOR(pg_catalog.=) 31 and t.tgqual is null
+               and t.tgattr OPERATOR(pg_catalog.=) ''::pg_catalog.int2vector and t.tgnargs OPERATOR(pg_catalog.=) 0 and not t.tgisinternal and t.tgconstraint OPERATOR(pg_catalog.=) 0
+               and t.tgenabled OPERATOR(pg_catalog.=) 'O'
                -- GR1-01: y en una de las DOS tablas de public, por su oid, no por su nombre
-               and (t.tgrelid = (select pa.ses from pareja pa) or t.tgrelid = (select pa.tra from pareja pa)) exacto
-          from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid = t.tgrelid
-               join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+               and (t.tgrelid OPERATOR(pg_catalog.=) (select pa.ses from pareja pa) or t.tgrelid OPERATOR(pg_catalog.=) (select pa.tra from pareja pa)) exacto
+          from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid OPERATOR(pg_catalog.=) t.tgrelid
+               join pg_catalog.pg_namespace n on n.oid OPERATOR(pg_catalog.=) c.relnamespace
          -- por su nombre en public, y tambien cualquier otro disparador, de CUALQUIER esquema, que llame a la funcion de
          -- la puerta (RG-02 del revisor interno)
-         where (c.relnamespace = 'public'::pg_catalog.regnamespace and t.tgname = 'sim_escrituras_v0_puerta')
-            or t.tgfoid = (select f.oid from fn f)),
-fn_bien as (select coalesce((select f.sha = 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883'
-                                    and f.ficha = 'plpgsql|definer=false|v|search_path=""|ret=trigger|args=0|dueño=ejecutor'
-                                    and f.ejecutan = 'nadie' from fn f), false) ok),
+         where (c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and t.tgname OPERATOR(pg_catalog.=) 'sim_escrituras_v0_puerta')
+            or t.tgfoid OPERATOR(pg_catalog.=) (select f.oid from fn f)),
+fn_bien as (select coalesce((select f.sha OPERATOR(pg_catalog.=) 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883'
+                                    and f.ficha OPERATOR(pg_catalog.=) 'plpgsql|definer=false|v|search_path=""|ret=trigger|args=0|dueño=ejecutor'
+                                    and f.ejecutan OPERATOR(pg_catalog.=) 'nadie' from fn f), false) ok),
 filas as (
   select 1 o, 'funcion' seccion, 'public.sim_escrituras_v0_puerta()' objeto,
-         coalesce((select 'existe · cuerpo sha256=' || f.sha
-                          || case when f.sha = 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883'
+         coalesce((select 'existe · cuerpo sha256=' OPERATOR(pg_catalog.||) f.sha
+                          OPERATOR(pg_catalog.||) case when f.sha OPERATOR(pg_catalog.=) 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883'
                                   then ' (el de sim-004a-puerta)' else ' (OTRO cuerpo)' end
-                          || ' · ' || f.ficha || ' · la ejecutan ademas del dueño: ' || f.ejecutan
-                          || case when (select b.ok from fn_bien b) then ' · exacta' else ' · NO es la de sim-004a-puerta' end
+                          OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) f.ficha OPERATOR(pg_catalog.||) ' · la ejecutan ademas del dueño: ' OPERATOR(pg_catalog.||) f.ejecutan
+                          OPERATOR(pg_catalog.||) case when (select b.ok from fn_bien b) then ' · exacta' else ' · NO es la de sim-004a-puerta' end
                      from fn f), 'no existe') detalle
   union all
   -- GR1-01: el esquema y la tabla reales (una temporal sale como pg_temp_N.sim_sessions, no como public)
-  select 2, 'disparador', t.tabla || '.sim_escrituras_v0_puerta',
-         t.detalle || case when t.exacto then ' · exacto' else ' · NO es el de sim-004a-puerta' end from trg t
+  select 2, 'disparador', t.tabla OPERATOR(pg_catalog.||) '.sim_escrituras_v0_puerta',
+         t.detalle OPERATOR(pg_catalog.||) case when t.exacto then ' · exacto' else ' · NO es el de sim-004a-puerta' end from trg t
   union all
   select 3, 'veredicto', 'puerta',
          case when (select b.ok from fn_bien b)
-                   and (select count(*) from trg) = 2
+                   and (select pg_catalog.count(*) from trg) OPERATOR(pg_catalog.=) 2
                    -- GR1-01: los dos exactos, uno en cada tabla de public, por su oid
-                   and (select count(*) from trg t where t.exacto and t.tgrelid = (select pa.ses from pareja pa)) = 1
-                   and (select count(*) from trg t where t.exacto and t.tgrelid = (select pa.tra from pareja pa)) = 1
+                   and (select pg_catalog.count(*) from trg t where t.exacto and t.tgrelid OPERATOR(pg_catalog.=) (select pa.ses from pareja pa)) OPERATOR(pg_catalog.=) 1
+                   and (select pg_catalog.count(*) from trg t where t.exacto and t.tgrelid OPERATOR(pg_catalog.=) (select pa.tra from pareja pa)) OPERATOR(pg_catalog.=) 1
               then 'APLICADA (los objetos de sim-004a-puerta, exactos; que bloquee lo acredita la s16 completa)'
-              when (select count(*) from fn) = 0 and (select count(*) from trg) = 0 then 'SIN APLICAR'
+              when (select pg_catalog.count(*) from fn) OPERATOR(pg_catalog.=) 0 and (select pg_catalog.count(*) from trg) OPERATOR(pg_catalog.=) 0 then 'SIN APLICAR'
               else 'A MEDIAS: PARAR (decide el CTO)' end
   union all
   select 4, 'FIN', 's16p', 'consulta')
 select seccion, objeto, detalle from filas
  where (select g.ok from guarda g)
- order by o, objeto collate "C";
+ order by o, objeto collate pg_catalog."C";
 rollback;

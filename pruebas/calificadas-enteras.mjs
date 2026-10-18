@@ -5,6 +5,7 @@
  *   1 en el texto, fuera de comentarios y cadenas: ningun operador sin OPERATOR(pg_catalog.x); ninguna conversion,
  *     funcion ni catalogo sin pg_catalog.; nada de IN, LIKE, IS DISTINCT FROM, NULLIF, BETWEEN ni CASE x WHEN (buscan
  *     su operador por el search_path); la colacion, pg_catalog."C". Control: el detector ve cada forma plantada
+ *     Y lo mismo en s10, s16h y s16p (F8 de la bateria: pegadas sin su BEGIN, el SET LOCAL no las protege)
  *   2 GR1-02: con un ~(text,text) homonimo en public que esconde las filas DIFIERE del recuento, un =(text,text) que hace
  *     «coincidir» el requisito del search_path, la puerta desactivada y search_path = public, pg_catalog, extensions:
  *     la s16 dice DIFIEREN n, con n = las filas DIFIERE/DE MAS/FALTA que de verdad da, y el requisito DIFIERE
@@ -49,6 +50,11 @@ const resume = mal => Object.entries(mal.reduce((a, x) => ({ ...a, [x]: (a[x] ??
 const m16 = sinCalificar(sinEnvoltura(S16)), mInf = sinCalificar(INFORME.slice(INFORME.indexOf('select seccion')))
 oraculo('GR1-02', 's16 entera: ni un operador, conversion, funcion, catalogo ni colacion sin pg_catalog; nada de IN, LIKE, IS DISTINCT FROM, NULLIF, BETWEEN ni CASE x WHEN', m16.length === 0, resume(m16).slice(0, 400))
 oraculo('GR1-03', 'el INFORME final de sim-004b, igual', mInf.length === 0, resume(mInf).slice(0, 400))
+// F8 (bateria, informe 1-036; orden 1-041): las otras tres consultas con guarda, igual (no dependen de su SET LOCAL)
+for (const q of ['s10-conciliacion', 's16h-pertenencias-y-profiles', 's16p-puerta-aplicada']) {
+  const mal = sinCalificar(sinEnvoltura(lee(`sql/consultas/${q}.sql`)).replace(/^set local search_path = pg_catalog, pg_temp;$/m, ''))
+  oraculo('F8', `${q} entera, igual (sin depender de su SET LOCAL)`, mal.length === 0, resume(mal).slice(0, 300))
+}
 // control: el detector ve cada forma, plantada en un texto calificado
 const plantas = ["a = b", "a || b", "a ~ 'x'", "x::text", "count(*)", "from pg_class", "x in ('a')", "x like 'a'", "a is distinct from b", "nullif(a, '')", "order by a collate \"C\"", "case a when 1 then 2 end", "a + 1"]
 const ciegas = plantas.filter(p => sinCalificar(`select ${p}`).length === 0)

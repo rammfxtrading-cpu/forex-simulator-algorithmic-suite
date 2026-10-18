@@ -43,6 +43,10 @@
 --                    sha256 canonico (n.2, o.0). Provisional hasta la foto final
 --                    (puerta activa + segunda lectura, n.1)
 --  10 service_role   escrituras de servidor, aparte: no cuentan (k.4 d)
+-- F8 (bateria de familias, informe 1-036; orden 1-041): pegada sin su BEGIN, el SET LOCAL no hace nada, y un =
+-- homonimo con RESTRICT = eqsel se ejecutaba al PLANIFICAR, antes de la guarda. Ahora todo el cuerpo va calificado con
+-- pg_catalog (operadores, IN → = any (array[…]), NOT IN → <> all, LIKE → ~~, IS DISTINCT FROM → coalesce, funciones,
+-- conversiones, catalogos), como la s16 (GR1-02): no depende del SET LOCAL. Mismo pg_get_viewdef que la de a6bb3a5.
 -- ============================================================================
 begin read only;
 -- S10RO-01: lo primero, el search_path de pg_catalog (LEEME): nada de la consulta resuelve en otro esquema por su nombre
@@ -57,7 +61,7 @@ guarda as (select case when pg_catalog.current_setting('transaction_read_only') 
                        else ('s10: pegala ENTERA, con su BEGIN READ ONLY y su ROLLBACK (transaction_read_only='
                              OPERATOR(pg_catalog.||) pg_catalog.current_setting('transaction_read_only') OPERATOR(pg_catalog.||) ')')::pg_catalog.bool end ok),
 sinfirma as (
-  select e.* from public.sim_escrituras_v0 e where e.cliente = 'sin-firma' and e.rol_jwt in ('authenticated', 'anon')
+  select e.* from public.sim_escrituras_v0 e where e.cliente OPERATOR(pg_catalog.=) 'sin-firma' and e.rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated', 'anon'])
 ), sesiones as (
   select distinct session_id from sinfirma where session_id is not null
 ), parejas as (
@@ -67,103 +71,103 @@ sinfirma as (
   select escritura_update id from parejas union all select escritura_insert from parejas
 ), clasif as (
   select f.*,
-         exists (select 1 from public.sim_escrituras_v0_marcas m where m.escritura_id = f.id) menciona_balance,
+         exists (select 1 from public.sim_escrituras_v0_marcas m where m.escritura_id OPERATOR(pg_catalog.=) f.id) menciona_balance,
          case
-           when f.id in (select id from emparejadas) then 'emparejada'
-           when f.tabla = 'sim_sessions' and f.operacion = 'UPDATE' and f.delta <> 0 then 'incidencia: cambio de saldo sin pareja'
-           when f.tabla = 'sim_sessions' and f.operacion = 'UPDATE'
-                and exists (select 1 from public.sim_escrituras_v0_marcas m where m.escritura_id = f.id) then 'dudoso: delta 0, menciona balance, sin pareja'
-           when f.tabla = 'sim_sessions' and f.operacion = 'UPDATE' then 'nada: no menciona balance (m.1)'
-           when f.tabla = 'sim_sessions' and f.operacion = 'INSERT' and f.delta is distinct from 0 then 'incidencia: sesion creada con balance distinto de capital'
-           when f.tabla = 'sim_sessions' then 'nada'
-           when f.tabla = 'sim_trades' and f.operacion = 'INSERT' then 'incidencia: INSERT de trade sin pareja'
-           when f.tabla = 'sim_trades' and f.operacion = 'DELETE'
-                and not exists (select 1 from public.sim_escrituras_v0 s where s.tabla = 'sim_sessions' and s.operacion = 'DELETE'
-                                   and s.session_id = f.session_id and s.xact = f.xact) then 'incidencia: DELETE de trade sin el de su sesion en la misma transaccion'
-           when f.tabla = 'sim_trades' and f.operacion = 'UPDATE'
-                and exists (select 1 from unnest(f.columnas) c where c not in ('notes', 'tags')) then 'incidencia: UPDATE de trade con columnas economicas (o.3)'
+           when f.id OPERATOR(pg_catalog.=) any (select id from emparejadas) then 'emparejada'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and f.operacion OPERATOR(pg_catalog.=) 'UPDATE' and f.delta OPERATOR(pg_catalog.<>) 0 then 'incidencia: cambio de saldo sin pareja'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and f.operacion OPERATOR(pg_catalog.=) 'UPDATE'
+                and exists (select 1 from public.sim_escrituras_v0_marcas m where m.escritura_id OPERATOR(pg_catalog.=) f.id) then 'dudoso: delta 0, menciona balance, sin pareja'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and f.operacion OPERATOR(pg_catalog.=) 'UPDATE' then 'nada: no menciona balance (m.1)'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and f.operacion OPERATOR(pg_catalog.=) 'INSERT' and f.delta is distinct from 0 then 'incidencia: sesion creada con balance distinto de capital'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_sessions' then 'nada'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_trades' and f.operacion OPERATOR(pg_catalog.=) 'INSERT' then 'incidencia: INSERT de trade sin pareja'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_trades' and f.operacion OPERATOR(pg_catalog.=) 'DELETE'
+                and not exists (select 1 from public.sim_escrituras_v0 s where s.tabla OPERATOR(pg_catalog.=) 'sim_sessions' and s.operacion OPERATOR(pg_catalog.=) 'DELETE'
+                                   and s.session_id OPERATOR(pg_catalog.=) f.session_id and s.xact OPERATOR(pg_catalog.=) f.xact) then 'incidencia: DELETE de trade sin el de su sesion en la misma transaccion'
+           when f.tabla OPERATOR(pg_catalog.=) 'sim_trades' and f.operacion OPERATOR(pg_catalog.=) 'UPDATE'
+                and exists (select 1 from pg_catalog.unnest(f.columnas) c where c OPERATOR(pg_catalog.<>) all (array['notes', 'tags'])) then 'incidencia: UPDATE de trade con columnas economicas (o.3)'
            else 'nada'
          end clase
     from sinfirma f
 ), timeout as (
   select r.rolname,
-         (select split_part(c, '=', 2) from pg_db_role_setting s, unnest(s.setconfig) c
-           where s.setrole = r.oid and s.setdatabase = (select oid from pg_database where datname = current_database()) and c like 'statement_timeout=%') rol_base,
-         (select split_part(c, '=', 2) from pg_db_role_setting s, unnest(s.setconfig) c
-           where s.setrole = r.oid and s.setdatabase = 0 and c like 'statement_timeout=%') rol,
-         (select split_part(c, '=', 2) from pg_db_role_setting s, unnest(s.setconfig) c
-           where s.setrole = 0 and s.setdatabase = (select oid from pg_database where datname = current_database()) and c like 'statement_timeout=%') base,
-         (select reset_val || coalesce(unit, '') || ' (fuente ' || source || ', arranque ' || boot_val || coalesce(unit, '') || ')' from pg_settings where name = 'statement_timeout') servidor
-    from pg_roles r where r.rolname in ('authenticated', 'anon', 'authenticator')
+         (select pg_catalog.split_part(c, '=', 2) from pg_catalog.pg_db_role_setting s, pg_catalog.unnest(s.setconfig) c
+           where s.setrole OPERATOR(pg_catalog.=) r.oid and s.setdatabase OPERATOR(pg_catalog.=) (select oid from pg_catalog.pg_database where datname OPERATOR(pg_catalog.=) current_database()) and c OPERATOR(pg_catalog.~~) 'statement_timeout=%') rol_base,
+         (select pg_catalog.split_part(c, '=', 2) from pg_catalog.pg_db_role_setting s, pg_catalog.unnest(s.setconfig) c
+           where s.setrole OPERATOR(pg_catalog.=) r.oid and s.setdatabase OPERATOR(pg_catalog.=) 0 and c OPERATOR(pg_catalog.~~) 'statement_timeout=%') rol,
+         (select pg_catalog.split_part(c, '=', 2) from pg_catalog.pg_db_role_setting s, pg_catalog.unnest(s.setconfig) c
+           where s.setrole OPERATOR(pg_catalog.=) 0 and s.setdatabase OPERATOR(pg_catalog.=) (select oid from pg_catalog.pg_database where datname OPERATOR(pg_catalog.=) current_database()) and c OPERATOR(pg_catalog.~~) 'statement_timeout=%') base,
+         (select reset_val OPERATOR(pg_catalog.||) coalesce(unit, '') OPERATOR(pg_catalog.||) ' (fuente ' OPERATOR(pg_catalog.||) source OPERATOR(pg_catalog.||) ', arranque ' OPERATOR(pg_catalog.||) boot_val OPERATOR(pg_catalog.||) coalesce(unit, '') OPERATOR(pg_catalog.||) ')' from pg_catalog.pg_settings where name OPERATOR(pg_catalog.=) 'statement_timeout') servidor
+    from pg_catalog.pg_roles r where r.rolname OPERATOR(pg_catalog.=) any (array['authenticated', 'anon', 'authenticator']::pg_catalog.name[])
 )
 select seccion, objeto, detalle from (
-  select 0 o, 0 o2, 'hora' seccion, 'ahora (UTC)' objeto, to_char(clock_timestamp() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') detalle
-  union all select 0, 1, 'hora', 'servidor', current_setting('server_version')
+  select 0 o, 0 o2, 'hora' seccion, 'ahora (UTC)' objeto, pg_catalog.to_char(pg_catalog.clock_timestamp() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') detalle
+  union all select 0, 1, 'hora', 'servidor', pg_catalog.current_setting('server_version')
   union all
   select 1, 0, 'timeout', t.rolname,
-         'rol+base=' || coalesce(t.rol_base, '-') || ' · rol=' || coalesce(t.rol, '-') || ' · base=' || coalesce(t.base, '-') || ' · servidor=' || t.servidor
-         || ' · MANDA: ' || coalesce(t.rol_base, t.rol, t.base, 'el del servidor')
-         || case when coalesce(t.rol_base, t.rol, t.base, (select reset_val from pg_settings where name = 'statement_timeout')) in ('0', '0ms', '0s')
+         'rol+base=' OPERATOR(pg_catalog.||) coalesce(t.rol_base, '-') OPERATOR(pg_catalog.||) ' · rol=' OPERATOR(pg_catalog.||) coalesce(t.rol, '-') OPERATOR(pg_catalog.||) ' · base=' OPERATOR(pg_catalog.||) coalesce(t.base, '-') OPERATOR(pg_catalog.||) ' · servidor=' OPERATOR(pg_catalog.||) t.servidor
+         OPERATOR(pg_catalog.||) ' · MANDA: ' OPERATOR(pg_catalog.||) coalesce(t.rol_base, t.rol, t.base, 'el del servidor')
+         OPERATOR(pg_catalog.||) case when coalesce(t.rol_base, t.rol, t.base, (select reset_val from pg_catalog.pg_settings where name OPERATOR(pg_catalog.=) 'statement_timeout')) OPERATOR(pg_catalog.=) any (array['0', '0ms', '0s'])
                  then ' · SIN LIMITE: la regla de 2 × statement_timeout no se puede aplicar; decide el CTO (l.1 c)' else '' end
     from timeout t
   union all
   select 2, 0, 'estado', 'registro',
-         case when exists (select 1 from pg_trigger where tgname = 'sim_escrituras_v0_puerta' and tgrelid = 'public.sim_sessions'::regclass)
+         case when exists (select 1 from pg_catalog.pg_trigger where tgname OPERATOR(pg_catalog.=) 'sim_escrituras_v0_puerta' and tgrelid OPERATOR(pg_catalog.=) 'public.sim_sessions'::pg_catalog.regclass)
               then 'registro + puerta' else 'registro instalado (puerta NO activa)' end
   union all
-  select 2, 1, 'estado', 'filas', 'total=' || count(*)
-         || ' · sin firma de alumno=' || count(*) filter (where cliente = 'sin-firma' and rol_jwt in ('authenticated', 'anon'))
-         || ' · firmadas=' || count(*) filter (where cliente <> 'sin-firma' and rol_jwt in ('authenticated', 'anon'))
-         || ' · service_role=' || count(*) filter (where rol_jwt = 'service_role')
-         || ' · otras (dueño, SQL directo)=' || count(*) filter (where rol_jwt is null or rol_jwt not in ('authenticated', 'anon', 'service_role'))
-         || ' · desde ' || coalesce(to_char(min(en) at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS'), '-') || ' UTC'
+  select 2, 1, 'estado', 'filas', 'total=' OPERATOR(pg_catalog.||) pg_catalog.count(*)
+         OPERATOR(pg_catalog.||) ' · sin firma de alumno=' OPERATOR(pg_catalog.||) pg_catalog.count(*) filter (where cliente OPERATOR(pg_catalog.=) 'sin-firma' and rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated', 'anon']))
+         OPERATOR(pg_catalog.||) ' · firmadas=' OPERATOR(pg_catalog.||) pg_catalog.count(*) filter (where cliente OPERATOR(pg_catalog.<>) 'sin-firma' and rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated', 'anon']))
+         OPERATOR(pg_catalog.||) ' · service_role=' OPERATOR(pg_catalog.||) pg_catalog.count(*) filter (where rol_jwt OPERATOR(pg_catalog.=) 'service_role')
+         OPERATOR(pg_catalog.||) ' · otras (dueño, SQL directo)=' OPERATOR(pg_catalog.||) pg_catalog.count(*) filter (where rol_jwt is null or rol_jwt OPERATOR(pg_catalog.<>) all (array['authenticated', 'anon', 'service_role']))
+         OPERATOR(pg_catalog.||) ' · desde ' OPERATOR(pg_catalog.||) coalesce(pg_catalog.to_char(pg_catalog.min(en) at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS'), '-') OPERATOR(pg_catalog.||) ' UTC'
     from public.sim_escrituras_v0
   union all
-  select 3, 0, 'volumen', to_char(date_trunc('day', en at time zone 'UTC'), 'YYYY-MM-DD'), count(*)::text || ' filas'
-    from public.sim_escrituras_v0 group by 2, date_trunc('day', en at time zone 'UTC')
+  select 3, 0, 'volumen', pg_catalog.to_char(pg_catalog.date_trunc('day', en at time zone 'UTC'), 'YYYY-MM-DD'), pg_catalog.count(*)::pg_catalog.text OPERATOR(pg_catalog.||) ' filas'
+    from public.sim_escrituras_v0 group by 2, pg_catalog.date_trunc('day', en at time zone 'UTC')
   union all
-  select 4, 0, 'alumno', a.user_id::text,
-         'ultima version firmada=' || coalesce((select e.cliente from public.sim_escrituras_v0 e where e.user_id = a.user_id and e.cliente <> 'sin-firma'
-                                                   and e.rol_jwt in ('authenticated', 'anon') order by e.id desc limit 1), '-')
-         || ' · sin firma 72 h=' || (select count(*) from sinfirma f where f.user_id = a.user_id and f.en > clock_timestamp() - interval '72 hours')
-         || ' · ultima sin firma=' || coalesce((select to_char(max(f.en) at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') from sinfirma f where f.user_id = a.user_id), '-')
-    from (select distinct user_id from public.sim_escrituras_v0 where rol_jwt in ('authenticated', 'anon') and user_id is not null) a
+  select 4, 0, 'alumno', a.user_id::pg_catalog.text,
+         'ultima version firmada=' OPERATOR(pg_catalog.||) coalesce((select e.cliente from public.sim_escrituras_v0 e where e.user_id OPERATOR(pg_catalog.=) a.user_id and e.cliente OPERATOR(pg_catalog.<>) 'sin-firma'
+                                                   and e.rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated', 'anon']) order by e.id desc limit 1), '-')
+         OPERATOR(pg_catalog.||) ' · sin firma 72 h=' OPERATOR(pg_catalog.||) (select pg_catalog.count(*) from sinfirma f where f.user_id OPERATOR(pg_catalog.=) a.user_id and f.en OPERATOR(pg_catalog.>) (pg_catalog.clock_timestamp() OPERATOR(pg_catalog.-) interval '72 hours'))
+         OPERATOR(pg_catalog.||) ' · ultima sin firma=' OPERATOR(pg_catalog.||) coalesce((select pg_catalog.to_char(pg_catalog.max(f.en) at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') from sinfirma f where f.user_id OPERATOR(pg_catalog.=) a.user_id), '-')
+    from (select distinct user_id from public.sim_escrituras_v0 where rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated', 'anon']) and user_id is not null) a
   union all
-  select 5, p.orden, 'pareja', p.session_id::text,
-         'u=' || p.escritura_update || ' (delta ' || trim_scale(u.delta) || ') · i=' || p.escritura_insert || ' (pnl ' || trim_scale(i.pnl) || ')'
-         || ' · ' || to_char(abs(extract(epoch from u.en - i.en)), 'FM990.000') || ' s'
-    from parejas p join public.sim_escrituras_v0 u on u.id = p.escritura_update join public.sim_escrituras_v0 i on i.id = p.escritura_insert
+  select 5, p.orden, 'pareja', p.session_id::pg_catalog.text,
+         'u=' OPERATOR(pg_catalog.||) p.escritura_update OPERATOR(pg_catalog.||) ' (delta ' OPERATOR(pg_catalog.||) trim_scale(u.delta) OPERATOR(pg_catalog.||) ') · i=' OPERATOR(pg_catalog.||) p.escritura_insert OPERATOR(pg_catalog.||) ' (pnl ' OPERATOR(pg_catalog.||) trim_scale(i.pnl) OPERATOR(pg_catalog.||) ')'
+         OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) pg_catalog.to_char(pg_catalog.abs(extract(epoch from u.en OPERATOR(pg_catalog.-) i.en)), 'FM990.000') OPERATOR(pg_catalog.||) ' s'
+    from parejas p join public.sim_escrituras_v0 u on u.id OPERATOR(pg_catalog.=) p.escritura_update join public.sim_escrituras_v0 i on i.id OPERATOR(pg_catalog.=) p.escritura_insert
   union all
-  select case when c.clase like 'incidencia%' then 6 else 7 end, c.id::integer,
-         case when c.clase like 'incidencia%' then 'incidencia' else 'dudoso' end, c.id::text,
-         c.clase || ' · sesion=' || coalesce(c.session_id::text, '-') || ' · alumno=' || coalesce(c.user_id::text, '-') || ' · ' || c.tabla || ' ' || c.operacion
-         || ' · delta=' || coalesce(trim_scale(c.delta)::text, '-') || ' · pnl=' || coalesce(trim_scale(c.pnl)::text, '-')
-         || ' · cols=' || array_to_string(c.columnas, ',') || ' · ' || to_char(c.en at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') || ' UTC'
-    from clasif c where c.clase like 'incidencia%' or c.clase like 'dudoso%'
+  select case when c.clase OPERATOR(pg_catalog.~~) 'incidencia%' then 6 else 7 end, c.id::pg_catalog.int4,
+         case when c.clase OPERATOR(pg_catalog.~~) 'incidencia%' then 'incidencia' else 'dudoso' end, c.id::pg_catalog.text,
+         c.clase OPERATOR(pg_catalog.||) ' · sesion=' OPERATOR(pg_catalog.||) coalesce(c.session_id::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · alumno=' OPERATOR(pg_catalog.||) coalesce(c.user_id::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) c.tabla OPERATOR(pg_catalog.||) ' ' OPERATOR(pg_catalog.||) c.operacion
+         OPERATOR(pg_catalog.||) ' · delta=' OPERATOR(pg_catalog.||) coalesce(trim_scale(c.delta)::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · pnl=' OPERATOR(pg_catalog.||) coalesce(trim_scale(c.pnl)::pg_catalog.text, '-')
+         OPERATOR(pg_catalog.||) ' · cols=' OPERATOR(pg_catalog.||) pg_catalog.array_to_string(c.columnas, ',') OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) pg_catalog.to_char(c.en at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') OPERATOR(pg_catalog.||) ' UTC'
+    from clasif c where c.clase OPERATOR(pg_catalog.~~) 'incidencia%' or c.clase OPERATOR(pg_catalog.~~) 'dudoso%'
   union all
-  select 8, e.id::integer, 'anomalia', e.id::text,
-         'rol_jwt=' || coalesce(e.rol_jwt, 'NULL') || ' ≠ rol_guc=' || coalesce(e.rol_guc, 'NULL') || ' · ' || e.tabla || ' ' || e.operacion
-         || ' · sesion=' || coalesce(e.session_id::text, '-') || ' · cliente=' || e.cliente || ' · ' || to_char(e.en at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') || ' UTC'
-    from public.sim_escrituras_v0 e where e.rol_jwt is distinct from e.rol_guc
+  select 8, e.id::pg_catalog.int4, 'anomalia', e.id::pg_catalog.text,
+         'rol_jwt=' OPERATOR(pg_catalog.||) coalesce(e.rol_jwt, 'NULL') OPERATOR(pg_catalog.||) ' ≠ rol_guc=' OPERATOR(pg_catalog.||) coalesce(e.rol_guc, 'NULL') OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) e.tabla OPERATOR(pg_catalog.||) ' ' OPERATOR(pg_catalog.||) e.operacion
+         OPERATOR(pg_catalog.||) ' · sesion=' OPERATOR(pg_catalog.||) coalesce(e.session_id::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · cliente=' OPERATOR(pg_catalog.||) e.cliente OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) pg_catalog.to_char(e.en at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') OPERATOR(pg_catalog.||) ' UTC'
+    from public.sim_escrituras_v0 e where not coalesce(e.rol_jwt OPERATOR(pg_catalog.=) e.rol_guc, e.rol_jwt is null and e.rol_guc is null)
   union all
-  select 8, m.id::integer, 'anomalia', 'marca ' || m.id,
-         case when e.id is null then 'marca huerfana (sin su fila de registro ' || m.escritura_id || ')'
-              when e.xact is distinct from m.xact then 'marca en una transaccion ajena (fila ' || e.id || ')'
-              else 'marca duplicada (fila ' || e.id || ')' end
-    from public.sim_escrituras_v0_marcas m left join public.sim_escrituras_v0 e on e.id = m.escritura_id
-   where e.id is null or e.xact is distinct from m.xact
-      or (select count(*) from public.sim_escrituras_v0_marcas m2 where m2.escritura_id = m.escritura_id) > 1
+  select 8, m.id::pg_catalog.int4, 'anomalia', 'marca ' OPERATOR(pg_catalog.||) m.id,
+         case when e.id is null then 'marca huerfana (sin su fila de registro ' OPERATOR(pg_catalog.||) m.escritura_id OPERATOR(pg_catalog.||) ')'
+              when not coalesce(e.xact OPERATOR(pg_catalog.=) m.xact, e.xact is null and m.xact is null) then 'marca en una transaccion ajena (fila ' OPERATOR(pg_catalog.||) e.id OPERATOR(pg_catalog.||) ')'
+              else 'marca duplicada (fila ' OPERATOR(pg_catalog.||) e.id OPERATOR(pg_catalog.||) ')' end
+    from public.sim_escrituras_v0_marcas m left join public.sim_escrituras_v0 e on e.id OPERATOR(pg_catalog.=) m.escritura_id
+   where e.id is null or not coalesce(e.xact OPERATOR(pg_catalog.=) m.xact, e.xact is null and m.xact is null)
+      or (select pg_catalog.count(*) from public.sim_escrituras_v0_marcas m2 where m2.escritura_id OPERATOR(pg_catalog.=) m.escritura_id) OPERATOR(pg_catalog.>) 1
   union all
-  select 9, 0, 'foto', s.session_id::text,
-         'ids=' || (select string_agg(f.id::text, ',' order by f.id) from sinfirma f where f.session_id = s.session_id)
-         || ' · abiertas=' || (select count(*) from clasif c where c.session_id = s.session_id and (c.clase like 'incidencia%' or c.clase like 'dudoso%'))
-         || ' · sha256=' || (select k.sha256 from public.sim_escrituras_v0_canonico(s.session_id) k)
+  select 9, 0, 'foto', s.session_id::pg_catalog.text,
+         'ids=' OPERATOR(pg_catalog.||) (select pg_catalog.string_agg(f.id::pg_catalog.text, ',' order by f.id) from sinfirma f where f.session_id OPERATOR(pg_catalog.=) s.session_id)
+         OPERATOR(pg_catalog.||) ' · abiertas=' OPERATOR(pg_catalog.||) (select pg_catalog.count(*) from clasif c where c.session_id OPERATOR(pg_catalog.=) s.session_id and (c.clase OPERATOR(pg_catalog.~~) 'incidencia%' or c.clase OPERATOR(pg_catalog.~~) 'dudoso%'))
+         OPERATOR(pg_catalog.||) ' · sha256=' OPERATOR(pg_catalog.||) (select k.sha256 from public.sim_escrituras_v0_canonico(s.session_id) k)
     from sesiones s
   union all
-  select 10, 0, 'service_role', coalesce(e.user_id::text, '-'),
-         count(*) || ' escrituras · ' || string_agg(distinct e.tabla || ' ' || e.operacion, ', ') || ' · ultima '
-         || to_char(max(e.en) at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') || ' UTC'
-    from public.sim_escrituras_v0 e where e.rol_jwt = 'service_role' group by e.user_id
+  select 10, 0, 'service_role', coalesce(e.user_id::pg_catalog.text, '-'),
+         pg_catalog.count(*) OPERATOR(pg_catalog.||) ' escrituras · ' OPERATOR(pg_catalog.||) pg_catalog.string_agg(distinct e.tabla OPERATOR(pg_catalog.||) ' ' OPERATOR(pg_catalog.||) e.operacion, ', ') OPERATOR(pg_catalog.||) ' · ultima '
+         OPERATOR(pg_catalog.||) pg_catalog.to_char(pg_catalog.max(e.en) at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') OPERATOR(pg_catalog.||) ' UTC'
+    from public.sim_escrituras_v0 e where e.rol_jwt OPERATOR(pg_catalog.=) 'service_role' group by e.user_id
   union all
   select 11, 0, 'FIN', 's10', 'consulta'
 ) x where (select g.ok from guarda g) order by o, objeto, o2;
