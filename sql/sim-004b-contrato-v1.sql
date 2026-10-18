@@ -1241,24 +1241,27 @@ $sim_004b$;
 
 
 -- ============================================================================
--- INFORME (solo lectura). Solo catalogo: ni una fila de alumnos. Sus conversiones, calificadas (S038R5-01): corre con el
--- search_path de quien la ejecuta, y un tipo homonimo (un dominio con CHECK) no se evalua
+-- INFORME (solo lectura). Solo catalogo: ni una fila de alumnos. Corre con el search_path de quien la ejecuta (el DO
+-- ya se lo ha devuelto): por eso TODO lo que ejecuta va calificado con pg_catalog, no solo las conversiones (S038R5-01):
+-- funciones, operadores (IN → = any (array[…])), tipos y catalogos. GR1-03 (Astra, guardas r1; orden 1-041): una
+-- pg_get_constraintdef homonima en public, con public delante de pg_catalog, se ejecutaba aqui dos veces (nextval).
+-- Equivalencia: el mismo pg_get_viewdef que el informe de a6bb3a5
 -- ============================================================================
 select seccion, detalle from (
-  select 1 o, 'restriccion' seccion, k.conrelid::pg_catalog.regclass::pg_catalog.text || '.' || k.conname || ' · ' || pg_get_constraintdef(k.oid) || ' · validada=' || k.convalidated detalle
-    from pg_constraint k where k.conname in ('sim_sessions_terminal_valida', 'sim_eventos_tipo_check')
+  select 1 o, 'restriccion' seccion, k.conrelid::pg_catalog.regclass::pg_catalog.text OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) k.conname OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) pg_catalog.pg_get_constraintdef(k.oid) OPERATOR(pg_catalog.||) ' · validada=' OPERATOR(pg_catalog.||) k.convalidated detalle
+    from pg_catalog.pg_constraint k where k.conname OPERATOR(pg_catalog.=) any (array['sim_sessions_terminal_valida', 'sim_eventos_tipo_check']::pg_catalog.name[])
   union all
-  select 2, 'funcion', p.oid::pg_catalog.regprocedure::pg_catalog.text || ' · cuerpo sha256=' || left(encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex'), 16)
-         || ' · security_definer=' || p.prosecdef || ' · config=' || coalesce(array_to_string(p.proconfig, ','), '-')
-         || ' · execute: anon=' || has_function_privilege('anon', p.oid, 'EXECUTE')
-         || ' authenticated=' || has_function_privilege('authenticated', p.oid, 'EXECUTE')
-         || ' service_role=' || has_function_privilege('service_role', p.oid, 'EXECUTE')
-    from pg_proc p where p.oid in (to_regprocedure('public.sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)'),
-                                   to_regprocedure('public.sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)'),
-                                   to_regprocedure('public.sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)'))
+  select 2, 'funcion', p.oid::pg_catalog.regprocedure::pg_catalog.text OPERATOR(pg_catalog.||) ' · cuerpo sha256=' OPERATOR(pg_catalog.||) pg_catalog.left(pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex'), 16)
+         OPERATOR(pg_catalog.||) ' · security_definer=' OPERATOR(pg_catalog.||) p.prosecdef OPERATOR(pg_catalog.||) ' · config=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.array_to_string(p.proconfig, ','), '-')
+         OPERATOR(pg_catalog.||) ' · execute: anon=' OPERATOR(pg_catalog.||) pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+         OPERATOR(pg_catalog.||) ' authenticated=' OPERATOR(pg_catalog.||) pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+         OPERATOR(pg_catalog.||) ' service_role=' OPERATOR(pg_catalog.||) pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')
+    from pg_catalog.pg_proc p where p.oid OPERATOR(pg_catalog.=) any (array[pg_catalog.to_regprocedure('public.sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)')::pg_catalog.oid,
+                                   pg_catalog.to_regprocedure('public.sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)')::pg_catalog.oid,
+                                   pg_catalog.to_regprocedure('public.sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)')::pg_catalog.oid])
   union all
-  select 3, 'rls', c.relname || ' · rls=' || c.relrowsecurity
-    from pg_class c where c.oid in (select to_regclass('public.' || t) from unnest(array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos',
+  select 3, 'rls', c.relname OPERATOR(pg_catalog.||) ' · rls=' OPERATOR(pg_catalog.||) c.relrowsecurity
+    from pg_catalog.pg_class c where c.oid OPERATOR(pg_catalog.=) any (select pg_catalog.to_regclass('public.' OPERATOR(pg_catalog.||) t) from pg_catalog.unnest(array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos',
       'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio', 'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config']) t)
   union all
   select 9, 'FIN', 'sim-004b aplicada'
