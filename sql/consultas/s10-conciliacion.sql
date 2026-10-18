@@ -44,13 +44,17 @@
 --  10 service_role   escrituras de servidor, aparte: no cuentan (k.4 d)
 -- ============================================================================
 begin read only;
+-- S10RO-01: lo primero, el search_path de pg_catalog (LEEME): nada de la consulta resuelve en otro esquema por su nombre
+set local search_path = pg_catalog, pg_temp;
 with
 -- la guarda: falla cerrada si no estamos dentro de la transaccion READ ONLY
-guarda as (select case when pg_catalog.current_setting('transaction_read_only') = 'on' then true
+guarda as (select case when pg_catalog.current_setting('transaction_read_only') OPERATOR(pg_catalog.=) 'on' then true
                        -- el texto depende de un valor de ejecucion: si fuera constante, PostgreSQL lo convertiria al
-                       -- planificar y la guarda saltaria siempre
+                       -- planificar y la guarda saltaria siempre. S10RO-01 (Astra; LEEME «Guardas de las consultas:
+                       -- calificadas»): operadores y conversion de pg_catalog, para que un operador homonimo (= o ||)
+                       -- en otro esquema del search_path no la haga pasar
                        else ('s10: pegala ENTERA, con su BEGIN READ ONLY y su ROLLBACK (transaction_read_only='
-                             || pg_catalog.current_setting('transaction_read_only') || ')')::boolean end ok),
+                             OPERATOR(pg_catalog.||) pg_catalog.current_setting('transaction_read_only') OPERATOR(pg_catalog.||) ')')::pg_catalog.bool end ok),
 sinfirma as (
   select e.* from public.sim_escrituras_v0 e where e.cliente = 'sin-firma' and e.rol_jwt in ('authenticated', 'anon')
 ), sesiones as (

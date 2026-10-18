@@ -48,11 +48,13 @@
 begin read only;
 with
 -- la guarda: falla cerrada si no estamos dentro de la transaccion READ ONLY
-guarda as (select case when pg_catalog.current_setting('transaction_read_only') = 'on' then true
+guarda as (select case when pg_catalog.current_setting('transaction_read_only') OPERATOR(pg_catalog.=) 'on' then true
                        -- el texto depende de un valor de ejecucion: si fuera constante, PostgreSQL lo convertiria al
-                       -- planificar y la guarda saltaria siempre
+                       -- planificar y la guarda saltaria siempre. S10RO-01 (Astra; LEEME «Guardas de las consultas:
+                       -- calificadas»): operadores y conversion de pg_catalog, para que un operador homonimo (= o ||)
+                       -- en otro esquema del search_path no la haga pasar
                        else ('s16: pegala ENTERA, con su BEGIN READ ONLY y su ROLLBACK (transaction_read_only='
-                             || pg_catalog.current_setting('transaction_read_only') || ')')::boolean end ok),
+                             OPERATOR(pg_catalog.||) pg_catalog.current_setting('transaction_read_only') OPERATOR(pg_catalog.||) ')')::pg_catalog.bool end ok),
 puerta as (select to_regprocedure('public.sim_escrituras_v0_puerta()') is not null as hay),
 tablas(t, protegida) as (values
     ('sim_alumnos', true), ('sim_arrendamientos', true), ('sim_recibos', true), ('sim_eventos', true),

@@ -19,7 +19,7 @@ const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const S16P = lee(process.env.S16P_FICHERO || 'sql/consultas/s16p-puerta-aplicada.sql'), PUERTA = lee('sql/sim-004a-puerta.sql')
 titulo('1 · solo lectura')
 const sin = S16P.replace(/--.*$/gm, '').replace(/'[^']*'/g, "''")
-oraculo('S16p', 'BEGIN READ ONLY, una sola SELECT y ROLLBACK (regla del LEEME, 18-oct): sin escrituras, EXECUTE ni set_config; no lee ninguna de las 14 tablas', /^begin read only;$/m.test(S16P) && /^rollback;$/m.test(S16P) && !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|perform|call|do|set_config)\b/i.test(sin) && (sin.match(/;/g) || []).length === 3 && !/\b(from|join)\s+(public\.)?(sim_|session_|user_)/i.test(sin))
+oraculo('S16p', 'BEGIN READ ONLY, SET LOCAL search_path = pg_catalog, pg_temp (S10RO-01), una sola SELECT y ROLLBACK (regla del LEEME, 18-oct): sin escrituras, EXECUTE ni set_config; no lee ninguna de las 14 tablas', /^begin read only;$/m.test(S16P) && /^rollback;$/m.test(S16P) && !/\b(insert|update|delete|truncate|alter|create|drop|grant|revoke|execute|perform|call|do|set_config)\b/i.test(sin) && (sin.match(/;/g) || []).length === 4 && /^set local search_path = pg_catalog, pg_temp;$/m.test(S16P) && !/\b(from|join)\s+(public\.)?(sim_|session_|user_)/i.test(sin))
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay, la prueba no se ha ejecutado', false); fin() }
 const m = montajeV1()
 try {
