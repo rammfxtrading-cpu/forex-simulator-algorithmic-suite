@@ -6,9 +6,12 @@
 -- el orden de la etapa 3 (q.13) DESPUES de la puerta y ANTES de sim-004b.
 --
 -- NO cambia nada: es UNA sola SELECT, sin escrituras ni EXECUTE. No hay nada que editar. Solo
--- catalogo: ni una fila de alumnos. Ensayada dentro de una transaccion READ ONLY y como un
--- ejecutor NO superusuario (pruebas/s16-catalogo-sim004b.mjs), que tambien comprueba que lo que
--- da por bueno es exactamente lo que exige sim-004b. Acaba en «FIN | s16 | consulta».
+-- catalogo: ni una fila de alumnos. Va DENTRO de una transaccion READ ONLY real (regla del LEEME del
+-- buzon, 18-oct; orden 1-027, D2): BEGIN READ ONLY al principio y ROLLBACK al final. Si se pega por
+-- partes, o el editor la ejecuta fuera de esa transaccion, la guarda la hace fallar cerrada con el
+-- mensaje «s16: pegala ENTERA…», sin dar datos (como la s16h). Ensayada como un ejecutor NO
+-- superusuario (pruebas/s16-catalogo-sim004b.mjs), que tambien comprueba que lo que da por bueno es
+-- exactamente lo que exige sim-004b. Acaba en «FIN | s16 | consulta».
 --
 -- Que trae, por este orden (cada fila acaba en «coincide» o en DIFIERE / DE MAS / FALTA):
 --   0 requisito      PostgreSQL >= 17, los roles anon, authenticated y service_role (seccion 0) y el
@@ -42,7 +45,14 @@
 -- consulta NO lo mide. Lo comprueba sim-004b al aplicarse (seccion 0: el siguiente valor de cada
 -- secuencia, por encima de max(id), solo con el agregado) y aborta antes de cambiar nada.
 -- ============================================================================
+begin read only;
 with
+-- la guarda: falla cerrada si no estamos dentro de la transaccion READ ONLY
+guarda as (select case when pg_catalog.current_setting('transaction_read_only') = 'on' then true
+                       -- el texto depende de un valor de ejecucion: si fuera constante, PostgreSQL lo convertiria al
+                       -- planificar y la guarda saltaria siempre
+                       else ('s16: pegala ENTERA, con su BEGIN READ ONLY y su ROLLBACK (transaction_read_only='
+                             || pg_catalog.current_setting('transaction_read_only') || ')')::boolean end ok),
 puerta as (select to_regprocedure('public.sim_escrituras_v0_puerta()') is not null as hay),
 tablas(t, protegida) as (values
     ('sim_alumnos', true), ('sim_arrendamientos', true), ('sim_recibos', true), ('sim_eventos', true),
@@ -701,4 +711,5 @@ select seccion, objeto, detalle from (
     from malas
   union all
   select 9, '', 'FIN', 's16', 'consulta'
-) x order by o, o2 collate "C", detalle collate "C";
+) x where (select g.ok from guarda g) order by o, o2 collate "C", detalle collate "C";
+rollback;

@@ -21,14 +21,14 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, importa, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, conUidDelMontaje } from './montaje-v1.mjs'
+import { montajeV1, conUidDelMontaje, sinEnvoltura } from './montaje-v1.mjs'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const err1 = r => (r.err.split('\n').find(l => /ERROR/.test(l)) || r.err.split('\n')[0] || '').replace(/^.*ERROR:\s+/, '')
 const CA = await importa('lib/motor/cartera.mjs'), RT = await importa('lib/motor/reto.mjs'), { COSTES_1 } = await importa('lib/motor/costes.mjs')
 
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay, la prueba no se ha ejecutado', false); fin() }
-const S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')), S16 = conUidDelMontaje(lee('sql/consultas/s16-catalogo-sim004b.sql'))
+const S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')), S16 = conUidDelMontaje(sinEnvoltura(lee('sql/consultas/s16-catalogo-sim004b.sql')))
 const m = montajeV1()
 const estado = () => JSON.parse(CA.serializa(RT.creaReto({ motor: CA.crea({ pares: ['EURUSD'], costes: COSTES_1, capital: '100000' }), inicio: 1736121600, reglas: RT.SUITE_1F })))
 const crea = d => m.rpc(d)('sim_crear_sesion', { p_actor: u(1), p_session_id: u(2), p_command_id: u(3), p_sobre: '{"tipo":"crear"}', p_epoca: 1, p_sesion: { name: 'inventada', pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: '1F' }, p_estado: estado(), p_mercado: { EURUSD: 'EURUSD@v1.1:' + 'a'.repeat(64) }, p_resumen: {} })

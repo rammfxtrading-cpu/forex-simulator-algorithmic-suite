@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, importa, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, conUidDelMontaje } from './montaje-v1.mjs'
+import { montajeV1, conUidDelMontaje, sinEnvoltura } from './montaje-v1.mjs'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const S4B0 = lee('sql/sim-004b-contrato-v1.sql'), S160 = lee('sql/consultas/s16-catalogo-sim004b.sql')
 const CA = await importa('lib/motor/cartera.mjs'), RT = await importa('lib/motor/reto.mjs'), { COSTES_1 } = await importa('lib/motor/costes.mjs')
@@ -36,7 +36,7 @@ const crea = (d, s, c) => m.rpc(d)('sim_crear_sesion', { p_actor: u(1), p_sessio
 try {
   m.arranca()
   let n = 0
-  const S4B = conUidDelMontaje(S4B0), S16 = conUidDelMontaje(S160)
+  const S4B = conUidDelMontaje(S4B0), S16 = conUidDelMontaje(sinEnvoltura(S160))
   const aplica = d => m.comoEjecutor(d, S4B)
   const s16 = d => m.comoEjecutor(d, `begin read only;\n${S16}\nrollback;`)
   const foto = d => m.uno(d, `select md5(string_agg(x, ',' order by x)) from (select c.relname || ':' || coalesce((select string_agg(conname || pg_get_constraintdef(oid), ',' order by conname) from pg_constraint where conrelid = c.oid), '') || ':' || coalesce((select string_agg(p.proname || md5(p.prosrc), ',' order by p.proname) from pg_proc p where p.pronamespace = 'public'::regnamespace), '') x from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'r') s`)

@@ -14,10 +14,12 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, conUidDelMontaje } from './montaje-v1.mjs'
+import { montajeV1, conUidDelMontaje, sinEnvoltura } from './montaje-v1.mjs'
 const lee = p => { try { return readFileSync(path.join(REPO, p), 'utf8') } catch { return null } }
 // R3E3B-02: la ficha de auth.uid() de produccion, por la del montaje (la unica adaptacion; montaje-v1.mjs)
-const S16 = conUidDelMontaje(lee('sql/consultas/s16-catalogo-sim004b.sql')), S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')), PUERTA = lee('sql/sim-004a-puerta.sql')
+// orden 1-027 (D2): el fichero ENTERO lleva su BEGIN READ ONLY … ROLLBACK con guarda; S16 es su cuerpo, para meterlo en
+// las transacciones de las familias (READ ONLY, o tras el desvio con SET TRANSACTION READ ONLY)
+const S16_ENTERA = conUidDelMontaje(lee('sql/consultas/s16-catalogo-sim004b.sql')), S16 = S16_ENTERA && sinEnvoltura(S16_ENTERA), S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')), PUERTA = lee('sql/sim-004a-puerta.sql')
 titulo('1 · la consulta y sim-004b dan por buenas las mismas funciones')
 const shas = t => new Set([...(t ?? '').matchAll(/'([0-9a-f]{64})'/g)].map(x => x[1]).concat([...(t ?? '').matchAll(/\|([0-9a-f]{64})\|/g)].map(x => x[1])))
 const s16 = shas(S16), s4b = shas(S4B)
@@ -43,6 +45,7 @@ try {
   const d = m.base('s16a')
   ver('control: el ejecutor del montaje NO es superusuario', m.comoEjecutor(d, 'select rolsuper from pg_roles where rolname = current_user').out === 'f')
   const r = corre(d), r0 = corre(d, "set search_path = '';\n"), r1 = corre(d, 'set search_path = public;\n')
+  const entera = m.comoEjecutor(d, S16_ENTERA)   // el fichero ENTERO, sobre la misma base y antes de aplicar nada (2b)
   const lineas = r.out.split('\n').filter(Boolean)
   oraculo('S16', 'en READ ONLY y como no superusuario: veredicto OK y acaba en «FIN|s16|consulta»', r.ok && veredicto(r) === 'OK' && lineas.at(-1) === 'FIN|s16|consulta', r.ok ? lineas.filter(l => /DIFIERE|DE MAS|FALTA|veredicto/.test(l)).join(' / ').slice(0, 600) : r.err)
   // RINV3-01: sin normalizar, la salida depende del search_path; la s16 exige el del editor (por sus esquemas efectivos)
@@ -59,6 +62,19 @@ try {
   const dp = m.base('s16p')
   const pp = m.comoEjecutor(dp, PUERTA)
   oraculo('S16', 'con la puerta (estado 2): veredicto OK (la puerta y sus 2 disparadores) y sim-004b aplica', pp.ok && veredicto(corre(dp)) === 'OK' && aplica(dp).ok, pp.ok ? '' : pp.err)
+  titulo('2b · la envoltura (orden 1-027, D2): entera da lo mismo; por partes, falla cerrada sin datos')
+  const sinTx = l => !/^(BEGIN|ROLLBACK|SET)$/.test(l)
+  const le = entera.out.split('\n').filter(Boolean).filter(sinTx)
+  oraculo('S16', 'el fichero empieza su SQL por «begin read only;» y acaba en «rollback;», una vez cada uno', (S16_ENTERA.match(/^begin read only;$/gm) || []).length === 1 && /\nrollback;\n?$/.test(S16_ENTERA) && (S16_ENTERA.match(/^rollback;$/gm) || []).length === 1)
+  oraculo('S16', 'ENTERA, tal cual: veredicto OK, acaba en «FIN|s16|consulta» y da exactamente las mismas filas que el cuerpo en READ ONLY', entera.ok && le.at(-1) === 'FIN|s16|consulta' && le.join('\n') === lineas.join('\n'), (entera.err || `${le.length} frente a ${lineas.length}; primera distinta: ${le.find((l, i) => l !== lineas[i]) ?? '-'} ≠ ${lineas.find((l, i) => l !== le[i]) ?? '-'}`).slice(0, 600))
+  const partes = [
+    ['sin su BEGIN READ ONLY', S16_ENTERA.replace(/^begin read only;$/m, '')],
+    ['solo la SELECT', S16],
+    ['BEGIN ordinario + la SELECT', `begin;\n${S16}\nrollback;`],
+    ['BEGIN READ WRITE + la SELECT', `begin read write;\n${S16}\nrollback;`],
+    ['BEGIN READ ONLY + ROLLBACK y despues la SELECT', `begin read only;\nrollback;\n${S16}`],
+  ].map(([que, t]) => [que, m.comoEjecutor(d, t)])
+  oraculo('S16', 'por partes (sin BEGIN, solo la SELECT, BEGIN ordinario, READ WRITE, o la SELECT tras el ROLLBACK): error «s16: pegala ENTERA…» y ninguna fila', partes.every(([, x]) => !x.ok && /s16: pegala ENTERA/.test(x.err) && !/FIN\|s16|veredicto\|/.test(x.out)), partes.filter(([, x]) => x.ok || !/s16: pegala ENTERA/.test(x.err) || /FIN\|s16|veredicto\|/.test(x.out)).map(([q]) => q).join(' · '))
 
   titulo('3 · cada desvio: la s16 dice DIFIEREN y sim-004b aborta')
   const desvios = [
@@ -109,7 +125,7 @@ try {
   const fam = m.base('s16f')
   const fallan = []
   for (const [que, sql] of familia) {
-    const rs = m.comoEjecutor(fam, `begin;\n${sql};\n${S16 ?? 'select 1/0;'}\nrollback;`)
+    const rs = m.comoEjecutor(fam, `begin;\n${sql};\nset transaction read only;\n${S16 ?? 'select 1/0;'}\nrollback;`)
     const ra = m.comoEjecutor(fam, `begin;\n${sql};\n${S4B}\nrollback;`)
     if (!(rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)) && !ra.ok && /sim-004b: /.test(ra.err))) fallan.push(`${que}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${ra.ok ? 'APLICA' : 'aborta'}`)
   }
@@ -124,7 +140,7 @@ try {
   const fallanF = []
   for (const t of CATORCE) {
     const sql = `alter table public.${t} force row level security`
-    const rs = m.comoEjecutor(fam, `begin;\n${sql};\n${S16 ?? 'select 1/0;'}\nrollback;`)
+    const rs = m.comoEjecutor(fam, `begin;\n${sql};\nset transaction read only;\n${S16 ?? 'select 1/0;'}\nrollback;`)
     const ra = m.comoEjecutor(fam, `begin;\n${sql};\n${S4B}\nrollback;`)
     if (!(rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)) && !ra.ok && /sim-004b: /.test(ra.err))) fallanF.push(`${t}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${ra.ok ? 'APLICA' : 'aborta'}`)
   }
@@ -172,7 +188,7 @@ try {
   ver(`control: la familia tiene ${malos.length} desvios que sim-004b rechaza (25 + 2 + 3 + 12 = 42) y ${buenos.length} que acepta (4 + 6)`, malos.length === 42 && buenos.length === 10)
   const desacuerdo = [], noRechazan = [], noAceptan = []
   for (const [que, sql, debe] of [...malos.map(x => [...x, 'aborta']), ...buenos.map(x => [...x, 'aplica'])]) {
-    const rs = m.comoEjecutor(fam, `begin;\n${sql};\n${S16 ?? 'select 1/0;'}\nrollback;`)
+    const rs = m.comoEjecutor(fam, `begin;\n${sql};\nset transaction read only;\n${S16 ?? 'select 1/0;'}\nrollback;`)
     const ra = m.comoEjecutor(fam, `begin;\n${sql};\n${S4B}\nrollback;`)
     const s16Mal = rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)), aborta = !ra.ok && /sim-004b: /.test(ra.err), aplica = ra.ok
     const linea = `${que}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${aplica ? 'APLICA' : aborta ? 'aborta' : 'error ajeno'}`
@@ -185,7 +201,7 @@ try {
   titulo('7 · con sim-004b YA aplicada: los atributos de las 3 RPC si cuentan')
   const apl = m.base('s16apl')
   ver('control: sim-004b aplicada en la base', aplica(apl).ok)
-  const sinNada = m.comoEjecutor(apl, `begin;\n${S16}\nrollback;`), reApl = m.comoEjecutor(apl, `begin;\n${S4B}\nrollback;`)
+  const sinNada = m.comoEjecutor(apl, `begin read only;\n${S16}\nrollback;`), reApl = m.comoEjecutor(apl, `begin;\n${S4B}\nrollback;`)
   oraculo('S16', 'aplicada y sin desvio: la s16 dice OK (estado «aplicada») y sim-004b se reejecuta', veredicto(sinNada) === 'OK' && /sim004b_estado\|[^\n]*aplicada[^\n]*coincide/.test(sinNada.out) && reApl.ok, `s16 ${veredicto(sinNada)} · sim-004b ${reApl.ok ? 'APLICA' : 'aborta'}`)
   const malosApl = SUST.flatMap(f => [
     [`search_path de ${f}`, `alter function public.${f} set search_path = public`],
@@ -194,7 +210,7 @@ try {
   ])
   const desApl = []
   for (const [que, sql] of malosApl) {
-    const rs = m.comoEjecutor(apl, `begin;\n${sql};\n${S16}\nrollback;`)
+    const rs = m.comoEjecutor(apl, `begin;\n${sql};\nset transaction read only;\n${S16}\nrollback;`)
     const ra = m.comoEjecutor(apl, `begin;\n${sql};\n${S4B}\nrollback;`)
     if (!(rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)) && !ra.ok && /sim-004b: /.test(ra.err))) desApl.push(`${que}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${ra.ok ? 'APLICA' : 'aborta'}`)
   }
