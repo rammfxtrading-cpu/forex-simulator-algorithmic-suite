@@ -10,7 +10,12 @@
  *     falla cerrada, con su mensaje y sin filas; y lo mismo sin la linea del SET LOCAL (la guarda sola tiene que bastar)
  *   4 el efecto indirecto (s10): con sim_escrituras_v0_parejas llamando a una funcion VOLATILE que inserta en un canario y
  *     avisa «EFECTO_EJECUTADO», bajo los homonimos y sin READ ONLY, NO se ejecuta; control: sin la guarda, si
- * GUARDAS_COMMIT=<sha>: lee las consultas de ese commit (el rojo previo, contra aa6d397 o dca27c4).
+ *   5 S038R5-01 (Astra, en la 038; LEEME, ampliacion; orden 1-034): en el DO sin aplicar de B (sim-004b; mercado-000 y
+ *     mercado-001, en su rama sobre main) los tipos y las funciones del DECLARE de primer nivel, calificados con pg_catalog, y la primera
+ *     sentencia del cuerpo fija el search_path de pg_catalog. En sim-004b, ademas: un dominio text o uuid homonimo con
+ *     CHECK que hace nextval (el caso de Astra) y el search_path alterado no se ejecuta; y un = homonimo con row_security = off no hace pasar su
+ *     seccion 0 (aborta en «ajustes»)
+ * GUARDAS_COMMIT=<sha>: lee las consultas de ese commit (el rojo previo, contra aa6d397, dca27c4 o 167cb1c).
  */
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -26,6 +31,8 @@ const Q = {
   s16h: lee('sql/consultas/s16h-pertenencias-y-profiles.sql'),
   s16p: lee('sql/consultas/s16p-puerta-aplicada.sql'),
 }
+// mercado-000 y mercado-001: su arreglo va en su rama, sobre las versiones de main (etapa 2 r9); aqui solo sim-004b
+const DO_SQL = { 'sim-004b': lee('sql/sim-004b-contrato-v1.sql') }
 const SET_LOCAL = 'set local search_path = pg_catalog, pg_temp;'
 const cuerpo = t => t.replace(/^begin read only;\n/m, '').replace(/\nrollback;\n?$/, '\n')
 const sinSet = t => t.split('\n').filter(l => l !== SET_LOCAL).join('\n')
@@ -43,6 +50,17 @@ oraculo('GUARDA', 'las cuatro: la guarda compara con OPERATOR(pg_catalog.=), con
   Object.entries(Q).filter(([, t]) => !/OPERATOR\(pg_catalog\.=\)/.test(guarda(t))).map(([k]) => k).join(', '))
 oraculo('GUARDA', `s10, s16h y s16p: «${SET_LOCAL}» justo tras su BEGIN READ ONLY; la s16 no lo lleva (exige el search_path del editor, RINV3-01)`,
   ['s10', 's16h', 's16p'].every(k => Q[k].includes(`begin read only;\n-- S10RO-01: lo primero, el search_path de pg_catalog (LEEME): nada de la consulta resuelve en otro esquema por su nombre\n${SET_LOCAL}\nwith\n`)) && !Q.s16.includes(SET_LOCAL))
+// el DECLARE de primer nivel de un DO (sin los cuerpos $c$…$c$ ni las cadenas) y su primera sentencia ejecutable
+const declare = t => { const L = t.split('\n'); const i = L.findIndex(l => /^do \$/i.test(l)); const j = L.findIndex((l, k) => k > i && /^begin$/i.test(l)); return { dec: L.slice(i + 2, j).join('\n'), cuerpo: L.slice(j + 1).filter(l => l.trim() && !/^\s*--/.test(l)).slice(0, 2).join('\n') } }
+const limpio = x => x.replace(/\$c\$[\s\S]*?\$c\$/g, "''").replace(/E?'(?:[^']|'')*'/g, "''").replace(/--.*$/gm, '')
+const malDeclare = Object.entries(DO_SQL).flatMap(([k, t]) => {
+  const { dec, cuerpo } = declare(t), d = limpio(dec), fallos = []
+  for (const m of d.matchAll(/^\s+[a-z_0-9]+\s+(?:constant\s+)?([a-z_.]+)/gm)) if (!m[1].startsWith('pg_catalog.')) fallos.push(`${k}: tipo ${m[1]}`)
+  for (const m of d.matchAll(/(?<![.\w])([a-z_][a-z_0-9]*)\s*\(/g)) if (!['array', 'current_user'].includes(m[1].toLowerCase())) fallos.push(`${k}: funcion ${m[1]}( sin calificar`)
+  if (!/pg_catalog\.set_config\('search_path', 'pg_catalog, pg_temp', true\)/.test(cuerpo)) fallos.push(`${k}: la primera sentencia no fija el search_path de pg_catalog`)
+  return fallos
+})
+oraculo('DECLARE', 'S038R5-01: en sim-004b, todo tipo y toda funcion del DECLARE de primer nivel, calificados con pg_catalog; y lo primero del cuerpo, el search_path de pg_catalog', malDeclare.length === 0, malDeclare.slice(0, 12).join(' · '))
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay, la prueba no se ha ejecutado', false); fin() }
 const m = montajeV1()
 try {
@@ -97,5 +115,29 @@ create or replace function public.sim_escrituras_v0_parejas(p_session_id uuid) r
   const sinFiltro = cuerpo(Q.s10).replace(/ where \(select g\.ok from guarda g\)/, '')
   const c = m.comoEjecutor(d, `begin;\n${EFECTO};\n${sinFiltro}\nrollback;`)
   ver('control: el mismo cuerpo SIN el filtro de la guarda, en READ WRITE, SI ejecuta el efecto (el doble escribe de verdad)', /EFECTO_EJECUTADO/.test(c.err + c.out), (c.err || '').slice(0, 200))
+  titulo('5 · S038R5-01 y la seccion 0 de sim-004b, en una base aparte')
+  const S4B = conUidDelMontaje(DO_SQL['sim-004b'])
+  const e = m.base('gc2')
+  // el mecanismo exacto de Astra: un dominio homonimo con CHECK (una funcion VOLATILE que hace nextval); el CHECK se evalua
+  // al inicializar la variable del DECLARE, aunque sea a NULL, y nextval no se deshace con el error posterior
+  m.uno('gc2', "create sequence public.h_seq; create function public.h_marca() returns boolean language plpgsql volatile set search_path = pg_catalog as $f$ begin perform pg_catalog.nextval('public.h_seq'); return true; end $f$")
+  const consumidas = []
+  for (const tipo of ['text', 'uuid']) {
+    const antes = m.uno('gc2', "select last_value || '|' || is_called from public.h_seq")
+    const rd = m.comoEjecutor(e, `begin;\ncreate domain public.${tipo} as pg_catalog.${tipo} check (public.h_marca());\n${ALTERADO}\n${S4B}\nrollback;`)
+    const despues = m.uno('gc2', "select last_value || '|' || is_called from public.h_seq")
+    if (despues !== antes) consumidas.push(`dominio ${tipo}: secuencia ${antes} → ${despues} (sim-004b ${rd.ok ? 'aplica' : rd.err.split('\n').find(l => /ERROR/.test(l))?.slice(0, 80)})`)
+  }
+  oraculo('DECLARE', 'S038R5-01 (el caso de Astra): con un dominio text o uuid homonimo en public, con CHECK que hace nextval, y el search_path alterado, sim-004b NO ejecuta el CHECK (la secuencia no se mueve)', consumidas.length === 0, consumidas.join(' · '))
+  // control positivo del doble: una variable de ese dominio, en un DO cualquiera, SI lo ejecuta
+  const antesC = m.uno('gc2', "select last_value || '|' || is_called from public.h_seq")
+  m.comoEjecutor(e, `begin;\ncreate domain public.text as pg_catalog.text check (public.h_marca());\n${ALTERADO}\ndo $x$ declare v text; begin null; end $x$;\nrollback;`)
+  ver('control: el doble funciona (un DECLARE con «text» sin calificar, bajo el search_path alterado, SI mueve la secuencia)', m.uno('gc2', "select last_value || '|' || is_called from public.h_seq") !== antesC)
+  const ra = m.comoEjecutor(e, `begin;\n${HOMONIMOS['= homonimo (true con off/on)']};\nset local row_security = off;\n${ALTERADO}\n${S4B}\nrollback;`)
+  oraculo('DECLARE', 'S10RO-01 en la seccion 0 de sim-004b: con un = homonimo (off = on) y row_security = off, sim-004b aborta en «ajustes que cambian la semantica» y no aplica', !ra.ok && /sim-004b: ajustes que cambian la semantica/.test(ra.err), ra.ok ? 'APLICA con row_security = off' : ra.err.split('\n').find(l => /ERROR/.test(l))?.slice(0, 160))
+  const rb = m.comoEjecutor(e, `begin;\nset local row_security = off;\n${S4B}\nrollback;`)
+  ver('control: sin el homonimo, row_security = off hace abortar sim-004b en «ajustes» (la guarda existe)', !rb.ok && /sim-004b: ajustes que cambian la semantica/.test(rb.err), rb.err.slice(0, 160))
+  const rl = m.comoEjecutor(e, `begin;\n${S4B}\nrollback;`)
+  ver('control: en limpio, sim-004b aplica y acaba en «FIN|sim-004b aplicada»', rl.ok && /FIN\|sim-004b aplicada/.test(rl.out), rl.err.slice(0, 160))
 } finally { m.cierra() }
 fin()

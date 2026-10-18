@@ -32,7 +32,7 @@ oraculo('S16', 'los sha256 de las funciones de la s16 son, uno a uno, los de las
 const literales = (t, re) => [...(t ?? '').matchAll(re)].map(x => x[0])
 const seccion3 = S4B?.slice(S4B.indexOf('FOR v_rel, f, v_def IN SELECT'), S4B.indexOf(') c(nombre, def)'))
 const r4b = [...literales(seccion3, /\('sim_[a-z_]+', 'sim_[a-z_0-9]+', '(?:[^']|'')*'\)/g), ...literales(seccion3, /\('sim_[a-z_0-9]+', 'CREATE UNIQUE INDEX (?:[^']|'')*'\)/g)]
-const d4b = ['v_terminal_vieja', 'v_terminal_nueva', 'v_tipo_viejo', 'v_tipo_nuevo'].map(v => (new RegExp(`^  ${v} text := ('(?:[^']|'')*');$`, 'm').exec(S4B ?? '') ?? [])[1])
+const d4b = ['v_terminal_vieja', 'v_terminal_nueva', 'v_tipo_viejo', 'v_tipo_nuevo'].map(v => (new RegExp(`^  ${v} (?:pg_catalog\\.)?text := ('(?:[^']|'')*');$`, 'm').exec(S4B ?? '') ?? [])[1])
 oraculo('S16', 'las 25 restricciones, los 10 indices y las 4 definiciones de las dos que cambia son, literales, las de sim-004b', r4b.length === 35 && r4b.every(x => (S16 ?? '').includes(x)) && d4b.every(x => x && (S16 ?? '').includes(x)), `${r4b.filter(x => !(S16 ?? '').includes(x)).length} de ${r4b.length} sin copiar (se esperaban 35)`)
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay, la parte contra la base no se ha ejecutado', false); fin() }
 const m = montajeV1()

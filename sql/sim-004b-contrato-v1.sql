@@ -72,18 +72,22 @@
 
 DO $sim_004b$
 DECLARE
-  f          text;
-  rol        text;
-  v_n        integer;
-  v_rel      text;
-  v_def      text;
-  v_sp       text;
-  v_txt      text;
-  v_nuevas   integer;
-  v_viejas   integer;
-  v_cuerpos  integer;
+  -- S038R5-01 (Astra, en la 038; LEEME, ampliacion del 18-oct 18:40; orden 1-034): los tipos y las funciones del DECLARE,
+  -- calificados con pg_catalog: se evaluan antes del cuerpo y de cualquier set_config del search_path, y un dominio o
+  -- una funcion homonimos en otro esquema (p. ej. un dominio text con DEFAULT nextval) correrian antes de la guarda
+  f          pg_catalog.text;
+  rol        pg_catalog.text;
+  v_n        pg_catalog.int4;
+  v_rel      pg_catalog.text;
+  v_def      pg_catalog.text;
+  v_sp       pg_catalog.text;
+  v_sp0      pg_catalog.text;   -- el search_path de quien la ejecuta, para devolverselo al final
+  v_txt      pg_catalog.text;
+  v_nuevas   pg_catalog.int4;
+  v_viejas   pg_catalog.int4;
+  v_cuerpos  pg_catalog.int4;
   -- ── los cuerpos: se crean con estos textos y se comparan con ellos ────────
-  v_comando text := $c$
+  v_comando pg_catalog.text := $c$
     DECLARE
       v_sobre jsonb; v_digest text; v_al jsonb; v_padre uuid; v_s public.sim_sessions; v_r public.sim_recibos;
       v_a public.sim_arrendamientos; v_t timestamptz; v_eventos jsonb; v_trades jsonb; v_proy jsonb; v_clase text;
@@ -256,7 +260,7 @@ DECLARE
       RETURN jsonb_build_object('ok', true, 'http', 200, 'recibo', to_jsonb(v_r), 'version', v_version, 'eventos', v_seqs,
                                 'trades', v_n, 'hasta', v_hasta);
     END $c$;
-  v_tomar   text := $c$
+  v_tomar   pg_catalog.text := $c$
     DECLARE
       v_sobre jsonb; v_digest text; v_al jsonb; v_padre uuid; v_s public.sim_sessions; v_r public.sim_recibos;
       v_a public.sim_arrendamientos; v_t timestamptz; v_otras uuid[]; v_testigo text; v_hasta timestamptz;
@@ -327,7 +331,7 @@ DECLARE
       RETURNING * INTO v_r;
       RETURN jsonb_build_object('ok', true, 'http', 200, 'testigo', v_testigo, 'hasta', v_hasta, 'recibo', to_jsonb(v_r));
     END $c$;
-  v_fase    text := $c$
+  v_fase    pg_catalog.text := $c$
     DECLARE
       v_sobre jsonb; v_digest text; v_al jsonb; v_p public.sim_sessions; v_h public.sim_sessions; v_r public.sim_recibos;
       v_nueva public.sim_sessions; v_k integer; v_n integer;
@@ -440,19 +444,19 @@ DECLARE
       RETURN jsonb_build_object('ok', true, 'http', 201, 'recibo', to_jsonb(v_r));
     END$c$;
   -- ── las dos restricciones, antes y despues (pg_get_constraintdef, search_path = public) ──
-  v_terminal_vieja text := 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text]))))';
-  v_terminal_nueva text := 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text, ''superado''::text]))))';
-  v_tipo_viejo text := 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text])))';
-  v_tipo_nuevo text := 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text, ''hueco_aceptado''::text])))';
+  v_terminal_vieja pg_catalog.text := 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text]))))';
+  v_terminal_nueva pg_catalog.text := 'CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY[''borrada''::text, ''revocada''::text, ''superado''::text]))))';
+  v_tipo_viejo pg_catalog.text := 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text])))';
+  v_tipo_nuevo pg_catalog.text := 'CHECK ((tipo = ANY (ARRAY[''orden_creada''::text, ''orden_modificada''::text, ''orden_cancelada''::text, ''fill''::text, ''cierre''::text, ''reset_diario''::text, ''breach''::text, ''fase_superada''::text, ''fin_de_datos''::text, ''posicion_modificada''::text, ''no_valorable''::text, ''hueco_aceptado''::text])))';
   -- ── las funciones de sim-003 (todas siguen ahi; tres cambian de cuerpo) ──
-  v_rpc text[] := ARRAY['sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)',
+  v_rpc pg_catalog.text[] := ARRAY['sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)',
                         'sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)',
                         'sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)',
                         'sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)',
                         'sim_borrar_sesion(uuid,uuid)', 'sim_borrar_legacy(uuid,uuid)', 'sim_borrar_alumno(uuid)'];
-  v_aux text[] := ARRAY['sim_error(integer,text,jsonb)', 'sim_bloquea_alumno(uuid)'];
+  v_aux pg_catalog.text[] := ARRAY['sim_error(integer,text,jsonb)', 'sim_bloquea_alumno(uuid)'];
   -- ── las funciones de la preparatoria (aplicada el 13-oct): sha256 de su cuerpo ──
-  v_prep text[][] := ARRAY[
+  v_prep pg_catalog.text[][] := ARRAY[
     ARRAY['sim_cierre_v0(uuid,numeric,bigint,jsonb)', '3f116e57f9ba0c4ef6b2d1176f0a91997548106ab186b9e3eff9c0f27126d70b'],
     ARRAY['sim_escrituras_v0_registra()', 'c47b1970ee48912748434f3161a62062835bfe1ec51af864659164dcddb7a6b4'],
     ARRAY['sim_escrituras_v0_marca_balance()', '894174ce7cbdd7f7ec69af214dd39fcff00ed12e117c48887c44bd0a058c3117'],
@@ -466,17 +470,17 @@ DECLARE
   -- ── E3-03 (Astra 15-oct; CTO; diseño q.16): lo que sim-004b ACREDITA del catalogo del que
   -- depende, en la primera aplicacion y en la reejecucion (seccion 4). Un desvio aborta y no queda
   -- nada (el DO es una transaccion).
-  v_actual   text;
-  v_esperado text;
-  v_puerta   boolean;
+  v_actual   pg_catalog.text;
+  v_esperado pg_catalog.text;
+  v_puerta   pg_catalog.bool;
   -- las tablas protegidas: las cuatro de sim-003, las tres de la preparatoria y las cuatro de E1R3-01
-  v_protegidas text[] := ARRAY['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos',
+  v_protegidas pg_catalog.text[] := ARRAY['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos',
                                'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
                                'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config'];
   -- sus secuencias (las de sim-003 y la preparatoria): sin receptores aparte del dueño
-  v_secuencias text[] := ARRAY['sim_recibos_id_seq', 'sim_eventos_id_seq', 'sim_escrituras_v0_id_seq', 'sim_escrituras_v0_marcas_id_seq'];
+  v_secuencias pg_catalog.text[] := ARRAY['sim_recibos_id_seq', 'sim_eventos_id_seq', 'sim_escrituras_v0_id_seq', 'sim_escrituras_v0_marcas_id_seq'];
   -- la condicion de las RESTRICTIVE de la preparatoria (o.16.7, o.16.9), con TABLA en lugar de la tabla
-  v_pol_cond constant text := E'(EXISTS ( SELECT 1\n   FROM public.sim_sessions s\n  WHERE ((s.id = TABLA.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))';
+  v_pol_cond constant pg_catalog.text := E'(EXISTS ( SELECT 1\n   FROM public.sim_sessions s\n  WHERE ((s.id = TABLA.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))';
   -- las funciones: firma · lenguaje · SECURITY DEFINER · volatilidad · proconfig · sha256 del cuerpo ·
   -- EXECUTE (receptores aparte del dueño). Dueño: el ejecutor (current_user), el mismo que aplico sim-003
   -- y la preparatoria (postgres, s06). sim-003: los cuerpos aplicados (1a951ca, APLICADOS.md); los tres
@@ -484,7 +488,7 @@ DECLARE
   -- disparador del cupo de sim_sessions, del que depende sim_crear_sesion), el MEDIDO en s04 (10-oct:
   -- sql/consultas/salidas/s04-esquema-simulador-2026-10-10.csv: definer, search_path=public, EXECUTE a
   -- PUBLIC, anon, authenticated y service_role).
-  v_funcs text[][] := ARRAY[
+  v_funcs pg_catalog.text[][] := ARRAY[
     ARRAY['sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)', 'plpgsql', 'true', 'v', 'search_path=""', '0634aba8572b154630175e35f6f4041656ce967608d80060b82baddeded2eace', 'service_role', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb|modes=-|names=p_actor,p_session_id,p_command_id,p_sobre,p_epoca,p_sesion,p_estado,p_mercado,p_resumen|defaults=-|ndefaults=0|cost=100|rows=0|def=abb09983533ae8b167c7c3910d36ddb7'],
     ARRAY['sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)', 'plpgsql', 'true', 'v', 'search_path=""', 'f58af2b0e4945d9313ea2c3bb55f4be7c003521be80ed92a5a0a56b5cdc03d48', 'service_role', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,integer,text,boolean|modes=-|names=p_actor,p_session_id,p_command_id,p_sobre,p_epoca,p_cliente_id,p_forzar|defaults=-|ndefaults=0|cost=100|rows=0|def=da773a9b444cf9cac9a610848a52b78b'],
     ARRAY['sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)', 'plpgsql', 'true', 'v', 'search_path=""', '94f4db481cc09a2bc9b5d86512931186d8ec5aa98689bf6dc54bd6418798bc36', 'service_role', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb|modes=-|names=p_actor,p_session_id,p_command_id,p_tipo,p_sobre,p_epoca,p_version_esperada,p_cliente_id,p_testigo,p_resultado|defaults=-|ndefaults=0|cost=100|rows=0|def=8d7d99c91cd3207fa686f97a13fe526c'],
@@ -506,10 +510,10 @@ DECLARE
     ARRAY['sim_sessions_padre_propio()', 'plpgsql', 'true', 'v', 'search_path=""', '3285b822d279587324951b93f7dd6268c2103bc5ff39f4e11d2e9a85d2623291', '', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=758dc4d0b122b53db35f91f8f85d44ec'],
     ARRAY['enforce_sim_session_limit()', 'plpgsql', 'true', 'v', 'search_path=public', '16cecbd9686b423fa48e75a8a18bfa0a99bff07382c0c5438bc7ba402ae67505', 'PUBLIC,anon,authenticated,service_role', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=057b9c51bfe664f3841b2b617aa724ae']];
   -- la puerta (sql/sim-004a-puerta.sql), si esta: estado 2 de la preparatoria
-  v_puerta_fn text[] := ARRAY['sim_escrituras_v0_puerta()', 'plpgsql', 'false', 'v', 'search_path=""', 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883', '', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=58a2b98ce8df1cffcb40e2ee8466e718'];
+  v_puerta_fn pg_catalog.text[] := ARRAY['sim_escrituras_v0_puerta()', 'plpgsql', 'false', 'v', 'search_path=""', 'fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883', '', 'strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=58a2b98ce8df1cffcb40e2ee8466e718'];
   -- los disparadores de las tablas que escriben las RPC y los disparadores (el inventario de la
   -- preparatoria: estado 1, o 2 con la puerta; y el de las demas tablas, solo los de sus FK)
-  v_trg_hoy text := concat_ws(E'\n',
+  v_trg_hoy pg_catalog.text := pg_catalog.concat_ws(E'\n',
     'public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_chart_config · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
     'public.sim_sessions|fk:session_chart_config_session_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_chart_config · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|17|O',
     'public.sim_sessions|fk:session_drawings_session_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_drawings · indice=public.sim_sessions_pkey · diferible=false/false · columnas=|9|O',
@@ -538,7 +542,7 @@ DECLARE
     'public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
     'public.sim_trades|fk:sim_trades_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O');
   -- lo que añade este fichero: estado 1
-  v_trg_registro text := concat_ws(E'\n',
+  v_trg_registro pg_catalog.text := pg_catalog.concat_ws(E'\n',
     'public.sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_inmutable()|27|O',
     'public.sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON public.sim_escrituras_v0_marcas FOR EACH STATEMENT EXECUTE FUNCTION public.sim_escrituras_v0_inmutable()|34|O',
     'public.sim_escrituras_v0_marcas|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_solo_disparador()|7|O',
@@ -552,10 +556,10 @@ DECLARE
     'public.sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_registra()|29|O',
     'public.sim_trades|sim_trades_rev_saldo|CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_trades_rev_saldo()|29|O');
   -- lo que añade sql/sim-004a-puerta.sql: estado 2
-  v_trg_puerta text := concat_ws(E'\n',
+  v_trg_puerta pg_catalog.text := pg_catalog.concat_ws(E'\n',
     'public.sim_sessions|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O',
     'public.sim_trades|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION public.sim_escrituras_v0_puerta()|31|O');
-  v_trg_otros text := concat_ws(E'\n',
+  v_trg_otros pg_catalog.text := pg_catalog.concat_ws(E'\n',
     'auth.users|fk:session_chart_config_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
     'auth.users|fk:session_chart_config_user_id_fkey|"RI_FKey_noaction_upd"() · when=no · args=0: · ref=public.session_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O',
     'auth.users|fk:session_drawings_user_id_fkey|"RI_FKey_cascade_del"() · when=no · args=0: · ref=public.session_drawings · indice=auth.users_pkey · diferible=false/false · columnas=|9|O',
@@ -599,6 +603,11 @@ DECLARE
     'public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_ins"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O',
     'public.user_tool_config|fk:user_tool_config_user_id_fkey|"RI_FKey_check_upd"() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O');
 BEGIN
+  -- S10RO-01 (Astra; LEEME «Guardas de las consultas: calificadas»; orden 1-034): la seccion 0 decide si se aplica, asi
+  -- que corre con el search_path de pg_catalog (un operador o una funcion homonimos en otro esquema no la hacen pasar).
+  -- Lo primero, con todo calificado; el del llamador se restaura al final (el informe de despues no cambia)
+  v_sp0 := pg_catalog.current_setting('search_path');
+  PERFORM pg_catalog.set_config('search_path', 'pg_catalog, pg_temp', true);
   -- ── 0 · lo que se da por hecho ──────────────────────────────────────────
   IF current_setting('server_version_num')::integer < 170000 THEN
     RAISE EXCEPTION 'sim-004b: hace falta PostgreSQL 17 o posterior (hay %)', current_setting('server_version');
@@ -1226,18 +1235,20 @@ BEGIN
   IF v_txt IS NOT NULL THEN
     RAISE EXCEPTION 'sim-004b: el catalogo de las 14 tablas o las funciones ajenas no son las medidas (s16e y s16f, 17-oct): %', v_txt;
   END IF;
+  PERFORM pg_catalog.set_config('search_path', v_sp0, true);
 END
 $sim_004b$;
 
 
 -- ============================================================================
--- INFORME (solo lectura). Solo catalogo: ni una fila de alumnos.
+-- INFORME (solo lectura). Solo catalogo: ni una fila de alumnos. Sus conversiones, calificadas (S038R5-01): corre con el
+-- search_path de quien la ejecuta, y un tipo homonimo (un dominio con CHECK) no se evalua
 -- ============================================================================
 select seccion, detalle from (
-  select 1 o, 'restriccion' seccion, k.conrelid::regclass::text || '.' || k.conname || ' · ' || pg_get_constraintdef(k.oid) || ' · validada=' || k.convalidated detalle
+  select 1 o, 'restriccion' seccion, k.conrelid::pg_catalog.regclass::pg_catalog.text || '.' || k.conname || ' · ' || pg_get_constraintdef(k.oid) || ' · validada=' || k.convalidated detalle
     from pg_constraint k where k.conname in ('sim_sessions_terminal_valida', 'sim_eventos_tipo_check')
   union all
-  select 2, 'funcion', p.oid::regprocedure::text || ' · cuerpo sha256=' || left(encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex'), 16)
+  select 2, 'funcion', p.oid::pg_catalog.regprocedure::pg_catalog.text || ' · cuerpo sha256=' || left(encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex'), 16)
          || ' · security_definer=' || p.prosecdef || ' · config=' || coalesce(array_to_string(p.proconfig, ','), '-')
          || ' · execute: anon=' || has_function_privilege('anon', p.oid, 'EXECUTE')
          || ' authenticated=' || has_function_privilege('authenticated', p.oid, 'EXECUTE')
