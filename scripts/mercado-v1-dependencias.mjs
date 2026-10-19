@@ -16,6 +16,9 @@ import * as L from '../lib/mercado/limites.mjs'
 import { texto, errorPropio } from '../lib/mercado/errores.mjs'
 import { cargaAceptados } from '../lib/mercado/aceptados.mjs'
 import { BUCKET } from '../lib/mercado/publica-v1.mjs'
+// la clave: SUPABASE_SECRET_KEY y, si no está, la vieja (lib/claveServidor.cjs, orden 2-018; este script llegó con main, orden 2-069)
+import claveServidor from '../lib/claveServidor.cjs'
+const { getClaveServidor, hayClaveServidor } = claveServidor
 
 const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const FICHERO_ACEPTACIONES = path.join(RAIZ, 'lib/mercado/huecos-aceptados.jsonl')
@@ -24,18 +27,18 @@ const ANIO_INICIAL = 2024
 const saneado = (que, e) => errorPropio(`${que}: ${e?.propio ? e.message : texto(e)}`)
 
 export function claves() {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: process.env.SUPABASE_SERVICE_ROLE_KEY.trim() }
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && hayClaveServidor(process.env)) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL.trim(), key: getClaveServidor(process.env) }
   const env = readFileSync(path.join(RAIZ, '.env.local'), 'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
     .reduce((a, l) => { const eq = l.indexOf('='); if (eq > 0) a[l.slice(0, eq).trim()] = l.slice(eq + 1).trim().replace(/^["']|["']$/g, ''); return a }, {})
-  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: env.SUPABASE_SERVICE_ROLE_KEY }
+  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: getClaveServidor(env) }
 }
 let cliente = null
 function sb() {
   if (cliente) return cliente
   let c
   try { c = claves() } catch (e) { throw saneado('claves de Supabase', e) }
-  if (!c.url || !c.key) throw errorPropio('faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY')
+  if (!c.url || !c.key) throw errorPropio('faltan NEXT_PUBLIC_SUPABASE_URL o la clave de servidor (lib/claveServidor.cjs)')
   cliente = createClient(c.url, c.key, { global: { fetch: L.fetchConLimite((...a) => globalThis.fetch(...a), F.LIMITES.grandeMs) } })
   return cliente
 }
