@@ -168,7 +168,14 @@ try {
     err1(r) || r.filas.at(-1)?.join('|'))
   // la envoltura (orden 1-029): el fichero ENTERO, tal cual, da exactamente las mismas filas; por partes, falla cerrada
   const ent = pgx(S10_ENTERA), filasEnt = ent.out.split('\n').filter(l => l && !/^(BEGIN|ROLLBACK)$/.test(l))
-  oraculo('S10-envoltura', 'ENTERA, tal cual (BEGIN READ ONLY … ROLLBACK): las mismas filas que el cuerpo en READ ONLY, hasta el FIN', ent.ok && filasEnt.join('\n') === r.filas.map(f => f.join('|')).join('\n'), err1(ent) || `${filasEnt.length} frente a ${r.filas.length}`)
+  // la fila «hora | ahora (UTC)» lleva clock_timestamp() al segundo: dos ejecuciones seguidas pueden caer a los dos
+  // lados de un segundo (medido: 1 de 190, «…14:04:46» ≠ «…14:04:45»). Se compara su FORMA; el resto, byte a byte
+  const sinHora = ls => ls.map(l => l.replace(/^hora\|ahora \(UTC\)\|\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/, 'hora|ahora (UTC)|<hora>'))
+  const ctrl = ['hora|ahora (UTC)|2026-10-19 14:04:46', 'x|1'], ctrlB = ['hora|ahora (UTC)|2026-10-19 14:04:45', 'x|1']
+  ver('control: sinHora iguala dos segundos distintos, y no una hora sin forma ni otra fila distinta',
+    sinHora(ctrl).join() === sinHora(ctrlB).join() && sinHora(['hora|ahora (UTC)|ayer', 'x|1']).join() !== sinHora(ctrl).join()
+    && sinHora([ctrl[0], 'x|2']).join() !== sinHora(ctrl).join())
+  oraculo('S10-envoltura', 'ENTERA, tal cual (BEGIN READ ONLY … ROLLBACK): las mismas filas que el cuerpo en READ ONLY, hasta el FIN', ent.ok && sinHora(filasEnt).join('\n') === sinHora(r.filas.map(f => f.join('|'))).join('\n'), err1(ent) || `${filasEnt.length} frente a ${r.filas.length}`)
   const partes = [
     ['sin su BEGIN READ ONLY', S10_ENTERA.replace(/^begin read only;$/m, '')],
     ['solo la SELECT', S10],
