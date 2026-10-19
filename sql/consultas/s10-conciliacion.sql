@@ -92,11 +92,11 @@ sinfirma as (
 ), timeout as (
   select r.rolname,
          (select pg_catalog.split_part(c, '=', 2) from pg_catalog.pg_db_role_setting s, pg_catalog.unnest(s.setconfig) c
-           where s.setrole OPERATOR(pg_catalog.=) r.oid and s.setdatabase OPERATOR(pg_catalog.=) (select oid from pg_catalog.pg_database where datname OPERATOR(pg_catalog.=) current_database()) and c OPERATOR(pg_catalog.~~) 'statement_timeout=%') rol_base,
+           where s.setrole OPERATOR(pg_catalog.=) r.oid and s.setdatabase OPERATOR(pg_catalog.=) (select oid from pg_catalog.pg_database where datname OPERATOR(pg_catalog.=) pg_catalog.current_database()) and c OPERATOR(pg_catalog.~~) 'statement_timeout=%') rol_base,
          (select pg_catalog.split_part(c, '=', 2) from pg_catalog.pg_db_role_setting s, pg_catalog.unnest(s.setconfig) c
            where s.setrole OPERATOR(pg_catalog.=) r.oid and s.setdatabase OPERATOR(pg_catalog.=) 0 and c OPERATOR(pg_catalog.~~) 'statement_timeout=%') rol,
          (select pg_catalog.split_part(c, '=', 2) from pg_catalog.pg_db_role_setting s, pg_catalog.unnest(s.setconfig) c
-           where s.setrole OPERATOR(pg_catalog.=) 0 and s.setdatabase OPERATOR(pg_catalog.=) (select oid from pg_catalog.pg_database where datname OPERATOR(pg_catalog.=) current_database()) and c OPERATOR(pg_catalog.~~) 'statement_timeout=%') base,
+           where s.setrole OPERATOR(pg_catalog.=) 0 and s.setdatabase OPERATOR(pg_catalog.=) (select oid from pg_catalog.pg_database where datname OPERATOR(pg_catalog.=) pg_catalog.current_database()) and c OPERATOR(pg_catalog.~~) 'statement_timeout=%') base,
          (select reset_val OPERATOR(pg_catalog.||) coalesce(unit, '') OPERATOR(pg_catalog.||) ' (fuente ' OPERATOR(pg_catalog.||) source OPERATOR(pg_catalog.||) ', arranque ' OPERATOR(pg_catalog.||) boot_val OPERATOR(pg_catalog.||) coalesce(unit, '') OPERATOR(pg_catalog.||) ')' from pg_catalog.pg_settings where name OPERATOR(pg_catalog.=) 'statement_timeout') servidor
     from pg_catalog.pg_roles r where r.rolname OPERATOR(pg_catalog.=) any (array['authenticated', 'anon', 'authenticator']::pg_catalog.name[])
 )
@@ -134,14 +134,14 @@ select seccion, objeto, detalle from (
     from (select distinct user_id from public.sim_escrituras_v0 where rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated', 'anon']) and user_id is not null) a
   union all
   select 5, p.orden, 'pareja', p.session_id::pg_catalog.text,
-         'u=' OPERATOR(pg_catalog.||) p.escritura_update OPERATOR(pg_catalog.||) ' (delta ' OPERATOR(pg_catalog.||) trim_scale(u.delta) OPERATOR(pg_catalog.||) ') · i=' OPERATOR(pg_catalog.||) p.escritura_insert OPERATOR(pg_catalog.||) ' (pnl ' OPERATOR(pg_catalog.||) trim_scale(i.pnl) OPERATOR(pg_catalog.||) ')'
+         'u=' OPERATOR(pg_catalog.||) p.escritura_update OPERATOR(pg_catalog.||) ' (delta ' OPERATOR(pg_catalog.||) pg_catalog.trim_scale(u.delta) OPERATOR(pg_catalog.||) ') · i=' OPERATOR(pg_catalog.||) p.escritura_insert OPERATOR(pg_catalog.||) ' (pnl ' OPERATOR(pg_catalog.||) pg_catalog.trim_scale(i.pnl) OPERATOR(pg_catalog.||) ')'
          OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) pg_catalog.to_char(pg_catalog.abs(extract(epoch from u.en OPERATOR(pg_catalog.-) i.en)), 'FM990.000') OPERATOR(pg_catalog.||) ' s'
     from parejas p join public.sim_escrituras_v0 u on u.id OPERATOR(pg_catalog.=) p.escritura_update join public.sim_escrituras_v0 i on i.id OPERATOR(pg_catalog.=) p.escritura_insert
   union all
   select case when c.clase OPERATOR(pg_catalog.~~) 'incidencia%' then 6 else 7 end, c.id::pg_catalog.int4,
          case when c.clase OPERATOR(pg_catalog.~~) 'incidencia%' then 'incidencia' else 'dudoso' end, c.id::pg_catalog.text,
          c.clase OPERATOR(pg_catalog.||) ' · sesion=' OPERATOR(pg_catalog.||) coalesce(c.session_id::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · alumno=' OPERATOR(pg_catalog.||) coalesce(c.user_id::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) c.tabla OPERATOR(pg_catalog.||) ' ' OPERATOR(pg_catalog.||) c.operacion
-         OPERATOR(pg_catalog.||) ' · delta=' OPERATOR(pg_catalog.||) coalesce(trim_scale(c.delta)::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · pnl=' OPERATOR(pg_catalog.||) coalesce(trim_scale(c.pnl)::pg_catalog.text, '-')
+         OPERATOR(pg_catalog.||) ' · delta=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.trim_scale(c.delta)::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · pnl=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.trim_scale(c.pnl)::pg_catalog.text, '-')
          OPERATOR(pg_catalog.||) ' · cols=' OPERATOR(pg_catalog.||) pg_catalog.array_to_string(c.columnas, ',') OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) pg_catalog.to_char(c.en at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') OPERATOR(pg_catalog.||) ' UTC'
     from clasif c where c.clase OPERATOR(pg_catalog.~~) 'incidencia%' or c.clase OPERATOR(pg_catalog.~~) 'dudoso%'
   union all

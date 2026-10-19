@@ -36,10 +36,13 @@ function sinCalificar(t) {
   const c = codigo(t), mal = []
   // fuera los ya calificados, count(*) y select *: lo que quede de [=<>!~|+-*/] es un operador por su nombre
   const sinOp = c.replace(/OPERATOR\(pg_catalog\.[^)\s]+\)/g, ' ').replace(/\(\s*\*\s*\)/g, '( )').replace(/\bselect\s+\*/gi, 'select ').replace(/\b[a-z_]+\.\*/gi, 'x')
-  for (const m of sinOp.matchAll(/(\|\||<>|!=|<=|>=|!~|~~|[=<>~+\-*\/])/g)) mal.push(`operador ${m[1]}`)
+  // GR2-01: tambien % & ^ # @ ? && y los de jsonb/geometria (antes no se veian; hoy no habia ninguno)
+  for (const m of sinOp.matchAll(/(\|\||<>|!=|<=|>=|!~\*?|~~\*?|&&|@>|<@|->>?|#>>?|[=<>~+\-*\/%&^#@?!|])/g)) mal.push(`operador ${m[1]}`)
   for (const m of c.matchAll(/::\s*(?!pg_catalog\.)([A-Za-z_"][\w"]*)/g)) mal.push(`conversion ::${m[1]}`)
   // los nombres de las CTE y de los alias de columnas (nombre(a, b) as) no son llamadas
-  const ctes = new Set([...c.matchAll(/(?:with|,)\s*([a-z_][a-z_0-9]*)\s*(?:\([^()]*\))?\s+as\s*\(/gi)].map(m => m[1].toLowerCase()).concat([...c.matchAll(/(?:\)|\bordinality|\bas)\s+([a-z_][a-z_0-9]*)\s*\(/gi)].map(m => m[1].toLowerCase())))
+  // GR2-01 (revisor interno, 19-oct): sobre sinOp, no sobre c. Con c, «OPERATOR(pg_catalog.=) current_database()» casaba como
+  // alias «) nombre(» y la funcion sin calificar quedaba INVISIBLE
+  const ctes = new Set([...sinOp.matchAll(/(?:with|,)\s*([a-z_][a-z_0-9]*)\s*(?:\([^()]*\))?\s+as\s*\(/gi)].map(m => m[1].toLowerCase()).concat([...sinOp.matchAll(/(?:\)|\bordinality|\bas)\s+([a-z_][a-z_0-9]*)\s*\(/gi)].map(m => m[1].toLowerCase())))
   for (const m of sinOp.matchAll(/(?<![\w.])([a-z_][a-z_0-9]*)\s*\(/gi)) if (!SINTAXIS.has(m[1].toLowerCase()) && !ctes.has(m[1].toLowerCase())) mal.push(`funcion ${m[1]}(`)
   for (const m of c.matchAll(/(?<![\w.])(pg_[a-z_]+)\b(?!\s*[.(])/gi)) mal.push(`catalogo ${m[1]}`)
   for (const m of c.matchAll(/\b(in\s*\(|like|ilike|similar\s+to|distinct\s+from|nullif|between|collate\s+(?!pg_catalog\.))/gi)) mal.push(m[1].replace(/\s+/g, ' '))
@@ -56,7 +59,7 @@ for (const q of ['s10-conciliacion', 's16h-pertenencias-y-profiles', 's16p-puert
   oraculo('F8', `${q} entera, igual (sin depender de su SET LOCAL)`, mal.length === 0, resume(mal).slice(0, 300))
 }
 // control: el detector ve cada forma, plantada en un texto calificado
-const plantas = ["a = b", "a || b", "a ~ 'x'", "x::text", "count(*)", "from pg_class", "x in ('a')", "x like 'a'", "a is distinct from b", "nullif(a, '')", "order by a collate \"C\"", "case a when 1 then 2 end", "a + 1"]
+const plantas = ["x OPERATOR(pg_catalog.=) current_database()", "'a' OPERATOR(pg_catalog.||) trim_scale(d)", "a % 2", "b & 1", "j ? 'k'", "a = b", "a || b", "a ~ 'x'", "x::text", "count(*)", "from pg_class", "x in ('a')", "x like 'a'", "a is distinct from b", "nullif(a, '')", "order by a collate \"C\"", "case a when 1 then 2 end", "a + 1"]
 const ciegas = plantas.filter(p => sinCalificar(`select ${p}`).length === 0)
 ver(`control: el detector ve las ${plantas.length} formas plantadas`, ciegas.length === 0, ciegas.join(' · '))
 ver('control: y no ve nada en lo calificado (OPERATOR(pg_catalog.=), ::pg_catalog.text, pg_catalog.count(*), pg_catalog.pg_class)', sinCalificar("select a OPERATOR(pg_catalog.=) b, x::pg_catalog.text, pg_catalog.count(*) from pg_catalog.pg_class c where c.x OPERATOR(pg_catalog.=) any (array['a'])").length === 0)
@@ -97,6 +100,21 @@ create function public.to_regprocedure(text) returns regprocedure language plpgs
   const fuera = m.comoEjecutor(k, `begin;\n${ALTERADO}${sinEnvoltura(S16)}\nrollback;`)
   const trasK = lee_k()
   oraculo('RG-07', 'la s16 pegada fuera de READ ONLY con la homonima: falla en «pegala ENTERA» y el canario NO se mueve (nada se pliega antes de la guarda)', !fuera.ok && /s16: pegala ENTERA/.test(fuera.err) && trasK === antesK, `${fuera.ok ? 'NO fallo' : fuera.err.slice(0, 80)} · canario ${antesK} → ${trasK}`)
+
+  titulo('2c · GR2-01 (revisor interno, 19-oct): la s10 pegada sin su BEGIN con current_database() homonima IMMUTABLE')
+  {
+    const q = m.base('cal4')
+    ver('control: el ejecutor crea el canario y la current_database() homonima IMMUTABLE', m.comoEjecutor(q, `create sequence public.gr201_canario;
+create function public.current_database() returns name language plpgsql immutable as $f$ begin perform pg_catalog.nextval('public.gr201_canario'); return pg_catalog.current_database(); end $f$`).ok)
+    const lee_q = () => m.comoEjecutor(q, "select last_value || '|' || is_called from public.gr201_canario").out
+    m.comoEjecutor(q, `begin;\n${ALTERADO}select current_database();\nrollback;`)
+    const antesQ = lee_q()
+    ver('control: sin calificar y con ese search_path, la homonima SI corre (canario a 1|true)', antesQ === '1|true', antesQ)
+    const S10 = lee('sql/consultas/s10-conciliacion.sql')
+    const sinBegin = m.comoEjecutor(q, `${ALTERADO}${S10.replace(/^begin read only;$/m, '')}`)
+    const trasQ = lee_q()
+    oraculo('GR2-01', 'la s10 sin su BEGIN (el SET LOCAL no hace nada) con la homonima: falla en «pegala ENTERA» y el canario NO se mueve', !sinBegin.ok && /s10: pegala ENTERA/.test(sinBegin.err) && trasQ === antesQ, `${sinBegin.ok ? 'NO fallo' : sinBegin.err.slice(0, 80)} · canario ${antesQ} → ${trasQ}`)
+  }
 
   titulo('3 · GR1-03: pg_get_constraintdef homonima con efecto y public delante de pg_catalog')
   const e = m.base('cal2')
