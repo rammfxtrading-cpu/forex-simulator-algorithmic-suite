@@ -47,142 +47,142 @@ begin
       select v.familia, v.objeto, v.detalle, v.bien from (
         with inv as (
           select x.familia, x.fila from (
-            select 'tabla'::text familia, r.t || '|' ||
+            select 'tabla'::pg_catalog.text familia, r.t OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
                    case when c.oid is null then 'NO EXISTE'
-                        else 'relkind=' || c.relkind::text || ' · persistencia=' || c.relpersistence::text || ' · particion=' || c.relispartition::text
-                             || ' · hijas=' || (select count(*) from pg_catalog.pg_inherits i where i.inhparent = c.oid)
-                             || ' · padres=' || coalesce((select string_agg(i.inhparent::regclass::text, ',' order by i.inhseqno) from pg_catalog.pg_inherits i where i.inhrelid = c.oid), '-')
-                             || ' · particionada=' || exists (select 1 from pg_catalog.pg_partitioned_table p where p.partrelid = c.oid)::text
+                        else 'relkind=' OPERATOR(pg_catalog.||) c.relkind::pg_catalog.text OPERATOR(pg_catalog.||) ' · persistencia=' OPERATOR(pg_catalog.||) c.relpersistence::pg_catalog.text OPERATOR(pg_catalog.||) ' · particion=' OPERATOR(pg_catalog.||) c.relispartition::pg_catalog.text
+                             OPERATOR(pg_catalog.||) ' · hijas=' OPERATOR(pg_catalog.||) (select pg_catalog.count(*) from pg_catalog.pg_inherits i where i.inhparent OPERATOR(pg_catalog.=) c.oid)
+                             OPERATOR(pg_catalog.||) ' · padres=' OPERATOR(pg_catalog.||) coalesce((select pg_catalog.string_agg(i.inhparent::pg_catalog.regclass::pg_catalog.text, ',' order by i.inhseqno) from pg_catalog.pg_inherits i where i.inhrelid OPERATOR(pg_catalog.=) c.oid), '-')
+                             OPERATOR(pg_catalog.||) ' · particionada=' OPERATOR(pg_catalog.||) exists (select 1 from pg_catalog.pg_partitioned_table p where p.partrelid OPERATOR(pg_catalog.=) c.oid)::pg_catalog.text
                              -- RINV-01: el dueño («ejecutor» si es quien ejecuta); RINV-04: la RLS de las 3 no protegidas
-                             || ' · dueño=' || case when c.relowner = (select x.oid from pg_catalog.pg_roles x where x.rolname = current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(c.relowner)::text end
-                             || case when r.t in ('sim_drawing_templates', 'user_chart_config', 'user_tool_config')
-                                     then ' · rls=' || c.relrowsecurity::text || ' · forzada=' || c.relforcerowsecurity::text else '' end end fila
+                             OPERATOR(pg_catalog.||) ' · dueño=' OPERATOR(pg_catalog.||) case when c.relowner OPERATOR(pg_catalog.=) (select x.oid from pg_catalog.pg_roles x where x.rolname OPERATOR(pg_catalog.=) current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(c.relowner)::pg_catalog.text end
+                             OPERATOR(pg_catalog.||) case when r.t OPERATOR(pg_catalog.=) any (array['sim_drawing_templates', 'user_chart_config', 'user_tool_config'])
+                                     then ' · rls=' OPERATOR(pg_catalog.||) c.relrowsecurity::pg_catalog.text OPERATOR(pg_catalog.||) ' · forzada=' OPERATOR(pg_catalog.||) c.relforcerowsecurity::pg_catalog.text else '' end end fila
               from (values ('sim_alumnos'), ('sim_arrendamientos'), ('sim_recibos'), ('sim_eventos'), ('sim_escrituras_v0'), ('sim_escrituras_v0_marcas'), ('sim_servicio'),
                            ('sim_sessions'), ('sim_trades'), ('session_drawings'), ('session_chart_config'), ('sim_drawing_templates'), ('user_chart_config'), ('user_tool_config')) r(t)
-                   left join pg_catalog.pg_class c on c.oid = pg_catalog.to_regclass('public.' || r.t)
+                   left join pg_catalog.pg_class c on c.oid OPERATOR(pg_catalog.=) pg_catalog.to_regclass('public.' OPERATOR(pg_catalog.||) r.t)
             union all
-            select 'columna', c.relname || '.' || a.attname || '|' ||
+            select 'columna', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) a.attname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
                    -- RINV-02: el tipo con su esquema, sin quitarlo (un dominio public.text no pasa por text)
-                   'tipo=' || pg_catalog.format_type(a.atttypid, a.atttypmod) || ' · tipo_esquema=' || tn.nspname::text
-                   || ' · notnull=' || a.attnotnull::text
-                   || ' · identity=' || coalesce(nullif(a.attidentity::text, ''), '-')
-                   || ' · generated=' || coalesce(nullif(a.attgenerated::text, ''), '-')
+                   'tipo=' OPERATOR(pg_catalog.||) pg_catalog.format_type(a.atttypid, a.atttypmod) OPERATOR(pg_catalog.||) ' · tipo_esquema=' OPERATOR(pg_catalog.||) tn.nspname::pg_catalog.text
+                   OPERATOR(pg_catalog.||) ' · notnull=' OPERATOR(pg_catalog.||) a.attnotnull::pg_catalog.text
+                   OPERATOR(pg_catalog.||) ' · identity=' OPERATOR(pg_catalog.||) coalesce(case when a.attidentity::pg_catalog.text OPERATOR(pg_catalog.=) '' then null else a.attidentity::pg_catalog.text end, '-')
+                   OPERATOR(pg_catalog.||) ' · generated=' OPERATOR(pg_catalog.||) coalesce(case when a.attgenerated::pg_catalog.text OPERATOR(pg_catalog.=) '' then null else a.attgenerated::pg_catalog.text end, '-')
                    -- RINV2-02: «por defecto» solo la predeterminada (oid 100); cualquier otra, con esquema, proveedor, determinista y locale
-                   || ' · colacion=' || case when a.attcollation = 0 then '-' when a.attcollation = 100 then 'por defecto'
-                                             else coalesce((select pg_catalog.concat(cn.nspname, '.', co.collname, ' · proveedor=', co.collprovider::text, ' · determinista=', co.collisdeterministic::text,
+                   OPERATOR(pg_catalog.||) ' · colacion=' OPERATOR(pg_catalog.||) case when a.attcollation OPERATOR(pg_catalog.=) 0 then '-' when a.attcollation OPERATOR(pg_catalog.=) 100 then 'por defecto'
+                                             else coalesce((select pg_catalog.concat(cn.nspname, '.', co.collname, ' · proveedor=', co.collprovider::pg_catalog.text, ' · determinista=', co.collisdeterministic::pg_catalog.text,
                                                                                      ' · locale=', coalesce(co.collcollate, co.colllocale, '-'))
-                                                              from pg_catalog.pg_collation co join pg_catalog.pg_namespace cn on cn.oid = co.collnamespace where co.oid = a.attcollation), 'NO EXISTE') end
-                   || ' · defecto=' || coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '-')
-              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
-                   join pg_catalog.pg_type ty on ty.oid = a.atttypid join pg_catalog.pg_namespace tn on tn.oid = ty.typnamespace
-                   left join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config') and c.relkind = 'r'
+                                                              from pg_catalog.pg_collation co join pg_catalog.pg_namespace cn on cn.oid OPERATOR(pg_catalog.=) co.collnamespace where co.oid OPERATOR(pg_catalog.=) a.attcollation), 'NO EXISTE') end
+                   OPERATOR(pg_catalog.||) ' · defecto=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '-')
+              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid OPERATOR(pg_catalog.=) c.oid and a.attnum OPERATOR(pg_catalog.>) 0 and not a.attisdropped
+                   join pg_catalog.pg_type ty on ty.oid OPERATOR(pg_catalog.=) a.atttypid join pg_catalog.pg_namespace tn on tn.oid OPERATOR(pg_catalog.=) ty.typnamespace
+                   left join pg_catalog.pg_attrdef d on d.adrelid OPERATOR(pg_catalog.=) a.attrelid and d.adnum OPERATOR(pg_catalog.=) a.attnum
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[]) and c.relkind OPERATOR(pg_catalog.=) 'r'
             union all
-            select 'restriccion', c.relname || '.' || k.conname || '|' ||
-                   case when (c.relname, k.conname) in (('sim_sessions', 'sim_sessions_terminal_valida'), ('sim_eventos', 'sim_eventos_tipo_check'))
-                        then k.contype::text || ' · (la de sim-004b, segun su estado)'
-                        else k.contype::text || ' · ' || pg_catalog.pg_get_constraintdef(k.oid)
-                             || ' · validada=' || k.convalidated::text || ' · diferible=' || k.condeferrable::text || '/' || k.condeferred::text end
-              from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid = c.oid
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'restriccion', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) k.conname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
+                   case when ((c.relname OPERATOR(pg_catalog.=) 'sim_sessions' and k.conname OPERATOR(pg_catalog.=) 'sim_sessions_terminal_valida') or (c.relname OPERATOR(pg_catalog.=) 'sim_eventos' and k.conname OPERATOR(pg_catalog.=) 'sim_eventos_tipo_check'))
+                        then k.contype::pg_catalog.text OPERATOR(pg_catalog.||) ' · (la de sim-004b, segun su estado)'
+                        else k.contype::pg_catalog.text OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) pg_catalog.pg_get_constraintdef(k.oid)
+                             OPERATOR(pg_catalog.||) ' · validada=' OPERATOR(pg_catalog.||) k.convalidated::pg_catalog.text OPERATOR(pg_catalog.||) ' · diferible=' OPERATOR(pg_catalog.||) k.condeferrable::pg_catalog.text OPERATOR(pg_catalog.||) '/' OPERATOR(pg_catalog.||) k.condeferred::pg_catalog.text end
+              from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid OPERATOR(pg_catalog.=) c.oid
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
             -- E3R3-04 (Astra r3): ademas de la definicion, el estado operativo (unico, valido, listo y vivo)
-            select 'indice', c.relname || '.' || ic.relname || '|' || pg_catalog.pg_get_indexdef(x.indexrelid)
-                   || ' · unico=' || x.indisunique::text || ' · valido=' || x.indisvalid::text || ' · listo=' || x.indisready::text || ' · vivo=' || x.indislive::text
-              from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid = c.oid join pg_catalog.pg_class ic on ic.oid = x.indexrelid
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'indice', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) ic.relname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||) pg_catalog.pg_get_indexdef(x.indexrelid)
+                   OPERATOR(pg_catalog.||) ' · unico=' OPERATOR(pg_catalog.||) x.indisunique::pg_catalog.text OPERATOR(pg_catalog.||) ' · valido=' OPERATOR(pg_catalog.||) x.indisvalid::pg_catalog.text OPERATOR(pg_catalog.||) ' · listo=' OPERATOR(pg_catalog.||) x.indisready::pg_catalog.text OPERATOR(pg_catalog.||) ' · vivo=' OPERATOR(pg_catalog.||) x.indislive::pg_catalog.text
+              from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid OPERATOR(pg_catalog.=) c.oid join pg_catalog.pg_class ic on ic.oid OPERATOR(pg_catalog.=) x.indexrelid
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
             -- RINV-03: cada secuencia identity, con todos sus parametros y su dueño
-            select 'identidad', c.relname || '.' || a.attname || '|' ||
-                   'tipo=' || pg_catalog.format_type(s.seqtypid, null) || ' · inicio=' || s.seqstart || ' · incremento=' || s.seqincrement
-                   || ' · minimo=' || s.seqmin || ' · maximo=' || s.seqmax || ' · cache=' || s.seqcache || ' · ciclo=' || s.seqcycle::text
-                   || ' · dueño=' || case when sc.relowner = (select x.oid from pg_catalog.pg_roles x where x.rolname = current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(sc.relowner)::text end
-              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped and a.attidentity <> ''
-                   join pg_catalog.pg_depend dp on dp.refobjid = c.oid and dp.refobjsubid = a.attnum and dp.classid = 'pg_catalog.pg_class'::regclass and dp.deptype = 'i'
-                   join pg_catalog.pg_class sc on sc.oid = dp.objid and sc.relkind = 'S'
-                   join pg_catalog.pg_sequence s on s.seqrelid = sc.oid
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'identidad', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) a.attname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
+                   'tipo=' OPERATOR(pg_catalog.||) pg_catalog.format_type(s.seqtypid, null) OPERATOR(pg_catalog.||) ' · inicio=' OPERATOR(pg_catalog.||) s.seqstart OPERATOR(pg_catalog.||) ' · incremento=' OPERATOR(pg_catalog.||) s.seqincrement
+                   OPERATOR(pg_catalog.||) ' · minimo=' OPERATOR(pg_catalog.||) s.seqmin OPERATOR(pg_catalog.||) ' · maximo=' OPERATOR(pg_catalog.||) s.seqmax OPERATOR(pg_catalog.||) ' · cache=' OPERATOR(pg_catalog.||) s.seqcache OPERATOR(pg_catalog.||) ' · ciclo=' OPERATOR(pg_catalog.||) s.seqcycle::pg_catalog.text
+                   OPERATOR(pg_catalog.||) ' · dueño=' OPERATOR(pg_catalog.||) case when sc.relowner OPERATOR(pg_catalog.=) (select x.oid from pg_catalog.pg_roles x where x.rolname OPERATOR(pg_catalog.=) current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(sc.relowner)::pg_catalog.text end
+              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid OPERATOR(pg_catalog.=) c.oid and a.attnum OPERATOR(pg_catalog.>) 0 and not a.attisdropped and a.attidentity OPERATOR(pg_catalog.<>) ''
+                   join pg_catalog.pg_depend dp on dp.refobjid OPERATOR(pg_catalog.=) c.oid and dp.refobjsubid OPERATOR(pg_catalog.=) a.attnum and dp.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass and dp.deptype OPERATOR(pg_catalog.=) 'i'
+                   join pg_catalog.pg_class sc on sc.oid OPERATOR(pg_catalog.=) dp.objid and sc.relkind OPERATOR(pg_catalog.=) 'S'
+                   join pg_catalog.pg_sequence s on s.seqrelid OPERATOR(pg_catalog.=) sc.oid
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
             -- RINV2-01 y RINV2-04: de que dependen, FUERA de pg_catalog, los valores por defecto, las restricciones y los indices
             -- (por pg_depend: no depende del texto ni del search_path; un public.now() o un public.length() salen aqui). La s16d
-            select 'ajeno', o.nombre || '|' || pg_catalog.pg_describe_object(dp.refclassid, dp.refobjid, 0)
-              from (select 'pg_catalog.pg_attrdef'::regclass clase, d.oid, c.relname || '.' || a.attname || ' (defecto)' nombre
-                      from pg_catalog.pg_class c join pg_catalog.pg_attrdef d on d.adrelid = c.oid join pg_catalog.pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
-                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'ajeno', o.nombre OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||) pg_catalog.pg_describe_object(dp.refclassid, dp.refobjid, 0)
+              from (select 'pg_catalog.pg_attrdef'::pg_catalog.regclass clase, d.oid, c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) a.attname OPERATOR(pg_catalog.||) ' (defecto)' nombre
+                      from pg_catalog.pg_class c join pg_catalog.pg_attrdef d on d.adrelid OPERATOR(pg_catalog.=) c.oid join pg_catalog.pg_attribute a on a.attrelid OPERATOR(pg_catalog.=) d.adrelid and a.attnum OPERATOR(pg_catalog.=) d.adnum
+                     where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
                     union all
-                    select 'pg_catalog.pg_constraint'::regclass, k.oid, c.relname || '.' || k.conname || ' (restriccion)'
-                      from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid = c.oid
-                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+                    select 'pg_catalog.pg_constraint'::pg_catalog.regclass, k.oid, c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) k.conname OPERATOR(pg_catalog.||) ' (restriccion)'
+                      from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid OPERATOR(pg_catalog.=) c.oid
+                     where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
                     union all
-                    select 'pg_catalog.pg_class'::regclass, x.indexrelid, c.relname || '.' || ic.relname || ' (indice)'
-                      from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid = c.oid join pg_catalog.pg_class ic on ic.oid = x.indexrelid
-                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')) o
-                   join pg_catalog.pg_depend dp on dp.classid = o.clase and dp.objid = o.oid
-             where (dp.refclassid = 'pg_catalog.pg_proc'::regclass and (select p.pronamespace from pg_catalog.pg_proc p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
-                or (dp.refclassid = 'pg_catalog.pg_operator'::regclass and (select p.oprnamespace from pg_catalog.pg_operator p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
-                or (dp.refclassid = 'pg_catalog.pg_type'::regclass and (select p.typnamespace from pg_catalog.pg_type p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
-                or (dp.refclassid = 'pg_catalog.pg_collation'::regclass and (select p.collnamespace from pg_catalog.pg_collation p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
+                    select 'pg_catalog.pg_class'::pg_catalog.regclass, x.indexrelid, c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) ic.relname OPERATOR(pg_catalog.||) ' (indice)'
+                      from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid OPERATOR(pg_catalog.=) c.oid join pg_catalog.pg_class ic on ic.oid OPERATOR(pg_catalog.=) x.indexrelid
+                     where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])) o
+                   join pg_catalog.pg_depend dp on dp.classid OPERATOR(pg_catalog.=) o.clase and dp.objid OPERATOR(pg_catalog.=) o.oid
+             where (dp.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_proc'::pg_catalog.regclass and (select p.pronamespace from pg_catalog.pg_proc p where p.oid OPERATOR(pg_catalog.=) dp.refobjid) OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
+                or (dp.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_operator'::pg_catalog.regclass and (select p.oprnamespace from pg_catalog.pg_operator p where p.oid OPERATOR(pg_catalog.=) dp.refobjid) OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
+                or (dp.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_type'::pg_catalog.regclass and (select p.typnamespace from pg_catalog.pg_type p where p.oid OPERATOR(pg_catalog.=) dp.refobjid) OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
+                or (dp.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_collation'::pg_catalog.regclass and (select p.collnamespace from pg_catalog.pg_collation p where p.oid OPERATOR(pg_catalog.=) dp.refobjid) OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
             union all
-            select 'regla', c.relname || '.' || w.rulename || '|' || pg_catalog.pg_get_ruledef(w.oid)
-              from pg_catalog.pg_class c join pg_catalog.pg_rewrite w on w.ev_class = c.oid
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'regla', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) w.rulename OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||) pg_catalog.pg_get_ruledef(w.oid)
+              from pg_catalog.pg_class c join pg_catalog.pg_rewrite w on w.ev_class OPERATOR(pg_catalog.=) c.oid
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
-            select 'politica', p.tablename || '.' || p.policyname || '|' ||
-                   p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text || ' · using=' || coalesce(p.qual, '-')
-                   || ' · check=' || coalesce(p.with_check, '-')
-              from pg_catalog.pg_policies p where p.schemaname = 'public' and p.tablename in ('sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'politica', p.tablename OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) p.policyname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
+                   p.permissive OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) p.cmd OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) p.roles::pg_catalog.text OPERATOR(pg_catalog.||) ' · using=' OPERATOR(pg_catalog.||) coalesce(p.qual, '-')
+                   OPERATOR(pg_catalog.||) ' · check=' OPERATOR(pg_catalog.||) coalesce(p.with_check, '-')
+              from pg_catalog.pg_policies p where p.schemaname OPERATOR(pg_catalog.=) 'public' and p.tablename OPERATOR(pg_catalog.=) any (array['sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
             -- E3R3-01 (Astra r3): TODAS las funciones con esos nombres en esos esquemas (las RPC las llaman calificadas,
             -- extensions.digest(...), y una sobrecarga de mas en el mismo esquema hace ambigua la llamada: 42725)
-            select 'sobrecarga', n.nspname::text || '.' || p.proname::text || '(' || pg_catalog.pg_get_function_identity_arguments(p.oid) || ')'
-              from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-             where (n.nspname, p.proname) in (('extensions', 'digest'), ('extensions', 'gen_random_bytes'), ('auth', 'uid'))
+            select 'sobrecarga', n.nspname::pg_catalog.text OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) p.proname::pg_catalog.text OPERATOR(pg_catalog.||) '(' OPERATOR(pg_catalog.||) pg_catalog.pg_get_function_identity_arguments(p.oid) OPERATOR(pg_catalog.||) ')'
+              from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid OPERATOR(pg_catalog.=) p.pronamespace
+             where ((n.nspname OPERATOR(pg_catalog.=) 'extensions' and p.proname OPERATOR(pg_catalog.=) 'digest') or (n.nspname OPERATOR(pg_catalog.=) 'extensions' and p.proname OPERATOR(pg_catalog.=) 'gen_random_bytes') or (n.nspname OPERATOR(pg_catalog.=) 'auth' and p.proname OPERATOR(pg_catalog.=) 'uid'))
             union all
             -- E3R3-02 (Astra r3): el permiso EFECTIVO de EXECUTE de quien las usa: el dueño de las RPC (definer) las tres,
             -- y authenticated auth.uid() (las politicas de RLS). Lo medido, no la ACL textual
-            select 'permiso', f.firma || '|dueño_rpc=' || coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::text, 'NO EXISTE')
-                   || case when f.firma = 'auth.uid()' then ' · authenticated=' || coalesce(pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')::text, 'NO EXISTE') else '' end
+            select 'permiso', f.firma OPERATOR(pg_catalog.||) '|dueño_rpc=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::pg_catalog.text, 'NO EXISTE')
+                   OPERATOR(pg_catalog.||) case when f.firma OPERATOR(pg_catalog.=) 'auth.uid()' then ' · authenticated=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')::pg_catalog.text, 'NO EXISTE') else '' end
               from (values ('extensions.digest(bytea,text)'), ('extensions.gen_random_bytes(integer)'), ('auth.uid()')) f(firma)
-                   left join pg_catalog.pg_proc p on p.oid = pg_catalog.to_regprocedure(f.firma)
-                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+                   left join pg_catalog.pg_proc p on p.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure(f.firma)
+                   left join pg_catalog.pg_proc r on r.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
             union all
             -- RE3-02 y RE3-03 (revisor interno de c4d46e3): el permiso EFECTIVO del dueño de las RPC sobre lo que usan sus
             -- cuerpos: los siete privilegios en las 14 tablas y EXECUTE en las funciones sim_* de public (un REVOKE a si
             -- mismo las deja en 42501)
-            select 'permiso', 'tabla:' || c.relname || '|dueño_rpc=' || coalesce((select string_agg(pr.p, ',' order by pr.n) from (values ('SELECT', 1), ('INSERT', 2), ('UPDATE', 3), ('DELETE', 4), ('TRUNCATE', 5), ('REFERENCES', 6), ('TRIGGER', 7)) pr(p, n)
+            select 'permiso', 'tabla:' OPERATOR(pg_catalog.||) c.relname OPERATOR(pg_catalog.||) '|dueño_rpc=' OPERATOR(pg_catalog.||) coalesce((select pg_catalog.string_agg(pr.p, ',' order by pr.n) from (values ('SELECT', 1), ('INSERT', 2), ('UPDATE', 3), ('DELETE', 4), ('TRUNCATE', 5), ('REFERENCES', 6), ('TRIGGER', 7)) pr(p, n)
                                                                                   where pg_catalog.has_table_privilege(r.proowner, c.oid, pr.p)), '-')
               from pg_catalog.pg_class c
-                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config') and c.relkind = 'r'
+                   left join pg_catalog.pg_proc r on r.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[]) and c.relkind OPERATOR(pg_catalog.=) 'r'
             union all
-            select 'permiso', 'funcion:' || p.oid::regprocedure::text || '|dueño_rpc=' || coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::text, 'NO EXISTE')
+            select 'permiso', 'funcion:' OPERATOR(pg_catalog.||) p.oid::pg_catalog.regprocedure::pg_catalog.text OPERATOR(pg_catalog.||) '|dueño_rpc=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::pg_catalog.text, 'NO EXISTE')
               from pg_catalog.pg_proc p
-                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
-             where p.pronamespace = 'public'::regnamespace and (p.proname like 'sim\_%' or p.proname = 'enforce_sim_session_limit')
-               and p.proname <> 'sim_escrituras_v0_puerta'  -- la de la puerta (estado 2) es de disparador: no se llama
+                   left join pg_catalog.pg_proc r on r.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+             where p.pronamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and (p.proname OPERATOR(pg_catalog.~~) 'sim\_%' or p.proname OPERATOR(pg_catalog.=) 'enforce_sim_session_limit')
+               and p.proname OPERATOR(pg_catalog.<>) 'sim_escrituras_v0_puerta'  -- la de la puerta (estado 2) es de disparador: no se llama
             union all
             -- R3E3B-02 (CTO 17-oct): las tres funciones ajenas que llaman los cuerpos, con la ficha de la s16b
-            select 'funcion_ajena', f.firma || '|' ||
+            select 'funcion_ajena', f.firma OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
                    case when p.oid is null then 'NO EXISTE' else
-                     'functiondef md5=' || pg_catalog.md5(pg_catalog.pg_get_functiondef(p.oid))
-                     || ' · prosrc md5=' || pg_catalog.md5(coalesce(p.prosrc, '')) || ' · probin=' || coalesce(p.probin, '-')
-                     || ' · lenguaje=' || l.lanname || ' · dueño=' || pg_catalog.pg_get_userbyid(p.proowner)
-                     || ' · prosecdef=' || p.prosecdef::text || ' · provolatile=' || p.provolatile::text || ' · proconfig=' || coalesce(p.proconfig::text, '-')
-                     || ' · proisstrict=' || p.proisstrict::text || ' · proleakproof=' || p.proleakproof::text || ' · proparallel=' || p.proparallel::text
-                     || ' · prokind=' || p.prokind::text || ' · proretset=' || p.proretset::text || ' · prorettype=' || pg_catalog.format_type(p.prorettype, null)
-                     || ' · proargmodes=' || coalesce(p.proargmodes::text, '-') || ' · proargnames=' || coalesce(p.proargnames::text, '-')
-                     || ' · pronargdefaults=' || p.pronargdefaults::text || ' · procost=' || p.procost::text || ' · prorows=' || p.prorows::text end
+                     'functiondef md5=' OPERATOR(pg_catalog.||) pg_catalog.md5(pg_catalog.pg_get_functiondef(p.oid))
+                     OPERATOR(pg_catalog.||) ' · prosrc md5=' OPERATOR(pg_catalog.||) pg_catalog.md5(coalesce(p.prosrc, '')) OPERATOR(pg_catalog.||) ' · probin=' OPERATOR(pg_catalog.||) coalesce(p.probin, '-')
+                     OPERATOR(pg_catalog.||) ' · lenguaje=' OPERATOR(pg_catalog.||) l.lanname OPERATOR(pg_catalog.||) ' · dueño=' OPERATOR(pg_catalog.||) pg_catalog.pg_get_userbyid(p.proowner)
+                     OPERATOR(pg_catalog.||) ' · prosecdef=' OPERATOR(pg_catalog.||) p.prosecdef::pg_catalog.text OPERATOR(pg_catalog.||) ' · provolatile=' OPERATOR(pg_catalog.||) p.provolatile::pg_catalog.text OPERATOR(pg_catalog.||) ' · proconfig=' OPERATOR(pg_catalog.||) coalesce(p.proconfig::pg_catalog.text, '-')
+                     OPERATOR(pg_catalog.||) ' · proisstrict=' OPERATOR(pg_catalog.||) p.proisstrict::pg_catalog.text OPERATOR(pg_catalog.||) ' · proleakproof=' OPERATOR(pg_catalog.||) p.proleakproof::pg_catalog.text OPERATOR(pg_catalog.||) ' · proparallel=' OPERATOR(pg_catalog.||) p.proparallel::pg_catalog.text
+                     OPERATOR(pg_catalog.||) ' · prokind=' OPERATOR(pg_catalog.||) p.prokind::pg_catalog.text OPERATOR(pg_catalog.||) ' · proretset=' OPERATOR(pg_catalog.||) p.proretset::pg_catalog.text OPERATOR(pg_catalog.||) ' · prorettype=' OPERATOR(pg_catalog.||) pg_catalog.format_type(p.prorettype, null)
+                     OPERATOR(pg_catalog.||) ' · proargmodes=' OPERATOR(pg_catalog.||) coalesce(p.proargmodes::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · proargnames=' OPERATOR(pg_catalog.||) coalesce(p.proargnames::pg_catalog.text, '-')
+                     OPERATOR(pg_catalog.||) ' · pronargdefaults=' OPERATOR(pg_catalog.||) p.pronargdefaults::pg_catalog.text OPERATOR(pg_catalog.||) ' · procost=' OPERATOR(pg_catalog.||) p.procost::pg_catalog.text OPERATOR(pg_catalog.||) ' · prorows=' OPERATOR(pg_catalog.||) p.prorows::pg_catalog.text end
               from (values ('extensions.digest(bytea,text)'), ('extensions.gen_random_bytes(integer)'), ('auth.uid()')) f(firma)
-                   left join pg_catalog.pg_proc p on p.oid = pg_catalog.to_regprocedure(f.firma) left join pg_catalog.pg_language l on l.oid = p.prolang
+                   left join pg_catalog.pg_proc p on p.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure(f.firma) left join pg_catalog.pg_language l on l.oid OPERATOR(pg_catalog.=) p.prolang
           ) x
         ),
         esp_f(esquemas, familia, n, h) as (values
@@ -210,24 +210,24 @@ begin
           ('auth.uid()', 'functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0'),
           ('extensions.digest(bytea,text)', 'functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0'),
           ('extensions.gen_random_bytes(integer)', 'functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0')),
-        med_f as (select i.familia, count(*)::integer n, pg_catalog.md5(string_agg(i.fila, E'\n' order by i.fila collate "C")) h from inv i where i.familia <> 'funcion_ajena' group by i.familia),
-        med_a as (select split_part(i.fila, '|', 1) firma, substr(i.fila, strpos(i.fila, '|') + 1) ficha from inv i where i.familia = 'funcion_ajena')
-        select 'inventario'::text familia, e.familia objeto,
-               'n=' || coalesce(m.n, 0) || ' md5=' || coalesce(m.h, pg_catalog.md5(''))
-               || case when coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h then ''
-                       else ' (sim-004b espera n=' || e.n || ' md5=' || e.h || ' con esquemas=' || e.esquemas || '; que fila: medirlo aparte)' end detalle,
-               coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h bien
-          from esp_f e left join med_f m on m.familia = e.familia
-         where e.esquemas = pg_catalog.current_schemas(false)::text
+        med_f as (select i.familia, pg_catalog.count(*)::pg_catalog.int4 n, pg_catalog.md5(pg_catalog.string_agg(i.fila, E'\n' order by i.fila collate pg_catalog."C")) h from inv i where i.familia OPERATOR(pg_catalog.<>) 'funcion_ajena' group by i.familia),
+        med_a as (select pg_catalog.split_part(i.fila, '|', 1) firma, pg_catalog.substr(i.fila, pg_catalog.strpos(i.fila, '|') OPERATOR(pg_catalog.+) 1) ficha from inv i where i.familia OPERATOR(pg_catalog.=) 'funcion_ajena')
+        select 'inventario'::pg_catalog.text familia, e.familia objeto,
+               'n=' OPERATOR(pg_catalog.||) coalesce(m.n, 0) OPERATOR(pg_catalog.||) ' md5=' OPERATOR(pg_catalog.||) coalesce(m.h, pg_catalog.md5(''))
+               OPERATOR(pg_catalog.||) case when coalesce(m.n, 0) OPERATOR(pg_catalog.=) e.n and coalesce(m.h, pg_catalog.md5('')) OPERATOR(pg_catalog.=) e.h then ''
+                       else ' (sim-004b espera n=' OPERATOR(pg_catalog.||) e.n OPERATOR(pg_catalog.||) ' md5=' OPERATOR(pg_catalog.||) e.h OPERATOR(pg_catalog.||) ' con esquemas=' OPERATOR(pg_catalog.||) e.esquemas OPERATOR(pg_catalog.||) '; que fila: medirlo aparte)' end detalle,
+               coalesce(m.n, 0) OPERATOR(pg_catalog.=) e.n and coalesce(m.h, pg_catalog.md5('')) OPERATOR(pg_catalog.=) e.h bien
+          from esp_f e left join med_f m on m.familia OPERATOR(pg_catalog.=) e.familia
+         where e.esquemas OPERATOR(pg_catalog.=) pg_catalog.current_schemas(false)::pg_catalog.text
         union all
-        select 'inventario', 'search_path', 'esquemas=' || pg_catalog.current_schemas(false)::text
-               || ' (sin valores esperados: solo {} en sim-004b y {public,extensions}, el del editor, en la s16)', false
-         where not exists (select 1 from esp_f e where e.esquemas = pg_catalog.current_schemas(false)::text)
+        select 'inventario', 'search_path', 'esquemas=' OPERATOR(pg_catalog.||) pg_catalog.current_schemas(false)::pg_catalog.text
+               OPERATOR(pg_catalog.||) ' (sin valores esperados: solo {} en sim-004b y {public,extensions}, el del editor, en la s16)', false
+         where not exists (select 1 from esp_f e where e.esquemas OPERATOR(pg_catalog.=) pg_catalog.current_schemas(false)::pg_catalog.text)
         union all
         select 'funcion_ajena', coalesce(e.firma, m.firma),
-               coalesce(m.ficha, 'NO EXISTE') || case when m.ficha is distinct from e.ficha then ' (sim-004b espera ' || e.ficha || ')' else '' end,
-               m.ficha is not distinct from e.ficha
-          from esp_a e left join med_a m on m.firma = e.firma
+               coalesce(m.ficha, 'NO EXISTE') OPERATOR(pg_catalog.||) case when not coalesce(m.ficha OPERATOR(pg_catalog.=) e.ficha, m.ficha is null and e.ficha is null) then ' (sim-004b espera ' OPERATOR(pg_catalog.||) e.ficha OPERATOR(pg_catalog.||) ')' else '' end,
+               coalesce(m.ficha OPERATOR(pg_catalog.=) e.ficha, m.ficha is null and e.ficha is null)
+          from esp_a e left join med_a m on m.firma OPERATOR(pg_catalog.=) e.firma
       ) v
       -- <<< inventario
     ) i;
@@ -251,142 +251,142 @@ begin
       select v.familia, v.objeto, v.detalle, v.bien from (
         with inv as (
           select x.familia, x.fila from (
-            select 'tabla'::text familia, r.t || '|' ||
+            select 'tabla'::pg_catalog.text familia, r.t OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
                    case when c.oid is null then 'NO EXISTE'
-                        else 'relkind=' || c.relkind::text || ' · persistencia=' || c.relpersistence::text || ' · particion=' || c.relispartition::text
-                             || ' · hijas=' || (select count(*) from pg_catalog.pg_inherits i where i.inhparent = c.oid)
-                             || ' · padres=' || coalesce((select string_agg(i.inhparent::regclass::text, ',' order by i.inhseqno) from pg_catalog.pg_inherits i where i.inhrelid = c.oid), '-')
-                             || ' · particionada=' || exists (select 1 from pg_catalog.pg_partitioned_table p where p.partrelid = c.oid)::text
+                        else 'relkind=' OPERATOR(pg_catalog.||) c.relkind::pg_catalog.text OPERATOR(pg_catalog.||) ' · persistencia=' OPERATOR(pg_catalog.||) c.relpersistence::pg_catalog.text OPERATOR(pg_catalog.||) ' · particion=' OPERATOR(pg_catalog.||) c.relispartition::pg_catalog.text
+                             OPERATOR(pg_catalog.||) ' · hijas=' OPERATOR(pg_catalog.||) (select pg_catalog.count(*) from pg_catalog.pg_inherits i where i.inhparent OPERATOR(pg_catalog.=) c.oid)
+                             OPERATOR(pg_catalog.||) ' · padres=' OPERATOR(pg_catalog.||) coalesce((select pg_catalog.string_agg(i.inhparent::pg_catalog.regclass::pg_catalog.text, ',' order by i.inhseqno) from pg_catalog.pg_inherits i where i.inhrelid OPERATOR(pg_catalog.=) c.oid), '-')
+                             OPERATOR(pg_catalog.||) ' · particionada=' OPERATOR(pg_catalog.||) exists (select 1 from pg_catalog.pg_partitioned_table p where p.partrelid OPERATOR(pg_catalog.=) c.oid)::pg_catalog.text
                              -- RINV-01: el dueño («ejecutor» si es quien ejecuta); RINV-04: la RLS de las 3 no protegidas
-                             || ' · dueño=' || case when c.relowner = (select x.oid from pg_catalog.pg_roles x where x.rolname = current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(c.relowner)::text end
-                             || case when r.t in ('sim_drawing_templates', 'user_chart_config', 'user_tool_config')
-                                     then ' · rls=' || c.relrowsecurity::text || ' · forzada=' || c.relforcerowsecurity::text else '' end end fila
+                             OPERATOR(pg_catalog.||) ' · dueño=' OPERATOR(pg_catalog.||) case when c.relowner OPERATOR(pg_catalog.=) (select x.oid from pg_catalog.pg_roles x where x.rolname OPERATOR(pg_catalog.=) current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(c.relowner)::pg_catalog.text end
+                             OPERATOR(pg_catalog.||) case when r.t OPERATOR(pg_catalog.=) any (array['sim_drawing_templates', 'user_chart_config', 'user_tool_config'])
+                                     then ' · rls=' OPERATOR(pg_catalog.||) c.relrowsecurity::pg_catalog.text OPERATOR(pg_catalog.||) ' · forzada=' OPERATOR(pg_catalog.||) c.relforcerowsecurity::pg_catalog.text else '' end end fila
               from (values ('sim_alumnos'), ('sim_arrendamientos'), ('sim_recibos'), ('sim_eventos'), ('sim_escrituras_v0'), ('sim_escrituras_v0_marcas'), ('sim_servicio'),
                            ('sim_sessions'), ('sim_trades'), ('session_drawings'), ('session_chart_config'), ('sim_drawing_templates'), ('user_chart_config'), ('user_tool_config')) r(t)
-                   left join pg_catalog.pg_class c on c.oid = pg_catalog.to_regclass('public.' || r.t)
+                   left join pg_catalog.pg_class c on c.oid OPERATOR(pg_catalog.=) pg_catalog.to_regclass('public.' OPERATOR(pg_catalog.||) r.t)
             union all
-            select 'columna', c.relname || '.' || a.attname || '|' ||
+            select 'columna', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) a.attname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
                    -- RINV-02: el tipo con su esquema, sin quitarlo (un dominio public.text no pasa por text)
-                   'tipo=' || pg_catalog.format_type(a.atttypid, a.atttypmod) || ' · tipo_esquema=' || tn.nspname::text
-                   || ' · notnull=' || a.attnotnull::text
-                   || ' · identity=' || coalesce(nullif(a.attidentity::text, ''), '-')
-                   || ' · generated=' || coalesce(nullif(a.attgenerated::text, ''), '-')
+                   'tipo=' OPERATOR(pg_catalog.||) pg_catalog.format_type(a.atttypid, a.atttypmod) OPERATOR(pg_catalog.||) ' · tipo_esquema=' OPERATOR(pg_catalog.||) tn.nspname::pg_catalog.text
+                   OPERATOR(pg_catalog.||) ' · notnull=' OPERATOR(pg_catalog.||) a.attnotnull::pg_catalog.text
+                   OPERATOR(pg_catalog.||) ' · identity=' OPERATOR(pg_catalog.||) coalesce(case when a.attidentity::pg_catalog.text OPERATOR(pg_catalog.=) '' then null else a.attidentity::pg_catalog.text end, '-')
+                   OPERATOR(pg_catalog.||) ' · generated=' OPERATOR(pg_catalog.||) coalesce(case when a.attgenerated::pg_catalog.text OPERATOR(pg_catalog.=) '' then null else a.attgenerated::pg_catalog.text end, '-')
                    -- RINV2-02: «por defecto» solo la predeterminada (oid 100); cualquier otra, con esquema, proveedor, determinista y locale
-                   || ' · colacion=' || case when a.attcollation = 0 then '-' when a.attcollation = 100 then 'por defecto'
-                                             else coalesce((select pg_catalog.concat(cn.nspname, '.', co.collname, ' · proveedor=', co.collprovider::text, ' · determinista=', co.collisdeterministic::text,
+                   OPERATOR(pg_catalog.||) ' · colacion=' OPERATOR(pg_catalog.||) case when a.attcollation OPERATOR(pg_catalog.=) 0 then '-' when a.attcollation OPERATOR(pg_catalog.=) 100 then 'por defecto'
+                                             else coalesce((select pg_catalog.concat(cn.nspname, '.', co.collname, ' · proveedor=', co.collprovider::pg_catalog.text, ' · determinista=', co.collisdeterministic::pg_catalog.text,
                                                                                      ' · locale=', coalesce(co.collcollate, co.colllocale, '-'))
-                                                              from pg_catalog.pg_collation co join pg_catalog.pg_namespace cn on cn.oid = co.collnamespace where co.oid = a.attcollation), 'NO EXISTE') end
-                   || ' · defecto=' || coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '-')
-              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
-                   join pg_catalog.pg_type ty on ty.oid = a.atttypid join pg_catalog.pg_namespace tn on tn.oid = ty.typnamespace
-                   left join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config') and c.relkind = 'r'
+                                                              from pg_catalog.pg_collation co join pg_catalog.pg_namespace cn on cn.oid OPERATOR(pg_catalog.=) co.collnamespace where co.oid OPERATOR(pg_catalog.=) a.attcollation), 'NO EXISTE') end
+                   OPERATOR(pg_catalog.||) ' · defecto=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '-')
+              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid OPERATOR(pg_catalog.=) c.oid and a.attnum OPERATOR(pg_catalog.>) 0 and not a.attisdropped
+                   join pg_catalog.pg_type ty on ty.oid OPERATOR(pg_catalog.=) a.atttypid join pg_catalog.pg_namespace tn on tn.oid OPERATOR(pg_catalog.=) ty.typnamespace
+                   left join pg_catalog.pg_attrdef d on d.adrelid OPERATOR(pg_catalog.=) a.attrelid and d.adnum OPERATOR(pg_catalog.=) a.attnum
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[]) and c.relkind OPERATOR(pg_catalog.=) 'r'
             union all
-            select 'restriccion', c.relname || '.' || k.conname || '|' ||
-                   case when (c.relname, k.conname) in (('sim_sessions', 'sim_sessions_terminal_valida'), ('sim_eventos', 'sim_eventos_tipo_check'))
-                        then k.contype::text || ' · (la de sim-004b, segun su estado)'
-                        else k.contype::text || ' · ' || pg_catalog.pg_get_constraintdef(k.oid)
-                             || ' · validada=' || k.convalidated::text || ' · diferible=' || k.condeferrable::text || '/' || k.condeferred::text end
-              from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid = c.oid
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'restriccion', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) k.conname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
+                   case when ((c.relname OPERATOR(pg_catalog.=) 'sim_sessions' and k.conname OPERATOR(pg_catalog.=) 'sim_sessions_terminal_valida') or (c.relname OPERATOR(pg_catalog.=) 'sim_eventos' and k.conname OPERATOR(pg_catalog.=) 'sim_eventos_tipo_check'))
+                        then k.contype::pg_catalog.text OPERATOR(pg_catalog.||) ' · (la de sim-004b, segun su estado)'
+                        else k.contype::pg_catalog.text OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) pg_catalog.pg_get_constraintdef(k.oid)
+                             OPERATOR(pg_catalog.||) ' · validada=' OPERATOR(pg_catalog.||) k.convalidated::pg_catalog.text OPERATOR(pg_catalog.||) ' · diferible=' OPERATOR(pg_catalog.||) k.condeferrable::pg_catalog.text OPERATOR(pg_catalog.||) '/' OPERATOR(pg_catalog.||) k.condeferred::pg_catalog.text end
+              from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid OPERATOR(pg_catalog.=) c.oid
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
             -- E3R3-04 (Astra r3): ademas de la definicion, el estado operativo (unico, valido, listo y vivo)
-            select 'indice', c.relname || '.' || ic.relname || '|' || pg_catalog.pg_get_indexdef(x.indexrelid)
-                   || ' · unico=' || x.indisunique::text || ' · valido=' || x.indisvalid::text || ' · listo=' || x.indisready::text || ' · vivo=' || x.indislive::text
-              from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid = c.oid join pg_catalog.pg_class ic on ic.oid = x.indexrelid
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'indice', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) ic.relname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||) pg_catalog.pg_get_indexdef(x.indexrelid)
+                   OPERATOR(pg_catalog.||) ' · unico=' OPERATOR(pg_catalog.||) x.indisunique::pg_catalog.text OPERATOR(pg_catalog.||) ' · valido=' OPERATOR(pg_catalog.||) x.indisvalid::pg_catalog.text OPERATOR(pg_catalog.||) ' · listo=' OPERATOR(pg_catalog.||) x.indisready::pg_catalog.text OPERATOR(pg_catalog.||) ' · vivo=' OPERATOR(pg_catalog.||) x.indislive::pg_catalog.text
+              from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid OPERATOR(pg_catalog.=) c.oid join pg_catalog.pg_class ic on ic.oid OPERATOR(pg_catalog.=) x.indexrelid
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
             -- RINV-03: cada secuencia identity, con todos sus parametros y su dueño
-            select 'identidad', c.relname || '.' || a.attname || '|' ||
-                   'tipo=' || pg_catalog.format_type(s.seqtypid, null) || ' · inicio=' || s.seqstart || ' · incremento=' || s.seqincrement
-                   || ' · minimo=' || s.seqmin || ' · maximo=' || s.seqmax || ' · cache=' || s.seqcache || ' · ciclo=' || s.seqcycle::text
-                   || ' · dueño=' || case when sc.relowner = (select x.oid from pg_catalog.pg_roles x where x.rolname = current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(sc.relowner)::text end
-              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped and a.attidentity <> ''
-                   join pg_catalog.pg_depend dp on dp.refobjid = c.oid and dp.refobjsubid = a.attnum and dp.classid = 'pg_catalog.pg_class'::regclass and dp.deptype = 'i'
-                   join pg_catalog.pg_class sc on sc.oid = dp.objid and sc.relkind = 'S'
-                   join pg_catalog.pg_sequence s on s.seqrelid = sc.oid
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'identidad', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) a.attname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
+                   'tipo=' OPERATOR(pg_catalog.||) pg_catalog.format_type(s.seqtypid, null) OPERATOR(pg_catalog.||) ' · inicio=' OPERATOR(pg_catalog.||) s.seqstart OPERATOR(pg_catalog.||) ' · incremento=' OPERATOR(pg_catalog.||) s.seqincrement
+                   OPERATOR(pg_catalog.||) ' · minimo=' OPERATOR(pg_catalog.||) s.seqmin OPERATOR(pg_catalog.||) ' · maximo=' OPERATOR(pg_catalog.||) s.seqmax OPERATOR(pg_catalog.||) ' · cache=' OPERATOR(pg_catalog.||) s.seqcache OPERATOR(pg_catalog.||) ' · ciclo=' OPERATOR(pg_catalog.||) s.seqcycle::pg_catalog.text
+                   OPERATOR(pg_catalog.||) ' · dueño=' OPERATOR(pg_catalog.||) case when sc.relowner OPERATOR(pg_catalog.=) (select x.oid from pg_catalog.pg_roles x where x.rolname OPERATOR(pg_catalog.=) current_user) then 'ejecutor' else pg_catalog.pg_get_userbyid(sc.relowner)::pg_catalog.text end
+              from pg_catalog.pg_class c join pg_catalog.pg_attribute a on a.attrelid OPERATOR(pg_catalog.=) c.oid and a.attnum OPERATOR(pg_catalog.>) 0 and not a.attisdropped and a.attidentity OPERATOR(pg_catalog.<>) ''
+                   join pg_catalog.pg_depend dp on dp.refobjid OPERATOR(pg_catalog.=) c.oid and dp.refobjsubid OPERATOR(pg_catalog.=) a.attnum and dp.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass and dp.deptype OPERATOR(pg_catalog.=) 'i'
+                   join pg_catalog.pg_class sc on sc.oid OPERATOR(pg_catalog.=) dp.objid and sc.relkind OPERATOR(pg_catalog.=) 'S'
+                   join pg_catalog.pg_sequence s on s.seqrelid OPERATOR(pg_catalog.=) sc.oid
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
             -- RINV2-01 y RINV2-04: de que dependen, FUERA de pg_catalog, los valores por defecto, las restricciones y los indices
             -- (por pg_depend: no depende del texto ni del search_path; un public.now() o un public.length() salen aqui). La s16d
-            select 'ajeno', o.nombre || '|' || pg_catalog.pg_describe_object(dp.refclassid, dp.refobjid, 0)
-              from (select 'pg_catalog.pg_attrdef'::regclass clase, d.oid, c.relname || '.' || a.attname || ' (defecto)' nombre
-                      from pg_catalog.pg_class c join pg_catalog.pg_attrdef d on d.adrelid = c.oid join pg_catalog.pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
-                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'ajeno', o.nombre OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||) pg_catalog.pg_describe_object(dp.refclassid, dp.refobjid, 0)
+              from (select 'pg_catalog.pg_attrdef'::pg_catalog.regclass clase, d.oid, c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) a.attname OPERATOR(pg_catalog.||) ' (defecto)' nombre
+                      from pg_catalog.pg_class c join pg_catalog.pg_attrdef d on d.adrelid OPERATOR(pg_catalog.=) c.oid join pg_catalog.pg_attribute a on a.attrelid OPERATOR(pg_catalog.=) d.adrelid and a.attnum OPERATOR(pg_catalog.=) d.adnum
+                     where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
                     union all
-                    select 'pg_catalog.pg_constraint'::regclass, k.oid, c.relname || '.' || k.conname || ' (restriccion)'
-                      from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid = c.oid
-                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+                    select 'pg_catalog.pg_constraint'::pg_catalog.regclass, k.oid, c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) k.conname OPERATOR(pg_catalog.||) ' (restriccion)'
+                      from pg_catalog.pg_class c join pg_catalog.pg_constraint k on k.conrelid OPERATOR(pg_catalog.=) c.oid
+                     where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
                     union all
-                    select 'pg_catalog.pg_class'::regclass, x.indexrelid, c.relname || '.' || ic.relname || ' (indice)'
-                      from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid = c.oid join pg_catalog.pg_class ic on ic.oid = x.indexrelid
-                     where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')) o
-                   join pg_catalog.pg_depend dp on dp.classid = o.clase and dp.objid = o.oid
-             where (dp.refclassid = 'pg_catalog.pg_proc'::regclass and (select p.pronamespace from pg_catalog.pg_proc p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
-                or (dp.refclassid = 'pg_catalog.pg_operator'::regclass and (select p.oprnamespace from pg_catalog.pg_operator p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
-                or (dp.refclassid = 'pg_catalog.pg_type'::regclass and (select p.typnamespace from pg_catalog.pg_type p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
-                or (dp.refclassid = 'pg_catalog.pg_collation'::regclass and (select p.collnamespace from pg_catalog.pg_collation p where p.oid = dp.refobjid) <> 'pg_catalog'::regnamespace)
+                    select 'pg_catalog.pg_class'::pg_catalog.regclass, x.indexrelid, c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) ic.relname OPERATOR(pg_catalog.||) ' (indice)'
+                      from pg_catalog.pg_class c join pg_catalog.pg_index x on x.indrelid OPERATOR(pg_catalog.=) c.oid join pg_catalog.pg_class ic on ic.oid OPERATOR(pg_catalog.=) x.indexrelid
+                     where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])) o
+                   join pg_catalog.pg_depend dp on dp.classid OPERATOR(pg_catalog.=) o.clase and dp.objid OPERATOR(pg_catalog.=) o.oid
+             where (dp.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_proc'::pg_catalog.regclass and (select p.pronamespace from pg_catalog.pg_proc p where p.oid OPERATOR(pg_catalog.=) dp.refobjid) OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
+                or (dp.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_operator'::pg_catalog.regclass and (select p.oprnamespace from pg_catalog.pg_operator p where p.oid OPERATOR(pg_catalog.=) dp.refobjid) OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
+                or (dp.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_type'::pg_catalog.regclass and (select p.typnamespace from pg_catalog.pg_type p where p.oid OPERATOR(pg_catalog.=) dp.refobjid) OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
+                or (dp.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_collation'::pg_catalog.regclass and (select p.collnamespace from pg_catalog.pg_collation p where p.oid OPERATOR(pg_catalog.=) dp.refobjid) OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace)
             union all
-            select 'regla', c.relname || '.' || w.rulename || '|' || pg_catalog.pg_get_ruledef(w.oid)
-              from pg_catalog.pg_class c join pg_catalog.pg_rewrite w on w.ev_class = c.oid
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'regla', c.relname OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) w.rulename OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||) pg_catalog.pg_get_ruledef(w.oid)
+              from pg_catalog.pg_class c join pg_catalog.pg_rewrite w on w.ev_class OPERATOR(pg_catalog.=) c.oid
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
-            select 'politica', p.tablename || '.' || p.policyname || '|' ||
-                   p.permissive || ' · ' || p.cmd || ' · ' || p.roles::text || ' · using=' || coalesce(p.qual, '-')
-                   || ' · check=' || coalesce(p.with_check, '-')
-              from pg_catalog.pg_policies p where p.schemaname = 'public' and p.tablename in ('sim_drawing_templates', 'user_chart_config', 'user_tool_config')
+            select 'politica', p.tablename OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) p.policyname OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
+                   p.permissive OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) p.cmd OPERATOR(pg_catalog.||) ' · ' OPERATOR(pg_catalog.||) p.roles::pg_catalog.text OPERATOR(pg_catalog.||) ' · using=' OPERATOR(pg_catalog.||) coalesce(p.qual, '-')
+                   OPERATOR(pg_catalog.||) ' · check=' OPERATOR(pg_catalog.||) coalesce(p.with_check, '-')
+              from pg_catalog.pg_policies p where p.schemaname OPERATOR(pg_catalog.=) 'public' and p.tablename OPERATOR(pg_catalog.=) any (array['sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[])
             union all
             -- E3R3-01 (Astra r3): TODAS las funciones con esos nombres en esos esquemas (las RPC las llaman calificadas,
             -- extensions.digest(...), y una sobrecarga de mas en el mismo esquema hace ambigua la llamada: 42725)
-            select 'sobrecarga', n.nspname::text || '.' || p.proname::text || '(' || pg_catalog.pg_get_function_identity_arguments(p.oid) || ')'
-              from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-             where (n.nspname, p.proname) in (('extensions', 'digest'), ('extensions', 'gen_random_bytes'), ('auth', 'uid'))
+            select 'sobrecarga', n.nspname::pg_catalog.text OPERATOR(pg_catalog.||) '.' OPERATOR(pg_catalog.||) p.proname::pg_catalog.text OPERATOR(pg_catalog.||) '(' OPERATOR(pg_catalog.||) pg_catalog.pg_get_function_identity_arguments(p.oid) OPERATOR(pg_catalog.||) ')'
+              from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid OPERATOR(pg_catalog.=) p.pronamespace
+             where ((n.nspname OPERATOR(pg_catalog.=) 'extensions' and p.proname OPERATOR(pg_catalog.=) 'digest') or (n.nspname OPERATOR(pg_catalog.=) 'extensions' and p.proname OPERATOR(pg_catalog.=) 'gen_random_bytes') or (n.nspname OPERATOR(pg_catalog.=) 'auth' and p.proname OPERATOR(pg_catalog.=) 'uid'))
             union all
             -- E3R3-02 (Astra r3): el permiso EFECTIVO de EXECUTE de quien las usa: el dueño de las RPC (definer) las tres,
             -- y authenticated auth.uid() (las politicas de RLS). Lo medido, no la ACL textual
-            select 'permiso', f.firma || '|dueño_rpc=' || coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::text, 'NO EXISTE')
-                   || case when f.firma = 'auth.uid()' then ' · authenticated=' || coalesce(pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')::text, 'NO EXISTE') else '' end
+            select 'permiso', f.firma OPERATOR(pg_catalog.||) '|dueño_rpc=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::pg_catalog.text, 'NO EXISTE')
+                   OPERATOR(pg_catalog.||) case when f.firma OPERATOR(pg_catalog.=) 'auth.uid()' then ' · authenticated=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')::pg_catalog.text, 'NO EXISTE') else '' end
               from (values ('extensions.digest(bytea,text)'), ('extensions.gen_random_bytes(integer)'), ('auth.uid()')) f(firma)
-                   left join pg_catalog.pg_proc p on p.oid = pg_catalog.to_regprocedure(f.firma)
-                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+                   left join pg_catalog.pg_proc p on p.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure(f.firma)
+                   left join pg_catalog.pg_proc r on r.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
             union all
             -- RE3-02 y RE3-03 (revisor interno de c4d46e3): el permiso EFECTIVO del dueño de las RPC sobre lo que usan sus
             -- cuerpos: los siete privilegios en las 14 tablas y EXECUTE en las funciones sim_* de public (un REVOKE a si
             -- mismo las deja en 42501)
-            select 'permiso', 'tabla:' || c.relname || '|dueño_rpc=' || coalesce((select string_agg(pr.p, ',' order by pr.n) from (values ('SELECT', 1), ('INSERT', 2), ('UPDATE', 3), ('DELETE', 4), ('TRUNCATE', 5), ('REFERENCES', 6), ('TRIGGER', 7)) pr(p, n)
+            select 'permiso', 'tabla:' OPERATOR(pg_catalog.||) c.relname OPERATOR(pg_catalog.||) '|dueño_rpc=' OPERATOR(pg_catalog.||) coalesce((select pg_catalog.string_agg(pr.p, ',' order by pr.n) from (values ('SELECT', 1), ('INSERT', 2), ('UPDATE', 3), ('DELETE', 4), ('TRUNCATE', 5), ('REFERENCES', 6), ('TRIGGER', 7)) pr(p, n)
                                                                                   where pg_catalog.has_table_privilege(r.proowner, c.oid, pr.p)), '-')
               from pg_catalog.pg_class c
-                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
-             where c.relnamespace = 'public'::regnamespace and c.relname in ('sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
-                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config') and c.relkind = 'r'
+                   left join pg_catalog.pg_proc r on r.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+             where c.relnamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and c.relname OPERATOR(pg_catalog.=) any (array['sim_alumnos', 'sim_arrendamientos', 'sim_recibos', 'sim_eventos', 'sim_escrituras_v0', 'sim_escrituras_v0_marcas', 'sim_servicio',
+                           'sim_sessions', 'sim_trades', 'session_drawings', 'session_chart_config', 'sim_drawing_templates', 'user_chart_config', 'user_tool_config']::pg_catalog.name[]) and c.relkind OPERATOR(pg_catalog.=) 'r'
             union all
-            select 'permiso', 'funcion:' || p.oid::regprocedure::text || '|dueño_rpc=' || coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::text, 'NO EXISTE')
+            select 'permiso', 'funcion:' OPERATOR(pg_catalog.||) p.oid::pg_catalog.regprocedure::pg_catalog.text OPERATOR(pg_catalog.||) '|dueño_rpc=' OPERATOR(pg_catalog.||) coalesce(pg_catalog.has_function_privilege(r.proowner, p.oid, 'EXECUTE')::pg_catalog.text, 'NO EXISTE')
               from pg_catalog.pg_proc p
-                   left join pg_catalog.pg_proc r on r.oid = pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
-             where p.pronamespace = 'public'::regnamespace and (p.proname like 'sim\_%' or p.proname = 'enforce_sim_session_limit')
-               and p.proname <> 'sim_escrituras_v0_puerta'  -- la de la puerta (estado 2) es de disparador: no se llama
+                   left join pg_catalog.pg_proc r on r.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('public.sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)')
+             where p.pronamespace OPERATOR(pg_catalog.=) 'public'::pg_catalog.regnamespace and (p.proname OPERATOR(pg_catalog.~~) 'sim\_%' or p.proname OPERATOR(pg_catalog.=) 'enforce_sim_session_limit')
+               and p.proname OPERATOR(pg_catalog.<>) 'sim_escrituras_v0_puerta'  -- la de la puerta (estado 2) es de disparador: no se llama
             union all
             -- R3E3B-02 (CTO 17-oct): las tres funciones ajenas que llaman los cuerpos, con la ficha de la s16b
-            select 'funcion_ajena', f.firma || '|' ||
+            select 'funcion_ajena', f.firma OPERATOR(pg_catalog.||) '|' OPERATOR(pg_catalog.||)
                    case when p.oid is null then 'NO EXISTE' else
-                     'functiondef md5=' || pg_catalog.md5(pg_catalog.pg_get_functiondef(p.oid))
-                     || ' · prosrc md5=' || pg_catalog.md5(coalesce(p.prosrc, '')) || ' · probin=' || coalesce(p.probin, '-')
-                     || ' · lenguaje=' || l.lanname || ' · dueño=' || pg_catalog.pg_get_userbyid(p.proowner)
-                     || ' · prosecdef=' || p.prosecdef::text || ' · provolatile=' || p.provolatile::text || ' · proconfig=' || coalesce(p.proconfig::text, '-')
-                     || ' · proisstrict=' || p.proisstrict::text || ' · proleakproof=' || p.proleakproof::text || ' · proparallel=' || p.proparallel::text
-                     || ' · prokind=' || p.prokind::text || ' · proretset=' || p.proretset::text || ' · prorettype=' || pg_catalog.format_type(p.prorettype, null)
-                     || ' · proargmodes=' || coalesce(p.proargmodes::text, '-') || ' · proargnames=' || coalesce(p.proargnames::text, '-')
-                     || ' · pronargdefaults=' || p.pronargdefaults::text || ' · procost=' || p.procost::text || ' · prorows=' || p.prorows::text end
+                     'functiondef md5=' OPERATOR(pg_catalog.||) pg_catalog.md5(pg_catalog.pg_get_functiondef(p.oid))
+                     OPERATOR(pg_catalog.||) ' · prosrc md5=' OPERATOR(pg_catalog.||) pg_catalog.md5(coalesce(p.prosrc, '')) OPERATOR(pg_catalog.||) ' · probin=' OPERATOR(pg_catalog.||) coalesce(p.probin, '-')
+                     OPERATOR(pg_catalog.||) ' · lenguaje=' OPERATOR(pg_catalog.||) l.lanname OPERATOR(pg_catalog.||) ' · dueño=' OPERATOR(pg_catalog.||) pg_catalog.pg_get_userbyid(p.proowner)
+                     OPERATOR(pg_catalog.||) ' · prosecdef=' OPERATOR(pg_catalog.||) p.prosecdef::pg_catalog.text OPERATOR(pg_catalog.||) ' · provolatile=' OPERATOR(pg_catalog.||) p.provolatile::pg_catalog.text OPERATOR(pg_catalog.||) ' · proconfig=' OPERATOR(pg_catalog.||) coalesce(p.proconfig::pg_catalog.text, '-')
+                     OPERATOR(pg_catalog.||) ' · proisstrict=' OPERATOR(pg_catalog.||) p.proisstrict::pg_catalog.text OPERATOR(pg_catalog.||) ' · proleakproof=' OPERATOR(pg_catalog.||) p.proleakproof::pg_catalog.text OPERATOR(pg_catalog.||) ' · proparallel=' OPERATOR(pg_catalog.||) p.proparallel::pg_catalog.text
+                     OPERATOR(pg_catalog.||) ' · prokind=' OPERATOR(pg_catalog.||) p.prokind::pg_catalog.text OPERATOR(pg_catalog.||) ' · proretset=' OPERATOR(pg_catalog.||) p.proretset::pg_catalog.text OPERATOR(pg_catalog.||) ' · prorettype=' OPERATOR(pg_catalog.||) pg_catalog.format_type(p.prorettype, null)
+                     OPERATOR(pg_catalog.||) ' · proargmodes=' OPERATOR(pg_catalog.||) coalesce(p.proargmodes::pg_catalog.text, '-') OPERATOR(pg_catalog.||) ' · proargnames=' OPERATOR(pg_catalog.||) coalesce(p.proargnames::pg_catalog.text, '-')
+                     OPERATOR(pg_catalog.||) ' · pronargdefaults=' OPERATOR(pg_catalog.||) p.pronargdefaults::pg_catalog.text OPERATOR(pg_catalog.||) ' · procost=' OPERATOR(pg_catalog.||) p.procost::pg_catalog.text OPERATOR(pg_catalog.||) ' · prorows=' OPERATOR(pg_catalog.||) p.prorows::pg_catalog.text end
               from (values ('extensions.digest(bytea,text)'), ('extensions.gen_random_bytes(integer)'), ('auth.uid()')) f(firma)
-                   left join pg_catalog.pg_proc p on p.oid = pg_catalog.to_regprocedure(f.firma) left join pg_catalog.pg_language l on l.oid = p.prolang
+                   left join pg_catalog.pg_proc p on p.oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure(f.firma) left join pg_catalog.pg_language l on l.oid OPERATOR(pg_catalog.=) p.prolang
           ) x
         ),
         esp_f(esquemas, familia, n, h) as (values
@@ -414,24 +414,24 @@ begin
           ('auth.uid()', 'functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0'),
           ('extensions.digest(bytea,text)', 'functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0'),
           ('extensions.gen_random_bytes(integer)', 'functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0')),
-        med_f as (select i.familia, count(*)::integer n, pg_catalog.md5(string_agg(i.fila, E'\n' order by i.fila collate "C")) h from inv i where i.familia <> 'funcion_ajena' group by i.familia),
-        med_a as (select split_part(i.fila, '|', 1) firma, substr(i.fila, strpos(i.fila, '|') + 1) ficha from inv i where i.familia = 'funcion_ajena')
-        select 'inventario'::text familia, e.familia objeto,
-               'n=' || coalesce(m.n, 0) || ' md5=' || coalesce(m.h, pg_catalog.md5(''))
-               || case when coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h then ''
-                       else ' (sim-004b espera n=' || e.n || ' md5=' || e.h || ' con esquemas=' || e.esquemas || '; que fila: medirlo aparte)' end detalle,
-               coalesce(m.n, 0) = e.n and coalesce(m.h, pg_catalog.md5('')) = e.h bien
-          from esp_f e left join med_f m on m.familia = e.familia
-         where e.esquemas = pg_catalog.current_schemas(false)::text
+        med_f as (select i.familia, pg_catalog.count(*)::pg_catalog.int4 n, pg_catalog.md5(pg_catalog.string_agg(i.fila, E'\n' order by i.fila collate pg_catalog."C")) h from inv i where i.familia OPERATOR(pg_catalog.<>) 'funcion_ajena' group by i.familia),
+        med_a as (select pg_catalog.split_part(i.fila, '|', 1) firma, pg_catalog.substr(i.fila, pg_catalog.strpos(i.fila, '|') OPERATOR(pg_catalog.+) 1) ficha from inv i where i.familia OPERATOR(pg_catalog.=) 'funcion_ajena')
+        select 'inventario'::pg_catalog.text familia, e.familia objeto,
+               'n=' OPERATOR(pg_catalog.||) coalesce(m.n, 0) OPERATOR(pg_catalog.||) ' md5=' OPERATOR(pg_catalog.||) coalesce(m.h, pg_catalog.md5(''))
+               OPERATOR(pg_catalog.||) case when coalesce(m.n, 0) OPERATOR(pg_catalog.=) e.n and coalesce(m.h, pg_catalog.md5('')) OPERATOR(pg_catalog.=) e.h then ''
+                       else ' (sim-004b espera n=' OPERATOR(pg_catalog.||) e.n OPERATOR(pg_catalog.||) ' md5=' OPERATOR(pg_catalog.||) e.h OPERATOR(pg_catalog.||) ' con esquemas=' OPERATOR(pg_catalog.||) e.esquemas OPERATOR(pg_catalog.||) '; que fila: medirlo aparte)' end detalle,
+               coalesce(m.n, 0) OPERATOR(pg_catalog.=) e.n and coalesce(m.h, pg_catalog.md5('')) OPERATOR(pg_catalog.=) e.h bien
+          from esp_f e left join med_f m on m.familia OPERATOR(pg_catalog.=) e.familia
+         where e.esquemas OPERATOR(pg_catalog.=) pg_catalog.current_schemas(false)::pg_catalog.text
         union all
-        select 'inventario', 'search_path', 'esquemas=' || pg_catalog.current_schemas(false)::text
-               || ' (sin valores esperados: solo {} en sim-004b y {public,extensions}, el del editor, en la s16)', false
-         where not exists (select 1 from esp_f e where e.esquemas = pg_catalog.current_schemas(false)::text)
+        select 'inventario', 'search_path', 'esquemas=' OPERATOR(pg_catalog.||) pg_catalog.current_schemas(false)::pg_catalog.text
+               OPERATOR(pg_catalog.||) ' (sin valores esperados: solo {} en sim-004b y {public,extensions}, el del editor, en la s16)', false
+         where not exists (select 1 from esp_f e where e.esquemas OPERATOR(pg_catalog.=) pg_catalog.current_schemas(false)::pg_catalog.text)
         union all
         select 'funcion_ajena', coalesce(e.firma, m.firma),
-               coalesce(m.ficha, 'NO EXISTE') || case when m.ficha is distinct from e.ficha then ' (sim-004b espera ' || e.ficha || ')' else '' end,
-               m.ficha is not distinct from e.ficha
-          from esp_a e left join med_a m on m.firma = e.firma
+               coalesce(m.ficha, 'NO EXISTE') OPERATOR(pg_catalog.||) case when not coalesce(m.ficha OPERATOR(pg_catalog.=) e.ficha, m.ficha is null and e.ficha is null) then ' (sim-004b espera ' OPERATOR(pg_catalog.||) e.ficha OPERATOR(pg_catalog.||) ')' else '' end,
+               coalesce(m.ficha OPERATOR(pg_catalog.=) e.ficha, m.ficha is null and e.ficha is null)
+          from esp_a e left join med_a m on m.firma OPERATOR(pg_catalog.=) e.firma
       ) v
       -- <<< inventario
     ) i;

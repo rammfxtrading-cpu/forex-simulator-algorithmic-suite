@@ -14,10 +14,12 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, conUidDelMontaje } from './montaje-v1.mjs'
+import { montajeV1, conUidDelMontaje, sinEnvoltura } from './montaje-v1.mjs'
 const lee = p => { try { return readFileSync(path.join(REPO, p), 'utf8') } catch { return null } }
 // R3E3B-02: la ficha de auth.uid() de produccion, por la del montaje (la unica adaptacion; montaje-v1.mjs)
-const S16 = conUidDelMontaje(lee('sql/consultas/s16-catalogo-sim004b.sql')), S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')), PUERTA = lee('sql/sim-004a-puerta.sql')
+// orden 1-027 (D2): el fichero ENTERO lleva su BEGIN READ ONLY … ROLLBACK con guarda; S16 es su cuerpo, para meterlo en
+// las transacciones de las familias (READ ONLY, o tras el desvio con SET TRANSACTION READ ONLY)
+const S16_ENTERA = conUidDelMontaje(lee('sql/consultas/s16-catalogo-sim004b.sql')), S16 = S16_ENTERA && sinEnvoltura(S16_ENTERA), S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')), PUERTA = lee('sql/sim-004a-puerta.sql')
 titulo('1 · la consulta y sim-004b dan por buenas las mismas funciones')
 const shas = t => new Set([...(t ?? '').matchAll(/'([0-9a-f]{64})'/g)].map(x => x[1]).concat([...(t ?? '').matchAll(/\|([0-9a-f]{64})\|/g)].map(x => x[1])))
 const s16 = shas(S16), s4b = shas(S4B)
@@ -30,7 +32,7 @@ oraculo('S16', 'los sha256 de las funciones de la s16 son, uno a uno, los de las
 const literales = (t, re) => [...(t ?? '').matchAll(re)].map(x => x[0])
 const seccion3 = S4B?.slice(S4B.indexOf('FOR v_rel, f, v_def IN SELECT'), S4B.indexOf(') c(nombre, def)'))
 const r4b = [...literales(seccion3, /\('sim_[a-z_]+', 'sim_[a-z_0-9]+', '(?:[^']|'')*'\)/g), ...literales(seccion3, /\('sim_[a-z_0-9]+', 'CREATE UNIQUE INDEX (?:[^']|'')*'\)/g)]
-const d4b = ['v_terminal_vieja', 'v_terminal_nueva', 'v_tipo_viejo', 'v_tipo_nuevo'].map(v => (new RegExp(`^  ${v} text := ('(?:[^']|'')*');$`, 'm').exec(S4B ?? '') ?? [])[1])
+const d4b = ['v_terminal_vieja', 'v_terminal_nueva', 'v_tipo_viejo', 'v_tipo_nuevo'].map(v => (new RegExp(`^  ${v} (?:pg_catalog\\.)?text := ('(?:[^']|'')*');$`, 'm').exec(S4B ?? '') ?? [])[1])
 oraculo('S16', 'las 25 restricciones, los 10 indices y las 4 definiciones de las dos que cambia son, literales, las de sim-004b', r4b.length === 35 && r4b.every(x => (S16 ?? '').includes(x)) && d4b.every(x => x && (S16 ?? '').includes(x)), `${r4b.filter(x => !(S16 ?? '').includes(x)).length} de ${r4b.length} sin copiar (se esperaban 35)`)
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay, la parte contra la base no se ha ejecutado', false); fin() }
 const m = montajeV1()
@@ -43,6 +45,7 @@ try {
   const d = m.base('s16a')
   ver('control: el ejecutor del montaje NO es superusuario', m.comoEjecutor(d, 'select rolsuper from pg_roles where rolname = current_user').out === 'f')
   const r = corre(d), r0 = corre(d, "set search_path = '';\n"), r1 = corre(d, 'set search_path = public;\n')
+  const entera = m.comoEjecutor(d, S16_ENTERA)   // el fichero ENTERO, sobre la misma base y antes de aplicar nada (2b)
   const lineas = r.out.split('\n').filter(Boolean)
   oraculo('S16', 'en READ ONLY y como no superusuario: veredicto OK y acaba en «FIN|s16|consulta»', r.ok && veredicto(r) === 'OK' && lineas.at(-1) === 'FIN|s16|consulta', r.ok ? lineas.filter(l => /DIFIERE|DE MAS|FALTA|veredicto/.test(l)).join(' / ').slice(0, 600) : r.err)
   // RINV3-01: sin normalizar, la salida depende del search_path; la s16 exige el del editor (por sus esquemas efectivos)
@@ -54,11 +57,24 @@ try {
   // matriz efectiva de los siete privilegios en las 11 protegidas, los receptores de mas en las 7 nuevas
   // y sus 4 secuencias, y ninguna ACL de columna en las 11
   const acl = lineas.filter(l => /^acl_(tabla|receptores|columna)\|/.test(l))
-  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 81 + 23 + 43 + 1 + 11 + 1 + 2 + 2 + 2 + 1, acl.join(' / ').slice(0, 500))
+  oraculo('S16', 'y las ACL de tabla: 11 filas acl_tabla, 11 acl_receptores y 1 acl_columna, todas «coincide»', acl.filter(l => l.startsWith('acl_tabla|')).length === 11 && acl.filter(l => l.startsWith('acl_receptores|')).length === 11 && acl.filter(l => l.startsWith('acl_columna|')).length === 1 && acl.every(l => l.endsWith('coincide')) && (r.out.match(/coincide$/gm) ?? []).length === 14 + 13 + 17 + 81 + 23 + 43 + 1 + 11 + 1 + 2 + 2 + 2 + 1 + 2, acl.join(' / ').slice(0, 500))
   oraculo('S16', 'y con eso sim-004b aplica', aplica(d).ok)
   const dp = m.base('s16p')
   const pp = m.comoEjecutor(dp, PUERTA)
   oraculo('S16', 'con la puerta (estado 2): veredicto OK (la puerta y sus 2 disparadores) y sim-004b aplica', pp.ok && veredicto(corre(dp)) === 'OK' && aplica(dp).ok, pp.ok ? '' : pp.err)
+  titulo('2b · la envoltura (orden 1-027, D2): entera da lo mismo; por partes, falla cerrada sin datos')
+  const sinTx = l => !/^(BEGIN|ROLLBACK|SET)$/.test(l)
+  const le = entera.out.split('\n').filter(Boolean).filter(sinTx)
+  oraculo('S16', 'el fichero empieza su SQL por «begin read only;» y acaba en «rollback;», una vez cada uno', (S16_ENTERA.match(/^begin read only;$/gm) || []).length === 1 && /\nrollback;\n?$/.test(S16_ENTERA) && (S16_ENTERA.match(/^rollback;$/gm) || []).length === 1)
+  oraculo('S16', 'ENTERA, tal cual: veredicto OK, acaba en «FIN|s16|consulta» y da exactamente las mismas filas que el cuerpo en READ ONLY', entera.ok && le.at(-1) === 'FIN|s16|consulta' && le.join('\n') === lineas.join('\n'), (entera.err || `${le.length} frente a ${lineas.length}; primera distinta: ${le.find((l, i) => l !== lineas[i]) ?? '-'} ≠ ${lineas.find((l, i) => l !== le[i]) ?? '-'}`).slice(0, 600))
+  const partes = [
+    ['sin su BEGIN READ ONLY', S16_ENTERA.replace(/^begin read only;$/m, '')],
+    ['solo la SELECT', S16],
+    ['BEGIN ordinario + la SELECT', `begin;\n${S16}\nrollback;`],
+    ['BEGIN READ WRITE + la SELECT', `begin read write;\n${S16}\nrollback;`],
+    ['BEGIN READ ONLY + ROLLBACK y despues la SELECT', `begin read only;\nrollback;\n${S16}`],
+  ].map(([que, t]) => [que, m.comoEjecutor(d, t)])
+  oraculo('S16', 'por partes (sin BEGIN, solo la SELECT, BEGIN ordinario, READ WRITE, o la SELECT tras el ROLLBACK): error «s16: pegala ENTERA…» y ninguna fila', partes.every(([, x]) => !x.ok && /s16: pegala ENTERA/.test(x.err) && !/FIN\|s16|veredicto\|/.test(x.out)), partes.filter(([, x]) => x.ok || !/s16: pegala ENTERA/.test(x.err) || /FIN\|s16|veredicto\|/.test(x.out)).map(([q]) => q).join(' · '))
 
   titulo('3 · cada desvio: la s16 dice DIFIEREN y sim-004b aborta')
   const desvios = [
@@ -109,7 +125,7 @@ try {
   const fam = m.base('s16f')
   const fallan = []
   for (const [que, sql] of familia) {
-    const rs = m.comoEjecutor(fam, `begin;\n${sql};\n${S16 ?? 'select 1/0;'}\nrollback;`)
+    const rs = m.comoEjecutor(fam, `begin;\n${sql};\nset transaction read only;\n${S16 ?? 'select 1/0;'}\nrollback;`)
     const ra = m.comoEjecutor(fam, `begin;\n${sql};\n${S4B}\nrollback;`)
     if (!(rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)) && !ra.ok && /sim-004b: /.test(ra.err))) fallan.push(`${que}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${ra.ok ? 'APLICA' : 'aborta'}`)
   }
@@ -124,7 +140,7 @@ try {
   const fallanF = []
   for (const t of CATORCE) {
     const sql = `alter table public.${t} force row level security`
-    const rs = m.comoEjecutor(fam, `begin;\n${sql};\n${S16 ?? 'select 1/0;'}\nrollback;`)
+    const rs = m.comoEjecutor(fam, `begin;\n${sql};\nset transaction read only;\n${S16 ?? 'select 1/0;'}\nrollback;`)
     const ra = m.comoEjecutor(fam, `begin;\n${sql};\n${S4B}\nrollback;`)
     if (!(rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)) && !ra.ok && /sim-004b: /.test(ra.err))) fallanF.push(`${t}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${ra.ok ? 'APLICA' : 'aborta'}`)
   }
@@ -172,7 +188,7 @@ try {
   ver(`control: la familia tiene ${malos.length} desvios que sim-004b rechaza (25 + 2 + 3 + 12 = 42) y ${buenos.length} que acepta (4 + 6)`, malos.length === 42 && buenos.length === 10)
   const desacuerdo = [], noRechazan = [], noAceptan = []
   for (const [que, sql, debe] of [...malos.map(x => [...x, 'aborta']), ...buenos.map(x => [...x, 'aplica'])]) {
-    const rs = m.comoEjecutor(fam, `begin;\n${sql};\n${S16 ?? 'select 1/0;'}\nrollback;`)
+    const rs = m.comoEjecutor(fam, `begin;\n${sql};\nset transaction read only;\n${S16 ?? 'select 1/0;'}\nrollback;`)
     const ra = m.comoEjecutor(fam, `begin;\n${sql};\n${S4B}\nrollback;`)
     const s16Mal = rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)), aborta = !ra.ok && /sim-004b: /.test(ra.err), aplica = ra.ok
     const linea = `${que}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${aplica ? 'APLICA' : aborta ? 'aborta' : 'error ajeno'}`
@@ -185,7 +201,7 @@ try {
   titulo('7 · con sim-004b YA aplicada: los atributos de las 3 RPC si cuentan')
   const apl = m.base('s16apl')
   ver('control: sim-004b aplicada en la base', aplica(apl).ok)
-  const sinNada = m.comoEjecutor(apl, `begin;\n${S16}\nrollback;`), reApl = m.comoEjecutor(apl, `begin;\n${S4B}\nrollback;`)
+  const sinNada = m.comoEjecutor(apl, `begin read only;\n${S16}\nrollback;`), reApl = m.comoEjecutor(apl, `begin;\n${S4B}\nrollback;`)
   oraculo('S16', 'aplicada y sin desvio: la s16 dice OK (estado «aplicada») y sim-004b se reejecuta', veredicto(sinNada) === 'OK' && /sim004b_estado\|[^\n]*aplicada[^\n]*coincide/.test(sinNada.out) && reApl.ok, `s16 ${veredicto(sinNada)} · sim-004b ${reApl.ok ? 'APLICA' : 'aborta'}`)
   const malosApl = SUST.flatMap(f => [
     [`search_path de ${f}`, `alter function public.${f} set search_path = public`],
@@ -194,12 +210,12 @@ try {
   ])
   const desApl = []
   for (const [que, sql] of malosApl) {
-    const rs = m.comoEjecutor(apl, `begin;\n${sql};\n${S16}\nrollback;`)
+    const rs = m.comoEjecutor(apl, `begin;\n${sql};\nset transaction read only;\n${S16}\nrollback;`)
     const ra = m.comoEjecutor(apl, `begin;\n${sql};\n${S4B}\nrollback;`)
     if (!(rs.ok && /^DIFIEREN \d+$/.test(veredicto(rs)) && !ra.ok && /sim-004b: /.test(ra.err))) desApl.push(`${que}: s16 ${rs.ok ? veredicto(rs) : 'error'} · sim-004b ${ra.ok ? 'APLICA' : 'aborta'}`)
   }
   oraculo('S16', `aplicada: en las 3 RPC, otro search_path, SECURITY INVOKER o EXECUTE a anon → la s16 dice DIFIEREN y sim-004b aborta (${malosApl.length})`, desApl.length === 0, desApl.join(' · '))
   const filasNuevas = lineas.filter(l => /^(requisito|sim004b_estado|restriccion|indice|funcion_sustituida)\|/.test(l))
-  oraculo('S16', 'y en el montaje: 10 requisito (con el search_path, los dos ajustes de RE3-01, pgrst.*, los roles del alumno y el uso de esquemas de RE4-01), 1 sim004b_estado, 25 restriccion, 10 indice y 3 funcion_sustituida, todas «coincide»', filasNuevas.filter(l => l.startsWith('requisito|')).length === 10 && filasNuevas.filter(l => l.startsWith('sim004b_estado|')).length === 1 && filasNuevas.filter(l => l.startsWith('restriccion|')).length === 25 && filasNuevas.filter(l => l.startsWith('indice|')).length === 10 && filasNuevas.filter(l => l.startsWith('funcion_sustituida|')).length === 3 && filasNuevas.every(l => l.endsWith('coincide')), filasNuevas.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 400))
+  oraculo('S16', 'y en el montaje: 12 requisito (con el search_path, los dos ajustes de RE3-01, pgrst.*, los roles del alumno y el uso de esquemas de RE4-01, el permiso en profiles y las pertenencias del alumno de E3R4), 1 sim004b_estado, 25 restriccion, 10 indice y 3 funcion_sustituida, todas «coincide»', filasNuevas.filter(l => l.startsWith('requisito|')).length === 12 && filasNuevas.filter(l => l.startsWith('sim004b_estado|')).length === 1 && filasNuevas.filter(l => l.startsWith('restriccion|')).length === 25 && filasNuevas.filter(l => l.startsWith('indice|')).length === 10 && filasNuevas.filter(l => l.startsWith('funcion_sustituida|')).length === 3 && filasNuevas.every(l => l.endsWith('coincide')), filasNuevas.filter(l => !l.endsWith('coincide')).join(' / ').slice(0, 400))
 } finally { m.cierra() }
 fin()

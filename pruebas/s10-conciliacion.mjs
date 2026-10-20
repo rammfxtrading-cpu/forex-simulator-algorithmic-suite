@@ -25,7 +25,11 @@ import { BIN, hayPostgres, cluster } from './pg-ensayo.mjs'
 import { PRODUCCION } from './estado-s04.mjs'
 if (!hayPostgres()) { ver(`PostgreSQL 17 en ${BIN}: NO hay, la prueba no se ha ejecutado`, false); fin() }
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
-const S10 = lee('sql/consultas/s10-conciliacion.sql')
+// orden 1-029: el fichero ENTERO lleva su BEGIN READ ONLY … ROLLBACK con guarda; S10 es su cuerpo (la SELECT), para
+// meterlo en las transacciones READ ONLY de la prueba y de los mutantes. Si la envoltura no esta exactamente una vez, revienta
+const S10_ENTERA = lee('sql/consultas/s10-conciliacion.sql')
+if ((S10_ENTERA.match(/^begin read only;$/gm) || []).length !== 1 || !/\nrollback;\n?$/.test(S10_ENTERA)) throw new Error('s10: la envoltura BEGIN READ ONLY … ROLLBACK no esta exactamente una vez')
+const S10 = S10_ENTERA.replace(/^begin read only;\n/m, '').replace(/\nrollback;\n?$/, '\n')
 const pg = cluster()
 const psqlEn = pg.psql
 pg.psql = (q, db = 'p') => psqlEn(q, db)
@@ -162,6 +166,24 @@ try {
     r.ok && r.filas.at(-1)?.join('|') === 'FIN|s10|consulta'
     && ['hora', 'timeout', 'estado', 'volumen', 'alumno', 'pareja', 'incidencia', 'dudoso', 'anomalia', 'foto', 'service_role'].every(sec => r.filas.some(f => f[0] === sec)),
     err1(r) || r.filas.at(-1)?.join('|'))
+  // la envoltura (orden 1-029): el fichero ENTERO, tal cual, da exactamente las mismas filas; por partes, falla cerrada
+  const ent = pgx(S10_ENTERA), filasEnt = ent.out.split('\n').filter(l => l && !/^(BEGIN|ROLLBACK)$/.test(l))
+  // la fila «hora | ahora (UTC)» lleva clock_timestamp() al segundo: dos ejecuciones seguidas pueden caer a los dos
+  // lados de un segundo (medido: 1 de 190, «…14:04:46» ≠ «…14:04:45»). Se compara su FORMA; el resto, byte a byte
+  const sinHora = ls => ls.map(l => l.replace(/^hora\|ahora \(UTC\)\|\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/, 'hora|ahora (UTC)|<hora>'))
+  const ctrl = ['hora|ahora (UTC)|2026-10-19 14:04:46', 'x|1'], ctrlB = ['hora|ahora (UTC)|2026-10-19 14:04:45', 'x|1']
+  ver('control: sinHora iguala dos segundos distintos, y no una hora sin forma ni otra fila distinta',
+    sinHora(ctrl).join() === sinHora(ctrlB).join() && sinHora(['hora|ahora (UTC)|ayer', 'x|1']).join() !== sinHora(ctrl).join()
+    && sinHora([ctrl[0], 'x|2']).join() !== sinHora(ctrl).join())
+  oraculo('S10-envoltura', 'ENTERA, tal cual (BEGIN READ ONLY … ROLLBACK): las mismas filas que el cuerpo en READ ONLY, hasta el FIN', ent.ok && sinHora(filasEnt).join('\n') === sinHora(r.filas.map(f => f.join('|'))).join('\n'), err1(ent) || `${filasEnt.length} frente a ${r.filas.length}`)
+  const partes = [
+    ['sin su BEGIN READ ONLY', S10_ENTERA.replace(/^begin read only;$/m, '')],
+    ['solo la SELECT', S10],
+    ['BEGIN ordinario + la SELECT', `begin;\n${S10}\nrollback;`],
+    ['BEGIN READ WRITE + la SELECT', `begin read write;\n${S10}\nrollback;`],
+    ['BEGIN READ ONLY + ROLLBACK y despues la SELECT', `begin read only;\nrollback;\n${S10}`],
+  ].map(([que, t]) => [que, pgx(t)])
+  oraculo('S10-envoltura', 'por partes (sin BEGIN, solo la SELECT, BEGIN ordinario, READ WRITE, o la SELECT tras el ROLLBACK): error «s10: pegala ENTERA…» y ninguna fila', partes.every(([, x]) => !x.ok && /s10: pegala ENTERA/.test(x.err) && !/FIN\|s10|hora\|/.test(x.out)), partes.filter(([, x]) => x.ok || !/s10: pegala ENTERA/.test(x.err) || /FIN\|s10|hora\|/.test(x.out)).map(([q]) => q).join(' · '))
   const nUltimo = pg.psql('select count(*) || max(id) from public.sim_escrituras_v0').out
   ver('el registro no cambia por correr s10', pg.psql('select count(*) || max(id) from public.sim_escrituras_v0').out === nUltimo)
 
@@ -284,10 +306,10 @@ rollback;`)
     oraculo('MUT-' + desc.replace(/\W+/g, '-'), `mutante «${desc}» → s10 cambia (lo caza ${lo})`, rm.ok && JSON.stringify(mira(rm)) !== JSON.stringify(mira(r2)), `${JSON.stringify(mira(r2))} → ${JSON.stringify(mira(rm))} ${err1(rm)}`)
   }
   const anomalias = x => x.filas.filter(f => f[0] === 'anomalia').length
-  mutaS10('DELETE de trade sin mirar la transaccion', 'and s.session_id = f.session_id and s.xact = f.xact', 'and s.session_id = f.session_id', x => clases(x, C.delLuego), 'L-delete-trade-otra-xact')
-  mutaS10('<> en lugar de IS DISTINCT FROM en las anomalias', 'where e.rol_jwt is distinct from e.rol_guc', 'where e.rol_jwt <> e.rol_guc', anomalias, 'A-tres-caminos')
+  mutaS10('DELETE de trade sin mirar la transaccion', 'and s.session_id OPERATOR(pg_catalog.=) f.session_id and s.xact OPERATOR(pg_catalog.=) f.xact', 'and s.session_id OPERATOR(pg_catalog.=) f.session_id', x => clases(x, C.delLuego), 'L-delete-trade-otra-xact')
+  mutaS10('<> en lugar de IS DISTINCT FROM en las anomalias', 'where not coalesce(e.rol_jwt OPERATOR(pg_catalog.=) e.rol_guc, e.rol_jwt is null and e.rol_guc is null)', 'where e.rol_jwt OPERATOR(pg_catalog.<>) e.rol_guc', anomalias, 'A-tres-caminos')
   mutaS10('ignorar el delta 0 que menciona balance (sin dudosos)', "then 'dudoso: delta 0, menciona balance, sin pareja'", "then 'nada'", x => clases(x, C.pausa), 'L-pausa')
-  mutaS10('solo cuenta authenticated', "where e.cliente = 'sin-firma' and e.rol_jwt in ('authenticated', 'anon')", "where e.cliente = 'sin-firma' and e.rol_jwt in ('authenticated')", x => clases(x, C.anon), 'A-anon')
+  mutaS10('solo cuenta authenticated', "where e.cliente OPERATOR(pg_catalog.=) 'sin-firma' and e.rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated', 'anon'])", "where e.cliente OPERATOR(pg_catalog.=) 'sin-firma' and e.rol_jwt OPERATOR(pg_catalog.=) any (array['authenticated'])", x => clases(x, C.anon), 'A-anon')
 } finally {
   pg.cierra()
 }

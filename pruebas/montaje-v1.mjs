@@ -58,6 +58,15 @@ export function conUidDelMontaje(texto) {
   return texto.replace(de, a)
 }
 
+// La s16 lleva su propia transaccion READ ONLY (BEGIN READ ONLY … ROLLBACK, con guarda; orden 1-027, D2). Las pruebas que
+// la meten en una transaccion suya (READ ONLY, o con un desvio y SET TRANSACTION READ ONLY) usan el cuerpo: la SELECT,
+// sin las dos lineas de la envoltura. Si la envoltura no esta exactamente asi, revienta: nunca mide otra cosa en silencio.
+export function sinEnvoltura(texto) {
+  const hasta = /\nrollback;\n?$/
+  if ((texto.match(/^begin read only;$/gm) || []).length !== 1 || !hasta.test(texto)) throw new Error('sinEnvoltura: la envoltura BEGIN READ ONLY … ROLLBACK no esta exactamente una vez')
+  return texto.replace(/^begin read only;\n/m, '').replace(hasta, '\n')
+}
+
 export function montajeV1() {
   const pg = cluster()
   const pgx = (texto, db) => {

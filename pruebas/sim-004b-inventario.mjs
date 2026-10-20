@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, importa, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, conUidDelMontaje, FICHA_UID_MONTAJE, FICHA_UID_PRODUCCION } from './montaje-v1.mjs'
+import { montajeV1, conUidDelMontaje, FICHA_UID_MONTAJE, FICHA_UID_PRODUCCION, sinEnvoltura } from './montaje-v1.mjs'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const S4B0 = lee('sql/sim-004b-contrato-v1.sql'), S160 = lee('sql/consultas/s16-catalogo-sim004b.sql')
 const CA = await importa('lib/motor/cartera.mjs'), RT = await importa('lib/motor/reto.mjs'), { COSTES_1 } = await importa('lib/motor/costes.mjs')
@@ -68,11 +68,11 @@ try {
   const base = () => { const d = m.base(`iv${++n}`); const p = m.comoEjecutor(d, lee('sql/sim-004a-puerta.sql')); if (!p.ok) throw new Error('puerta: ' + p.err); return d }
   // la ficha de auth.uid() del montaje (su cuerpo de Supabase no se conoce): la unica sustitucion de la prueba
   const d0 = base()
-  const q0 = m.comoEjecutor(d0, `begin read only;\n${S160}\nrollback;`)
+  const q0 = m.comoEjecutor(d0, `begin read only;\n${sinEnvoltura(S160)}\nrollback;`)
   const fila0 = q0.out.split('\n').find(l => l.startsWith('funcion_ajena|auth.uid()|')) || ''
   const uidMontaje = fila0.replace(/^funcion_ajena\|auth\.uid\(\)\|/, '').replace(/ \(sim-004b espera .*$/, '')
   const prodUid = `(${L('auth.uid()')}, ${L(fichas['auth.uid()'])})`, montUid = `(${L('auth.uid()')}, ${L(uidMontaje)})`
-  const S4B = conUidDelMontaje(S4B0), S16 = conUidDelMontaje(S160)
+  const S4B = conUidDelMontaje(S4B0), S16 = conUidDelMontaje(sinEnvoltura(S160))
   ver('control: la ficha de auth.uid() del montaje, medida ahora, es la fija de montaje-v1.mjs (FICHA_UID_MONTAJE), y la de produccion es la literal de la s16b', uidMontaje === FICHA_UID_MONTAJE && FICHA_UID_PRODUCCION === fichas['auth.uid()'], uidMontaje.slice(0, 80))
   ver('control: la unica sustitucion (la ficha de auth.uid() por la del montaje) toca una sola linea en cada fichero', S4B0.split(prodUid).length === 2 && S160.split(prodUid).length === 2 && S4B !== S4B0 && S4B.length - S4B0.length === montUid.length - prodUid.length && /functiondef md5=[0-9a-f]{32} · prosrc md5=/.test(uidMontaje), uidMontaje.slice(0, 80))
   const aplica = d => m.comoEjecutor(d, S4B)
@@ -112,7 +112,8 @@ try {
     ['funcion_ajena · extensions.digest con otro COST', 'extensions.digest(bytea,text)', 'alter function extensions.digest(bytea, text) cost 7;', true, 'despues'],
     ['funcion_ajena · auth.uid() con otro dueño', 'auth.uid()', 'alter function auth.uid() owner to service_role;', true, 'despues'],
     // el revisor interno de 679d363 (RINV-01..05)
-    ['tabla · RINV-01: sim_sessions con otro dueño (authenticated), quitandole lo que la 4.3 veria (el caso del revisor)', 'tabla', 'alter table public.sim_sessions owner to authenticated; revoke truncate, references, trigger on public.sim_sessions from authenticated;', true, 'despues'],
+    ['tabla · RINV-01: sim_sessions con otro dueño (authenticated), quitandole lo que la 4.3 veria (el caso del revisor)', 'tabla', 'alter table public.sim_sessions owner to authenticated; revoke truncate, references, trigger on public.sim_sessions from authenticated;', true, 'despues', 'pertenencias del alumno'],
+    // (desde E3R5-01, sim-004b lo para antes, en su seccion 0: authenticated ES dueño de una de las 14, un rol privilegiado)
     ['tabla · RINV-04: la RLS apagada en user_chart_config (no protegida)', 'tabla', 'alter table public.user_chart_config disable row level security;', false, 'despues'],
     ['columna · RINV-02: un dominio public.text en sim_sessions.name', 'columna', "create domain public.text as pg_catalog.text check (value <> 'inventada'); alter table public.sim_sessions alter column name type public.text;", false, 'despues'],
     ['identidad · RINV-03: sim_recibos.id con MAXVALUE 2', 'identidad', 'alter table public.sim_recibos alter column id set maxvalue 2;', false, 'despues'],

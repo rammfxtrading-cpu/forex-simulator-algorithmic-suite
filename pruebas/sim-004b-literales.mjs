@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
-import { montajeV1, conUidDelMontaje } from './montaje-v1.mjs'
+import { montajeV1, conUidDelMontaje, sinEnvoltura } from './montaje-v1.mjs'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const err1 = r => (r.err.split('\n').find(l => /ERROR/.test(l)) || r.err.split('\n')[0] || '').replace(/^.*ERROR:\s+/, '')
@@ -28,7 +28,7 @@ const sinComentarios = t => t.replace(/--.*$/gm, '')
 oraculo('LIT', 'ni sim-004b ni la s16 usan regexp_replace ni quitan «public.» de ningun texto', ![S4B0, S160].some(t => /regexp_replace|replace\([^)]*public/i.test(sinComentarios(t))))
 
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay, la prueba no se ha ejecutado', false); fin() }
-const S4B = conUidDelMontaje(S4B0), S16 = conUidDelMontaje(S160)
+const S4B = conUidDelMontaje(S4B0), S16 = conUidDelMontaje(sinEnvoltura(S160))
 const m = montajeV1()
 try {
   m.arranca()
