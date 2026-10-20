@@ -1,0 +1,237 @@
+seccion,objeto,detalle
+requisito,PostgreSQL >= 17,17.6 · coincide
+requisito,permiso en profiles,"dueño_rpc SELECT(id, plan, simulador_activo)=true · UPDATE en alguna columna (FOR KEY SHARE)=true · coincide"
+requisito,pertenencias del alumno,ninguna · coincide
+requisito,pgrst.*,pgrst.* · fijado en pg_db_role_setting: ninguno · coincide
+requisito,rol anon,existe · coincide
+requisito,rol authenticated,existe · coincide
+requisito,rol service_role,existe · coincide
+requisito,roles del alumno,anon: superusuario=false bypassrls=false · authenticated: superusuario=false bypassrls=false · coincide
+requisito,row_security,row_security: efectivo on=true · fijado en pg_db_role_setting: ninguno · coincide
+requisito,search_path,"esquemas={public,extensions} (el del editor de Supabase: ""$user"", public, extensions) · coincide"
+requisito,session_replication_role,session_replication_role: efectivo origin=true · fijado en pg_db_role_setting: ninguno · coincide
+requisito,uso de esquemas,authenticated USAGE auth=true · authenticated USAGE public=true · dueño_rpc USAGE extensions=true · dueño_rpc USAGE public=true · coincide
+sim004b_estado,las 2 restricciones y los 3 cuerpos que cambia,"restricciones viejas 0, nuevas 2 de 2; cuerpos de sim-004b 3 de 3 · aplicada · coincide"
+restriccion,sim_alumnos.sim_alumnos_pkey,PRIMARY KEY (user_id) · coincide
+restriccion,sim_alumnos.sim_alumnos_user_id_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · coincide
+restriccion,sim_arrendamientos.sim_arrendamientos_cliente_id_check,CHECK (((length(cliente_id) >= 1) AND (length(cliente_id) <= 100))) · coincide
+restriccion,sim_arrendamientos.sim_arrendamientos_pkey,PRIMARY KEY (session_id) · coincide
+restriccion,sim_arrendamientos.sim_arrendamientos_session_id_fkey,FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · coincide
+restriccion,sim_arrendamientos.sim_arrendamientos_testigo_hash_check,CHECK ((testigo_hash ~ '^[0-9a-f]{64}$'::text)) · coincide
+restriccion,sim_eventos.sim_eventos_ordinal_check,CHECK ((ordinal >= 0)) · coincide
+restriccion,sim_eventos.sim_eventos_pkey,PRIMARY KEY (id) · coincide
+restriccion,sim_eventos.sim_eventos_seq_check,CHECK ((seq >= 1)) · coincide
+restriccion,sim_eventos.sim_eventos_session_command_ordinal_key,"UNIQUE (session_id, command_id, ordinal) · coincide"
+restriccion,sim_eventos.sim_eventos_session_id_fkey,FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · coincide
+restriccion,sim_eventos.sim_eventos_session_seq_key,"UNIQUE (session_id, seq) · coincide"
+restriccion,sim_recibos.sim_recibos_clase_check,"CHECK ((clase = ANY (ARRAY['economico'::text, 'ultimo_avance'::text]))) · coincide"
+restriccion,sim_recibos.sim_recibos_clase_tipo,"CHECK (((clase = 'economico'::text) OR (tipo = ANY (ARRAY['avanzar'::text, 'checkpoint'::text])))) · coincide"
+restriccion,sim_recibos.sim_recibos_digest_check,CHECK ((digest ~ '^[0-9a-f]{64}$'::text)) · coincide
+restriccion,sim_recibos.sim_recibos_pkey,PRIMARY KEY (id) · coincide
+restriccion,sim_recibos.sim_recibos_resultado_check,"CHECK ((resultado = ANY (ARRAY['aceptado'::text, 'rechazado'::text, 'conflicto'::text]))) · coincide"
+restriccion,sim_recibos.sim_recibos_session_command_key,"UNIQUE (session_id, command_id) · coincide"
+restriccion,sim_recibos.sim_recibos_session_id_fkey,FOREIGN KEY (session_id) REFERENCES sim_sessions(id) ON DELETE CASCADE · coincide
+restriccion,sim_recibos.sim_recibos_tipo_check,"CHECK ((tipo = ANY (ARRAY['abrir'::text, 'modificar'::text, 'cancelar'::text, 'cerrar'::text, 'avanzar'::text, 'checkpoint'::text, 'crear'::text, 'tomar_escritor'::text, 'avanzar_fase'::text]))) · coincide"
+restriccion,sim_sessions.sim_sessions_user_id_perfil_fkey,FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE · coincide
+restriccion,sim_sessions.sim_sessions_v1_coherente,"CHECK (((motor_version = ANY (ARRAY[0, 1])) AND (epoca >= 0) AND (version >= 0) AND ((motor_version = 0) OR (creada_por_rpc AND (((estado IS NOT NULL) AND (mercado IS NOT NULL)) OR (NOT (terminal IS DISTINCT FROM 'borrada'::text))))) AND ((NOT legado) OR (motor_version = 0)))) · coincide"
+restriccion,sim_trades.sim_trades_evento_id_fkey,FOREIGN KEY (evento_id) REFERENCES sim_eventos(id) ON DELETE CASCADE · coincide
+restriccion,sim_trades.sim_trades_evento_id_key,UNIQUE (evento_id) · coincide
+restriccion,sim_trades.sim_trades_v1_coherente,CHECK ((((motor_version = 0) AND (evento_id IS NULL)) OR ((motor_version = 1) AND (evento_id IS NOT NULL) AND (bruto_micro IS NOT NULL) AND (neto_micro IS NOT NULL) AND (comision_micro IS NOT NULL) AND (spread_micro IS NOT NULL) AND (swap_micro IS NOT NULL) AND (ambigua IS NOT NULL)))) · coincide
+indice,sim_alumnos_pkey,CREATE UNIQUE INDEX sim_alumnos_pkey ON public.sim_alumnos USING btree (user_id) · coincide
+indice,sim_arrendamientos_pkey,CREATE UNIQUE INDEX sim_arrendamientos_pkey ON public.sim_arrendamientos USING btree (session_id) · coincide
+indice,sim_eventos_pkey,CREATE UNIQUE INDEX sim_eventos_pkey ON public.sim_eventos USING btree (id) · coincide
+indice,sim_eventos_session_command_ordinal_key,"CREATE UNIQUE INDEX sim_eventos_session_command_ordinal_key ON public.sim_eventos USING btree (session_id, command_id, ordinal) · coincide"
+indice,sim_eventos_session_seq_key,"CREATE UNIQUE INDEX sim_eventos_session_seq_key ON public.sim_eventos USING btree (session_id, seq) · coincide"
+indice,sim_recibos_pkey,CREATE UNIQUE INDEX sim_recibos_pkey ON public.sim_recibos USING btree (id) · coincide
+indice,sim_recibos_session_command_key,"CREATE UNIQUE INDEX sim_recibos_session_command_key ON public.sim_recibos USING btree (session_id, command_id) · coincide"
+indice,sim_recibos_ultimo_avance_key,CREATE UNIQUE INDEX sim_recibos_ultimo_avance_key ON public.sim_recibos USING btree (session_id) WHERE (clase = 'ultimo_avance'::text) · coincide
+indice,sim_sessions_una_hija_v1_key,CREATE UNIQUE INDEX sim_sessions_una_hija_v1_key ON public.sim_sessions USING btree (challenge_parent_id) WHERE ((motor_version = 1) AND (challenge_parent_id IS NOT NULL)) · coincide
+indice,sim_trades_evento_id_key,CREATE UNIQUE INDEX sim_trades_evento_id_key ON public.sim_trades USING btree (evento_id) · coincide
+rls,session_chart_config,rls=true · force=false · coincide
+rls,session_drawings,rls=true · force=false · coincide
+rls,sim_alumnos,rls=true · force=false · coincide
+rls,sim_arrendamientos,rls=true · force=false · coincide
+rls,sim_drawing_templates,rls=true · force=false · coincide
+rls,sim_escrituras_v0,rls=true · force=false · coincide
+rls,sim_escrituras_v0_marcas,rls=true · force=false · coincide
+rls,sim_eventos,rls=true · force=false · coincide
+rls,sim_recibos,rls=true · force=false · coincide
+rls,sim_servicio,rls=true · force=false · coincide
+rls,sim_sessions,rls=true · force=false · coincide
+rls,sim_trades,rls=true · force=false · coincide
+rls,user_chart_config,rls=true · force=false · coincide
+rls,user_tool_config,rls=true · force=false · coincide
+politica,"session_chart_config|session_chart_config_sesion_propia_insert|RESTRICTIVE|INSERT|{authenticated}|-|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = session_chart_config.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))",coincide
+politica,"session_chart_config|session_chart_config_sesion_propia_update|RESTRICTIVE|UPDATE|{authenticated}|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = session_chart_config.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = session_chart_config.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))",coincide
+politica,session_chart_config|user owns session config|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-,coincide
+politica,"session_drawings|session_drawings_sesion_propia_insert|RESTRICTIVE|INSERT|{authenticated}|-|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = session_drawings.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))",coincide
+politica,"session_drawings|session_drawings_sesion_propia_update|RESTRICTIVE|UPDATE|{authenticated}|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = session_drawings.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = session_drawings.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))",coincide
+politica,session_drawings|user owns session drawings|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-,coincide
+politica,sim_eventos|sim_eventos_select_propios|PERMISSIVE|SELECT|{authenticated}|(auth.uid() = user_id)|-,coincide
+politica,sim_recibos|sim_recibos_select_propios|PERMISSIVE|SELECT|{authenticated}|(auth.uid() = user_id)|-,coincide
+politica,sim_servicio|sim_servicio_lectura|PERMISSIVE|SELECT|{authenticated}|true|-,coincide
+politica,sim_sessions|Users see own sessions|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-,coincide
+politica,sim_trades|Users see own trades|PERMISSIVE|ALL|{public}|(auth.uid() = user_id)|-,coincide
+politica,"sim_trades|sim_trades_sesion_propia_insert|RESTRICTIVE|INSERT|{authenticated}|-|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = sim_trades.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))",coincide
+politica,"sim_trades|sim_trades_sesion_propia_update|RESTRICTIVE|UPDATE|{authenticated}|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = sim_trades.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))|(EXISTS ( SELECT 1
+   FROM sim_sessions s
+  WHERE ((s.id = sim_trades.session_id) AND (s.user_id = ( SELECT auth.uid() AS uid)))))",coincide
+funcion,enforce_sim_session_limit(),"plpgsql|true|v|search_path=public|dueño=ejecutor|16cecbd9686b423fa48e75a8a18bfa0a99bff07382c0c5438bc7ba402ae67505|PUBLIC,anon,authenticated,service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=057b9c51bfe664f3841b2b617aa724ae · md5 e14eafab524d58d3c49e4856e238ded7 · dueño postgres · acl {=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres} · coincide"
+funcion,sim_bloquea_alumno(uuid),"plpgsql|true|v|search_path=""""|dueño=ejecutor|6f0b01b1fb10aedfe788a79dbc6500f23b43c74008f2e41f8062ad7206ffc672||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid|modes=-|names=p_actor|defaults=-|ndefaults=0|cost=100|rows=0|def=c11ecb12f670396198cce2655f88387a · md5 4afb3f21f3ab3fd20dcbc315387efb2c · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_borrar_alumno(uuid),"plpgsql|true|v|search_path=""""|dueño=ejecutor|99130396d3fc4e301110d7aaf42c70240a80e7ae07d81ae738c1cba63e84cdea|service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid|modes=-|names=p_user_id|defaults=-|ndefaults=0|cost=100|rows=0|def=bdcb1e2a59d9422d6c7b9951482475ee · md5 486a0a17c17cc80ccb308289e95cd5d9 · dueño postgres · acl {postgres=X/postgres,service_role=X/postgres} · coincide"
+funcion,"sim_borrar_legacy(uuid,uuid)","plpgsql|true|v|search_path=""""|dueño=ejecutor|699be648cae457b5339a5f94d80bbe30f03f5952fb7dbeb9dadc79f3bce114f5|service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid|modes=-|names=p_user_id,p_session_id|defaults=-|ndefaults=0|cost=100|rows=0|def=5398552fbd631d0beebc6a2990633340 · md5 7dab0ae504a761ea60e83311d6e2985b · dueño postgres · acl {postgres=X/postgres,service_role=X/postgres} · coincide"
+funcion,"sim_borrar_sesion(uuid,uuid)","plpgsql|true|v|search_path=""""|dueño=ejecutor|210d6d9ef38f483eab2d2a73a773fcd68b49b4e58ac33d813bbf34532426360d|service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid|modes=-|names=p_actor,p_session_id|defaults=-|ndefaults=0|cost=100|rows=0|def=b039b2b9e9f005b2305416eb11b7e834 · md5 af4c38288e02b545ba8f3f28094a68c9 · dueño postgres · acl {postgres=X/postgres,service_role=X/postgres} · coincide"
+funcion,"sim_cierre_v0(uuid,numeric,bigint,jsonb)","plpgsql|false|v|search_path=""""|dueño=ejecutor|3f116e57f9ba0c4ef6b2d1176f0a91997548106ab186b9e3eff9c0f27126d70b|authenticated|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=uuid|args=uuid,numeric,bigint,jsonb|modes=-|names=p_session_id,p_balance,p_last_timestamp,p_trade|defaults=-|ndefaults=0|cost=100|rows=0|def=4d35ee3cad1d8f34b22074607fa00e07 · md5 cd9611b2a415bcdc3c9ffee474b7b4b0 · dueño postgres · acl {postgres=X/postgres,authenticated=X/postgres} · coincide"
+funcion,"sim_crear_sesion(uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb)","plpgsql|true|v|search_path=""""|dueño=ejecutor|0634aba8572b154630175e35f6f4041656ce967608d80060b82baddeded2eace|service_role|strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,integer,jsonb,jsonb,jsonb,jsonb|modes=-|names=p_actor,p_session_id,p_command_id,p_sobre,p_epoca,p_sesion,p_estado,p_mercado,p_resumen|defaults=-|ndefaults=0|cost=100|rows=0|def=abb09983533ae8b167c7c3910d36ddb7 · md5 fde69640c00a1b397ff8f77d8a6a41d6 · dueño postgres · acl {postgres=X/postgres,service_role=X/postgres} · coincide"
+funcion,"sim_error(integer,text,jsonb)","sql|true|i|search_path=""""|dueño=ejecutor|d549317d65746f847af514cee10c6c31cb6bfd7eb678900af8531e14f01ccdc0||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=integer,text,jsonb|modes=-|names=p_http,p_motivo,p_extra|defaults='{}'::jsonb|ndefaults=1|cost=100|rows=0|def=a46517c97ea242e3901ad75f89ac92a7 · md5 ad394d52e026eafa87c7c6281834dd02 · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_escrituras_v0_canonico(uuid),"plpgsql|false|s|search_path=""""|dueño=ejecutor|a84f48563b8abc6af7731fccee921d9b04231daeccd1bfa8abe81dddee0192b9||strict=false|leakproof=false|parallel=u|kind=f|retset=true|ret=record|args=uuid|modes={i,t,t}|names=p_session_id,texto,sha256|defaults=-|ndefaults=0|cost=100|rows=1000|def=a946bc032d0fa3b182ad6e3df9167074 · md5 d09bdfb51df53997a8e0735a24ca8556 · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_escrituras_v0_inmutable(),"plpgsql|false|v|search_path=""""|dueño=ejecutor|58154aea4b93fa65064079566019ad2e390969860961b6aece7281b8463b48d3||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=28490ac5564dae2cc9137c700e7dac07 · md5 b19e78ea1ac09c1e904a4fadbf77d642 · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_escrituras_v0_marca_balance(),"plpgsql|true|v|search_path=""""|dueño=ejecutor|894174ce7cbdd7f7ec69af214dd39fcff00ed12e117c48887c44bd0a058c3117||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=bb380293db1ca7e5715052e4d7e0bb8a · md5 282eb3ae6911fd153c200e2e7f098e8d · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_escrituras_v0_parejas(uuid),"plpgsql|false|s|search_path=""""|dueño=ejecutor|287f3eba3f68aa68385b6dd2e82512b9ccea1ed963a8def38382f1fdd6adbf32||strict=false|leakproof=false|parallel=u|kind=f|retset=true|ret=record|args=uuid|modes={i,t,t,t}|names=p_session_id,orden,escritura_update,escritura_insert|defaults=-|ndefaults=0|cost=100|rows=1000|def=7999fb9592b0450511cb9fa3276bf600 · md5 3d8d007c74e45313773ab8998ad8a6ad · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_escrituras_v0_puerta(),"plpgsql|false|v|search_path=""""|dueño=ejecutor|fe4c7c32b146e7d525665760047af0ad49d85d2dc538e1afcf3b080a9f305883||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=58a2b98ce8df1cffcb40e2ee8466e718 · md5 3d620fc89b8263b13b1be9a50dcb2a34 · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_escrituras_v0_registra(),"plpgsql|true|v|search_path=""""|dueño=ejecutor|c47b1970ee48912748434f3161a62062835bfe1ec51af864659164dcddb7a6b4||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=a342f7511bc8cde06164e95bedfa521d · md5 85e83d230dd74ef6bde232e50d6bb9ce · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_escrituras_v0_solo_disparador(),"plpgsql|false|v|search_path=""""|dueño=ejecutor|6b0f60c5164ea97357a5234501a106b95fcbacfb3362a203b070ad3ca1cb3146||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=b5e4e4f3516eafbfc60ef7b28f856768 · md5 eb3533d24d804fc06da23878f68d50f1 · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_sessions_padre_propio(),"plpgsql|true|v|search_path=""""|dueño=ejecutor|3285b822d279587324951b93f7dd6268c2103bc5ff39f4e11d2e9a85d2623291||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=758dc4d0b122b53db35f91f8f85d44ec · md5 d666506f1579fe44dce880b080dc5934 · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_sessions_rev_saldo(),"plpgsql|false|v|search_path=""""|dueño=ejecutor|c209d2326065f55a610319b3207c7b43fdc4ffb5be79302285081b0c5ce18503||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=a94d218859a71712d274259e40c15a98 · md5 518bd0d1f39e161ab38fb6435c44a599 · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion,sim_trades_rev_saldo(),"plpgsql|true|v|search_path=""""|dueño=ejecutor|94c4e7220af33da3f257dfc4eae01d00acbc412b5417d025636d83f88f74569d||strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=trigger|args=|modes=-|names=-|defaults=-|ndefaults=0|cost=100|rows=0|def=4ae9b01861c73e7ae45bc51760d56764 · md5 64264c4cd3e063ededef8fed2fe6988c · dueño postgres · acl {postgres=X/postgres} · coincide"
+funcion_sustituida,"sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb)","anon=false authenticated=false PUBLIC=false service_role=true receptores=service_role definer=true search_path_vacio=true atributos=strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb|modes=-|names=p_actor,p_padre_id,p_hija_id,p_command_id,p_sobre,p_epoca,p_version_esperada,p_sesion,p_estado,p_mercado,p_resumen|defaults=-|ndefaults=0|cost=100|rows=0|def=e26f913d4b994863373db75cd571ed94 · coincide"
+funcion_sustituida,"sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb)","anon=false authenticated=false PUBLIC=false service_role=true receptores=service_role definer=true search_path_vacio=true atributos=strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb|modes=-|names=p_actor,p_session_id,p_command_id,p_tipo,p_sobre,p_epoca,p_version_esperada,p_cliente_id,p_testigo,p_resultado|defaults=-|ndefaults=0|cost=100|rows=0|def=8d7d99c91cd3207fa686f97a13fe526c · coincide"
+funcion_sustituida,"sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean)","anon=false authenticated=false PUBLIC=false service_role=true receptores=service_role definer=true search_path_vacio=true atributos=strict=false|leakproof=false|parallel=u|kind=f|retset=false|ret=jsonb|args=uuid,uuid,uuid,text,integer,text,boolean|modes=-|names=p_actor,p_session_id,p_command_id,p_sobre,p_epoca,p_cliente_id,p_forzar|defaults=-|ndefaults=0|cost=100|rows=0|def=da773a9b444cf9cac9a610848a52b78b · coincide"
+homonimos,public,ninguno · coincide
+inventario,ajeno,n=0 md5=d41d8cd98f00b204e9800998ecf8427e · coincide
+funcion_ajena,auth.uid(),functiondef md5=ea3b41bf29e2ad573067939329aa088e · prosrc md5=cdef18c69c4f4cbbced2eaf81e628b49 · probin=- · lenguaje=sql · dueño=supabase_auth_admin · prosecdef=false · provolatile=s · proconfig=- · proisstrict=false · proleakproof=false · proparallel=u · prokind=f · proretset=false · prorettype=uuid · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=100 · prorows=0 · coincide
+inventario,columna,n=135 md5=9610bdfa6bce4ff3b95a3d4fafd743b0 · coincide
+funcion_ajena,"extensions.digest(bytea,text)",functiondef md5=85b88685f74a398b1ff164ad33eeaaca · prosrc md5=926ba3fbdb45dc078b3e3cafddc392cc · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=i · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0 · coincide
+funcion_ajena,extensions.gen_random_bytes(integer),functiondef md5=a7569a34c9be929beb24ef5670d42636 · prosrc md5=393a992bef3cadec88b224bd3dace51c · probin=$libdir/pgcrypto · lenguaje=c · dueño=postgres · prosecdef=false · provolatile=v · proconfig=- · proisstrict=true · proleakproof=false · proparallel=s · prokind=f · proretset=false · prorettype=bytea · proargmodes=- · proargnames=- · pronargdefaults=0 · procost=1 · prorows=0 · coincide
+inventario,identidad,n=4 md5=472c2271705ab4440fba7bbe0c61ed04 · coincide
+inventario,indice,n=31 md5=79cdc8554026972e2802601707a99bd1 · coincide
+inventario,permiso,n=39 md5=6a3ba7f0b9e33c9e43e91aacd6eeaf3b · coincide
+inventario,politica,n=3 md5=ae70c7a2dca8be8f6aa6c6eae4d9754f · coincide
+inventario,regla,n=0 md5=d41d8cd98f00b204e9800998ecf8427e · coincide
+inventario,restriccion,n=59 md5=8c1bcac993492ca83039e80ec6168d01 · coincide
+inventario,sobrecarga,n=4 md5=df3ad2088d0f399ac318d9e1346413b4 · coincide
+inventario,tabla,n=14 md5=a9b56cc77c3da41b455e0250b489e0aa · coincide
+disparador,"auth.users|fk:session_chart_config_user_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=session_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"auth.users|fk:session_chart_config_user_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=session_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"auth.users|fk:session_drawings_user_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=session_drawings · indice=auth.users_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"auth.users|fk:session_drawings_user_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=session_drawings · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"auth.users|fk:sim_drawing_templates_user_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_drawing_templates · indice=auth.users_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"auth.users|fk:sim_drawing_templates_user_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_drawing_templates · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"auth.users|fk:sim_sessions_user_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_sessions · indice=auth.users_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"auth.users|fk:sim_sessions_user_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_sessions · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"auth.users|fk:sim_trades_user_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_trades · indice=auth.users_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"auth.users|fk:sim_trades_user_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_trades · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"auth.users|fk:user_chart_config_user_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=user_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"auth.users|fk:user_chart_config_user_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=user_chart_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"auth.users|fk:user_tool_config_user_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=user_tool_config · indice=auth.users_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"auth.users|fk:user_tool_config_user_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=user_tool_config · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"profiles|fk:sim_alumnos_user_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_alumnos · indice=profiles_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"profiles|fk:sim_alumnos_user_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_alumnos · indice=profiles_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"profiles|fk:sim_sessions_user_id_perfil_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_sessions · indice=profiles_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"profiles|fk:sim_sessions_user_id_perfil_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_sessions · indice=profiles_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"session_chart_config|fk:session_chart_config_session_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"session_chart_config|fk:session_chart_config_session_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"session_chart_config|fk:session_chart_config_user_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"session_chart_config|fk:session_chart_config_user_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"session_drawings|fk:session_drawings_session_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"session_drawings|fk:session_drawings_session_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"session_drawings|fk:session_drawings_user_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"session_drawings|fk:session_drawings_user_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_alumnos|fk:sim_alumnos_user_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=profiles · indice=profiles_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_alumnos|fk:sim_alumnos_user_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=profiles · indice=profiles_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_arrendamientos|fk:sim_arrendamientos_session_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_drawing_templates|fk:sim_drawing_templates_user_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_inmutable()|27|O,coincide
+disparador,sim_escrituras_v0_marcas|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON public.sim_escrituras_v0_marcas FOR EACH STATEMENT EXECUTE FUNCTION sim_escrituras_v0_inmutable()|34|O,coincide
+disparador,sim_escrituras_v0_marcas|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON public.sim_escrituras_v0_marcas FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_solo_disparador()|7|O,coincide
+disparador,sim_escrituras_v0|sim_escrituras_v0_inmutable_fila|CREATE TRIGGER sim_escrituras_v0_inmutable_fila BEFORE DELETE OR UPDATE ON public.sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_inmutable()|27|O,coincide
+disparador,sim_escrituras_v0|sim_escrituras_v0_inmutable_truncate|CREATE TRIGGER sim_escrituras_v0_inmutable_truncate BEFORE TRUNCATE ON public.sim_escrituras_v0 FOR EACH STATEMENT EXECUTE FUNCTION sim_escrituras_v0_inmutable()|34|O,coincide
+disparador,sim_escrituras_v0|sim_escrituras_v0_solo_disparador|CREATE TRIGGER sim_escrituras_v0_solo_disparador BEFORE INSERT ON public.sim_escrituras_v0 FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_solo_disparador()|7|O,coincide
+disparador,"sim_eventos|fk:sim_eventos_session_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_eventos|fk:sim_eventos_session_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_eventos|fk:sim_trades_evento_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_trades · indice=sim_eventos_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"sim_eventos|fk:sim_trades_evento_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_trades · indice=sim_eventos_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_recibos|fk:sim_recibos_session_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_recibos|fk:sim_recibos_session_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:session_chart_config_session_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=session_chart_config · indice=sim_sessions_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"sim_sessions|fk:session_chart_config_session_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=session_chart_config · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:session_drawings_session_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=session_drawings · indice=sim_sessions_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"sim_sessions|fk:session_drawings_session_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=session_drawings · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:sim_arrendamientos_session_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_arrendamientos · indice=sim_sessions_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"sim_sessions|fk:sim_arrendamientos_session_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_arrendamientos · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:sim_eventos_session_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_eventos · indice=sim_sessions_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"sim_sessions|fk:sim_eventos_session_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_eventos · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:sim_recibos_session_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_recibos · indice=sim_sessions_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"sim_sessions|fk:sim_recibos_session_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_recibos · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:sim_sessions_challenge_parent_id_fkey|""RI_FKey_setnull_del""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"sim_sessions|fk:sim_sessions_user_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_sessions|fk:sim_sessions_user_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:sim_sessions_user_id_perfil_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=profiles · indice=profiles_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_sessions|fk:sim_sessions_user_id_perfil_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=profiles · indice=profiles_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_sessions|fk:sim_trades_session_id_fkey|""RI_FKey_cascade_del""() · when=no · args=0: · ref=sim_trades · indice=sim_sessions_pkey · diferible=false/false · columnas=|9|O",coincide
+disparador,"sim_sessions|fk:sim_trades_session_id_fkey|""RI_FKey_noaction_upd""() · when=no · args=0: · ref=sim_trades · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,sim_sessions|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_registra()|29|O,coincide
+disparador,sim_sessions|sim_escrituras_v0_b_balance|CREATE TRIGGER sim_escrituras_v0_b_balance AFTER UPDATE OF balance ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_marca_balance()|17|O,coincide
+disparador,sim_sessions|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_puerta()|31|O,coincide
+disparador,sim_sessions|sim_sessions_padre_propio|CREATE TRIGGER sim_sessions_padre_propio BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_sessions_padre_propio()|23|O,coincide
+disparador,sim_sessions|sim_sessions_rev_saldo|CREATE TRIGGER sim_sessions_rev_saldo BEFORE INSERT OR UPDATE ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION sim_sessions_rev_saldo()|23|O,coincide
+disparador,sim_sessions|trg_enforce_sim_session_limit|CREATE TRIGGER trg_enforce_sim_session_limit BEFORE INSERT ON public.sim_sessions FOR EACH ROW EXECUTE FUNCTION enforce_sim_session_limit()|7|O,coincide
+disparador,"sim_trades|fk:sim_trades_evento_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=sim_eventos · indice=sim_eventos_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_trades|fk:sim_trades_evento_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=sim_eventos · indice=sim_eventos_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_trades|fk:sim_trades_session_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_trades|fk:sim_trades_session_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=sim_sessions · indice=sim_sessions_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"sim_trades|fk:sim_trades_user_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"sim_trades|fk:sim_trades_user_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,sim_trades|sim_escrituras_v0_a|CREATE TRIGGER sim_escrituras_v0_a AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_registra()|29|O,coincide
+disparador,sim_trades|sim_escrituras_v0_puerta|CREATE TRIGGER sim_escrituras_v0_puerta BEFORE INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION sim_escrituras_v0_puerta()|31|O,coincide
+disparador,sim_trades|sim_trades_rev_saldo|CREATE TRIGGER sim_trades_rev_saldo AFTER INSERT OR DELETE OR UPDATE ON public.sim_trades FOR EACH ROW EXECUTE FUNCTION sim_trades_rev_saldo()|29|O,coincide
+disparador,"user_chart_config|fk:user_chart_config_user_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"user_chart_config|fk:user_chart_config_user_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+disparador,"user_tool_config|fk:user_tool_config_user_id_fkey|""RI_FKey_check_ins""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|5|O",coincide
+disparador,"user_tool_config|fk:user_tool_config_user_id_fkey|""RI_FKey_check_upd""() · when=no · args=0: · ref=auth.users · indice=auth.users_pkey · diferible=false/false · columnas=|17|O",coincide
+acl_tabla,session_chart_config,"public=- anon=- authenticated=SELECT,INSERT,UPDATE,DELETE service_role=SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER · coincide"
+acl_tabla,session_drawings,"public=- anon=- authenticated=SELECT,INSERT,UPDATE,DELETE service_role=SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER · coincide"
+acl_tabla,sim_alumnos,public=- anon=- authenticated=- service_role=- · coincide
+acl_tabla,sim_arrendamientos,public=- anon=- authenticated=- service_role=- · coincide
+acl_tabla,sim_escrituras_v0,public=- anon=- authenticated=- service_role=- · coincide
+acl_tabla,sim_escrituras_v0_marcas,public=- anon=- authenticated=- service_role=- · coincide
+acl_tabla,sim_eventos,public=- anon=- authenticated=SELECT service_role=SELECT · coincide
+acl_tabla,sim_recibos,public=- anon=- authenticated=SELECT service_role=SELECT · coincide
+acl_tabla,sim_servicio,public=- anon=- authenticated=SELECT service_role=SELECT · coincide
+acl_tabla,sim_sessions,"public=- anon=- authenticated=SELECT,INSERT,UPDATE,DELETE service_role=SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER · coincide"
+acl_tabla,sim_trades,"public=- anon=- authenticated=SELECT,INSERT,UPDATE,DELETE service_role=SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER · coincide"
+acl_receptores,sim_alumnos,ninguno de mas · coincide
+acl_receptores,sim_arrendamientos,ninguno de mas · coincide
+acl_receptores,sim_escrituras_v0,ninguno de mas · coincide
+acl_receptores,sim_escrituras_v0_id_seq,ninguno de mas · coincide
+acl_receptores,sim_escrituras_v0_marcas,ninguno de mas · coincide
+acl_receptores,sim_escrituras_v0_marcas_id_seq,ninguno de mas · coincide
+acl_receptores,sim_eventos,ninguno de mas · coincide
+acl_receptores,sim_eventos_id_seq,ninguno de mas · coincide
+acl_receptores,sim_recibos,ninguno de mas · coincide
+acl_receptores,sim_recibos_id_seq,ninguno de mas · coincide
+acl_receptores,sim_servicio,ninguno de mas · coincide
+acl_columna,las 11 protegidas,ninguna · coincide
+veredicto,OK,"lo que exige sim-004b (requisitos, estado, restricciones, indices, rls, force, politicas, funciones, disparadores y ACL de tabla) coincide: se puede aplicar"
+FIN,s16,consulta

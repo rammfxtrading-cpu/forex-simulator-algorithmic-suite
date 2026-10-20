@@ -1,0 +1,4 @@
+seccion,objeto,detalle
+profiles,dueño de las RPC (postgres),SELECT id=true plan=true simulador_activo=true · UPDATE en alguna columna=true · tabla SELECT=true UPDATE=true · dueño de profiles=postgres
+resumen,recuentos,0 concesiones directas · 0 roles privilegiados alcanzados
+FIN,s16h,consulta

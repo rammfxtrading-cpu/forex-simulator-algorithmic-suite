@@ -18,6 +18,7 @@ Lo que se ha ejecutado de `sql/` en la base viva, con el informe del propio fich
 | `sim-004a-preparatoria.sql` | etapa 1: cierre atómico `sim_cierre_v0`, registro de escrituras y marcas, `sim_servicio`, `rev_saldo` y sus disparadores, disparador del padre, políticas RESTRICTIVE de `sim_trades`, `session_drawings` y `session_chart_config` (o.16) | **sí** · **13/10/2026, ~19:30**, Ramón en el editor; acaba en `FIN \| sim-004a-preparatoria aplicada`; informe **resumido** por el CTO: ver abajo | `4da2df2` · `060717995e723fdefc043b9cb6fb0f7658943034a3810474adea4a587eb2f6e2` |
 | `consultas/s10-conciliacion.sql` | **consulta de solo lectura**: conciliación del registro y `statement_timeout` (paso 4) | **sí** · **13/10/2026** (noche), tras la preparatoria; **resumen** del CTO: ver abajo | `4da2df2` · `eaa23bc700a44c05ccacd66212195bb5dbbb3aee0ab8d992b7a7606af37c7576` |
 | `sim-004a-puerta.sql` | **la puerta** (m.3, l.1 b): función `sim_escrituras_v0_puerta()` (INVOKER, `search_path` vacío, EXECUTE de nadie) y sus disparadores BEFORE INSERT/UPDATE/DELETE en `sim_sessions` y `sim_trades`. Rechaza escrituras de `authenticated`/`anon` sin la cabecera `x-sim-cliente` | **sí** · **18/10/2026**, Ramón en el editor, una sola pegada (orden 1-030 del CTO; «sí, aplica la puerta» escrito por Ramón en la ventana 1). **Hora del informe, antes del COMMIT: 2026-10-18 14:42:22 UTC (16:42:22 Madrid)**. Informe **literal**: ver abajo | `0e447cd` (sin cambios hasta `af6bbea`) · `10f75d5b55bf98b28a6717741462ab44ac3214ca1694cd9e5190c232cb4ff63c` |
+| `sim-004b-contrato-v1.sql` | contrato v1: amplía `sim_sessions_terminal_valida` y `sim_eventos_tipo_check`, y sustituye `sim_tomar_escritor`, `sim_comando` y `sim_avanzar_fase` (SECURITY DEFINER, `search_path` vacío, solo `service_role`). **Desde aquí sim-003 NO se vuelve a ejecutar** | **sí** · **20/10/2026, ~22:06 Madrid** (sesión B, orden 1-063; «sí» de Ramón en la ventana 1), una sola pegada; informe **literal** de 17 líneas, idéntico al esperado, que acaba en `FIN \| sim-004b aplicada`: ver abajo | `231e2e3` (en `main` por `3925f0f`) · `4b0f2ff12b0a032b83a425d68dc785580abc39f765c2df0dacb296971fdd6d9a` |
 
 ## s04 · resultado (4-oct-2026)
 
@@ -188,3 +189,13 @@ FIN,sim-004a-puerta aplicada
 **Desde aquí:**
 - **la s10 diaria ya no hace falta para la puerta;**
 - sim-004a-preparatoria, si se reejecuta, reconoce el estado 2.
+
+
+## Sesión B · 20-oct-2026 (orden 1-063 del CTO, con Ramón delante)
+
+- **Paso 1:** `merge --no-ff 231e2e3` en `main` → `3925f0f`, árbol `fd040bad…`, el del ensayo (156 pruebas, código 0). Push a las 19:30:50, con el «sí» de Ramón. Vercel `success` a las 19:31:27; las seis rutas `/api/sim/*` dan `503 apagado` con `no-store` y la portada 200. Ramón abrió una sesión de práctica: igual que antes.
+- **Paso 2, la s16 antes:** `veredicto OK`, 216 «coincide», `sim004b_estado … sin aplicar · coincide`. Línea a línea igual a `s16-esperada-con-puerta.txt`, salvo la versión (17.6) y el nombre del dueño del ensayo (`pgx` → `postgres`). Salida: `consultas/salidas/2026-10-20-s16-con-puerta-salida.csv`.
+- **Paso 3, sim-004b:** el informe, **literal** e idéntico al esperado (17 líneas): `consultas/salidas/2026-10-20-sim-004b-informe-salida.csv`. Ramón pegó una segunda vez la salida del informe, igual; la segunda ejecución, si la hubo, no cambia nada (lo dice la cabecera del fichero).
+- **Paso 3.4, la s16 después:** idéntica a `s16-esperada-tras-sim004b-con-puerta.txt` (con el mismo cambio de nombre del dueño): `sim004b_estado … 3 de 3 · aplicada · coincide` y las 3 `funcion_sustituida` con `definer=true search_path_vacio=true`. Salida: `consultas/salidas/2026-10-20-s16-tras-sim004b-salida.csv`.
+- **La s16h:** `0 concesiones directas · 0 roles privilegiados alcanzados`; el dueño de las RPC (`postgres`) con SELECT de `id`, `plan` y `simulador_activo`. Salida: `consultas/salidas/2026-10-20-s16h-salida.csv`.
+- **v1 sigue APAGADO.** Encenderlo es la etapa 5b, fuera de esta sesión.

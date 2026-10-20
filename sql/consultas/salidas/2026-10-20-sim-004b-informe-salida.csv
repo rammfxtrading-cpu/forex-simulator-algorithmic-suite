@@ -1,0 +1,18 @@
+seccion,detalle
+restriccion,"sim_eventos.sim_eventos_tipo_check · CHECK ((tipo = ANY (ARRAY['orden_creada'::text, 'orden_modificada'::text, 'orden_cancelada'::text, 'fill'::text, 'cierre'::text, 'reset_diario'::text, 'breach'::text, 'fase_superada'::text, 'fin_de_datos'::text, 'posicion_modificada'::text, 'no_valorable'::text, 'hueco_aceptado'::text]))) · validada=true"
+restriccion,"sim_sessions.sim_sessions_terminal_valida · CHECK (((terminal IS NULL) OR (terminal = ANY (ARRAY['borrada'::text, 'revocada'::text, 'superado'::text])))) · validada=true"
+funcion,"sim_avanzar_fase(uuid,uuid,uuid,uuid,text,integer,bigint,jsonb,jsonb,jsonb,jsonb) · cuerpo sha256=3409a208f5b26211 · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true"
+funcion,"sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,text,jsonb) · cuerpo sha256=94f4db481cc09a2b · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true"
+funcion,"sim_tomar_escritor(uuid,uuid,uuid,text,integer,text,boolean) · cuerpo sha256=f58af2b0e4945d93 · security_definer=true · config=search_path="""" · execute: anon=false authenticated=false service_role=true"
+rls,session_chart_config · rls=true
+rls,session_drawings · rls=true
+rls,sim_alumnos · rls=true
+rls,sim_arrendamientos · rls=true
+rls,sim_escrituras_v0 · rls=true
+rls,sim_escrituras_v0_marcas · rls=true
+rls,sim_eventos · rls=true
+rls,sim_recibos · rls=true
+rls,sim_servicio · rls=true
+rls,sim_sessions · rls=true
+rls,sim_trades · rls=true
+FIN,sim-004b aplicada
