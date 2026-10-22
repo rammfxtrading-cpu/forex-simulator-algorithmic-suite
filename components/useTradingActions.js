@@ -19,6 +19,7 @@ import { pipMult } from '../lib/trading/pricing'
 import { sessionKeyAt } from '../lib/killzonesDomain'
 import { cierraPosicion, saldoConfirmado, nuevoIdTrade } from '../lib/sim/cierre'
 import { encola, posicionOcupada, hayBarrera, suscribeCola } from '../lib/sim/cola'
+import { cierreEnVela } from '../lib/sim/vela'
 import { avisa } from '../lib/sim/avisos'
 
 // La fila de sim_trades de un cierre (total o parcial), con su id generado aqui:
@@ -287,7 +288,6 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     const toClose=[]
     for(let i=fromIdx; i<=curIdx; i++){
       const candle=engine.candles[i];if(!candle) continue
-      const{high,low}=candle
       ps.positions.forEach(pos=>{
         if(soloIds && !soloIds.includes(pos.id)) return
         if(toClose.find(x=>x.id===pos.id)) return // already queued
@@ -296,11 +296,12 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         // (e.g. when a LIMIT activated incorrectly on a past candle).
         if(pos.openTime != null && candle.time < pos.openTime) return
         if(espera(pos)){ ps.sltpDesde=Math.min(ps.sltpDesde??i,i); return }
-        const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
-        const hitSl=pos.side==='BUY'?low<=pos.sl:high>=pos.sl
+        // la regla de la vela (Ramon, orden 1-085; lib/sim/vela.js): si toca el SL y el TP, el que el
+        // recorrido de la vela alcanza antes; una pendiente llenada en esta vela, desde su entrada
+        const toca=cierreEnVela(pos,candle,{llenadaAqui:pos.porLimite&&candle.time===pos.openTime})
         // la hora, la de la vela que lo toca: en una reevaluacion (reevaluaSLTP) es anterior al motor (GOTOG1-01)
-        if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp,hora:candle.time})
-        else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl,hora:candle.time})
+        if(toca==='TP') toClose.push({id:pos.id,reason:'TP',price:pos.tp,hora:candle.time})
+        else if(toca==='SL') toClose.push({id:pos.id,reason:'SL',price:pos.sl,hora:candle.time})
       })
     }
     toClose.forEach(({id,reason,price,hora})=>closePositionRef.current(id,reason,pair,price,null,hora))
@@ -337,7 +338,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         const posId=`P${Date.now()}-${Math.random().toString(36).slice(2,5)}`
         // openTime = timestamp of the candle that triggered the LIMIT, not engine.currentTime.
         // This ensures checkSLTP only checks candles AFTER this position was actually opened.
-        const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:candle.time,initialSlPips:order.slPips}
+        const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:candle.time,initialSlPips:order.slPips,porLimite:true}
         ps.positions=[...ps.positions,newPos]
         abiertas.push(posId); if(desdeIdx==null) desdeIdx=i
         setTimeout(()=>createPositionLines(posId,pair,newPos),50)
