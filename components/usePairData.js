@@ -95,8 +95,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         // en el salto del Go to (avanzaHasta) el grafico se pinta una vez, al llegar
         if(!engine.saltando) updateChart(pair,engine,false)
         checkSLTPRef.current?.(pair,engine)
-        // M04 (orden 1-081): una pendiente llenada en esta vela mira su SL/TP en ella, con la misma
-        // regla de la misma vela que checkSLTP (si toca los dos, gana el TP)
+        // M04 (orden 1-081): una pendiente llenada en esta vela mira su SL/TP en ella, con la regla
+        // de la vela de checkSLTP (orden 1-085, lib/sim/vela.js), desde el punto de su entrada
         const llenadas=checkLimitOrdersRef.current?.(pair,engine)
         if(llenadas) checkSLTPRef.current?.(pair,engine,llenadas.desdeIdx,llenadas.ids)
         // Challenge breach intra-vela: si el floating PnL + cerrado supera
