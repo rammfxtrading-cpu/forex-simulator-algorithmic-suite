@@ -1142,9 +1142,13 @@ export default function SessionPage(){
     if(!target){setGotoMiss(true);setTimeout(()=>setGotoMiss(false),1500);return}
     // Orden 1-080: el salto recorre TODAS las velas M1 del tramo como el replay (lib/sim/salto.js);
     // para antes si el reto se quema o se alcanza el objetivo, o si lo economico se bloquea
-    await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
-    // si durante el salto se cambio de par o se salio de la pagina, nada de pintar ni guardar
-    if(activePairRef.current!==activePair||!chartMap.current[activePair])return
+    const llego=await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
+    // si durante el salto se cambio de par o se salio de la pagina, nada de pintar ni guardar; al
+    // cambiar de par el salto se corta (orden 1-084, CTO): se avisa, y el alumno repite el Go to
+    if(activePairRef.current!==activePair||!chartMap.current[activePair]){
+      if(!llego&&chartMap.current[activePair]) avisa('El salto se ha detenido al cambiar de par.')
+      return
+    }
     setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
     const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
     updateChart(activePair,e,true)
