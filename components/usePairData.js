@@ -14,6 +14,7 @@ import { useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
 import { saltaA } from '../lib/sim/salto'
+import { progresoMonotono, siembraProgreso } from '../lib/sim/progreso'
 import { puedeEscribir } from '../lib/sim/servicio'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { fetchSessionCandles, setSeriesData, setMasterTime, getMasterTime } from '../lib/sessionData'
@@ -34,7 +35,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
     try{
       const p=await puedeEscribir()
       if(!p.permitido) return
-      const r=await supabase.from('sim_sessions').update({last_timestamp:ts,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)
+      // nunca hacia atras (SIMGOTO2-02, lib/sim/progreso.js)
+      const r=await supabase.from('sim_sessions').update({last_timestamp:progresoMonotono(id,ts),timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)
       avisaSiError('el avance de la sesión')(r)
     }catch(e){ avisa('No se ha podido guardar el avance de la sesión. Comprueba tu conexión.') }
   },[id])
@@ -78,6 +80,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       const toOrdinal = (t) => t ?? null  // real timestamps — no conversion needed
       const isOrdinal = (t) => t && t < 1000000000
       const resumeReal = masterTime || (isOrdinal(sess.last_timestamp)?null:sess.last_timestamp) || replayTs
+      // lo guardado es el suelo del progreso de esta sesion (SIMGOTO2-02)
+      if(!isOrdinal(sess.last_timestamp)) siembraProgreso(id, Number(sess.last_timestamp))
       const resumeTs = toOrdinal(resumeReal) ?? 0
       engine.load(ordinalCandles); engine.seekToTime(resumeTs); engine.speed=speedRef.current
       engine.onTick=()=>{

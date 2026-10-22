@@ -19,6 +19,7 @@ const useChallengeFlow = (await importa('components/useChallengeFlow.js')).defau
 const { nextSessionOpen } = await importa('lib/killzonesDomain.js')
 // antes de la orden 1-080 (historicas.sh, contra c470c8f) no existe: irA es el Go to de entonces
 const saltaA = await importa('lib/sim/salto.js').then(m => m.saltaA, () => null)
+const pasoConFrontera = await importa('lib/sim/salto.js').then(m => m.pasoConFrontera ?? null, () => null)
 const { router } = await import('./next-falso.mjs')
 
 // Pone las velas M1 (segundos) en forex-data/<PAR>/M1/<año>.json y un [] en los
@@ -109,7 +110,15 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
       await repinta(); await asienta(80); await repinta()
     },
     // un paso de vela como handleStep (_SessionInner.js:1100): nextCandle(1)
-    async paso(n = 1) { for (let i = 0; i < n; i++) { motor().nextCandle(1); await repinta() } },
+    // un paso de vela como handleStep (orden 1-087): pasoConFrontera (una vela y la frontera economica del
+    // salto); sin lib/sim/salto.js (el codigo auditado), el de entonces: nextCandle(1)
+    async paso(n = 1) {
+      for (let i = 0; i < n; i++) {
+        if (pasoConFrontera) await pasoConFrontera({ engine: motor(), sid: sesion.id, pairState: refs.pairState, esReto: !!refs.sessionRef.current?.challenge_type, refresca: caja.valor.reto.refreshChallengeStatus })
+        else motor().nextCandle(1)
+        await repinta()
+      }
+    },
     // Go to como handleGoTo (_SessionInner.js): el salto REAL vela a vela (orden 1-080); sin
     // lib/sim/salto.js, el de antes: un seekToTime y el reset de cursores
     async irA(sessKey) {
@@ -135,6 +144,7 @@ export function copiasVigentes() {
   const s = fuente('components/_SessionInner.js')
   return {
     mercado: s.includes("const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}"),
+    paso: pasoConFrontera ? s.includes('await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') : /e\.nextCandle\(1\)/.test(s),
     irA: saltaA
       ? s.includes('await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') && !/lastSLTPIdx=e\.currentIndex/.test(s)
       : /e\.seekToTime\(target\.time\)[\s\S]{0,200}if\(ps\)\{ps\.lastSLTPIdx=e\.currentIndex;ps\.lastLimitIdx=e\.currentIndex\}/.test(s),

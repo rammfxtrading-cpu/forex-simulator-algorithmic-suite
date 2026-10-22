@@ -13,12 +13,14 @@
  *          onTick, tambien con Step): ademas de la igualdad, el TP tiene que ejecutarse.
  *   finde  Go to desde el viernes por la tarde cruzando el fin de semana (dos semanas: la real y la
  *          misma +7 dias): el hueco del lunes.
+ *   lento  reto con usuario, lotes grandes (breach y objetivo posibles) y cada challenge/status tardando 0–25 ms
+ *          al azar (SIMGOTO2-01): la frontera economica comun a Step y salto da lo mismo.
  *   par    se cambia a GBP/USD, se avanzan k = 1..6 velas y se vuelve (la puesta al dia, SIMGOTO-03:
  *          antes, con k = 1 no se recorria y el reloj maestro retrocedia) contra quedarse y avanzar k.
  * El control (avance) es Step: nextCandle(1) y repintar, parando en el breach como la pagina.
  */
 import { readFileSync } from 'node:fs'
-import { titulo, ver, oraculo, fin, escenario, sesionSim, vela, importa, A, db } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, sesionSim, vela, importa, A, db, retenApi } from '../lib.mjs'
 import { banco, velasEnStorage } from '../banco-motor.mjs'
 import { nextSessionOpen } from '../../lib/killzonesDomain.js'
 
@@ -41,7 +43,7 @@ const PIP = 0.0001, red = x => +x.toFixed(5)
 
 let vueltasPar = 0
 function tramo(familia) {
-  const reto = r() < 0.5
+  const reto = familia === 'lento' ? true : r() < 0.5   // lento: siempre reto, con el status del reto tardando
   const desde = familia === 'finde' ? entre(7068 - 400, 7068 - 2) : entre(60, 5600)   // finde: vie por la tarde; si no, lun 01:00 → jue
   const p = (familia === 'finde' ? DOS : REALES)[desde].close
   const lados = r() < 0.5 ? 1 : -1
@@ -51,6 +53,7 @@ function tramo(familia) {
   const lim = { side: lp > 0 ? 'BUY_LIMIT' : 'SELL_LIMIT', entry: red(p - lp * dist * PIP), lots: entre(1, 10), slPips: entre(5, 30), tpPips: entre(5, 40) }
   lim.sl = red(lim.entry - lp * lim.slPips * PIP); lim.tp = red(lim.entry + lp * lim.tpPips * PIP)
   const c = { familia, reto, desde, mercado, lim, sesion: elige(['asia', 'london', 'nyam']), k: entre(1, 6) }
+  if (familia === 'lento') { c.retardos = Array.from({ length: 16 }, () => entre(0, 25)); c.mercado.lots = entre(5, 30); c.lim.lots = entre(5, 30) }   // lotes grandes: breach y objetivo posibles
   if (familia === 'par') {
     c.k = 1 + (vueltasPar++ % 6)   // k = 1..6 en orden: el 1 es SIMGOTO-03
     // en k minutos tiene que pasar algo: la pendiente a 0–2 pips y protecciones de 1–4 pips
@@ -101,12 +104,18 @@ async function corre(c, modo) {
   if (globalThis.window) globalThis.window.__algSuiteCurrentTime = null   // el reloj maestro del tramo anterior
   velasEnStorage('EUR/USD', velas, [2025])   // el año anterior, vacio: el codigo auditado lo pide
   velasEnStorage('GBP/USD', velas.map(v => vela(v.time, 1.25, 1.2501, 1.2499, 1.25)), [2025])
+  // lento (SIMGOTO2-01, orden 1-087): cada respuesta de challenge/status tarda 0–25 ms al azar (la misma
+  // semilla en el salto y en el avance: se repite la secuencia); la frontera economica tiene que dar lo mismo
+  if (c.familia === 'lento') { let k = 0; const ret = c.retardos; retenApi.antes = async u => { if (u.includes('challenge/status')) await new Promise(res => setTimeout(res, ret[k++ % ret.length])) } }
+  else retenApi.antes = null
   const b = await banco({ sesion: ses, userId: c.reto ? A : null })
   if (c.reto) { CI.fijaSaldoConfirmado(ses.id, 100000); await SV.leeServicio(); await b.repinta() }
   if (b.motor()?.currentTime !== t0) return { roto: `el motor no arranca en la vela de partida (${b.motor()?.currentTime} ≠ ${t0})` }
   b.abreMercado(c.mercado)
   await b.pendiente(c.lim)
-  const quemado = () => b.ps('EUR/USD').trades.some(t => /BREACH/.test(t.reason))
+  // el avance para donde la pagina bloquea el Step: breach, o el reto ya no activo (challengeLocked:
+  // objetivo alcanzado o fallido, useChallengeFlow.js)
+  const quemado = () => b.ps('EUR/USD').trades.some(t => /BREACH/.test(t.reason)) || ['target_reached', 'failed_dd_daily', 'failed_dd_total'].includes(b.caja.valor.reto.challengeStatus?.evaluation?.status)
   let hasta
   if (c.familia === 'par') {
     hasta = REALES[c.desde + c.k].time
@@ -130,10 +139,11 @@ async function corre(c, modo) {
     pendientes: ps.orders.length,
   }
   b.caja.raiz.desmonta?.()
+  retenApi.antes = null
   return { res, hasta: hasta - t0 }
 }
 
-const N = { goto: 14, final: 6, par: 12, finde: 16 }
+const N = { goto: 14, final: 6, par: 12, finde: 16, lento: 10 }
 let corridos = 0, distintos = 0, sinTramo = 0, conCierres = 0
 for (const [familia, n] of Object.entries(N)) {
   // finde, con su propio generador desde la semilla: los mismos tramos que el revisor (el 1 de 16 en rojo)

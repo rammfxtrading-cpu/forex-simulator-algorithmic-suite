@@ -41,7 +41,7 @@ import AvisoServicio from './AvisoServicio'
 import { useServicio } from '../lib/sim/servicio'
 import { fijaSaldoConfirmado } from '../lib/sim/cierre'
 import { useCola } from '../lib/sim/cola'
-import { saltaA } from '../lib/sim/salto'
+import { saltaA, creaFrontera, pasoConFrontera } from '../lib/sim/salto'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import { COLUMNAS_SESION } from '../lib/sim/columnas'
@@ -1129,10 +1129,14 @@ export default function SessionPage(){
       // Deseleccionar al play no afecta el dibujo en sí (sigue ahí), solo
       // quita los handles de edición.
       try{ deselectAll() }catch{}
+      // la frontera economica del Play, la misma que la del Step y el salto (SIMGOTO2-01, orden 1-087)
+      e.frontera=creaFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
       e.play();setIsPlaying(true)
     }
   },[activePair,saveProgress,deselectAll])
-  const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying||e.saltando)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress])
+  // Step: una vela con la frontera economica del salto (SIMGOTO2-01, orden 1-087): no se pasa a la siguiente
+  // hasta aplicar los cierres y releer el reto; mientras espera, otro Step no hace nada (e.saltando)
+  const handleStep=useCallback(async()=>{const e=eng();if(!e||e.isPlaying||e.saltando)return;await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress,id,refreshChallengeStatus])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
   const handleGoTo=useCallback(async(sessKey)=>{
     setGotoOpen(false)
