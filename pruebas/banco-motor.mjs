@@ -61,11 +61,12 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
     const datos = usePairData({ id: sesion.id, session: estado.sesionVisible ?? null, activePair: estado.activa ?? null, ...refs,
       setIsPlaying: v => { estado.isPlaying = typeof v === 'function' ? v(estado.isPlaying) : v },
       setCurrentTime: v => { estado.currentTime = v }, setProgress: nada, setCurrentPrice: v => { estado.precio = v }, setDataReady: nada, setTick: nada,
-      exportTools: () => '[]', setErrorDatos: v => { estado.errorDatos = v } })
+      exportTools: () => '[]', setErrorDatos: v => { estado.errorDatos = v },
+      refrescaReto: ct => caja.valor?.reto?.refreshChallengeStatus(ct) })
     const reto = useChallengeFlow({ id: sesion.id, router, session: estado.sesionVisible ?? null, setSession: nada, sessionRef: refs.sessionRef,
       currentTime: estado.currentTime, pairState: refs.pairState, balanceRef: refs.balanceRef, closePositionRef: refs.closePositionRef,
       setIsPlaying: v => { estado.isPlaying = v } })
-    const trading = useTradingActions({ id: sesion.id, activePair: par, currentPrice: estado.precio ?? null, currentTime: estado.currentTime,
+    const trading = useTradingActions({ id: sesion.id, activePair: estado.activa ?? par, currentPrice: estado.precio ?? null, currentTime: estado.currentTime,
       lots: 1, preview: estado.preview ?? null, ...refs, setBalance: v => { estado.saldo = v }, setTick: nada, setPreview: nada, setCtxMenu: nada,
       refreshChallengeStatus: reto.refreshChallengeStatus, alBloqueo: m => { estado.bloqueos.push(m) } })
     return { datos, reto, trading }
@@ -81,24 +82,31 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
   // carga como la pagina: la sesion y el par activo llegan, y los efectos de usePairData cargan
   estado.sesionVisible = sesion; estado.activa = par
   await repinta(); await asienta(80); await repinta()
-  const ps = () => refs.pairState.current[par]
-  const motor = () => ps()?.engine
+  // el par activo (cambiaPar lo cambia, como la pagina: el estado y activePairRef)
+  const ps = (p = estado.activa ?? par) => refs.pairState.current[p]
+  const motor = (p) => ps(p)?.engine
   return {
     refs, estado, caja, ps, motor, repinta,
     // _SessionInner.js:1877-1880, tal cual: la entrada es la del modal y openTime el currentTime de la pagina
     abreMercado({ side, entry, sl, tp, lots, slPips = 10, tpPips = 20 }) {
       const posId = `${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
-      const newPos = { id: posId, pair: par, side, entry, lots, sl, tp, slPips, tpPips, openTime: estado.currentTime, initialSlPips: slPips }
+      const newPos = { id: posId, pair: estado.activa ?? par, side, entry, lots, sl, tp, slPips, tpPips, openTime: estado.currentTime, initialSlPips: slPips }
       ps().positions = [...ps().positions, newPos]
       return newPos
     },
     // la limit por la funcion REAL confirmLimitOrder (useTradingActions.js:82)
     async pendiente({ side, entry, sl, tp, lots, slPips = 10, tpPips = 30 }) {
-      estado.preview = { pair: par, side, entry, sl, tp, lots, slPips, tpPips, rr: tpPips / slPips }
+      estado.preview = { pair: estado.activa ?? par, side, entry, sl, tp, lots, slPips, tpPips, rr: tpPips / slPips }
       await repinta()
       caja.valor.trading.confirmLimitOrder()
       estado.preview = null; await repinta()
       return ps().orders.at(-1)
+    },
+    // cambiar de par activo como la pagina (_SessionInner.js:574 y el efecto de usePairData): el
+    // nuevo se carga o, si ya estaba, se pone al dia con el tiempo maestro (orden 1-081)
+    async cambiaPar(p) {
+      estado.activa = p; refs.activePairRef.current = p; refs.pairTfRef.current[p] ??= 'M1'
+      await repinta(); await asienta(80); await repinta()
     },
     // un paso de vela como handleStep (_SessionInner.js:1100): nextCandle(1)
     async paso(n = 1) { for (let i = 0; i < n; i++) { motor().nextCandle(1); await repinta() } },

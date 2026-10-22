@@ -10,9 +10,10 @@
  * están entrelazados con el dominio de dibujos/SL-TP y van a su propio corte (decisión s59).
  */
 
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
+import { saltaA } from '../lib/sim/salto'
 import { puedeEscribir } from '../lib/sim/servicio'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { fetchSessionCandles, setSeriesData, setMasterTime, getMasterTime } from '../lib/sessionData'
@@ -21,7 +22,9 @@ import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/char
 import { computePhantomsNeeded } from '../lib/sessionUi'
 import { fechaCorta, listaDiasCortos } from '../lib/mercado/calidad.mjs'
 
-export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools }){
+export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools, refrescaReto }){
+  // el refresco del reto con hora (useChallengeFlow), para el salto al volver a un par (orden 1-081)
+  const refrescaRetoRef=useRef(refrescaReto); refrescaRetoRef.current=refrescaReto
   const saveProgress=useCallback(async(ts)=>{
     if(!id||!ts) return
     // Etapa 1 (diseño sim-004, d2, o.5, o.7): una sesion legado no escribe; el
@@ -81,7 +84,10 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         // en el salto del Go to (avanzaHasta) el grafico se pinta una vez, al llegar
         if(!engine.saltando) updateChart(pair,engine,false)
         checkSLTPRef.current?.(pair,engine)
-        checkLimitOrdersRef.current?.(pair,engine)
+        // M04 (orden 1-081): una pendiente llenada en esta vela mira su SL/TP en ella, con la misma
+        // regla de la misma vela que checkSLTP (si toca los dos, gana el TP)
+        const llenadas=checkLimitOrdersRef.current?.(pair,engine)
+        if(llenadas) checkSLTPRef.current?.(pair,engine,llenadas.desdeIdx,llenadas.ids)
         // Challenge breach intra-vela: si el floating PnL + cerrado supera
         // el cap diario o total, fuerza cierre de TODAS las posiciones al
         // precio exacto donde se cruzó el cap. Estilo FTMO real.
@@ -196,13 +202,27 @@ if(full||(curr!==prev&&curr!==prev+1)){
     if(ps?.engine){
       // Sync this pair's engine to the current master time (from whichever pair was active before)
       const masterTime = getMasterTime()
-      if(masterTime && Math.abs(ps.engine.currentTime - masterTime) > 60) {
-        ps.engine.seekToTime(masterTime)
+      const e=ps.engine, par=activePair
+      const sincroniza=()=>{
+        setIsPlaying(e.isPlaying);setCurrentTime(e.currentTime)
+        setProgress(Math.round(e.progress*100))
+        const agg=e.getAggregated(pairTfRef.current[par]||'H1')
+        setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);setMasterTime(e.currentTime)
       }
-      setIsPlaying(ps.engine.isPlaying);setCurrentTime(ps.engine.currentTime)
-      setProgress(Math.round(ps.engine.progress*100))
-      const agg=ps.engine.getAggregated(pairTfRef.current[activePair]||'H1')
-      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);setMasterTime(ps.engine.currentTime)
+      if(masterTime && masterTime - e.currentTime > 60) {
+        // Orden 1-081: ponerse al dia es un salto como el Go to: vela a vela (lib/sim/salto.js), no un
+        // seekToTime de un solo onTick (una pendiente de este par no miraria su SL/TP: M04)
+        saltaA({engine:e,hasta:masterTime,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:(ct)=>refrescaRetoRef.current?.(ct)})
+          .then(()=>{
+            if(activePairRef.current!==par) return
+            const cr=chartMap.current[par]; if(cr) cr.prevCount=0
+            updateChart(par,e,true); sincroniza(); setTick(t=>t+1)
+          })
+      } else {
+        // hacia atras (no deberia ocurrir: el par quieto siempre va por detras) se queda como estaba
+        if(masterTime && Math.abs(e.currentTime - masterTime) > 60) e.seekToTime(masterTime)
+        sincroniza()
+      }
     }else{setDataReady(false);if(sessionRef.current)loadPair(activePair)}
     setTick(t=>t+1)
   },[activePair,loadPair])

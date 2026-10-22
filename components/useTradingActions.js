@@ -262,7 +262,8 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   },[])
 
   // desdeIdx (opcional): reevaluar desde esa vela (reevaluaSLTP, al liberarse una posicion)
-  const checkSLTP=useCallback((pair,engine,desdeIdx)=>{
+  // soloIds (opcional): solo esas posiciones (las que una pendiente acaba de abrir: M04, orden 1-081)
+  const checkSLTP=useCallback((pair,engine,desdeIdx,soloIds)=>{
     const ps=pairState.current[pair];if(!ps?.positions?.length) return
     const curIdx=engine.currentIndex
     // Determine range to check — from last checked index+1 to current
@@ -278,6 +279,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
       const candle=engine.candles[i];if(!candle) continue
       const{high,low}=candle
       ps.positions.forEach(pos=>{
+        if(soloIds && !soloIds.includes(pos.id)) return
         if(toClose.find(x=>x.id===pos.id)) return // already queued
         // FIX BUG A: Skip candles before this position was opened.
         // Without this guard, past candles could trigger SL/TP retroactively
@@ -293,13 +295,16 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     toClose.forEach(({id,reason,price})=>closePositionRef.current(id,reason,pair,price))
   },[id])
 
+  // Devuelve las posiciones que abre ({ids, desdeIdx}: la primera vela de llenado) o null; el onTick
+  // les mira SL/TP desde esa vela, la del llenado incluida (M04, orden 1-081)
   const checkLimitOrders=useCallback((pair,engine)=>{
-    const ps=pairState.current[pair]; if(!ps?.orders?.length) return
+    const ps=pairState.current[pair]; if(!ps?.orders?.length) return null
     const curIdx=engine.currentIndex
     const fromIdx = ps.lastLimitIdx != null ? ps.lastLimitIdx + 1 : curIdx
     ps.lastLimitIdx = curIdx
 
-    const executed=[]
+    const executed=[], abiertas=[]
+    let desdeIdx=null
     for(let i=fromIdx; i<=curIdx; i++){
       const candle=engine.candles[i]; if(!candle) continue
       ps.orders.forEach(order=>{
@@ -323,6 +328,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         // This ensures checkSLTP only checks candles AFTER this position was actually opened.
         const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:candle.time,initialSlPips:order.slPips}
         ps.positions=[...ps.positions,newPos]
+        abiertas.push(posId); if(desdeIdx==null) desdeIdx=i
         setTimeout(()=>createPositionLines(posId,pair,newPos),50)
       })
     }
@@ -330,6 +336,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
       ps.orders=ps.orders.filter(o=>!executed.includes(o.id))
       setTick(t=>t+1)
     }
+    return abiertas.length ? { ids:abiertas, desdeIdx } : null
   },[])
 
   return {

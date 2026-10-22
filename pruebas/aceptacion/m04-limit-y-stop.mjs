@@ -14,6 +14,11 @@
  * llena) y despues por 1,0990 (SL): no hay ambiguedad. Resultado:
  *   (1,0990 − 1,1000) × 10.000 × 1 lote × 10 USD = −100, en esa misma vela.
  * Go to: el resultado de un salto tiene que ser el mismo que paso a paso (−100).
+ *
+ * CONTRATO desde la orden 1-081 del CTO (antes en fase1/; la reproduccion original esta en
+ * historicas/): la posicion que abre una pendiente mira su SL/TP en la vela del llenado con la
+ * MISMA regla de la misma vela que checkSLTP (hoy: si toca los dos, gana el TP; una regla nueva
+ * la decide Ramon e iria aparte). Seccion 4: llenado, SL y TP en la misma vela → TP (+300).
  */
 import { titulo, ver, oraculo, fin, escenario, sesionSim, vela } from '../lib.mjs'
 import { banco, velasEnStorage, copiasVigentes } from '../banco-motor.mjs'
@@ -87,4 +92,16 @@ const salto = await goto(true)
 ver('control: el Go to salto a la apertura de NY AM, las 12:00', salto.destino?.time === T0 + 180 && salto.b.motor().currentTime === T0 + 180, JSON.stringify(salto.destino))
 oraculo('M04', 'Go to a las 12:00 da lo mismo que paso a paso (−100)', salto.t.length === 1 && Math.abs(salto.t[0].pnl + 100) < 1e-6,
   salto.abiertas.length ? `con el salto la posicion sigue ABIERTA (llenada ${new Date(salto.abiertas[0].openTime * 1000).toISOString().slice(11, 16)}, SL ${salto.abiertas[0].sl})` : JSON.stringify(salto.t.map(t => [t.reason, t.pnl])))
+titulo('4 · la regla de la misma vela en la vela del llenado: toca el SL y el TP → gana el TP')
+{
+  const s4 = sesionSim({ pair: 'AUD/USD' })
+  escenario({ sim_sessions: [s4] })
+  velasEnStorage('AUD/USD', [vela(T, 1.1020, 1.1022, 1.1018, 1.1020), vela(T + 60, 1.1010, 1.1035, 1.0985, 1.1000), vela(T + 120, 1.1000, 1.1001, 1.0999, 1.1000)], [2024], { tramoAbierto: true })
+  const b = await banco({ sesion: s4 })
+  await b.pendiente({ side: 'BUY_LIMIT', entry: 1.1000, sl: 1.0990, tp: 1.1030, lots: 1 })
+  await b.paso(1)
+  const t = b.ps().trades
+  ver('control: la orden se lleno en esa vela', b.ps().orders.length === 0 && t.length + b.ps().positions.length === 1)
+  oraculo('M04', 'llenada en una vela que toca SL y TP: cerrada en su TP (+300) en esa vela, como checkSLTP', t.length === 1 && t[0].reason === 'TP' && Math.abs(t[0].pnl - 300) < 1e-6, JSON.stringify(t.map(x => [x.reason, x.pnl])))
+}
 fin()

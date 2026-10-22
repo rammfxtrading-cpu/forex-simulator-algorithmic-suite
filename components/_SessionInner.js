@@ -762,7 +762,7 @@ export default function SessionPage(){
     pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef,
     checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef,
     setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick,
-    exportTools,
+    exportTools, refrescaReto: refreshChallengeStatus,
   })
 
   // ── Mount chart ───────────────────────────────────────────────────────────────
