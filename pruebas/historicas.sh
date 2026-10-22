@@ -24,6 +24,8 @@ rm -rf "$DIR" && mkdir -p "$DIR" || exit 2
 git archive "$AUDITADO" | tar -x -C "$DIR" || exit 2
 rm -rf "$DIR/pruebas"; mkdir -p "$DIR/pruebas"
 cp pruebas/*.mjs pruebas/*.cjs pruebas/*.sb "$DIR/pruebas/" && cp -R pruebas/historicas pruebas/aceptacion "$DIR/pruebas/" || exit 2
+# las velas reales de las pruebas de propiedad (sg05, orden 1-083): datos, no codigo
+mkdir -p "$DIR/pruebas/fixtures" && cp -R pruebas/fixtures/velas "$DIR/pruebas/fixtures/" || exit 2
 ln -s "$PWD/node_modules" "$DIR/node_modules"
 cd "$DIR" || exit 2
 mkdir -p .pruebas
