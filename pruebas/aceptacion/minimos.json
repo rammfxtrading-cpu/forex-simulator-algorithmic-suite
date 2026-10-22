@@ -62,6 +62,7 @@
   "sg09-latencia-medianoche": 2,
   "sg10-progreso-monotono": 4,
   "sg11-play-frontera": 4,
+  "sg12-cierre-en-vuelo-y-quitar-par": 8,
   "sp01-sonda-proveedor": 9,
   "sp02-sonda-educada": 11,
   "srk01-clave-servidor": 41,

@@ -73,6 +73,14 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     ps3.positions = ps3.positions.some(p=>p.id===confirmada.id)
       ? ps3.positions.map(p=>p.id===confirmada.id?{...confirmada}:p)
       : [...ps3.positions,{...confirmada}]
+    // GOTOG1-01 (orden 1-089): mientras su cierre estuvo en vuelo, la posicion no estaba en la lista y
+    // checkSLTP no la miro; vuelve con las velas DESPUES de la del cierre apuntadas (reevaluaSLTP, al
+    // liberarse). La del cierre no: un cierre que falla de verdad no se reintenta solo
+    const cs=ps3.engine?.candles, ct=enMemoria?.closeTime
+    if(cs&&Number.isFinite(ct)){
+      const i=cs.findIndex(c=>c.time>ct)
+      if(i>=0&&i<=ps3.engine.currentIndex) ps3.sltpDesde=Math.min(ps3.sltpDesde??i,i)
+    }
   }
   // SL/TP de las velas que pasaron con la posicion ocupada (o con la barrera del reto): al
   // liberarse, se vuelven a mirar (checkSLTP las apunta en ps.sltpDesde)
@@ -290,11 +298,12 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         if(espera(pos)){ ps.sltpDesde=Math.min(ps.sltpDesde??i,i); return }
         const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
         const hitSl=pos.side==='BUY'?low<=pos.sl:high>=pos.sl
-        if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp})
-        else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl})
+        // la hora, la de la vela que lo toca: en una reevaluacion (reevaluaSLTP) es anterior al motor (GOTOG1-01)
+        if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp,hora:candle.time})
+        else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl,hora:candle.time})
       })
     }
-    toClose.forEach(({id,reason,price})=>closePositionRef.current(id,reason,pair,price,null,engine.currentTime))
+    toClose.forEach(({id,reason,price,hora})=>closePositionRef.current(id,reason,pair,price,null,hora))
   },[id])
 
   // Devuelve las posiciones que abre ({ids, desdeIdx}: la primera vela de llenado) o null; el onTick

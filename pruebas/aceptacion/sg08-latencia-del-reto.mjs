@@ -24,7 +24,7 @@ async function corre(modo, retenida) {
  if(retenida){retenApi.antes=async u=>{if(!usado&&u.includes('challenge/status')){usado=true;ent.abrir();await sal.p}};pend=b.caja.valor.reto.refreshChallengeStatus();await ent.p;}
  if(modo==='salto'){
   const run=b.irA('nyam');await asienta(100);
-  if(retenida){ver('salto espera al status en la vela SL',b.motor().currentTime===T+60);sal.abrir();await pend;}
+  if(retenida){ver('salto espera al status: no pasa de la vela del SL mientras esta retenido (GOTOG1-01: el Go to espera a la cola antes de empezar)',b.motor().currentTime<=T+60);sal.abrir();await pend;}
   await run;
  } else {
   // clics de Step: el primero espera (frontera), los siguientes no hacen nada mientras tanto
