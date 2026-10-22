@@ -389,10 +389,12 @@ async function pideFase(b, sid, { primero, pendiente, falla, pierde, incierto })
     b.abreMercado({ side: 'BUY', entry: 1.2, sl: 1.0, tp: 1.3, lots: 1 })
     const g = puerta(); db.pausa = c => c.tabla === 'rpc:sim_cierre_v0' ? g.p : null
     if (falla) db.falla = c => c.tabla === 'rpc:sim_cierre_v0' ? { code: 'P0001', message: 'inventado' } : null
-    await b.paso(1)
+    // SIMGOTO3-02 (orden 1-090): el Step confirma la economia de la vela del breach antes de devolver el control
+    // (espera al cierre forzado y al reto); aqui es un clic que no se espera hasta soltar el cierre
+    const clic = b.paso(1)
     await new Promise(r => setTimeout(r, 1500)); await b.repinta()
     const conPendiente = b.caja.valor.reto.challengeModal
-    g.abrir(); await asienta(80); await new Promise(r => setTimeout(r, 100)); await b.repinta()
+    g.abrir(); await clic; await asienta(80); await new Promise(r => setTimeout(r, 100)); await b.repinta()
     db.pausa = null; db.falla = null
     const ev = b.caja.valor.reto.challengeStatus?.evaluation?.status
     const r = { conPendiente, modal: b.caja.valor.reto.challengeModal, ev, trades: db.tablas.sim_trades.length }
