@@ -8,7 +8,9 @@
 // Datos inventados. Igual mercado y status retenido: el alumno pulsa Step mientras llega la respuesta.
 import {ver,oraculo,fin,escenario,sesionSim,vela,importa,A,retenApi,puerta,asienta,db} from '../lib.mjs'
 import {banco,velasEnStorage} from '../banco-motor.mjs'
-const CI=await importa('lib/sim/cierre.js'), SV=await importa('lib/sim/servicio.js');
+const CI=await importa('lib/sim/cierre.js').catch(()=>null), SV=await importa('lib/sim/servicio.js').catch(()=>null);
+// el codigo auditado (c470c8f, historicas.sh) no tiene la cola ni el cierre atomico de la etapa 1: ahi, rojo
+if(!CI||!SV){for(let i=0;i<2;i++)oraculo('ASTRA-LATENCIA',`caso ${i}: sin lib/sim/cierre.js ni servicio.js no se puede`,false,'no estan');fin()}
 const T=Date.parse('2025-01-07T11:55:00Z')/1000;
 async function corre(modo, retenida) {
  const ses=sesionSim({pair:'EUR/USD',date_from:'2025-01-07',date_to:'2025-01-10',last_timestamp:T,capital:100000,balance:100000,challenge_type:'2F',challenge_phase:1});

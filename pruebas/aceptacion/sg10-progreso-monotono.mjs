@@ -7,7 +7,9 @@
 // SG06 con una posición real del banco y la RPC final retenida, sin datos reales.
 import {ver,oraculo,fin,escenario,sesionSim,vela,importa,A,asienta,db,puerta} from '../lib.mjs'
 import {banco,velasEnStorage} from '../banco-motor.mjs'
-const CI=await importa('lib/sim/cierre.js'),SV=await importa('lib/sim/servicio.js');
+const CI=await importa('lib/sim/cierre.js').catch(()=>null), SV=await importa('lib/sim/servicio.js').catch(()=>null);
+// el codigo auditado (c470c8f, historicas.sh) no tiene la cola ni el cierre atomico de la etapa 1: ahi, rojo
+if(!CI||!SV){for(let i=0;i<4;i++)oraculo('SG10',`caso ${i}: sin lib/sim/cierre.js ni servicio.js no se puede`,false,'no estan');fin()}
 const T=Date.parse('2025-01-07T08:00:00Z')/1000;
 for(const retiene of [false,true]){
  const ses=sesionSim({pair:'EUR/USD',date_from:'2025-01-07',date_to:'2025-01-10',last_timestamp:T,capital:100000,balance:100000});escenario({sim_sessions:[ses]});
