@@ -18,7 +18,6 @@ import { titulo, ver, oraculo, fin, escenario, sesionSim, vela, importa } from '
 import { banco, velasEnStorage } from '../banco-motor.mjs'
 const V = await importa('lib/sim/vela.js').catch(() => null)
 const SALTO = await importa('lib/sim/salto.js').catch(() => null)
-if (!V) { for (let i = 0; i < 20; i++) oraculo('SV01', `caso ${i}: sin lib/sim/vela.js no hay regla de la vela`, false, 'no esta'); fin() }
 
 const T = Date.parse('2025-01-07T10:00:00Z') / 1000
 const CASOS = [
@@ -82,8 +81,9 @@ const LLENADO = [
   ['largo, llena sin tocar nada mas', L, v(1.1005, 1.1010, 1.0995, 1.1008), null],
 ]
 for (const [d, pos, vel, esperado] of LLENADO) {
-  const r = V.cierreEnVela(pos, vel, { llenadaAqui: true })
+  // el codigo de antes de la regla no tiene lib/sim/vela.js: ahi, rojo
+  const r = V ? V.cierreEnVela(pos, vel, { llenadaAqui: true }) : 'sin lib/sim/vela.js'
   oraculo('SV01', `${d}: ${esperado ?? 'ninguno'}`, r === esperado, String(r))
 }
-ver('control: una posicion abierta antes de la vela (no llenada aqui) con un hueco de apertura mas alla del SL: el SL', V.cierreEnVela(L, v(1.0980, 1.1040, 1.0975, 1.1035)) === 'SL')
+if (V) ver('control: una posicion abierta antes de la vela (no llenada aqui) con un hueco de apertura mas alla del SL: el SL', V.cierreEnVela(L, v(1.0980, 1.1040, 1.0975, 1.1035)) === 'SL')
 fin()
