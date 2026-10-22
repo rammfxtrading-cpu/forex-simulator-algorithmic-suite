@@ -17,10 +17,14 @@
  *          al azar (SIMGOTO2-01): la frontera economica comun a Step y salto da lo mismo.
  *   par    se cambia a GBP/USD, se avanzan k = 1..6 velas y se vuelve (la puesta al dia, SIMGOTO-03:
  *          antes, con k = 1 no se recorria y el reloj maestro retrocedia) contra quedarse y avanzar k.
+ *   manual reto con usuario y lotes grandes; nada mas abrir, el alumno cierra a mano la posicion y ese cierre
+ *          queda EN VUELO (retenido 0–30 ms), y la base lo rechaza (23514) o lo acepta al azar (SIMGOTO4-01,
+ *          Astra; orden 1-093). Tres modos: salto, Step y PLAY (el motor real con su frontera, ticks a mano).
+ *          Antes, un rechazo tardio hacia que Step y Play omitieran el breach intravela que el salto aplicaba.
  * El control (avance) es Step: nextCandle(1) y repintar, parando en el breach como la pagina.
  */
 import { readFileSync } from 'node:fs'
-import { titulo, ver, oraculo, fin, escenario, sesionSim, vela, importa, A, db, retenApi } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, escenario, sesionSim, vela, importa, A, db, retenApi, asienta } from '../lib.mjs'
 import { banco, velasEnStorage } from '../banco-motor.mjs'
 import { nextSessionOpen } from '../../lib/killzonesDomain.js'
 
@@ -32,6 +36,7 @@ ver('control: la semana real esta entera (7.068 velas M1, 2-mar a 6-mar-2026)', 
 const DOS = [...REALES, ...REALES.map(v => vela(v.time + 7 * 86400, v.open, v.high, v.low, v.close))]
 const velasDe = c => c.familia === 'finde' ? DOS : REALES
 const CI = await importa('lib/sim/cierre.js').catch(() => null), SV = await importa('lib/sim/servicio.js').catch(() => null)
+const SAL = await importa('lib/sim/salto.js').catch(() => null), COLA = await importa('lib/sim/cola.js').catch(() => null)
 
 // semilla fija: los mismos tramos en cada tanda (mulberry32)
 const SEMILLA = Number(process.env.SEMILLA ?? 20261022)
@@ -43,7 +48,7 @@ const PIP = 0.0001, red = x => +x.toFixed(5)
 
 let vueltasPar = 0
 function tramo(familia) {
-  const reto = familia === 'lento' ? true : r() < 0.5   // lento: siempre reto, con el status del reto tardando
+  const reto = familia === 'lento' || familia === 'manual' ? true : r() < 0.5   // lento y manual: siempre reto
   const desde = familia === 'finde' ? entre(7068 - 400, 7068 - 2) : entre(60, 5600)   // finde: vie por la tarde; si no, lun 01:00 → jue
   const p = (familia === 'finde' ? DOS : REALES)[desde].close
   const lados = r() < 0.5 ? 1 : -1
@@ -54,6 +59,11 @@ function tramo(familia) {
   lim.sl = red(lim.entry - lp * lim.slPips * PIP); lim.tp = red(lim.entry + lp * lim.tpPips * PIP)
   const c = { familia, reto, desde, mercado, lim, sesion: elige(['asia', 'london', 'nyam']), k: entre(1, 6) }
   if (familia === 'lento') { c.retardos = Array.from({ length: 16 }, () => entre(0, 25)); c.mercado.lots = entre(5, 30); c.lim.lots = entre(5, 30) }   // lotes grandes: breach y objetivo posibles
+  if (familia === 'manual') {
+    // lotes grandes y SL lejos: el flotante de la posicion cuyo cierre esta en vuelo puede quemar el reto
+    c.mercado.lots = entre(5, 30); c.lim.lots = entre(5, 30); c.falla = r() < 0.6; c.retencion = entre(0, 30)
+    c.mercado.slPips = entre(30, 60); c.mercado.sl = red(p - lados * c.mercado.slPips * PIP)
+  }
   if (familia === 'par') {
     c.k = 1 + (vueltasPar++ % 6)   // k = 1..6 en orden: el 1 es SIMGOTO-03
     // en k minutos tiene que pasar algo: la pendiente a 0–2 pips y protecciones de 1–4 pips
@@ -111,8 +121,17 @@ async function corre(c, modo) {
   const b = await banco({ sesion: ses, userId: c.reto ? A : null })
   if (c.reto) { CI.fijaSaldoConfirmado(ses.id, 100000); await SV.leeServicio(); await b.repinta() }
   if (b.motor()?.currentTime !== t0) return { roto: `el motor no arranca en la vela de partida (${b.motor()?.currentTime} ≠ ${t0})` }
-  b.abreMercado(c.mercado)
+  const pos = b.abreMercado(c.mercado)
   await b.pendiente(c.lim)
+  // manual (SIMGOTO4-01): el cierre a mano de la posicion, EN VUELO durante el avance; la base lo retiene
+  // c.retencion ms y lo rechaza o lo acepta (solo ese primer cierre: los de despues pasan)
+  let cierre = null
+  if (c.familia === 'manual') {
+    let primero = true
+    db.pausa = ctx => ctx.tabla === 'rpc:sim_cierre_v0' && primero ? new Promise(res => setTimeout(res, c.retencion)) : null
+    db.falla = ctx => { if (ctx.tabla !== 'rpc:sim_cierre_v0' || !primero) return null; primero = false; return c.falla ? { code: '23514', message: 'rechazo sintetico' } : null }
+    cierre = b.caja.valor.trading.closePosition(pos.id, 'MANUAL', 'EUR/USD', velasDe(c)[c.desde].close)
+  }
   // el avance para donde la pagina bloquea el Step: breach, o el reto ya no activo (challengeLocked:
   // objetivo alcanzado o fallido, useChallengeFlow.js)
   const quemado = () => b.ps('EUR/USD').trades.some(t => /BREACH/.test(t.reason)) || ['target_reached', 'failed_dd_daily', 'failed_dd_total'].includes(b.caja.valor.reto.challengeStatus?.evaluation?.status)
@@ -126,8 +145,20 @@ async function corre(c, modo) {
     if (!destino) return null
     hasta = destino.time
     if (modo === 'salto') await b.irA(c.sesion)
+    else if (modo === 'play') {
+      // el Play del motor real con su frontera; los fotogramas, a mano (el banco no tiene requestAnimationFrame);
+      // la pagina lo para al llegar al destino (aqui, a mano) o en el breach
+      const e = b.motor(), params = { engine: e, sid: ses.id, pairState: b.refs.pairState, esReto: !!c.reto, refresca: b.caja.valor.reto.refreshChallengeStatus }
+      e._loop = () => {}; e.frontera = SAL.creaFrontera(params); e.speed = 4; e.play()
+      for (let k = 0; k < 4000 && e.currentTime < hasta && !quemado(); k++) {
+        if (!e.isPlaying && !e._esperando) break
+        e._tickFrame(k * 250); if (e._esperando) await e._esperando; await b.repinta()
+      }
+      e.pause()
+    }
     else while (b.motor().currentTime < hasta && !quemado()) { const antes = b.motor().currentTime; await b.paso(1); if (b.motor().currentTime === antes) break }
   }
+  if (cierre) { await cierre; await COLA.esperaCola(ses.id); await asienta(40); db.pausa = null; db.falla = null }
   await new Promise(s => setTimeout(s, 60)); await b.repinta()
   const ps = b.ps('EUR/USD')
   const res = {
@@ -143,8 +174,8 @@ async function corre(c, modo) {
   return { res, hasta: hasta - t0 }
 }
 
-const N = { goto: 14, final: 6, par: 12, finde: 16, lento: 10 }
-let corridos = 0, distintos = 0, sinTramo = 0, conCierres = 0
+const N = { goto: 14, final: 6, par: 12, finde: 16, lento: 10, manual: 12 }
+let corridos = 0, distintos = 0, sinTramo = 0, conCierres = 0, manualesFallados = 0, manualesConDinero = 0
 for (const [familia, n] of Object.entries(N)) {
   // finde, con su propio generador desde la semilla: los mismos tramos que el revisor (el 1 de 16 en rojo)
   if (familia === 'finde') r = azar(SEMILLA)
@@ -156,7 +187,16 @@ for (const [familia, n] of Object.entries(N)) {
     const rojos = (motivo, det) => { for (let k = familia === 'final' ? 2 : 1; k > 0; k--) oraculo('SG05', `${familia} ${i}: ${motivo}`, false, det) }
     if (!c) { sinTramo++; rojos('no se encuentra un destino con TP solo en la ultima vela', '-'); continue }
     if (c.reto && (!CI || !SV)) { rojos('sin lib/sim/cierre.js ni servicio.js no hay reto con usuario', 'no estan'); continue }
+    if (familia === 'manual' && !SAL?.creaFrontera) { rojos('sin la frontera no hay Play que comparar', 'no esta'); continue }
     const salto = await corre(c, 'salto'), paso = await corre(c, 'paso')
+    if (familia === 'manual' && salto && paso && !salto.roto && !paso.roto) {
+      const play = await corre(c, 'play'); if (c.falla) manualesFallados++
+      if (salto.res.trades.some(t => /BREACH/.test(t[0])) || salto.res.filas.length) manualesConDinero++
+      oraculo('SG05', `manual ${i} (${c.mercado.side} ${c.mercado.lots} lotes, cierre ${c.falla ? 'RECHAZADO' : 'aceptado'} a los ${c.retencion} ms, desde ${new Date(REALES[c.desde].time * 1000).toISOString().slice(5, 16)}): salto = Step = Play`,
+        JSON.stringify(salto.res) === JSON.stringify(paso.res) && JSON.stringify(paso.res) === JSON.stringify(play.res),
+        `caso ${JSON.stringify(c)} · salto ${JSON.stringify(salto.res)} · Step ${JSON.stringify(paso.res)} · Play ${JSON.stringify(play.res)}`)
+      continue
+    }
     if (!salto || !paso) { sinTramo++; rojos('sin destino para el Go to', JSON.stringify(c)); continue }
     if (salto.roto || paso.roto) { ver(`${familia} ${i}: el banco arranca`, false, salto.roto || paso.roto); continue }
     corridos++
@@ -173,4 +213,6 @@ for (const [familia, n] of Object.entries(N)) {
 // sin cierres no hay nada que comparar: la familia tiene que mover dinero de verdad (se mide con el
 // codigo de la etapa 1; en el auditado, sin la cola, los retos ya salen en rojo y no cuentan)
 if (CI && SV) ver(`control: la mayoria de los tramos tienen cierres (${conCierres} de ${corridos}) y ninguno se descarta (${sinTramo})`, corridos >= 48 && sinTramo === 0 && conCierres >= corridos / 2, JSON.stringify({ corridos, conCierres, sinTramo, distintos }))
+// manual: la familia tiene que tener rechazos de verdad y mover dinero (si no, no prueba SIMGOTO4-01)
+if (CI && SV && SAL?.creaFrontera) ver(`control: manual con cierres rechazados (${manualesFallados} de ${N.manual}) y con dinero movido (${manualesConDinero})`, manualesFallados >= 4 && manualesConDinero >= 4, JSON.stringify({ manualesFallados, manualesConDinero }))
 fin()
