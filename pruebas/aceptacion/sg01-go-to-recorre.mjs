@@ -22,6 +22,7 @@
  *     se cruza a 1,1950 (−50 pips × 100 = −5.000) y lib/trading/breach.js cierra medio pip
  *     mas alla, a 1,19495 (−50,5 × 100 = −5.050) → cierre forzado ahi, y el salto PARA en
  *     esa vela (11:57), como el replay, que queda bloqueado.
+ *   5 y 6, el reto con usuario (la espera a la cola y el reto releido): sg02-go-to-reto-con-usuario.mjs
  * La regla de la misma vela (SL y TP tocados a la vez) es la de checkSLTP: gana el TP; esta
  * prueba no la usa (los casos tocan uno solo). La de una pendiente que se llena y toca su
  * SL en la MISMA vela sigue en fase1/m04 (rojo tambien paso a paso: no es del salto).

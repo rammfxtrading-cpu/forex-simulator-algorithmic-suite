@@ -1112,7 +1112,8 @@ export default function SessionPage(){
   // ── Replay ────────────────────────────────────────────────────────────────────
   const eng=()=>pairState.current[activePair]?.engine
   const handlePlayPause=useCallback(()=>{
-    const e=eng();if(!e)return
+    // durante el salto del Go to (avanzaHasta) ni Play ni Step: el salto termina o para solo
+    const e=eng();if(!e||e.saltando)return
     if(e.isPlaying){
       e.pause();setIsPlaying(false)
       // Etapa 1 (CTO 13-oct, Astra E1-01): la pausa solo guarda last_timestamp y
@@ -1131,7 +1132,7 @@ export default function SessionPage(){
       e.play();setIsPlaying(true)
     }
   },[activePair,saveProgress,deselectAll])
-  const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress])
+  const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying||e.saltando)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
   const handleGoTo=useCallback(async(sessKey)=>{
     setGotoOpen(false)
@@ -1142,6 +1143,8 @@ export default function SessionPage(){
     // Orden 1-080: el salto recorre TODAS las velas M1 del tramo como el replay (lib/sim/salto.js);
     // para antes si el reto se quema o se alcanza el objetivo, o si lo economico se bloquea
     await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
+    // si durante el salto se cambio de par o se salio de la pagina, nada de pintar ni guardar
+    if(activePairRef.current!==activePair||!chartMap.current[activePair])return
     setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
     const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
     updateChart(activePair,e,true)
@@ -1392,6 +1395,8 @@ export default function SessionPage(){
     // (usePairData) y el saldo, cada cierre.
     Object.values(pairState.current).forEach(ps=>ps?.engine?.pause())
     Object.values(chartMap.current).forEach(cr=>{try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{}})
+    // sin graficos: un Go to que estuviera esperando (orden 1-080) ve que se salio y no pinta ni guarda
+    chartMap.current={}
   },[])
 
   // ── Computed ──────────────────────────────────────────────────────────────────
