@@ -11,6 +11,8 @@
  *          al azar; en practica o en un reto 2F con usuario (cierres por la funcion atomica, doble).
  *   final  el historico ACABA en la vela de destino y solo esa vela toca el TP (SIMGOTO-02: antes, sin su
  *          onTick, tambien con Step): ademas de la igualdad, el TP tiene que ejecutarse.
+ *   finde  Go to desde el viernes por la tarde cruzando el fin de semana (dos semanas: la real y la
+ *          misma +7 dias): el hueco del lunes.
  *   par    se cambia a GBP/USD, se avanzan k = 1..6 velas y se vuelve (la puesta al dia, SIMGOTO-03:
  *          antes, con k = 1 no se recorria y el reloj maestro retrocedia) contra quedarse y avanzar k.
  * El control (avance) es Step: nextCandle(1) y repintar, parando en el breach como la pagina.
@@ -23,12 +25,16 @@ import { nextSessionOpen } from '../../lib/killzonesDomain.js'
 const fx = JSON.parse(readFileSync(new URL('../fixtures/velas/eurusd-2026-03-02-semana.json', import.meta.url), 'utf8'))
 const REALES = fx.velas.map(([t, o, h, l, c]) => vela(t, o, h, l, c))
 ver('control: la semana real esta entera (7.068 velas M1, 2-mar a 6-mar-2026)', REALES.length === 7068, String(REALES.length))
+// finde: dos semanas seguidas (la misma semana real repetida +7 dias) para cruzar el hueco del fin de
+// semana; lo encontro el revisor adversario de r2 (breach fantasma con el gap del lunes)
+const DOS = [...REALES, ...REALES.map(v => vela(v.time + 7 * 86400, v.open, v.high, v.low, v.close))]
+const velasDe = c => c.familia === 'finde' ? DOS : REALES
 const CI = await importa('lib/sim/cierre.js').catch(() => null), SV = await importa('lib/sim/servicio.js').catch(() => null)
 
 // semilla fija: los mismos tramos en cada tanda (mulberry32)
 const SEMILLA = Number(process.env.SEMILLA ?? 20261022)
 function azar(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
-const r = azar(SEMILLA)
+let r = azar(SEMILLA)
 const entre = (a, b) => a + Math.floor(r() * (b - a + 1))
 const elige = xs => xs[Math.floor(r() * xs.length)]
 const PIP = 0.0001, red = x => +x.toFixed(5)
@@ -36,8 +42,8 @@ const PIP = 0.0001, red = x => +x.toFixed(5)
 let vueltasPar = 0
 function tramo(familia) {
   const reto = r() < 0.5
-  const desde = entre(60, 5600)                     // indice de la vela de partida (lun 01:00 → jue)
-  const p = REALES[desde].close
+  const desde = familia === 'finde' ? entre(7068 - 400, 7068 - 2) : entre(60, 5600)   // finde: vie por la tarde; si no, lun 01:00 → jue
+  const p = (familia === 'finde' ? DOS : REALES)[desde].close
   const lados = r() < 0.5 ? 1 : -1
   const mercado = { side: lados > 0 ? 'BUY' : 'SELL', entry: p, lots: entre(1, 10), slPips: entre(5, 40), tpPips: entre(5, 40) }
   mercado.sl = red(p - lados * mercado.slPips * PIP); mercado.tp = red(p + lados * mercado.tpPips * PIP)
@@ -82,19 +88,19 @@ function tramo(familia) {
 }
 
 async function corre(c, modo) {
-  const t0 = REALES[c.desde].time
-  let velas = REALES
+  const t0 = velasDe(c)[c.desde].time
+  let velas = velasDe(c)
   if (c.familia === 'final') {
     const destino = nextSessionOpen(REALES, c.desde, c.sesion)
     if (!destino) return null
     velas = REALES.filter(v => v.time <= destino.time)
   }
-  const ses = sesionSim({ pair: 'EUR/USD', date_from: '2026-03-02', date_to: '2026-03-06', last_timestamp: t0,
+  const ses = sesionSim({ pair: 'EUR/USD', date_from: '2026-03-02', date_to: c.familia === 'finde' ? '2026-03-13' : '2026-03-06', last_timestamp: t0,
     ...(c.reto ? { capital: 100000, balance: 100000, challenge_type: '2F', challenge_phase: 1 } : {}) })
   escenario({ sim_sessions: [ses] })
   if (globalThis.window) globalThis.window.__algSuiteCurrentTime = null   // el reloj maestro del tramo anterior
-  velasEnStorage('EUR/USD', velas)
-  velasEnStorage('GBP/USD', velas.map(v => vela(v.time, 1.25, 1.2501, 1.2499, 1.25)))
+  velasEnStorage('EUR/USD', velas, [2025])   // el año anterior, vacio: el codigo auditado lo pide
+  velasEnStorage('GBP/USD', velas.map(v => vela(v.time, 1.25, 1.2501, 1.2499, 1.25)), [2025])
   const b = await banco({ sesion: ses, userId: c.reto ? A : null })
   if (c.reto) { CI.fijaSaldoConfirmado(ses.id, 100000); await SV.leeServicio(); await b.repinta() }
   if (b.motor()?.currentTime !== t0) return { roto: `el motor no arranca en la vela de partida (${b.motor()?.currentTime} ≠ ${t0})` }
@@ -127,16 +133,21 @@ async function corre(c, modo) {
   return { res, hasta: hasta - t0 }
 }
 
-const N = { goto: 14, final: 6, par: 12 }
+const N = { goto: 14, final: 6, par: 12, finde: 16 }
 let corridos = 0, distintos = 0, sinTramo = 0, conCierres = 0
 for (const [familia, n] of Object.entries(N)) {
+  // finde, con su propio generador desde la semilla: los mismos tramos que el revisor (el 1 de 16 en rojo)
+  if (familia === 'finde') r = azar(SEMILLA)
   titulo(`${familia}: ${n} tramos al azar (semilla ${SEMILLA})`)
   for (let i = 0; i < n; i++) {
     const c = tramo(familia)
-    if (!c) { sinTramo++; continue }
-    if (c.reto && (!CI || !SV)) { oraculo('SG05', `${familia} ${i}: sin lib/sim/cierre.js ni servicio.js no hay reto con usuario`, false, 'no estan'); continue }
+    // un tramo que no se puede correr cuenta en ROJO, con los oraculos que habria tenido (el minimo
+    // de minimos.json no baja en silencio): en HEAD no pasa (control de abajo: sinTramo = 0)
+    const rojos = (motivo, det) => { for (let k = familia === 'final' ? 2 : 1; k > 0; k--) oraculo('SG05', `${familia} ${i}: ${motivo}`, false, det) }
+    if (!c) { sinTramo++; rojos('no se encuentra un destino con TP solo en la ultima vela', '-'); continue }
+    if (c.reto && (!CI || !SV)) { rojos('sin lib/sim/cierre.js ni servicio.js no hay reto con usuario', 'no estan'); continue }
     const salto = await corre(c, 'salto'), paso = await corre(c, 'paso')
-    if (!salto || !paso) { sinTramo++; continue }
+    if (!salto || !paso) { sinTramo++; rojos('sin destino para el Go to', JSON.stringify(c)); continue }
     if (salto.roto || paso.roto) { ver(`${familia} ${i}: el banco arranca`, false, salto.roto || paso.roto); continue }
     corridos++
     if (paso.res.trades.length) conCierres++
@@ -145,10 +156,11 @@ for (const [familia, n] of Object.entries(N)) {
       [salto, paso].every(x => x.res.trades.some(t => t[0] === 'TP' && t[2] === x.hasta)), `salto ${JSON.stringify(salto)} · avance ${JSON.stringify(paso)}`)
     const igual = JSON.stringify(salto.res) === JSON.stringify(paso.res)
     if (!igual) distintos++
-    oraculo('SG05', `${familia} ${i} (${c.reto ? 'reto' : 'practica'}, ${familia === 'par' ? `k=${c.k}` : c.sesion}, desde ${new Date(REALES[c.desde].time * 1000).toISOString().slice(5, 16)}): salto = avance`,
+    oraculo('SG05', `${familia} ${i} (${c.reto ? 'reto' : 'practica'}, ${familia === 'par' ? `k=${c.k}` : c.sesion}, desde ${new Date(velasDe(c)[c.desde].time * 1000).toISOString().slice(5, 16)}): salto = avance`,
       igual, `caso ${JSON.stringify(c)} · salto ${JSON.stringify(salto.res)} · avance ${JSON.stringify(paso.res)}`)
   }
 }
-// sin cierres no hay nada que comparar: la familia tiene que mover dinero de verdad
-ver(`control: la mayoria de los tramos tienen cierres (${conCierres} de ${corridos}) y casi ninguno se descarta (${sinTramo})`, corridos >= 28 && conCierres >= corridos / 2, JSON.stringify({ corridos, conCierres, sinTramo, distintos }))
+// sin cierres no hay nada que comparar: la familia tiene que mover dinero de verdad (se mide con el
+// codigo de la etapa 1; en el auditado, sin la cola, los retos ya salen en rojo y no cuentan)
+if (CI && SV) ver(`control: la mayoria de los tramos tienen cierres (${conCierres} de ${corridos}) y ninguno se descarta (${sinTramo})`, corridos >= 48 && sinTramo === 0 && conCierres >= corridos / 2, JSON.stringify({ corridos, conCierres, sinTramo, distintos }))
 fin()

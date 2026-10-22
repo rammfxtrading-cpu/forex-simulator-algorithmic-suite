@@ -95,10 +95,11 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         if(pair===activePairRef.current){
           setCurrentTime(engine.currentTime)
           setProgress(Math.round(engine.progress*100))
-          setMasterTime(engine.currentTime)
+          // el reloj maestro nunca retrocede (SIMGOTO-03): un par cuyo historico acaba antes no lo baja
+          const m=getMasterTime(); if(!m||engine.currentTime>m) setMasterTime(engine.currentTime)
         }
       }
-      engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(engine.currentTime)}}
+      engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(Math.max(engine.currentTime,getMasterTime()||0))}}
       const ps={engine,ready:true,positions:[],trades:[],
         lastSLTPIdx: engine.currentIndex,   // start from current — don't re-check history
         lastLimitIdx: engine.currentIndex,

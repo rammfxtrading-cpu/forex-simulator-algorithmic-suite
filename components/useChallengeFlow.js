@@ -12,7 +12,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { getMasterTime } from '../lib/sessionData'
 import { calcPnl } from '../lib/trading/pricing'
 import { resolveBreach } from '../lib/trading/breach'
-import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera } from '../lib/sim/cola'
+import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera, posicionOcupada } from '../lib/sim/cola'
 import { inciertosDe } from '../lib/sim/servicio'
 import { avisa } from '../lib/sim/avisos'
 
@@ -404,6 +404,7 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       const lastCandle = candles[idx2]
       const lastPrice = lastCandle?.close ?? ps2.positions[0].entry
       ps2.positions.forEach(p => {
+        if (posicionOcupada(id, p.id)) return   // con su cierre en curso, como arriba
         floatingOtherPairs += calcPnl(p.side, p.entry, lastPrice, p.lots, k)
       })
     })
@@ -423,8 +424,11 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       const candle = engine.candles[i]
       if (!candle) continue
       const { high, low } = candle
-      // Filtramos posiciones que ya estaban abiertas en esta vela.
-      const livePositions = ps.positions.filter(p => p.openTime == null || candle.time >= p.openTime)
+      // Filtramos posiciones que ya estaban abiertas en esta vela, y las que ya tienen su cierre en
+      // curso (p. ej. el SL de esta misma vela, pendiente en la cola): su perdida es la de ese cierre,
+      // no la mecha; contarlas daba un breach fantasma que paraba el Go to y no el Step (revisor
+      // adversario de sim-goto-r2). Su resultado entra en el saldo cuando la cola lo aplica.
+      const livePositions = ps.positions.filter(p => (p.openTime == null || candle.time >= p.openTime) && !posicionOcupada(id, p.id))
       if (!livePositions.length) continue
 
       // Nucleo de breach extraido a lib/trading/breach.js (Corte 2, vela-a-vela).
