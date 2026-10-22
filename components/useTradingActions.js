@@ -94,16 +94,18 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   }
 
   // closePosition accepts optional pair+exitPrice for use from engine.onTick
-  const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null)=>{
+  // horaCierre (opcional): la hora de la vela que origina el cierre (SIMGOTO-01, orden 1-083)
+  const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null,horaCierre=null)=>{
     const usePair=pairOverride||activePair
     const usePrice=exitPriceOverride||currentPrice
     const ps=pairState.current[usePair];if(!ps||!usePrice) return
     if(!ps.positions.some(p=>p.id===posId)) return
     // d2: una sesion del simulador anterior es de solo lectura
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); return }
-    // la hora del motor del par activo: en el salto del Go to (orden 1-080) el cierre es de la
-    // vela del salto donde ocurre, no de la hora de la pagina de antes del salto
-    const ct=pairState.current[activePair]?.engine?.currentTime ?? currentTime
+    // la hora de la vela que lo origina, en SU par: en el salto del Go to (orden 1-080) el cierre es
+    // de la vela del salto donde ocurre, no de la hora de la pagina de antes del salto; y nunca la
+    // del par que se este mirando si es otro (SIMGOTO-01, orden 1-083)
+    const ct=Number.isFinite(horaCierre) ? horaCierre : (pairState.current[usePair]?.engine?.currentTime ?? currentTime)
     // en su turno: la posicion de ese momento; aplica el cierre a la pantalla
     const prepara=()=>{
       const ps2=pairState.current[usePair]
@@ -292,7 +294,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl})
       })
     }
-    toClose.forEach(({id,reason,price})=>closePositionRef.current(id,reason,pair,price))
+    toClose.forEach(({id,reason,price})=>closePositionRef.current(id,reason,pair,price,null,engine.currentTime))
   },[id])
 
   // Devuelve las posiciones que abre ({ids, desdeIdx}: la primera vela de llenado) o null; el onTick

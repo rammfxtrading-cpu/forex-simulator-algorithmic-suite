@@ -453,9 +453,10 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       // Cierre en pair actual al breachPrice
       const positionsToClose = [...livePositions]
       positionsToClose.forEach(p => {
-        try { closePositionRef.current(p.id, reasonStr, pair, breachPrice) } catch(e) { console.error('[breach close]', e) }
+        try { closePositionRef.current(p.id, reasonStr, pair, breachPrice, null, engine.currentTime) } catch(e) { console.error('[breach close]', e) }
       })
-      // Cierre en otros pares al último precio conocido (close del candle actual)
+      // Cierre en otros pares al último precio conocido (close del candle actual), con la hora de
+      // la vela del breach, no la del motor de ese par, que puede ir atrasado (SIMGOTO-01)
       Object.entries(pairState.current).forEach(([k, ps2]) => {
         if (k === pair || !ps2?.positions?.length || !ps2.engine) return
         const candles = ps2.engine.candles || []
@@ -464,7 +465,7 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
         const lastPrice = lastCandle?.close ?? ps2.positions[0].entry
         const otherPositions = [...ps2.positions]
         otherPositions.forEach(p => {
-          try { closePositionRef.current(p.id, reasonStr, k, lastPrice) } catch(e) { console.error('[breach close other]', e) }
+          try { closePositionRef.current(p.id, reasonStr, k, lastPrice, null, engine.currentTime) } catch(e) { console.error('[breach close other]', e) }
         })
       })
 
