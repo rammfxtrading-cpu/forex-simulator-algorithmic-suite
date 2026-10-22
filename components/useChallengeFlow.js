@@ -72,14 +72,17 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   // Etapa 1, ronda 2 (CTO 13-oct, Astra E1-04): el refresco es una operacion de la
   // COLA de la sesion (lib/sim/cola.js): va detras de los cierres ya pedidos.
   // refrescaAhora es el cuerpo, para usarlo DENTRO de una operacion de la cola.
-  const refrescaAhora = useCallback(async () => {
+  // ct (opcional): la hora con la que se evalua; el salto del Go to (lib/sim/salto.js) pasa la
+  // de la vela en curso, que el estado de React aun no tiene (orden 1-080)
+  const refrescaAhora = useCallback(async (ctSalto) => {
     if (!id || !sessionRef.current?.challenge_type) return null
     try {
       // Pasamos currentTime del simulador: así el motor sabe qué día es HOY en el backtest.
       // El DD diario se resetea en el día Madrid de esta vela, no de la fecha real del ordenador.
       // Leemos currentTimeRef (state de React, se inicializa al cargar el engine).
       // Fallback adicional a getMasterTime() por si acaso.
-      const ct = currentTimeRef.current
+      const ct = (Number.isFinite(ctSalto) ? ctSalto : null)
+        || currentTimeRef.current
         || getMasterTime()
         || null
       const qs = ct ? `?session_id=${id}&current_time=${ct}` : `?session_id=${id}`
@@ -87,6 +90,8 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       if (!res.ok) return null
       const data = await res.json()
       setChallengeStatus(data)
+      // el espejo, ya: el breach de la vela siguiente del salto lo lee sin esperar al render
+      challengeStatusRef.current = data
       // Actualizamos también el state `session` con el status vivo de BD.
       // Sin esto, sessionStatus quedaba congelado en 'active' aunque el motor
       // hubiera persistido 'failed_dd_daily' — y challengeLocked solo se
@@ -104,9 +109,9 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       return null
     }
   }, [id])
-  const refreshChallengeStatus = useCallback(() => {
+  const refreshChallengeStatus = useCallback((ct) => {
     if (!id || !sessionRef.current?.challenge_type) return Promise.resolve(null)
-    return encola(id, refrescaAhora)
+    return encola(id, () => refrescaAhora(ct))
   }, [id, refrescaAhora])
 
   // La confirmacion explicita del reto (E1-04): se cierra la cola a cierres nuevos

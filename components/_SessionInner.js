@@ -41,6 +41,7 @@ import AvisoServicio from './AvisoServicio'
 import { useServicio } from '../lib/sim/servicio'
 import { fijaSaldoConfirmado } from '../lib/sim/cierre'
 import { useCola } from '../lib/sim/cola'
+import { saltaA } from '../lib/sim/salto'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import { COLUMNAS_SESION } from '../lib/sim/columnas'
@@ -1132,21 +1133,20 @@ export default function SessionPage(){
   },[activePair,saveProgress,deselectAll])
   const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
-  const handleGoTo=useCallback((sessKey)=>{
+  const handleGoTo=useCallback(async(sessKey)=>{
     setGotoOpen(false)
-    const e=eng();if(!e)return
+    const e=eng();if(!e||e.saltando)return
     if(e.isPlaying){e.pause();setIsPlaying(false)}
     const target=nextSessionOpen(e.candles,e.currentIndex,sessKey)
     if(!target){setGotoMiss(true);setTimeout(()=>setGotoMiss(false),1500);return}
-    e.seekToTime(target.time)
-    // Belt-reset de cursores como el scrubber (cinturon para el caso sin posiciones)
-    const ps=pairState.current[activePair]
-    if(ps){ps.lastSLTPIdx=e.currentIndex;ps.lastLimitIdx=e.currentIndex}
+    // Orden 1-080: el salto recorre TODAS las velas M1 del tramo como el replay (lib/sim/salto.js);
+    // para antes si el reto se quema o se alcanza el objetivo, o si lo economico se bloquea
+    await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
     setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
     const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
     updateChart(activePair,e,true)
     saveProgress(e.currentTime)
-  },[activePair,updateChart,saveProgress])
+  },[activePair,updateChart,saveProgress,id,refreshChallengeStatus])
 
   // Etapa 1 (o.5–o.7): con lo economico bloqueado el replay se para; si no, el
   // motor volveria a cerrar en la vela siguiente lo que se acaba de revertir.

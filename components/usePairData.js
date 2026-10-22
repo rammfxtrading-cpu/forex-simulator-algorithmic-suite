@@ -78,7 +78,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       const resumeTs = toOrdinal(resumeReal) ?? 0
       engine.load(ordinalCandles); engine.seekToTime(resumeTs); engine.speed=speedRef.current
       engine.onTick=()=>{
-        updateChart(pair,engine,false)
+        // en el salto del Go to (avanzaHasta) el grafico se pinta una vez, al llegar
+        if(!engine.saltando) updateChart(pair,engine,false)
         checkSLTPRef.current?.(pair,engine)
         checkLimitOrdersRef.current?.(pair,engine)
         // Challenge breach intra-vela: si el floating PnL + cerrado supera

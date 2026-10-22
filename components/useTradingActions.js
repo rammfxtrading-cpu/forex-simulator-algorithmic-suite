@@ -101,7 +101,9 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     if(!ps.positions.some(p=>p.id===posId)) return
     // d2: una sesion del simulador anterior es de solo lectura
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); return }
-    const ct=currentTime
+    // la hora del motor del par activo: en el salto del Go to (orden 1-080) el cierre es de la
+    // vela del salto donde ocurre, no de la hora de la pagina de antes del salto
+    const ct=pairState.current[activePair]?.engine?.currentTime ?? currentTime
     // en su turno: la posicion de ese momento; aplica el cierre a la pantalla
     const prepara=()=>{
       const ps2=pairState.current[usePair]

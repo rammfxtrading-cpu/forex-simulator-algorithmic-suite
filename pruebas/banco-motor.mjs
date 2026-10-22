@@ -9,13 +9,16 @@
 // Las refs puente se rellenan como en components/_SessionInner.js:1141-1146.
 // Lo unico copiado de _SessionInner (no se puede montar sin grafico): el alta
 // de una orden a mercado del OrderModal (_SessionInner.js:1877-1880), en
-// abreMercado(), y el reset de cursores del Go to (_SessionInner.js:1110-1111),
-// en irA(); las pruebas que los usan comprueban antes que esas lineas siguen ahi.
+// abreMercado(), y la llamada del Go to al salto REAL (lib/sim/salto.js, orden 1-080;
+// antes, el reset de cursores), en irA(); las pruebas que los usan comprueban antes
+// que esas lineas siguen ahi.
 import { importa, sonda, db, asienta, fuente } from './lib.mjs'
 const usePairData = (await importa('components/usePairData.js')).default
 const useTradingActions = (await importa('components/useTradingActions.js')).default
 const useChallengeFlow = (await importa('components/useChallengeFlow.js')).default
 const { nextSessionOpen } = await importa('lib/killzonesDomain.js')
+// antes de la orden 1-080 (historicas.sh, contra c470c8f) no existe: irA es el Go to de entonces
+const saltaA = await importa('lib/sim/salto.js').then(m => m.saltaA, () => null)
 const { router } = await import('./next-falso.mjs')
 
 // Pone las velas M1 (segundos) en forex-data/<PAR>/M1/<año>.json y un [] en los
@@ -99,15 +102,22 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
     },
     // un paso de vela como handleStep (_SessionInner.js:1100): nextCandle(1)
     async paso(n = 1) { for (let i = 0; i < n; i++) { motor().nextCandle(1); await repinta() } },
-    // Go to como handleGoTo (_SessionInner.js:1103-1116)
+    // Go to como handleGoTo (_SessionInner.js): el salto REAL vela a vela (orden 1-080); sin
+    // lib/sim/salto.js, el de antes: un seekToTime y el reset de cursores
     async irA(sessKey) {
       const e = motor()
       const target = nextSessionOpen(e.candles, e.currentIndex, sessKey)
       if (!target) return null
-      e.seekToTime(target.time)
-      ps().lastSLTPIdx = e.currentIndex; ps().lastLimitIdx = e.currentIndex
+      if (!saltaA) {
+        e.seekToTime(target.time)
+        ps().lastSLTPIdx = e.currentIndex; ps().lastLimitIdx = e.currentIndex
+        await repinta()
+        return target
+      }
+      const llego = await saltaA({ engine: e, hasta: target.time, sid: sesion.id, pairState: refs.pairState,
+        esReto: !!refs.sessionRef.current?.challenge_type, refresca: caja.valor.reto.refreshChallengeStatus })
       await repinta()
-      return target
+      return { ...target, llego }
     },
   }
 }
@@ -117,6 +127,8 @@ export function copiasVigentes() {
   const s = fuente('components/_SessionInner.js')
   return {
     mercado: s.includes("const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}"),
-    irA: /e\.seekToTime\(target\.time\)[\s\S]{0,200}if\(ps\)\{ps\.lastSLTPIdx=e\.currentIndex;ps\.lastLimitIdx=e\.currentIndex\}/.test(s),
+    irA: saltaA
+      ? s.includes('await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') && !/lastSLTPIdx=e\.currentIndex/.test(s)
+      : /e\.seekToTime\(target\.time\)[\s\S]{0,200}if\(ps\)\{ps\.lastSLTPIdx=e\.currentIndex;ps\.lastLimitIdx=e\.currentIndex\}/.test(s),
   }
 }
