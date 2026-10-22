@@ -104,6 +104,7 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         }
       }
       engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(Math.max(engine.currentTime,getMasterTime()||0))}}
+      engine.onPausa=()=>{if(pair===activePairRef.current)setIsPlaying(false)}
       const ps={engine,ready:true,positions:[],trades:[],
         lastSLTPIdx: engine.currentIndex,   // start from current — don't re-check history
         lastLimitIdx: engine.currentIndex,
