@@ -29,7 +29,8 @@ export default function SessionTopBar({session,activePairs,activePair,setActiveP
                 {pair}
                 {(pairState.current[pair]?.positions?.length>0)&&<span style={s.tabDot}/>}
               </span>
-              {activePairs.length>1&&<button style={s.tabClose} onClick={()=>removePair(pair)}>✕</button>}
+              {/* orden 1-097: sin la ✕ mientras el par tenga posiciones u ordenes (quitarlo las borraria: aun no se guardan) */}
+              {activePairs.length>1&&!((pairState.current[pair]?.positions?.length||0)+(pairState.current[pair]?.orders?.length||0))&&<button style={s.tabClose} onClick={()=>removePair(pair)}>✕</button>}
             </div>
           ))}
           <div style={{position:'relative',flexShrink:0}}>

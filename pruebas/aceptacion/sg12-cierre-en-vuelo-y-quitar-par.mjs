@@ -11,14 +11,15 @@
  *   en los dos, el salto (Go to NY) da lo mismo que el avance con Step (clics)
  * r6 (SIMGOTO5-01, orden 1-095): con la PAUSA REAL de la pagina en el banco, el cierre que FALLA para el avance en la
  * vela del cierre (11:55), en el salto y en el Step; el alumno repite la orden y el TP de las 11:57 se cierra.
- * GOTOG1-03 · quitar un par con posiciones u ordenes las borraba sin cerrarlas: ahora no se quita y avisa.
+ * GOTOG1-03 · quitar un par con posiciones u ordenes las borraba sin cerrarlas. Orden 1-097 (nada obliga a cerrar: orden
+ * 1-091): la ✕ del par no se muestra mientras las tenga (SessionTopBar.js) y removePair no lo quita, sin aviso.
  * GOTOG1-02 (volver a un par) ya lo cubren sg03 y sg05 (familia par); la reproduccion de Astra da 6/0 en r3.
  */
 import { titulo, ver, oraculo, fin, escenario, sesionSim, vela, importa, A, asienta, db, puerta, REPO } from '../lib.mjs'
 import { banco, velasEnStorage } from '../banco-motor.mjs'
 import fs from 'node:fs'
 const CI = await importa('lib/sim/cierre.js').catch(() => null), SV = await importa('lib/sim/servicio.js').catch(() => null)
-if (!CI || !SV) { for (let i = 0; i < 8; i++) oraculo('SG12', `caso ${i}: sin la cola de la etapa 1 no se puede`, false, 'no estan'); fin() }
+if (!CI || !SV) { for (let i = 0; i < 9; i++) oraculo('SG12', `caso ${i}: sin la cola de la etapa 1 no se puede`, false, 'no estan'); fin() }
 
 async function corre(falla, modo) {
   const dia = falla ? '2025-01-07' : '2024-01-09', T = Date.parse(dia + 'T11:55:00Z') / 1000
@@ -61,7 +62,7 @@ for (const falla of [true, false]) {
   if (falla) oraculo('SG12', 'el cierre falla: la pausa de la pagina para el salto y el Step en la vela del cierre (11:55)', s.parado === 0 && p.parado === 0, `salto ${s.parado} · paso ${p.parado}`)
 }
 
-titulo('GOTOG1-03 · quitar un par con operaciones: no se quita y avisa')
+titulo('GOTOG1-03 · quitar un par con operaciones: sin la ✕ y no se quita, sin texto que obligue a nada (orden 1-097)')
 const src = fs.readFileSync(REPO + 'components/_SessionInner.js', 'utf8')
 const i0 = src.indexOf('const removePair=useCallback(')
 const cuerpo = src.slice(i0, src.indexOf('},[activePairs,activePair,id])', i0) + 1).replace('const removePair=useCallback(', 'return (').replace(/\}$/, '})')
@@ -73,7 +74,18 @@ function quita(estadoGBP) {
   return { avisos, quedan: 'GBP/USD' in pairState.current, pares }
 }
 const conPos = quita({ positions: [{ id: 'p' }], orders: [] }), conOrd = quita({ positions: [], orders: [{ id: 'o' }] }), vacio = quita({ positions: [], orders: [] })
-oraculo('SG12', 'con una posicion abierta en el par: no se quita y avisa', conPos.quedan && conPos.avisos.length === 1, JSON.stringify(conPos))
-oraculo('SG12', 'con una orden pendiente en el par: no se quita y avisa', conOrd.quedan && conOrd.avisos.length === 1, JSON.stringify(conOrd))
+oraculo('SG12', 'con una posicion abierta en el par: no se quita, y sin aviso', conPos.quedan && conPos.avisos.length === 0, JSON.stringify(conPos))
+oraculo('SG12', 'con una orden pendiente en el par: no se quita, y sin aviso', conOrd.quedan && conOrd.avisos.length === 0, JSON.stringify(conOrd))
+// la barra: la ✕ de cada par, solo si no tiene operaciones (el elemento que devuelve SessionTopBar, con React de pruebas)
+const TB = (await importa('components/SessionTopBar.js')).default
+function cruces(estados) {
+  const el = TB({ session: { name: 's' }, activePairs: Object.keys(estados), activePair: 'EUR/USD', setActivePair() {}, pairState: { current: estados }, removePair() {}, addPair() {}, addingPair: false, setAddingPair() {} })
+  const out = [], anda = (n, k) => { if (!n || typeof n !== 'object') return; if (Array.isArray(n)) return n.forEach(x => anda(x, k)); const p = n.props || {}, kk = n.key ?? k; if (n.type === 'button' && [].concat(p.children).includes('✕')) out.push(kk); anda(p.children, kk) }
+  anda(el, null); return out.sort().join()
+}
+const vacios = { 'EUR/USD': { positions: [], orders: [] }, 'GBP/USD': { positions: [], orders: [] }, 'USD/JPY': { positions: [], orders: [] } }
+const conOps = { ...vacios, 'GBP/USD': { positions: [{ id: 'p' }], orders: [] }, 'USD/JPY': { positions: [], orders: [{ id: 'o' }] } }
+oraculo('SG12', 'la barra: sin la ✕ en el par con una posicion o una orden; con ella en los demas', cruces(conOps) === 'EUR/USD', cruces(conOps))
+ver('control: sin operaciones, la ✕ en todos los pares', cruces(vacios) === 'EUR/USD,GBP/USD,USD/JPY', cruces(vacios))
 ver('control: sin operaciones, el par se quita como siempre', !vacio.quedan && vacio.avisos.length === 0 && vacio.pares.join() === 'EUR/USD', JSON.stringify(vacio))
 fin()

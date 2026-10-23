@@ -1234,9 +1234,10 @@ export default function SessionPage(){
 
   const removePair=useCallback((pair)=>{
     if(activePairs.length===1) return
-    // GOTOG1-03 (orden 1-089): quitar un par borraba sus posiciones y ordenes sin cerrarlas ni cancelarlas
+    // GOTOG1-03 (orden 1-089): quitar un par borraba sus posiciones y ordenes sin cerrarlas ni cancelarlas. Orden 1-097:
+    // la ✕ no se muestra mientras las tenga (SessionTopBar.js) y, por si acaso, aqui no se quita; sin texto que obligue a nada
     const pq=pairState.current[pair]
-    if((pq?.positions?.length||0)+(pq?.orders?.length||0)>0){avisa('Cierra o cancela las operaciones de ese par antes de quitarlo.');return}
+    if((pq?.positions?.length||0)+(pq?.orders?.length||0)>0)return
     const cr=chartMap.current[pair];if(cr){try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{};delete chartMap.current[pair]}
     delete pairState.current[pair]
     const next=activePairs.filter(p=>p!==pair);setActivePairs(next)
