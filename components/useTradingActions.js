@@ -298,7 +298,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         if(espera(pos)){ ps.sltpDesde=Math.min(ps.sltpDesde??i,i); return }
         // la regla de la vela (Ramon, orden 1-085; lib/sim/vela.js): si toca el SL y el TP, el que el
         // recorrido de la vela alcanza antes; una pendiente llenada en esta vela, desde su entrada
-        const toca=cierreEnVela(pos,candle,{llenadaAqui:pos.porLimite&&candle.time===pos.openTime})
+        const toca=cierreEnVela(pos,candle,{llenadaAqui:pos.porLimite&&candle.time===pos.openTime,par:pair})
         // la hora, la de la vela que lo toca: en una reevaluacion (reevaluaSLTP) es anterior al motor (GOTOG1-01)
         if(toca==='TP') toClose.push({id:pos.id,reason:'TP',price:pos.tp,hora:candle.time})
         else if(toca==='SL') toClose.push({id:pos.id,reason:'SL',price:pos.sl,hora:candle.time})
