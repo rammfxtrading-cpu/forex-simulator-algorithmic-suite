@@ -757,7 +757,7 @@ export default function SessionPage(){
 
   // Datos y chart del par: saveProgress, loadPair y updateChart viven en usePairData
   // (Fase 7, Corte E). API devuelta con los mismos nombres: ningún call-site cambia.
-  const { saveProgress, loadPair, updateChart } = usePairData({
+  const { saveProgress, loadPair, updateChart, ponAlDia } = usePairData({
     id, session, activePair,
     pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef,
     checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef,
@@ -1111,9 +1111,9 @@ export default function SessionPage(){
 
   // ── Replay ────────────────────────────────────────────────────────────────────
   const eng=()=>pairState.current[activePair]?.engine
-  const handlePlayPause=useCallback(()=>{
-    // durante el salto del Go to (avanzaHasta) ni Play ni Step: el salto termina o para solo
-    const e=eng();if(!e||e.saltando)return
+  const handlePlayPause=useCallback(async()=>{
+    // durante el salto del Go to (o su espera inicial: engine.ocupado, SGR6-02) ni Play ni Step: el salto termina o para solo
+    const e=eng();if(!e||e.ocupado)return
     if(e.isPlaying){
       e.pause();setIsPlaying(false)
       // Etapa 1 (CTO 13-oct, Astra E1-01): la pausa solo guarda last_timestamp y
@@ -1129,19 +1129,23 @@ export default function SessionPage(){
       // Deseleccionar al play no afecta el dibujo en sí (sigue ahí), solo
       // quita los handles de edición.
       try{ deselectAll() }catch{}
+      // SGR6-01: si una pausa corto la puesta al dia del par, primero al dia; si no se puede (otra pausa), no arranca
+      if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return
       // la frontera economica del Play, la misma que la del Step y el salto (SIMGOTO2-01, orden 1-087)
       e.frontera=creaFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
       e.play();setIsPlaying(true)
     }
-  },[activePair,saveProgress,deselectAll])
+  },[activePair,saveProgress,deselectAll,ponAlDia])
   // Step: una vela con la frontera economica del salto (SIMGOTO2-01, orden 1-087): no se pasa a la siguiente
   // hasta aplicar los cierres y releer el reto; mientras espera, otro Step no hace nada (e.saltando)
-  const handleStep=useCallback(async()=>{const e=eng();if(!e||e.isPlaying||e.saltando)return;await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress,id,refreshChallengeStatus])
+  const handleStep=useCallback(async()=>{const e=eng();if(!e||e.isPlaying||e.ocupado)return;if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
   const handleGoTo=useCallback(async(sessKey)=>{
     setGotoOpen(false)
-    const e=eng();if(!e||e.saltando)return
+    const e=eng();if(!e||e.ocupado)return
     if(e.isPlaying){e.pause();setIsPlaying(false)}
+    // SGR6-01: si una pausa corto la puesta al dia del par, primero al dia (el Go to se calcula desde el maestro)
+    if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado)return
     const target=nextSessionOpen(e.candles,e.currentIndex,sessKey)
     if(!target){setGotoMiss(true);setTimeout(()=>setGotoMiss(false),1500);return}
     // Orden 1-080: el salto recorre TODAS las velas M1 del tramo como el replay (lib/sim/salto.js);
@@ -1157,7 +1161,7 @@ export default function SessionPage(){
     const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
     updateChart(activePair,e,true)
     saveProgress(e.currentTime)
-  },[activePair,updateChart,saveProgress,id,refreshChallengeStatus])
+  },[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
 
   // Etapa 1 (o.5–o.7): con lo economico bloqueado el replay se para; si no, el
   // motor volveria a cerrar en la vela siguiente lo que se acaba de revertir.

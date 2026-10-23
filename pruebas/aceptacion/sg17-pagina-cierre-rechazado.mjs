@@ -40,7 +40,7 @@ for(const side of ['BUY','SELL'])for(const rechazo of [false,true]){
   const avanza=async()=>{
    if(modo==='salto')return props(p,'ReplayPill').handleGoTo('nyam');
    if(modo==='paso'){for(let i=0;i<5;i++){let antes=e.currentTime;await props(p,'ReplayPill').handleStep();await asienta();if(e.currentTime===antes)break}return}
-   props(p,'ReplayPill').handleSpeed(4);props(p,'ReplayPill').handlePlayPause();let k=0;
+   props(p,'ReplayPill').handleSpeed(4);await props(p,'ReplayPill').handlePlayPause();let k=0;
    while((e.isPlaying||e._esperando)&&e.currentTime<T+300&&k<30){e._tickFrame(k++*250);if(e._esperando)await e._esperando;await asienta()}
    ver('control: Play no agota fotogramas',k<30);e.pause();
   };

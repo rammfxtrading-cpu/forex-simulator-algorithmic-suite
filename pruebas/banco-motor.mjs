@@ -114,8 +114,11 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
     // un paso de vela como handleStep (_SessionInner.js:1100): nextCandle(1)
     // un paso de vela como handleStep (orden 1-087): pasoConFrontera (una vela y la frontera economica del
     // salto); sin lib/sim/salto.js (el codigo auditado), el de entonces: nextCandle(1)
+    // SGR6-01: como la pagina, primero al dia con el maestro si una pausa corto la puesta al dia (ponAlDia)
     async paso(n = 1) {
       for (let i = 0; i < n; i++) {
+        const pon = caja.valor.datos.ponAlDia
+        if (pon && !(await pon(estado.activa))) { await repinta(); continue }
         if (pasoConFrontera) await pasoConFrontera({ engine: motor(), sid: sesion.id, pairState: refs.pairState, esReto: !!refs.sessionRef.current?.challenge_type, refresca: caja.valor.reto.refreshChallengeStatus })
         else motor().nextCandle(1)
         await repinta()
@@ -125,6 +128,8 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
     // lib/sim/salto.js, el de antes: un seekToTime y el reset de cursores
     async irA(sessKey) {
       const e = motor()
+      const pon = caja.valor.datos.ponAlDia
+      if (pon && !(await pon(estado.activa))) { await repinta(); return null }
       const target = nextSessionOpen(e.candles, e.currentIndex, sessKey)
       if (!target) return null
       if (!saltaA) {

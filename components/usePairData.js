@@ -202,11 +202,32 @@ if(full||(curr!==prev&&curr!==prev+1)){
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
   },[])
 
+  // Ponerse al dia con el reloj maestro (orden 1-081: un salto como el Go to, vela a vela, no un seekToTime de un solo
+  // onTick, o una pendiente de este par no miraria su SL/TP: M04). Al cambiar de par y, SGR6-01 (revision adversarial
+  // r6), ANTES de cada orden del alumno (Step, Go to, Play: _SessionInner.js): si una pausa (un cierre rechazado) corto
+  // la puesta al dia, el par no avanza desde el pasado: primero se pone al dia. true si esta al dia (su siguiente vela
+  // es posterior al maestro; un par con un hueco se queda en su ultima vela <= maestro)
+  const ponAlDia=useCallback(async(par)=>{
+    const e=pairState.current[par]?.engine; if(!e) return false
+    const alDia=()=>{ const m=getMasterTime(), sig=e.candles[e.currentIndex+1]; return !m||!sig||sig.time>m }
+    if(alDia()) return true
+    await saltaA({engine:e,hasta:getMasterTime(),sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:(ct)=>refrescaRetoRef.current?.(ct)})
+    if(activePairRef.current!==par) return false
+    const cr=chartMap.current[par]; if(cr) cr.prevCount=0
+    updateChart(par,e,true)
+    setIsPlaying(e.isPlaying);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
+    const agg=e.getAggregated(pairTfRef.current[par]||'H1')
+    setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true)
+    const m=getMasterTime(); if(!m||e.currentTime>m) setMasterTime(e.currentTime)
+    setTick(t=>t+1)
+    return alDia()
+  },[id,updateChart])
+
   useEffect(()=>{
     if(!activePair) return
     // SIMGOTO-01 (orden 1-083): un salto de otro par que siga en curso se corta en la vela en que
     // va (como si se hubiera avanzado hasta ahi y despues cambiado de par): nunca dos relojes a la vez
-    Object.entries(pairState.current).forEach(([k,o])=>{ if(k!==activePair&&o?.engine?.saltando) o.engine.pause() })
+    Object.entries(pairState.current).forEach(([k,o])=>{ if(k!==activePair&&o?.engine?.ocupado) o.engine.pause() })
     const ps=pairState.current[activePair]
     if(ps?.engine){
       // Sync this pair's engine to the current master time (from whichever pair was active before)
@@ -223,14 +244,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       }
       // SIMGOTO-03 (orden 1-083): cualquier retraso, tambien de una sola vela (antes, > 60 s)
       if(masterTime && masterTime > e.currentTime) {
-        // Orden 1-081: ponerse al dia es un salto como el Go to: vela a vela (lib/sim/salto.js), no un
-        // seekToTime de un solo onTick (una pendiente de este par no miraria su SL/TP: M04)
-        saltaA({engine:e,hasta:masterTime,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:(ct)=>refrescaRetoRef.current?.(ct)})
-          .then(()=>{
-            if(activePairRef.current!==par) return
-            const cr=chartMap.current[par]; if(cr) cr.prevCount=0
-            updateChart(par,e,true); sincroniza(); setTick(t=>t+1)
-          })
+        ponAlDia(par)
       } else {
         // por delante del maestro (no deberia ocurrir: el par quieto siempre va por detras) NO se
         // rebobina: sus cierres ya ocurrieron; el maestro sube hasta el (SIMGOTO-03)
@@ -242,5 +256,5 @@ if(full||(curr!==prev&&curr!==prev+1)){
 
   useEffect(()=>{if(session&&activePair)loadPair(activePair)},[session,activePair,loadPair])
 
-  return { saveProgress, loadPair, updateChart }
+  return { saveProgress, loadPair, updateChart, ponAlDia }
 }
