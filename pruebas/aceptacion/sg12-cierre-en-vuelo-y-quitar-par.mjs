@@ -63,13 +63,14 @@ for (const falla of [true, false]) {
 }
 
 titulo('GOTOG1-03 · quitar un par con operaciones: sin la ✕ y no se quita, sin texto que obligue a nada (orden 1-097)')
+const QP = await importa('lib/sim/quitarPar.js').catch(() => null)   // GOTODESP1-01: la funcion comun de la ✕ y removePair
 const src = fs.readFileSync(REPO + 'components/_SessionInner.js', 'utf8')
 const i0 = src.indexOf('const removePair=useCallback(')
 const cuerpo = src.slice(i0, src.indexOf('},[activePairs,activePair,id])', i0) + 1).replace('const removePair=useCallback(', 'return (').replace(/\}$/, '})')
 function quita(estadoGBP) {
   const avisos = [], pairState = { current: { 'EUR/USD': { positions: [], orders: [] }, 'GBP/USD': estadoGBP } }
   let pares = ['EUR/USD', 'GBP/USD']
-  const env = { useCallback: f => f, activePairs: pares, chartMap: { current: {} }, pairState, avisa: x => avisos.push(x), setActivePairs: x => { pares = x }, id: 's', localStorage: { setItem() {} }, activePair: 'EUR/USD', setActivePair() {} }
+  const env = { parConOperaciones: QP?.parConOperaciones ?? (() => false), useCallback: f => f, activePairs: pares, chartMap: { current: {} }, pairState, avisa: x => avisos.push(x), setActivePairs: x => { pares = x }, id: 's', localStorage: { setItem() {} }, activePair: 'EUR/USD', setActivePair() {} }
   new Function(...Object.keys(env), cuerpo)(...Object.values(env))('GBP/USD')
   return { avisos, quedan: 'GBP/USD' in pairState.current, pares }
 }

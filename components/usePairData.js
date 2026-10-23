@@ -14,6 +14,7 @@ import { useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
 import { saltaA } from '../lib/sim/salto'
+import { encola } from '../lib/sim/cola'
 import { progresoMonotono, siembraProgreso } from '../lib/sim/progreso'
 import { puedeEscribir } from '../lib/sim/servicio'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
@@ -32,13 +33,19 @@ export default function usePairData({ id, session, activePair, pairState, chartM
     // guardado es una escritura economica (last_timestamp): antes, el estado del
     // servicio; despues, el {error}, que solo avisa
     if(sessionRef.current?.legado===true) return
-    try{
-      const p=await puedeEscribir()
-      if(!p.permitido) return
-      // nunca hacia atras (SIMGOTO2-02, lib/sim/progreso.js)
-      const r=await supabase.from('sim_sessions').update({last_timestamp:progresoMonotono(id,ts),timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)
-      avisaSiError('el avance de la sesión')(r)
-    }catch(e){ avisa('No se ha podido guardar el avance de la sesión. Comprueba tu conexión.') }
+    // GOTODESP1-02 (Astra; orden 1-099): el guardado va por la COLA de la sesion, como los cierres (lib/sim/cola.js): ninguna
+    // escritura de last_timestamp sale hasta que termina la anterior, y su valor se calcula al salir (el mayor hasta
+    // entonces). Asi una peticion antigua no llega despues de una nueva. Lo que no cubre (otra pestaña, otro navegador)
+    // lo cierra la sim-005 en la base
+    return encola(id, async()=>{
+      try{
+        const p=await puedeEscribir()
+        if(!p.permitido) return
+        // nunca hacia atras (SIMGOTO2-02, lib/sim/progreso.js)
+        const r=await supabase.from('sim_sessions').update({last_timestamp:progresoMonotono(id,ts),timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)
+        avisaSiError('el avance de la sesión')(r)
+      }catch(e){ avisa('No se ha podido guardar el avance de la sesión. Comprueba tu conexión.') }
+    })
   },[id])
 
   // Bloque D, punto 5 (CTO, 5-oct; Astra, regresion de C04): el fallo de un par

@@ -7,6 +7,7 @@
 import { useRouter } from 'next/router'
 import { s } from './sessionStyles'
 import { ALL_PAIRS } from '../lib/sessionUi'
+import { parConOperaciones } from '../lib/sim/quitarPar'
 
 export default function SessionTopBar({session,activePairs,activePair,setActivePair,pairState,removePair,addPair,addingPair,setAddingPair}){
   const router = useRouter()
@@ -29,8 +30,9 @@ export default function SessionTopBar({session,activePairs,activePair,setActiveP
                 {pair}
                 {(pairState.current[pair]?.positions?.length>0)&&<span style={s.tabDot}/>}
               </span>
-              {/* orden 1-097: sin la ✕ mientras el par tenga posiciones u ordenes (quitarlo las borraria: aun no se guardan) */}
-              {activePairs.length>1&&!((pairState.current[pair]?.positions?.length||0)+(pairState.current[pair]?.orders?.length||0))&&<button style={s.tabClose} onClick={()=>removePair(pair)}>✕</button>}
+              {/* orden 1-097: sin la ✕ mientras el par tenga operaciones, tambien un cierre en vuelo (lib/sim/quitarPar.js);
+                  la pagina repinta con la cola (useCola en _SessionInner.js) */}
+              {activePairs.length>1&&!parConOperaciones(session?.id,pairState.current[pair])&&<button style={s.tabClose} onClick={()=>removePair(pair)}>✕</button>}
             </div>
           ))}
           <div style={{position:'relative',flexShrink:0}}>
