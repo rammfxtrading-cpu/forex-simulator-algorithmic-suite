@@ -9,6 +9,8 @@
  *   el cierre FALLA (23514): la posicion vuelve antes del avance y el TP de las 11:57 se cierra (+300), con su fila
  *   el cierre SALE: cerrada a mano a 1,1000 (0), sin TP despues
  *   en los dos, el salto (Go to NY) da lo mismo que el avance con Step (clics)
+ * r6 (SIMGOTO5-01, orden 1-095): con la PAUSA REAL de la pagina en el banco, el cierre que FALLA para el avance en la
+ * vela del cierre (11:55), en el salto y en el Step; el alumno repite la orden y el TP de las 11:57 se cierra.
  * GOTOG1-03 · quitar un par con posiciones u ordenes las borraba sin cerrarlas: ahora no se quita y avisa.
  * GOTOG1-02 (volver a un par) ya lo cubren sg03 y sg05 (familia par); la reproduccion de Astra da 6/0 en r3.
  */
@@ -16,7 +18,7 @@ import { titulo, ver, oraculo, fin, escenario, sesionSim, vela, importa, A, asie
 import { banco, velasEnStorage } from '../banco-motor.mjs'
 import fs from 'node:fs'
 const CI = await importa('lib/sim/cierre.js').catch(() => null), SV = await importa('lib/sim/servicio.js').catch(() => null)
-if (!CI || !SV) { for (let i = 0; i < 7; i++) oraculo('SG12', `caso ${i}: sin la cola de la etapa 1 no se puede`, false, 'no estan'); fin() }
+if (!CI || !SV) { for (let i = 0; i < 8; i++) oraculo('SG12', `caso ${i}: sin la cola de la etapa 1 no se puede`, false, 'no estan'); fin() }
 
 async function corre(falla, modo) {
   const dia = falla ? '2025-01-07' : '2024-01-09', T = Date.parse(dia + 'T11:55:00Z') / 1000
@@ -38,10 +40,13 @@ async function corre(falla, modo) {
   await asienta(80)
   const durante = b.motor().currentTime - T
   gate.abrir(); await cerrando; await avance; await asienta(80)
+  const parado = b.motor().currentTime - T
   db.pausa = null; db.falla = null
+  // el rechazo paro el avance (SIMGOTO5-01): el alumno repite la orden (el Step, abajo, ya avanza hasta las 12:00)
+  if (falla && modo === 'salto') { await b.irA('nyam'); await asienta(80) }
   if (modo === 'paso') { while (b.motor().currentTime < T + 300) { const antes = b.motor().currentTime; await b.paso(1); if (b.motor().currentTime === antes) break } }
   await asienta(80); await b.repinta()
-  const r = { durante, fin: b.motor().currentTime - T, trades: b.ps().trades.map(t => [t.reason, Math.round(t.pnl), t.closeTime - T]), abiertas: b.ps().positions.length, filas: db.tablas.sim_trades.map(f => [+Number(f.pnl), f.closed_at]) }
+  const r = { durante, parado, fin: b.motor().currentTime - T, trades: b.ps().trades.map(t => [t.reason, Math.round(t.pnl), t.closeTime - T]), abiertas: b.ps().positions.length, filas: db.tablas.sim_trades.map(f => [+Number(f.pnl), f.closed_at]) }
   b.caja.raiz.desmonta?.()
   return r
 }
@@ -53,6 +58,7 @@ for (const falla of [true, false]) {
   if (falla) oraculo('SG12', 'el cierre falla: la posicion vuelve y el TP de las 11:57 se cierra en su vela (+300), con su fila', JSON.stringify(s.trades) === JSON.stringify([['TP', 300, 120]]) && s.abiertas === 0 && s.filas.length === 1 && s.filas[0][0] === 300, JSON.stringify(s))
   else oraculo('SG12', 'el cierre sale: cerrada a mano a 1,1000, sin TP despues', JSON.stringify(s.trades) === JSON.stringify([['MANUAL', 0, 0]]) && s.abiertas === 0, JSON.stringify(s))
   oraculo('SG12', `falla=${falla}: salto = avance con Step`, JSON.stringify([s.trades, s.abiertas, s.filas]) === JSON.stringify([p.trades, p.abiertas, p.filas]), `salto ${JSON.stringify(s)} · paso ${JSON.stringify(p)}`)
+  if (falla) oraculo('SG12', 'el cierre falla: la pausa de la pagina para el salto y el Step en la vela del cierre (11:55)', s.parado === 0 && p.parado === 0, `salto ${s.parado} · paso ${p.parado}`)
 }
 
 titulo('GOTOG1-03 · quitar un par con operaciones: no se quita y avisa')

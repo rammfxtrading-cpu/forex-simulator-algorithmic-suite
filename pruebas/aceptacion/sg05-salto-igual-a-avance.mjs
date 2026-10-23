@@ -21,6 +21,9 @@
  *          queda EN VUELO (retenido 0–30 ms), y la base lo rechaza (23514) o lo acepta al azar (SIMGOTO4-01,
  *          Astra; orden 1-093). Tres modos: salto, Step y PLAY (el motor real con su frontera, ticks a mano).
  *          Antes, un rechazo tardio hacia que Step y Play omitieran el breach intravela que el salto aplicaba.
+ *          r6 (SIMGOTO5-01, orden 1-095): el banco hace ya la PAUSA REAL de la pagina al rechazarse un cierre; los tres
+ *          modos se paran en la vela del cierre y el alumno REPITE la orden (otro Go to, otros Step, otro Play): las dos
+ *          ordenes cuentan. Y cierres PARCIALES (la mitad de los lotes) ademas de totales.
  * El control (avance) es Step: nextCandle(1) y repintar, parando en el breach como la pagina.
  */
 import { readFileSync } from 'node:fs'
@@ -61,7 +64,7 @@ function tramo(familia) {
   if (familia === 'lento') { c.retardos = Array.from({ length: 16 }, () => entre(0, 25)); c.mercado.lots = entre(5, 30); c.lim.lots = entre(5, 30) }   // lotes grandes: breach y objetivo posibles
   if (familia === 'manual') {
     // lotes grandes y SL lejos: el flotante de la posicion cuyo cierre esta en vuelo puede quemar el reto
-    c.mercado.lots = entre(5, 30); c.lim.lots = entre(5, 30); c.falla = r() < 0.6; c.retencion = entre(0, 30)
+    c.mercado.lots = entre(5, 30); c.lim.lots = entre(5, 30); c.falla = r() < 0.6; c.retencion = entre(0, 30); c.parcial = r() < 0.4
     c.mercado.slPips = entre(30, 60); c.mercado.sl = red(p - lados * c.mercado.slPips * PIP)
   }
   if (familia === 'par') {
@@ -130,7 +133,8 @@ async function corre(c, modo) {
     let primero = true
     db.pausa = ctx => ctx.tabla === 'rpc:sim_cierre_v0' && primero ? new Promise(res => setTimeout(res, c.retencion)) : null
     db.falla = ctx => { if (ctx.tabla !== 'rpc:sim_cierre_v0' || !primero) return null; primero = false; return c.falla ? { code: '23514', message: 'rechazo sintetico' } : null }
-    cierre = b.caja.valor.trading.closePosition(pos.id, 'MANUAL', 'EUR/USD', velasDe(c)[c.desde].close)
+    cierre = c.parcial ? b.caja.valor.trading.closePartial(pos.id, 'EUR/USD', Math.floor(c.mercado.lots / 2))
+      : b.caja.valor.trading.closePosition(pos.id, 'MANUAL', 'EUR/USD', velasDe(c)[c.desde].close)
   }
   // el avance para donde la pagina bloquea el Step: breach, o el reto ya no activo (challengeLocked:
   // objetivo alcanzado o fallido, useChallengeFlow.js)
@@ -144,6 +148,7 @@ async function corre(c, modo) {
     const destino = nextSessionOpen(b.motor().candles, b.motor().currentIndex, c.sesion)
     if (!destino) return null
     hasta = destino.time
+    const avanza = async () => {
     if (modo === 'salto') await b.irA(c.sesion)
     else if (modo === 'play') {
       // el Play del motor real con su frontera; los fotogramas, a mano (el banco no tiene requestAnimationFrame);
@@ -157,8 +162,14 @@ async function corre(c, modo) {
       e.pause()
     }
     else while (b.motor().currentTime < hasta && !quemado()) { const antes = b.motor().currentTime; await b.paso(1); if (b.motor().currentTime === antes) break }
+    }
+    await avanza()
+    if (cierre) {
+      await cierre; await COLA.esperaCola(ses.id); await asienta(40); db.pausa = null; db.falla = null
+      // el rechazo paro el avance (la pausa de la pagina): el alumno repite la MISMA orden
+      if (c.falla && !quemado()) { await avanza(); await COLA.esperaCola(ses.id); await asienta(40) }
+    }
   }
-  if (cierre) { await cierre; await COLA.esperaCola(ses.id); await asienta(40); db.pausa = null; db.falla = null }
   await new Promise(s => setTimeout(s, 60)); await b.repinta()
   const ps = b.ps('EUR/USD')
   const res = {
@@ -192,7 +203,7 @@ for (const [familia, n] of Object.entries(N)) {
     if (familia === 'manual' && salto && paso && !salto.roto && !paso.roto) {
       const play = await corre(c, 'play'); if (c.falla) manualesFallados++
       if (salto.res.trades.some(t => /BREACH/.test(t[0])) || salto.res.filas.length) manualesConDinero++
-      oraculo('SG05', `manual ${i} (${c.mercado.side} ${c.mercado.lots} lotes, cierre ${c.falla ? 'RECHAZADO' : 'aceptado'} a los ${c.retencion} ms, desde ${new Date(REALES[c.desde].time * 1000).toISOString().slice(5, 16)}): salto = Step = Play`,
+      oraculo('SG05', `manual ${i} (${c.mercado.side} ${c.mercado.lots} lotes, cierre ${c.parcial ? 'PARCIAL ' : ''}${c.falla ? 'RECHAZADO' : 'aceptado'} a los ${c.retencion} ms, desde ${new Date(REALES[c.desde].time * 1000).toISOString().slice(5, 16)}): salto = Step = Play`,
         JSON.stringify(salto.res) === JSON.stringify(paso.res) && JSON.stringify(paso.res) === JSON.stringify(play.res),
         `caso ${JSON.stringify(c)} · salto ${JSON.stringify(salto.res)} · Step ${JSON.stringify(paso.res)} · Play ${JSON.stringify(play.res)}`)
       continue
