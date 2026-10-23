@@ -73,14 +73,6 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     ps3.positions = ps3.positions.some(p=>p.id===confirmada.id)
       ? ps3.positions.map(p=>p.id===confirmada.id?{...confirmada}:p)
       : [...ps3.positions,{...confirmada}]
-    // GOTOG1-01 (orden 1-089): mientras su cierre estuvo en vuelo, la posicion no estaba en la lista y
-    // checkSLTP no la miro; vuelve con las velas DESPUES de la del cierre apuntadas (reevaluaSLTP, al
-    // liberarse). La del cierre no: un cierre que falla de verdad no se reintenta solo
-    const cs=ps3.engine?.candles, ct=enMemoria?.closeTime
-    if(cs&&Number.isFinite(ct)){
-      const i=cs.findIndex(c=>c.time>ct)
-      if(i>=0&&i<=ps3.engine.currentIndex) ps3.sltpDesde=Math.min(ps3.sltpDesde??i,i)
-    }
   }
   // SL/TP de las velas que pasaron con la posicion ocupada (o con la barrera del reto): al
   // liberarse, se vuelven a mirar (checkSLTP las apunta en ps.sltpDesde)
@@ -102,18 +94,14 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   }
 
   // closePosition accepts optional pair+exitPrice for use from engine.onTick
-  // horaCierre (opcional): la hora de la vela que origina el cierre (SIMGOTO-01, orden 1-083)
-  const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null,horaCierre=null)=>{
+  const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null)=>{
     const usePair=pairOverride||activePair
     const usePrice=exitPriceOverride||currentPrice
     const ps=pairState.current[usePair];if(!ps||!usePrice) return
     if(!ps.positions.some(p=>p.id===posId)) return
     // d2: una sesion del simulador anterior es de solo lectura
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); return }
-    // la hora de la vela que lo origina, en SU par: en el salto del Go to (orden 1-080) el cierre es
-    // de la vela del salto donde ocurre, no de la hora de la pagina de antes del salto; y nunca la
-    // del par que se este mirando si es otro (SIMGOTO-01, orden 1-083)
-    const ct=Number.isFinite(horaCierre) ? horaCierre : (pairState.current[usePair]?.engine?.currentTime ?? currentTime)
+    const ct=currentTime
     // en su turno: la posicion de ese momento; aplica el cierre a la pantalla
     const prepara=()=>{
       const ps2=pairState.current[usePair]
@@ -272,8 +260,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   },[])
 
   // desdeIdx (opcional): reevaluar desde esa vela (reevaluaSLTP, al liberarse una posicion)
-  // soloIds (opcional): solo esas posiciones (las que una pendiente acaba de abrir: M04, orden 1-081)
-  const checkSLTP=useCallback((pair,engine,desdeIdx,soloIds)=>{
+  const checkSLTP=useCallback((pair,engine,desdeIdx)=>{
     const ps=pairState.current[pair];if(!ps?.positions?.length) return
     const curIdx=engine.currentIndex
     // Determine range to check — from last checked index+1 to current
@@ -289,7 +276,6 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
       const candle=engine.candles[i];if(!candle) continue
       const{high,low}=candle
       ps.positions.forEach(pos=>{
-        if(soloIds && !soloIds.includes(pos.id)) return
         if(toClose.find(x=>x.id===pos.id)) return // already queued
         // FIX BUG A: Skip candles before this position was opened.
         // Without this guard, past candles could trigger SL/TP retroactively
@@ -298,24 +284,20 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         if(espera(pos)){ ps.sltpDesde=Math.min(ps.sltpDesde??i,i); return }
         const hitTp=pos.side==='BUY'?high>=pos.tp:low<=pos.tp
         const hitSl=pos.side==='BUY'?low<=pos.sl:high>=pos.sl
-        // la hora, la de la vela que lo toca: en una reevaluacion (reevaluaSLTP) es anterior al motor (GOTOG1-01)
-        if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp,hora:candle.time})
-        else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl,hora:candle.time})
+        if(hitTp) toClose.push({id:pos.id,reason:'TP',price:pos.tp})
+        else if(hitSl) toClose.push({id:pos.id,reason:'SL',price:pos.sl})
       })
     }
-    toClose.forEach(({id,reason,price,hora})=>closePositionRef.current(id,reason,pair,price,null,hora))
+    toClose.forEach(({id,reason,price})=>closePositionRef.current(id,reason,pair,price))
   },[id])
 
-  // Devuelve las posiciones que abre ({ids, desdeIdx}: la primera vela de llenado) o null; el onTick
-  // les mira SL/TP desde esa vela, la del llenado incluida (M04, orden 1-081)
   const checkLimitOrders=useCallback((pair,engine)=>{
-    const ps=pairState.current[pair]; if(!ps?.orders?.length) return null
+    const ps=pairState.current[pair]; if(!ps?.orders?.length) return
     const curIdx=engine.currentIndex
     const fromIdx = ps.lastLimitIdx != null ? ps.lastLimitIdx + 1 : curIdx
     ps.lastLimitIdx = curIdx
 
-    const executed=[], abiertas=[]
-    let desdeIdx=null
+    const executed=[]
     for(let i=fromIdx; i<=curIdx; i++){
       const candle=engine.candles[i]; if(!candle) continue
       ps.orders.forEach(order=>{
@@ -339,7 +321,6 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         // This ensures checkSLTP only checks candles AFTER this position was actually opened.
         const newPos={id:posId,pair,side,entry:order.entry,sl:order.sl,tp:order.tp,lots:order.lots,slPips:order.slPips,tpPips:order.tpPips,rr:order.rr,openTime:candle.time,initialSlPips:order.slPips}
         ps.positions=[...ps.positions,newPos]
-        abiertas.push(posId); if(desdeIdx==null) desdeIdx=i
         setTimeout(()=>createPositionLines(posId,pair,newPos),50)
       })
     }
@@ -347,7 +328,6 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
       ps.orders=ps.orders.filter(o=>!executed.includes(o.id))
       setTick(t=>t+1)
     }
-    return abiertas.length ? { ids:abiertas, desdeIdx } : null
   },[])
 
   return {

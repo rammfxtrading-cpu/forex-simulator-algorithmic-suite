@@ -10,7 +10,6 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { clearCurrentTime, getSeriesData, getRealLen } from '../lib/sessionData'
-import { parConOperaciones } from '../lib/sim/quitarPar'
 import { initVisibleRange, scrollToTail, markUserScrollIfReal } from '../lib/chartViewport'
 import { isJpy, pipMult, calcPnl } from '../lib/trading/pricing'
 import { nextSessionOpen } from '../lib/killzonesDomain'
@@ -42,7 +41,6 @@ import AvisoServicio from './AvisoServicio'
 import { useServicio } from '../lib/sim/servicio'
 import { fijaSaldoConfirmado } from '../lib/sim/cierre'
 import { useCola } from '../lib/sim/cola'
-import { saltaA, creaFrontera, pasoConFrontera } from '../lib/sim/salto'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import { COLUMNAS_SESION } from '../lib/sim/columnas'
@@ -758,12 +756,12 @@ export default function SessionPage(){
 
   // Datos y chart del par: saveProgress, loadPair y updateChart viven en usePairData
   // (Fase 7, Corte E). API devuelta con los mismos nombres: ningún call-site cambia.
-  const { saveProgress, loadPair, updateChart, ponAlDia } = usePairData({
+  const { saveProgress, loadPair, updateChart } = usePairData({
     id, session, activePair,
     pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef,
     checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef,
     setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick,
-    exportTools, refrescaReto: refreshChallengeStatus,
+    exportTools,
   })
 
   // ── Mount chart ───────────────────────────────────────────────────────────────
@@ -1112,9 +1110,8 @@ export default function SessionPage(){
 
   // ── Replay ────────────────────────────────────────────────────────────────────
   const eng=()=>pairState.current[activePair]?.engine
-  const handlePlayPause=useCallback(async()=>{
-    // durante el salto del Go to (o su espera inicial: engine.ocupado, SGR6-02) ni Play ni Step: el salto termina o para solo
-    const e=eng();if(!e||e.ocupado)return
+  const handlePlayPause=useCallback(()=>{
+    const e=eng();if(!e)return
     if(e.isPlaying){
       e.pause();setIsPlaying(false)
       // Etapa 1 (CTO 13-oct, Astra E1-01): la pausa solo guarda last_timestamp y
@@ -1130,39 +1127,26 @@ export default function SessionPage(){
       // Deseleccionar al play no afecta el dibujo en sí (sigue ahí), solo
       // quita los handles de edición.
       try{ deselectAll() }catch{}
-      // SGR6-01: si una pausa corto la puesta al dia del par, primero al dia; si no se puede (otra pausa), no arranca
-      if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return
-      // la frontera economica del Play, la misma que la del Step y el salto (SIMGOTO2-01, orden 1-087)
-      e.frontera=creaFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
       e.play();setIsPlaying(true)
     }
-  },[activePair,saveProgress,deselectAll,ponAlDia])
-  // Step: una vela con la frontera economica del salto (SIMGOTO2-01, orden 1-087): no se pasa a la siguiente
-  // hasta aplicar los cierres y releer el reto; mientras espera, otro Step no hace nada (e.saltando)
-  const handleStep=useCallback(async()=>{const e=eng();if(!e||e.isPlaying||e.ocupado)return;if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
+  },[activePair,saveProgress,deselectAll])
+  const handleStep=useCallback(()=>{const e=eng();if(!e||e.isPlaying)return;e.nextCandle(1);const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
-  const handleGoTo=useCallback(async(sessKey)=>{
+  const handleGoTo=useCallback((sessKey)=>{
     setGotoOpen(false)
-    const e=eng();if(!e||e.ocupado)return
+    const e=eng();if(!e)return
     if(e.isPlaying){e.pause();setIsPlaying(false)}
-    // SGR6-01: si una pausa corto la puesta al dia del par, primero al dia (el Go to se calcula desde el maestro)
-    if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado)return
     const target=nextSessionOpen(e.candles,e.currentIndex,sessKey)
     if(!target){setGotoMiss(true);setTimeout(()=>setGotoMiss(false),1500);return}
-    // Orden 1-080: el salto recorre TODAS las velas M1 del tramo como el replay (lib/sim/salto.js);
-    // para antes si el reto se quema o se alcanza el objetivo, o si lo economico se bloquea
-    const llego=await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
-    // si durante el salto se cambio de par o se salio de la pagina, nada de pintar ni guardar; al
-    // cambiar de par el salto se corta (orden 1-084, CTO): se avisa, y el alumno repite el Go to
-    if(activePairRef.current!==activePair||!chartMap.current[activePair]){
-      if(!llego&&chartMap.current[activePair]) avisa('El salto se ha detenido al cambiar de par.')
-      return
-    }
+    e.seekToTime(target.time)
+    // Belt-reset de cursores como el scrubber (cinturon para el caso sin posiciones)
+    const ps=pairState.current[activePair]
+    if(ps){ps.lastSLTPIdx=e.currentIndex;ps.lastLimitIdx=e.currentIndex}
     setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
     const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
     updateChart(activePair,e,true)
     saveProgress(e.currentTime)
-  },[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
+  },[activePair,updateChart,saveProgress])
 
   // Etapa 1 (o.5–o.7): con lo economico bloqueado el replay se para; si no, el
   // motor volveria a cerrar en la vela siguiente lo que se acaba de revertir.
@@ -1235,10 +1219,6 @@ export default function SessionPage(){
 
   const removePair=useCallback((pair)=>{
     if(activePairs.length===1) return
-    // GOTOG1-03 (orden 1-089): quitar un par borraba sus posiciones y ordenes sin cerrarlas ni cancelarlas. Orden 1-097:
-    // la ✕ no se muestra mientras las tenga (SessionTopBar.js) y, por si acaso, aqui no se quita; sin texto que obligue a
-    // nada. GOTODESP1-01 (orden 1-099): tampoco con un cierre en vuelo o incierto (lib/sim/quitarPar.js)
-    if(parConOperaciones(id,pairState.current[pair]))return
     const cr=chartMap.current[pair];if(cr){try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{};delete chartMap.current[pair]}
     delete pairState.current[pair]
     const next=activePairs.filter(p=>p!==pair);setActivePairs(next)
@@ -1412,8 +1392,6 @@ export default function SessionPage(){
     // (usePairData) y el saldo, cada cierre.
     Object.values(pairState.current).forEach(ps=>ps?.engine?.pause())
     Object.values(chartMap.current).forEach(cr=>{try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{}})
-    // sin graficos: un Go to que estuviera esperando (orden 1-080) ve que se salio y no pinta ni guarda
-    chartMap.current={}
   },[])
 
   // ── Computed ──────────────────────────────────────────────────────────────────

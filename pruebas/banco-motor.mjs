@@ -9,17 +9,13 @@
 // Las refs puente se rellenan como en components/_SessionInner.js:1141-1146.
 // Lo unico copiado de _SessionInner (no se puede montar sin grafico): el alta
 // de una orden a mercado del OrderModal (_SessionInner.js:1877-1880), en
-// abreMercado(), y la llamada del Go to al salto REAL (lib/sim/salto.js, orden 1-080;
-// antes, el reset de cursores), en irA(); las pruebas que los usan comprueban antes
-// que esas lineas siguen ahi.
+// abreMercado(), y el reset de cursores del Go to (_SessionInner.js:1110-1111),
+// en irA(); las pruebas que los usan comprueban antes que esas lineas siguen ahi.
 import { importa, sonda, db, asienta, fuente } from './lib.mjs'
 const usePairData = (await importa('components/usePairData.js')).default
 const useTradingActions = (await importa('components/useTradingActions.js')).default
 const useChallengeFlow = (await importa('components/useChallengeFlow.js')).default
 const { nextSessionOpen } = await importa('lib/killzonesDomain.js')
-// antes de la orden 1-080 (historicas.sh, contra c470c8f) no existe: irA es el Go to de entonces
-const saltaA = await importa('lib/sim/salto.js').then(m => m.saltaA, () => null)
-const pasoConFrontera = await importa('lib/sim/salto.js').then(m => m.pasoConFrontera ?? null, () => null)
 const { router } = await import('./next-falso.mjs')
 
 // Pone las velas M1 (segundos) en forex-data/<PAR>/M1/<año>.json y un [] en los
@@ -62,16 +58,13 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
     const datos = usePairData({ id: sesion.id, session: estado.sesionVisible ?? null, activePair: estado.activa ?? null, ...refs,
       setIsPlaying: v => { estado.isPlaying = typeof v === 'function' ? v(estado.isPlaying) : v },
       setCurrentTime: v => { estado.currentTime = v }, setProgress: nada, setCurrentPrice: v => { estado.precio = v }, setDataReady: nada, setTick: nada,
-      exportTools: () => '[]', setErrorDatos: v => { estado.errorDatos = v },
-      refrescaReto: ct => caja.valor?.reto?.refreshChallengeStatus(ct) })
+      exportTools: () => '[]', setErrorDatos: v => { estado.errorDatos = v } })
     const reto = useChallengeFlow({ id: sesion.id, router, session: estado.sesionVisible ?? null, setSession: nada, sessionRef: refs.sessionRef,
       currentTime: estado.currentTime, pairState: refs.pairState, balanceRef: refs.balanceRef, closePositionRef: refs.closePositionRef,
       setIsPlaying: v => { estado.isPlaying = v } })
-    const trading = useTradingActions({ id: sesion.id, activePair: estado.activa ?? par, currentPrice: estado.precio ?? null, currentTime: estado.currentTime,
+    const trading = useTradingActions({ id: sesion.id, activePair: par, currentPrice: estado.precio ?? null, currentTime: estado.currentTime,
       lots: 1, preview: estado.preview ?? null, ...refs, setBalance: v => { estado.saldo = v }, setTick: nada, setPreview: nada, setCtxMenu: nada,
-      // alBloqueo, como la pagina (_SessionInner.js pausaPorBloqueo): pausa TODOS los motores y apaga el Play; antes
-      // solo se apuntaba y las pruebas no veian lo que hace la pausa real (SIMGOTO5-01)
-      refreshChallengeStatus: reto.refreshChallengeStatus, alBloqueo: m => { estado.bloqueos.push(m); Object.values(refs.pairState.current).forEach(p => { try { p?.engine?.pause() } catch {} }); estado.isPlaying = false } })
+      refreshChallengeStatus: reto.refreshChallengeStatus, alBloqueo: m => { estado.bloqueos.push(m) } })
     return { datos, reto, trading }
   })
   const puentes = () => {
@@ -85,63 +78,36 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
   // carga como la pagina: la sesion y el par activo llegan, y los efectos de usePairData cargan
   estado.sesionVisible = sesion; estado.activa = par
   await repinta(); await asienta(80); await repinta()
-  // el par activo (cambiaPar lo cambia, como la pagina: el estado y activePairRef)
-  const ps = (p = estado.activa ?? par) => refs.pairState.current[p]
-  const motor = (p) => ps(p)?.engine
+  const ps = () => refs.pairState.current[par]
+  const motor = () => ps()?.engine
   return {
     refs, estado, caja, ps, motor, repinta,
     // _SessionInner.js:1877-1880, tal cual: la entrada es la del modal y openTime el currentTime de la pagina
     abreMercado({ side, entry, sl, tp, lots, slPips = 10, tpPips = 20 }) {
       const posId = `${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
-      const newPos = { id: posId, pair: estado.activa ?? par, side, entry, lots, sl, tp, slPips, tpPips, openTime: estado.currentTime, initialSlPips: slPips }
+      const newPos = { id: posId, pair: par, side, entry, lots, sl, tp, slPips, tpPips, openTime: estado.currentTime, initialSlPips: slPips }
       ps().positions = [...ps().positions, newPos]
       return newPos
     },
     // la limit por la funcion REAL confirmLimitOrder (useTradingActions.js:82)
     async pendiente({ side, entry, sl, tp, lots, slPips = 10, tpPips = 30 }) {
-      estado.preview = { pair: estado.activa ?? par, side, entry, sl, tp, lots, slPips, tpPips, rr: tpPips / slPips }
+      estado.preview = { pair: par, side, entry, sl, tp, lots, slPips, tpPips, rr: tpPips / slPips }
       await repinta()
       caja.valor.trading.confirmLimitOrder()
       estado.preview = null; await repinta()
       return ps().orders.at(-1)
     },
-    // cambiar de par activo como la pagina (_SessionInner.js:574 y el efecto de usePairData): el
-    // nuevo se carga o, si ya estaba, se pone al dia con el tiempo maestro (orden 1-081)
-    async cambiaPar(p) {
-      estado.activa = p; refs.activePairRef.current = p; refs.pairTfRef.current[p] ??= 'M1'
-      await repinta(); await asienta(80); await repinta()
-    },
     // un paso de vela como handleStep (_SessionInner.js:1100): nextCandle(1)
-    // un paso de vela como handleStep (orden 1-087): pasoConFrontera (una vela y la frontera economica del
-    // salto); sin lib/sim/salto.js (el codigo auditado), el de entonces: nextCandle(1)
-    // SGR6-01: como la pagina, primero al dia con el maestro si una pausa corto la puesta al dia (ponAlDia)
-    async paso(n = 1) {
-      for (let i = 0; i < n; i++) {
-        const pon = caja.valor.datos.ponAlDia
-        if (pon && !(await pon(estado.activa))) { await repinta(); continue }
-        if (pasoConFrontera) await pasoConFrontera({ engine: motor(), sid: sesion.id, pairState: refs.pairState, esReto: !!refs.sessionRef.current?.challenge_type, refresca: caja.valor.reto.refreshChallengeStatus })
-        else motor().nextCandle(1)
-        await repinta()
-      }
-    },
-    // Go to como handleGoTo (_SessionInner.js): el salto REAL vela a vela (orden 1-080); sin
-    // lib/sim/salto.js, el de antes: un seekToTime y el reset de cursores
+    async paso(n = 1) { for (let i = 0; i < n; i++) { motor().nextCandle(1); await repinta() } },
+    // Go to como handleGoTo (_SessionInner.js:1103-1116)
     async irA(sessKey) {
       const e = motor()
-      const pon = caja.valor.datos.ponAlDia
-      if (pon && !(await pon(estado.activa))) { await repinta(); return null }
       const target = nextSessionOpen(e.candles, e.currentIndex, sessKey)
       if (!target) return null
-      if (!saltaA) {
-        e.seekToTime(target.time)
-        ps().lastSLTPIdx = e.currentIndex; ps().lastLimitIdx = e.currentIndex
-        await repinta()
-        return target
-      }
-      const llego = await saltaA({ engine: e, hasta: target.time, sid: sesion.id, pairState: refs.pairState,
-        esReto: !!refs.sessionRef.current?.challenge_type, refresca: caja.valor.reto.refreshChallengeStatus })
+      e.seekToTime(target.time)
+      ps().lastSLTPIdx = e.currentIndex; ps().lastLimitIdx = e.currentIndex
       await repinta()
-      return { ...target, llego }
+      return target
     },
   }
 }
@@ -151,9 +117,6 @@ export function copiasVigentes() {
   const s = fuente('components/_SessionInner.js')
   return {
     mercado: s.includes("const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}"),
-    paso: pasoConFrontera ? s.includes('await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') : /e\.nextCandle\(1\)/.test(s),
-    irA: saltaA
-      ? s.includes('await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') && !/lastSLTPIdx=e\.currentIndex/.test(s)
-      : /e\.seekToTime\(target\.time\)[\s\S]{0,200}if\(ps\)\{ps\.lastSLTPIdx=e\.currentIndex;ps\.lastLimitIdx=e\.currentIndex\}/.test(s),
+    irA: /e\.seekToTime\(target\.time\)[\s\S]{0,200}if\(ps\)\{ps\.lastSLTPIdx=e\.currentIndex;ps\.lastLimitIdx=e\.currentIndex\}/.test(s),
   }
 }

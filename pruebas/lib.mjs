@@ -99,7 +99,6 @@ export function escenario({ perfiles = [perfil(A), perfil(B), perfil(ADM, { rol_
   const ci = globalThis.__simCierre; if (ci) ci.confirmado = {}
   const co = globalThis.__simCola; if (co) co.s = {}   // ronda 2: la cola de cada sesion (lib/sim/cola.js)
   const av = globalThis.__simAvisos; if (av) av.lista = []
-  const pg = globalThis.__simProgreso; if (pg) pg.s = {}   // SIMGOTO2-02: el progreso guardado de cada sesion
   db.tablas.profiles = perfiles.map(p => ({ ...p }))
   // rev_saldo: lo que deja la preparatoria en las filas de antes (0), salvo que la prueba diga otra cosa
   db.tablas.sim_sessions = sim_sessions.map(s => ({ rev_saldo: 0, ...s }))

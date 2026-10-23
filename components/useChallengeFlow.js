@@ -12,7 +12,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { getMasterTime } from '../lib/sessionData'
 import { calcPnl } from '../lib/trading/pricing'
 import { resolveBreach } from '../lib/trading/breach'
-import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera, posicionOcupada } from '../lib/sim/cola'
+import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera } from '../lib/sim/cola'
 import { inciertosDe } from '../lib/sim/servicio'
 import { avisa } from '../lib/sim/avisos'
 
@@ -72,17 +72,14 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   // Etapa 1, ronda 2 (CTO 13-oct, Astra E1-04): el refresco es una operacion de la
   // COLA de la sesion (lib/sim/cola.js): va detras de los cierres ya pedidos.
   // refrescaAhora es el cuerpo, para usarlo DENTRO de una operacion de la cola.
-  // ct (opcional): la hora con la que se evalua; el salto del Go to (lib/sim/salto.js) pasa la
-  // de la vela en curso, que el estado de React aun no tiene (orden 1-080)
-  const refrescaAhora = useCallback(async (ctSalto) => {
+  const refrescaAhora = useCallback(async () => {
     if (!id || !sessionRef.current?.challenge_type) return null
     try {
       // Pasamos currentTime del simulador: así el motor sabe qué día es HOY en el backtest.
       // El DD diario se resetea en el día Madrid de esta vela, no de la fecha real del ordenador.
       // Leemos currentTimeRef (state de React, se inicializa al cargar el engine).
       // Fallback adicional a getMasterTime() por si acaso.
-      const ct = (Number.isFinite(ctSalto) ? ctSalto : null)
-        || currentTimeRef.current
+      const ct = currentTimeRef.current
         || getMasterTime()
         || null
       const qs = ct ? `?session_id=${id}&current_time=${ct}` : `?session_id=${id}`
@@ -90,8 +87,6 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       if (!res.ok) return null
       const data = await res.json()
       setChallengeStatus(data)
-      // el espejo, ya: el breach de la vela siguiente del salto lo lee sin esperar al render
-      challengeStatusRef.current = data
       // Actualizamos también el state `session` con el status vivo de BD.
       // Sin esto, sessionStatus quedaba congelado en 'active' aunque el motor
       // hubiera persistido 'failed_dd_daily' — y challengeLocked solo se
@@ -109,9 +104,9 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       return null
     }
   }, [id])
-  const refreshChallengeStatus = useCallback((ct) => {
+  const refreshChallengeStatus = useCallback(() => {
     if (!id || !sessionRef.current?.challenge_type) return Promise.resolve(null)
-    return encola(id, () => refrescaAhora(ct))
+    return encola(id, refrescaAhora)
   }, [id, refrescaAhora])
 
   // La confirmacion explicita del reto (E1-04): se cierra la cola a cierres nuevos
@@ -404,7 +399,6 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       const lastCandle = candles[idx2]
       const lastPrice = lastCandle?.close ?? ps2.positions[0].entry
       ps2.positions.forEach(p => {
-        if (posicionOcupada(id, p.id)) return   // con su cierre en curso, como arriba
         floatingOtherPairs += calcPnl(p.side, p.entry, lastPrice, p.lots, k)
       })
     })
@@ -424,11 +418,8 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       const candle = engine.candles[i]
       if (!candle) continue
       const { high, low } = candle
-      // Filtramos posiciones que ya estaban abiertas en esta vela, y las que ya tienen su cierre en
-      // curso (p. ej. el SL de esta misma vela, pendiente en la cola): su perdida es la de ese cierre,
-      // no la mecha; contarlas daba un breach fantasma que paraba el Go to y no el Step (revisor
-      // adversario de sim-goto-r2). Su resultado entra en el saldo cuando la cola lo aplica.
-      const livePositions = ps.positions.filter(p => (p.openTime == null || candle.time >= p.openTime) && !posicionOcupada(id, p.id))
+      // Filtramos posiciones que ya estaban abiertas en esta vela.
+      const livePositions = ps.positions.filter(p => p.openTime == null || candle.time >= p.openTime)
       if (!livePositions.length) continue
 
       // Nucleo de breach extraido a lib/trading/breach.js (Corte 2, vela-a-vela).
@@ -457,10 +448,9 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       // Cierre en pair actual al breachPrice
       const positionsToClose = [...livePositions]
       positionsToClose.forEach(p => {
-        try { closePositionRef.current(p.id, reasonStr, pair, breachPrice, null, engine.currentTime) } catch(e) { console.error('[breach close]', e) }
+        try { closePositionRef.current(p.id, reasonStr, pair, breachPrice) } catch(e) { console.error('[breach close]', e) }
       })
-      // Cierre en otros pares al último precio conocido (close del candle actual), con la hora de
-      // la vela del breach, no la del motor de ese par, que puede ir atrasado (SIMGOTO-01)
+      // Cierre en otros pares al último precio conocido (close del candle actual)
       Object.entries(pairState.current).forEach(([k, ps2]) => {
         if (k === pair || !ps2?.positions?.length || !ps2.engine) return
         const candles = ps2.engine.candles || []
@@ -469,7 +459,7 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
         const lastPrice = lastCandle?.close ?? ps2.positions[0].entry
         const otherPositions = [...ps2.positions]
         otherPositions.forEach(p => {
-          try { closePositionRef.current(p.id, reasonStr, k, lastPrice, null, engine.currentTime) } catch(e) { console.error('[breach close other]', e) }
+          try { closePositionRef.current(p.id, reasonStr, k, lastPrice) } catch(e) { console.error('[breach close other]', e) }
         })
       })
 

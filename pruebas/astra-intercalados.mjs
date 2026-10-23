@@ -17,9 +17,6 @@
  *          (E104-servidor-directo): la fase se concede con lo guardado y el −3.000 tardio lo
  *          rechaza sim_cierre_v0. Un control nuevo: el advance no sale mientras el −3.000
  *          esta pendiente.
- *   E1-01 (GOTODESP1-02, orden 1-099): el guardado de la pausa va ahora por la cola de la sesion, detras del cierre: el
- *          control ya no es «la pausa sale con el cierre pendiente», sino que ESPERA su turno y sale al terminar el
- *          cierre. El oraculo (la pausa no pisa el P&L confirmado), igual
  */
 import { escenario,sesionSim,tradeSim,tok,importa,monta,router,vela,nav,db,api,A,asienta,puerta,ver,oraculo,fin } from './lib.mjs'
 import { llama } from './supabase-falso.mjs'
@@ -37,11 +34,9 @@ const rpcGate=puerta(),pauseGate=puerta();db.log.length=0
 db.pausa=c=>c.tabla==='rpc:sim_cierre_v0'?rpcGate.p:(c.tabla==='sim_sessions'&&c.op==='update'?pauseGate.p:null)
 const close=CI.persisteCierre({sessionId:'pausa',delta:100,lastTimestamp:T+60,trade:{id:'10000000-0000-4000-8000-000000000001',user_id:A,pair:'EUR/USD',side:'BUY',lots:1,pnl:100}})
 await asienta(30);tecla('Space');await p.asienta(40)
-const antes=db.log.find(c=>c.tabla==='sim_sessions'&&c.op==='update')
-ver('the pause is requested while the close is pending and WAITS its turn in the queue',antes===undefined,JSON.stringify(antes?.payload))
+const pending=db.log.find(c=>c.tabla==='sim_sessions'&&c.op==='update')
+ver('real pause submitted while the close is pending',pending?.payload?.last_timestamp!=null,JSON.stringify(pending?.payload))
 rpcGate.abrir();const cr=await close;ver('atomic close committed +100',cr.estado==='guardado'&&db.tablas.sim_sessions[0].balance===10100)
-await p.asienta(40);const pending=db.log.find(c=>c.tabla==='sim_sessions'&&c.op==='update')
-ver('after the close, the real pause is submitted',pending?.payload?.last_timestamp!=null,JSON.stringify(pending?.payload))
 pauseGate.abrir();await p.asienta(60)
 console.log('PAUSA',JSON.stringify({balance:db.tablas.sim_sessions[0].balance,trades:db.tablas.sim_trades,confirmado:CI.saldoConfirmado('pausa')}))
 oraculo('ASTRA-pausa','pause cannot overwrite committed pnl',db.tablas.sim_sessions[0].balance===10100,'observado '+db.tablas.sim_sessions[0].balance)
