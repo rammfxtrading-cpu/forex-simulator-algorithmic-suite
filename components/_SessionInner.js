@@ -1161,6 +1161,9 @@ export default function SessionPage(){
     setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
     const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
     updateChart(activePair,e,true)
+    // orden 1-104: durante el salto el onTick pone la hora de cada vela sin repintar las velas; al llegar, la hora es la
+    // misma y nada repintaba las killzones con las velas nuevas (se quedaban las de antes del salto). Un tick las repinta
+    setTick(t=>t+1)
     saveProgress(e.currentTime)
   },[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
 

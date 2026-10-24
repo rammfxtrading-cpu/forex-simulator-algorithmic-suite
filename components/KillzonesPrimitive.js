@@ -11,7 +11,7 @@
 //   series.detachPrimitive(kp)                         // en unmount
 
 import { getSeriesData, getRealLen } from '../lib/sessionData'
-import { SESSIONS, toNYHM, inSession } from '../lib/killzonesDomain'
+import { SESSIONS, toNYHM, inSession, toMinutes } from '../lib/killzonesDomain'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // KillzonesRenderer — implementa IPrimitivePaneRenderer
@@ -118,6 +118,14 @@ function computeActiveSession(sessions, currentTime) {
     if (s.key === activeKey && (!activeSession || s.endTime > activeSession.endTime)) activeSession = s
   }
   if (!activeSession) return { activeSession: null, liveHigh: null, liveLow: null, lastRealTs }
+  // Orden 1-104/1-105 (el caso de Ramon): la caja que se alarga tiene que ser la de ESTA sesion, la que contiene
+  // currentTime. Con el cursor en el hueco del fin de semana (domingo 02:00), inSession lo da por Asia (cruza la
+  // medianoche sin mirar el dia) y la Asia mas reciente es la del viernes: se estiraba hasta la ultima vela real y
+  // cubria todo el viernes. Si currentTime cae fuera de la ventana de esa caja (su inicio + la duracion de la
+  // sesion), no hay sesion viva que alargar: se dibuja como las demas
+  const sess = SESSIONS.find(x => x.key === activeKey)
+  const dur = sess.crossesMidnight ? (24 * 60 - toMinutes(sess.hStart, sess.mStart)) + toMinutes(sess.hEnd, sess.mEnd) : toMinutes(sess.hEnd, sess.mEnd) - toMinutes(sess.hStart, sess.mStart)
+  if (currentTime - activeSession.startTime >= dur * 60) return { activeSession: null, liveHigh: null, liveLow: null, lastRealTs }
 
   let liveHigh = null, liveLow = null
   for (let i = realLen - 1; i >= 0; i--) {
