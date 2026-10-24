@@ -5,8 +5,10 @@
  * 21:00 UTC → viernes 17-abr 20:59; hueco; domingo 19-abr 21:00 → lunes 20-abr 20:59.
  *   1 · cursor parado en el hueco (domingo 00:00 y 02:00 UTC): ninguna caja se estira; las del viernes, como un dia normal
  *       (en 8d99f6b y 785d9a8 la Asia del viernes se estiraba hasta la ultima vela: 20,75 h)
- *   2 · tras Go to → London desde el domingo: las cajas son las de las velas de ahora (el lunes), sin ninguna estirada
- *       (en 785d9a8 la cache del overlay se quedaba con las del viernes)
+ *   2 · tras Go to → London desde el domingo: ninguna caja estirada
+ *       (Con ESTE React doble, en 785d9a8 la cache del overlay se queda con las cajas del viernes tras el salto; en Chrome
+ *       con la pagina real NO pasa: pruebas/navegador/kz02 ve la Asia y la London del lunes en 785d9a8. Es del doble, no
+ *       se comprueba aqui; la comprobacion real es kz02.)
  *   3 · control: con el cursor DENTRO de una sesion viva (lunes, Asia en curso), su caja sigue creciendo hasta la ultima
  *       vela (eso no cambia)
  * Sin la regla (8d99f6b, 785d9a8): rojo.
@@ -74,7 +76,6 @@ for(const last of ['2026-04-19T00:00:00Z','2026-04-19T02:00:00Z']){
   const g=mide(p,e,'GoTo london desde '+last)
   ver('control: el Go to llega al lunes 06:00 UTC',g.motor==='04-20 06:00',g.motor)
   oraculo('KZ01',`tras Go to London desde ${last}: ninguna caja estirada`,g.CAJA_ENORME==='no',JSON.stringify(g.cajas))
-  oraculo('KZ01',`tras Go to London desde ${last}: las cajas son las de las velas de ahora (Asia y London del lunes)`,normal(g)&&g.cajas.some(c=>c.k==='asia'&&c.ini==='04-20 00:00')&&g.cajas.some(c=>c.k==='london'&&c.ini==='04-20 06:00'),JSON.stringify({cajas:g.cajas,calc:g.calcAhora}))
   p.desmonta(); await asienta()
 }
 {

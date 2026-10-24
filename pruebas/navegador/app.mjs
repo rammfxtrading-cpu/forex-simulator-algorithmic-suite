@@ -85,8 +85,8 @@ export function dobleSupabase({ sesion = {} } = {}) {
 }
 
 // abre la pagina de la sesion con todo interceptado; devuelve el navegador (cdp.mjs) y lo de fuera
-export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000 } = {}) {
-  const velas = velasSemana(), fuera = []
+export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana() } = {}) {
+  const fuera = []
   const sesionAuth = { access_token: 'tok-a', refresh_token: 'ref-a', token_type: 'bearer', expires_in: 360000, expires_at: Math.floor(Date.now() / 1000) + 360000,
     user: { id: USUARIO, email: 'a@ejemplo.test', aud: 'authenticated', role: 'authenticated' } }
   const b = await abre(`${app.url}/session/${SESION}`, { tope, esperaListo: Number(process.env.ESPERA ?? 180000),
@@ -108,7 +108,7 @@ export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000 }
           if (u.pathname === '/api/candles') {
             await espera(Number(process.env.LAT_VELAS ?? 1500))   // como la red: con respuesta instantanea la pagina pinta antes de tener el grafico
             const y = Number(u.searchParams.get('year')), from = Number(u.searchParams.get('from')), to = Number(u.searchParams.get('to'))
-            return llena(requestId, 200, { candles: y === 2026 ? velas.filter(v => v.time >= from && v.time <= to) : [] })
+            return llena(requestId, 200, { candles: velas.filter(v => v.time >= from && v.time <= to && new Date(v.time * 1000).getUTCFullYear() === y) })
           }
           return llena(requestId, 200, {})
         }
