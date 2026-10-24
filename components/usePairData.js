@@ -10,9 +10,12 @@
  * están entrelazados con el dominio de dibujos/SL-TP y van a su propio corte (decisión s59).
  */
 
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
+import { saltaA } from '../lib/sim/salto'
+import { encola } from '../lib/sim/cola'
+import { progresoMonotono, siembraProgreso } from '../lib/sim/progreso'
 import { puedeEscribir } from '../lib/sim/servicio'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { fetchSessionCandles, setSeriesData, setMasterTime, getMasterTime } from '../lib/sessionData'
@@ -21,19 +24,28 @@ import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/char
 import { computePhantomsNeeded } from '../lib/sessionUi'
 import { fechaCorta, listaDiasCortos } from '../lib/mercado/calidad.mjs'
 
-export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools }){
+export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools, refrescaReto }){
+  // el refresco del reto con hora (useChallengeFlow), para el salto al volver a un par (orden 1-081)
+  const refrescaRetoRef=useRef(refrescaReto); refrescaRetoRef.current=refrescaReto
   const saveProgress=useCallback(async(ts)=>{
     if(!id||!ts) return
     // Etapa 1 (diseño sim-004, d2, o.5, o.7): una sesion legado no escribe; el
     // guardado es una escritura economica (last_timestamp): antes, el estado del
     // servicio; despues, el {error}, que solo avisa
     if(sessionRef.current?.legado===true) return
-    try{
-      const p=await puedeEscribir()
-      if(!p.permitido) return
-      const r=await supabase.from('sim_sessions').update({last_timestamp:ts,timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)
-      avisaSiError('el avance de la sesión')(r)
-    }catch(e){ avisa('No se ha podido guardar el avance de la sesión. Comprueba tu conexión.') }
+    // GOTODESP1-02 (Astra; orden 1-099): el guardado va por la COLA de la sesion, como los cierres (lib/sim/cola.js): ninguna
+    // escritura de last_timestamp sale hasta que termina la anterior, y su valor se calcula al salir (el mayor hasta
+    // entonces). Asi una peticion antigua no llega despues de una nueva. Lo que no cubre (otra pestaña, otro navegador)
+    // lo cierra la sim-005 en la base
+    return encola(id, async()=>{
+      try{
+        const p=await puedeEscribir()
+        if(!p.permitido) return
+        // nunca hacia atras (SIMGOTO2-02, lib/sim/progreso.js)
+        const r=await supabase.from('sim_sessions').update({last_timestamp:progresoMonotono(id,ts),timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)
+        avisaSiError('el avance de la sesión')(r)
+      }catch(e){ avisa('No se ha podido guardar el avance de la sesión. Comprueba tu conexión.') }
+    })
   },[id])
 
   // Bloque D, punto 5 (CTO, 5-oct; Astra, regresion de C04): el fallo de un par
@@ -75,12 +87,18 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       const toOrdinal = (t) => t ?? null  // real timestamps — no conversion needed
       const isOrdinal = (t) => t && t < 1000000000
       const resumeReal = masterTime || (isOrdinal(sess.last_timestamp)?null:sess.last_timestamp) || replayTs
+      // lo guardado es el suelo del progreso de esta sesion (SIMGOTO2-02)
+      if(!isOrdinal(sess.last_timestamp)) siembraProgreso(id, Number(sess.last_timestamp))
       const resumeTs = toOrdinal(resumeReal) ?? 0
       engine.load(ordinalCandles); engine.seekToTime(resumeTs); engine.speed=speedRef.current
       engine.onTick=()=>{
-        updateChart(pair,engine,false)
+        // en el salto del Go to (avanzaHasta) el grafico se pinta una vez, al llegar
+        if(!engine.saltando) updateChart(pair,engine,false)
         checkSLTPRef.current?.(pair,engine)
-        checkLimitOrdersRef.current?.(pair,engine)
+        // M04 (orden 1-081): una pendiente llenada en esta vela mira su SL/TP en ella, con la misma
+        // regla de la misma vela que checkSLTP (si toca los dos, gana el TP)
+        const llenadas=checkLimitOrdersRef.current?.(pair,engine)
+        if(llenadas) checkSLTPRef.current?.(pair,engine,llenadas.desdeIdx,llenadas.ids)
         // Challenge breach intra-vela: si el floating PnL + cerrado supera
         // el cap diario o total, fuerza cierre de TODAS las posiciones al
         // precio exacto donde se cruzó el cap. Estilo FTMO real.
@@ -88,10 +106,12 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         if(pair===activePairRef.current){
           setCurrentTime(engine.currentTime)
           setProgress(Math.round(engine.progress*100))
-          setMasterTime(engine.currentTime)
+          // el reloj maestro nunca retrocede (SIMGOTO-03): un par cuyo historico acaba antes no lo baja
+          const m=getMasterTime(); if(!m||engine.currentTime>m) setMasterTime(engine.currentTime)
         }
       }
-      engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(engine.currentTime)}}
+      engine.onEnd=()=>{if(pair===activePairRef.current){setIsPlaying(false);saveProgress(Math.max(engine.currentTime,getMasterTime()||0))}}
+      engine.onPausa=()=>{if(pair===activePairRef.current)setIsPlaying(false)}
       const ps={engine,ready:true,positions:[],trades:[],
         lastSLTPIdx: engine.currentIndex,   // start from current — don't re-check history
         lastLimitIdx: engine.currentIndex,
@@ -189,24 +209,59 @@ if(full||(curr!==prev&&curr!==prev+1)){
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
   },[])
 
+  // Ponerse al dia con el reloj maestro (orden 1-081: un salto como el Go to, vela a vela, no un seekToTime de un solo
+  // onTick, o una pendiente de este par no miraria su SL/TP: M04). Al cambiar de par y, SGR6-01 (revision adversarial
+  // r6), ANTES de cada orden del alumno (Step, Go to, Play: _SessionInner.js): si una pausa (un cierre rechazado) corto
+  // la puesta al dia, el par no avanza desde el pasado: primero se pone al dia. true si esta al dia (su siguiente vela
+  // es posterior al maestro; un par con un hueco se queda en su ultima vela <= maestro)
+  const ponAlDia=useCallback(async(par)=>{
+    const e=pairState.current[par]?.engine; if(!e) return false
+    const alDia=()=>{ const m=getMasterTime(), sig=e.candles[e.currentIndex+1]; return !m||!sig||sig.time>m }
+    if(alDia()) return true
+    await saltaA({engine:e,hasta:getMasterTime(),sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:(ct)=>refrescaRetoRef.current?.(ct)})
+    if(activePairRef.current!==par) return false
+    const cr=chartMap.current[par]; if(cr) cr.prevCount=0
+    updateChart(par,e,true)
+    setIsPlaying(e.isPlaying);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
+    const agg=e.getAggregated(pairTfRef.current[par]||'H1')
+    setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true)
+    const m=getMasterTime(); if(!m||e.currentTime>m) setMasterTime(e.currentTime)
+    setTick(t=>t+1)
+    return alDia()
+  },[id,updateChart])
+
   useEffect(()=>{
     if(!activePair) return
+    // SIMGOTO-01 (orden 1-083): un salto de otro par que siga en curso se corta en la vela en que
+    // va (como si se hubiera avanzado hasta ahi y despues cambiado de par): nunca dos relojes a la vez
+    Object.entries(pairState.current).forEach(([k,o])=>{ if(k!==activePair&&o?.engine?.ocupado) o.engine.pause() })
     const ps=pairState.current[activePair]
     if(ps?.engine){
       // Sync this pair's engine to the current master time (from whichever pair was active before)
       const masterTime = getMasterTime()
-      if(masterTime && Math.abs(ps.engine.currentTime - masterTime) > 60) {
-        ps.engine.seekToTime(masterTime)
+      const e=ps.engine, par=activePair
+      const sincroniza=()=>{
+        setIsPlaying(e.isPlaying);setCurrentTime(e.currentTime)
+        setProgress(Math.round(e.progress*100))
+        const agg=e.getAggregated(pairTfRef.current[par]||'H1')
+        setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true)
+        // el reloj maestro nunca retrocede (SIMGOTO-03): si este par tiene un hueco, se queda en su
+        // ultima vela <= maestro y el maestro sigue donde estaba
+        const m=getMasterTime(); if(!m||e.currentTime>m) setMasterTime(e.currentTime)
       }
-      setIsPlaying(ps.engine.isPlaying);setCurrentTime(ps.engine.currentTime)
-      setProgress(Math.round(ps.engine.progress*100))
-      const agg=ps.engine.getAggregated(pairTfRef.current[activePair]||'H1')
-      setCurrentPrice(agg.slice(-1)[0]?.close??null);setDataReady(true);setMasterTime(ps.engine.currentTime)
+      // SIMGOTO-03 (orden 1-083): cualquier retraso, tambien de una sola vela (antes, > 60 s)
+      if(masterTime && masterTime > e.currentTime) {
+        ponAlDia(par)
+      } else {
+        // por delante del maestro (no deberia ocurrir: el par quieto siempre va por detras) NO se
+        // rebobina: sus cierres ya ocurrieron; el maestro sube hasta el (SIMGOTO-03)
+        sincroniza()
+      }
     }else{setDataReady(false);if(sessionRef.current)loadPair(activePair)}
     setTick(t=>t+1)
   },[activePair,loadPair])
 
   useEffect(()=>{if(session&&activePair)loadPair(activePair)},[session,activePair,loadPair])
 
-  return { saveProgress, loadPair, updateChart }
+  return { saveProgress, loadPair, updateChart, ponAlDia }
 }

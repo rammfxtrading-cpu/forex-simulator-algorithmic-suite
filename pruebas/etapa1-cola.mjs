@@ -179,10 +179,17 @@ let b0
   const g = puerta(); db.pausa = c => c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.lots === .5 ? g.p : null
   db.falla = c => c.tabla === 'rpc:sim_cierre_v0' && c.payload?.p_trade?.lots === .5 ? ERR : null
   const p1 = tr().closePartial(pos.id, 'EUR/USD', .5)
-  await asienta(20); await b0.paso(5); await asienta(20)
-  const conOcupada = rpcs().length
-  g.abrir(); await p1; db.pausa = null; db.falla = null; await asienta(80)
+  // SIMGOTO4-01 (orden 1-093): con un cierre en vuelo, el Step (como el salto y el Play) espera a la cola ANTES de
+  // la vela: los cinco pasos se piden con el parcial retenido y solo avanzan cuando se resuelve. Antes avanzaban
+  // con la posicion ocupada y el TP se reevaluaba al liberarse; ahora el TP llega en su vela con la posicion ya
+  // confirmada (2 lotes). Lo que se comprueba es lo mismo: ningun cierre de mas con la posicion ocupada y, al
+  // fallar el parcial, el TP cierra los 2 lotes
+  const reloj0 = b0.motor().currentTime
+  await asienta(20); const pasos = b0.paso(5); await asienta(20)
+  const conOcupada = rpcs().length, quieto = b0.motor().currentTime === reloj0
+  g.abrir(); await p1; await pasos; db.pausa = null; db.falla = null; await asienta(80)
   const t = db.tablas.sim_trades[0]
+  ver('control E102-sltp: con el parcial retenido, el Step no avanza (espera a la cola)', quieto)
   oraculo('E102-sltp', 'el TP llega con la posicion ocupada: no sale otro cierre; al fallar el parcial y liberarse, el TP se reevalua y cierra los 2 lotes (lo confirmado)',
     conOcupada === 1 && b0.ps().positions.length === 0 && db.tablas.sim_trades.length === 1 && Number(t?.lots) === 2 && t?.result === 'WIN' && coherente(b0, sid),
     `rpc con la posicion ocupada ${conOcupada} · ${cuenta(b0, sid)}`)
@@ -389,10 +396,12 @@ async function pideFase(b, sid, { primero, pendiente, falla, pierde, incierto })
     b.abreMercado({ side: 'BUY', entry: 1.2, sl: 1.0, tp: 1.3, lots: 1 })
     const g = puerta(); db.pausa = c => c.tabla === 'rpc:sim_cierre_v0' ? g.p : null
     if (falla) db.falla = c => c.tabla === 'rpc:sim_cierre_v0' ? { code: 'P0001', message: 'inventado' } : null
-    await b.paso(1)
+    // SIMGOTO3-02 (orden 1-090): el Step confirma la economia de la vela del breach antes de devolver el control
+    // (espera al cierre forzado y al reto); aqui es un clic que no se espera hasta soltar el cierre
+    const clic = b.paso(1)
     await new Promise(r => setTimeout(r, 1500)); await b.repinta()
     const conPendiente = b.caja.valor.reto.challengeModal
-    g.abrir(); await asienta(80); await new Promise(r => setTimeout(r, 100)); await b.repinta()
+    g.abrir(); await clic; await asienta(80); await new Promise(r => setTimeout(r, 100)); await b.repinta()
     db.pausa = null; db.falla = null
     const ev = b.caja.valor.reto.challengeStatus?.evaluation?.status
     const r = { conPendiente, modal: b.caja.valor.reto.challengeModal, ev, trades: db.tablas.sim_trades.length }
