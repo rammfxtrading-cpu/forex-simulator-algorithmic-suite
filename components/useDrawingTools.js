@@ -163,12 +163,14 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
     // NUNCA creamos uno encima ni dejamos huerfanos.
     if (cr.plugin) { pluginRef.current = cr.plugin; setPluginReady(true); return }
     try {
-      const { createLineToolsPlugin }                                            = await import('lightweight-charts-line-tools-core')
+      const { createLineToolsPlugin, AnchorPoint, PaneCursorType }               = await import('lightweight-charts-line-tools-core')
       const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
       const { LineToolPath }           = await import('lightweight-charts-line-tools-path')
       const { LineToolRectangle }      = await import('lightweight-charts-line-tools-rectangle')
       const { LineToolFibRetracement } = await import('../lightweight-charts-line-tools-fib-retracement')
       const { LineToolLongShortPosition } = await import('lightweight-charts-line-tools-long-short-position')
+      // tiradores como TradingView (ordenes 1-105 y 1-110): components/posicionTradingView.js
+      const { clasePosicion } = await import('./posicionTradingView')
 
       // Re-check tras el await: otra invocacion pudo construirlo mientras importabamos.
       if (cr.plugin) { pluginRef.current = cr.plugin; setPluginReady(true); return }
@@ -178,7 +180,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
       plugin.registerLineTool('HorizontalRay',      LineToolHorizontalRay)
       plugin.registerLineTool('Rectangle',          LineToolRectangle)
       plugin.registerLineTool('FibRetracement',     LineToolFibRetracement)
-      plugin.registerLineTool('LongShortPosition',  LineToolLongShortPosition)
+      plugin.registerLineTool('LongShortPosition',  clasePosicion(LineToolLongShortPosition, { AnchorPoint, PaneCursorType }))
       // ── Fix deseleccionar-todo para multi-selección (paridad TradingView) ──
       // El _handleStandaloneClick del fork solo apaga el _selectedTool único vía
       // deselectAllTools(), así que tras una multi-selección (varios con
