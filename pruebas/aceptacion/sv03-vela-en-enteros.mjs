@@ -1,19 +1,17 @@
 /**
- * SV03 · LA REGLA DE LA VELA EN ENTEROS (SIMVELA2-01, Astra; orden 1-108 del CTO)
- * Cada precio se convierte UNA vez a puntos enteros del par (×10^5 sin JPY, ×10^3 con JPY: decimas de pip) y todo se
- * compara en enteros. En dea0b26 las distancias se restaban en coma flotante y se redondeaban despues: un doji con los
- * dos extremos a 0,95 pip exactos de la apertura (decimal) daba TP en vez de SL.
- * EL ORACULO, independiente de lib/sim/vela.js: los precios de la prueba se construyen como ENTEROS en centesimas de pip
- * (las «unidades» de Astra: 0,000001 sin JPY, 0,0001 con JPY; diez unidades = un punto) y el punto de cada precio se
- * calcula con aritmetica entera: unidades/10 redondeado a la mitad PAR (el redondeo unico que fija lib/sim/vela.js para
- * un precio con mas decimales que el par). Con los puntos: alcista O→L→H→C, bajista O→H→L→C, doji el extremo mas
- * cercano, empate → SL.
- *   A · barrido de Astra (astra-bordes-r2): 9 pares × 4 aperturas × distancias 94..116 unidades arriba y abajo × BUY/SELL
- *   B · familias integradas de Astra (astra-integrado-r2) en Step, Play y Go to, con la fila del doble, mas las mismas
- *       familias JPY con la apertura EN la rejilla del par (151,234): motivo y hora, e igualdad de los tres modos
- * ⚠️ Un precio con MAS decimales que el par (las familias JPY de Astra con apertura 151,2345) ya no conserva la
- *    distancia decimal: la apertura se redondea a su punto (151,234) y los extremos tambien. Ahi el esperado es el de la
- *    orden 1-108 (precios en puntos), no el de las distancias decimales de SIMVELA2: lo calcula el oraculo y va anotado.
+ * SV03 · LA REGLA DE LA VELA EN ENTEROS, A LA ESCALA COMUN (SIMVELA2-01, Astra; ordenes 1-108 y 1-117 del CTO, opcion c)
+ * Los precios de la vela y de la posicion se escalan desde su texto a la escala comun del que mas decimales tenga y se
+ * comparan como enteros; el doji compara las distancias exactas en decimas de pip (mitad hacia arriba). En dea0b26 las
+ * distancias se restaban en coma flotante: un doji con los dos extremos a 0,95 pip exactos daba TP en vez de SL. En
+ * 0dde61f cada precio se redondeaba a su punto ANTES de restar: con una apertura fuera de la rejilla del par (JPY con 4
+ * decimales) la distancia decimal se perdia.
+ * EL ORACULO, independiente de lib/sim/vela.js, es el de Astra (astra-bordes-r2): precios construidos como ENTEROS en
+ * centesimas de pip («unidades»: 0,000001 sin JPY, 0,0001 con JPY; diez unidades = una decima de pip), distancias del
+ * doji floor((d+5)/10), toques exactos. Alcista O→L→H→C, bajista O→H→L→C, doji el extremo mas cercano, empate → SL.
+ *   A · barrido de Astra: 9 pares × 4 aperturas × distancias 94..116 unidades arriba y abajo × BUY/SELL
+ *   B · familias integradas de Astra en Step, Play y Go to, con la fila del doble: las simetricas 0,94/0,95/0,96 pip
+ *       (las JPY con la apertura FUERA de la rejilla, 151,2345, y tambien EN ella, 151,234) y las JPY de mitades
+ *       desiguales; motivo y hora, e igualdad de los tres modos
  */
 import { ver, oraculo, fin, escenario, sesionSim, vela, importa, A, asienta, db } from '../lib.mjs'
 import { banco, velasEnStorage } from '../banco-motor.mjs'
@@ -21,13 +19,14 @@ const V = await importa('lib/sim/vela.js').catch(() => null), SAL = await import
 if (!V?.cierreEnVela || !SAL?.creaFrontera || !CI || !SV || !COLA) { for (let i = 0; i < 281; i++) oraculo('SV03', `caso ${i}: sin lib/sim/vela.js ni la cola no se puede`, false, 'no estan'); fin() }
 
 // ── el oraculo en enteros ─────────────────────────────────────────────────────
-const punto = u => { const q = Math.floor(u / 10), r = u - q * 10; return r > 5 || (r === 5 && q % 2 === 1) ? q + 1 : q }   // unidades → puntos, mitad par
-function esperado({ side, o, h, l, c = o, sl, tp }) {   // todo en UNIDADES enteras
-  const [O, H, L, C, S, T] = [o, h, l, c, sl, tp].map(punto)
-  const rutas = C > O ? [[O, L, H, C]] : C < O ? [[O, H, L, C]] : (O - L < H - O ? [[O, L, H, C]] : H - O < O - L ? [[O, H, L, C]] : [[O, L, H, C], [O, H, L, C]])
+// todo en UNIDADES enteras exactas (una decima de pip = 10 unidades); el doji, con las distancias exactas pasadas a
+// decimas de pip redondeando la mitad hacia arriba (el oraculo de Astra: floor((d+5)/10)); los toques, exactos
+function esperado({ side, o, h, l, c = o, sl, tp }) {
+  const dec = d => Math.floor((d + 5) / 10)
+  const rutas = c > o ? [[o, l, h, c]] : c < o ? [[o, h, l, c]] : (dec(o - l) < dec(h - o) ? [[o, l, h, c]] : dec(h - o) < dec(o - l) ? [[o, h, l, c]] : [[o, l, h, c], [o, h, l, c]])
   const toca = r => { for (let k = 0; k < 3; k++) { const a = r[k], b = r[k + 1], lo = Math.min(a, b), hi = Math.max(a, b)
-    const s = S >= lo && S <= hi, t = T >= lo && T <= hi
-    if (s && t) return Math.abs(S - a) <= Math.abs(T - a) ? 'SL' : 'TP'
+    const s = sl >= lo && sl <= hi, t = tp >= lo && tp <= hi
+    if (s && t) return Math.abs(sl - a) <= Math.abs(tp - a) ? 'SL' : 'TP'
     if (s) return 'SL'; if (t) return 'TP' } return null }
   const rs = rutas.map(toca)
   return rs.includes('SL') ? 'SL' : rs.every(x => x === 'TP') ? 'TP' : null
@@ -46,7 +45,7 @@ for (const par of PARES) {
     const e = esperado({ side, o: oi, h: oi + up, l: oi - down, sl, tp })
     total++; if (r !== e && malos.length < 1e6) malos.push({ oi, up, down, side, e, r })
   }
-  oraculo('SV03', `A · ${par}: ${total} dojis de 0,94 a 1,16 pip, en puntos enteros`, malos.length === 0, JSON.stringify({ total, malos: malos.length, ejemplos: malos.slice(0, 3) }))
+  oraculo('SV03', `A · ${par}: ${total} dojis de 0,94 a 1,16 pip, en enteros a escala comun`, malos.length === 0, JSON.stringify({ total, malos: malos.length, ejemplos: malos.slice(0, 3) }))
 }
 
 // ── B · familias integradas, tres modos ───────────────────────────────────────
@@ -77,7 +76,7 @@ for (const c of casos) {
     await COLA.esperaCola(ses.id); await asienta(50); await b.repinta()
     const rr = { modo, reloj: e.currentTime - T, saldo: b.estado.saldo, trades: b.ps().trades.map(t => ({ motivo: t.reason, pnl: Math.round(t.pnl * 100) / 100, hora: t.closeTime - T })), filas: db.tablas.sim_trades.map(x => ({ pnl: +x.pnl })) }
     resultados.push(rr)
-    oraculo('SV03', `B · ${c.id} ${modo}: ${motivo} en la vela (a mano, en puntos)`, rr.reloj === 60 && rr.trades.length === 1 && rr.trades[0].motivo === motivo && rr.trades[0].hora === 60 && rr.filas.length === 1, JSON.stringify(rr))
+    oraculo('SV03', `B · ${c.id} ${modo}: ${motivo} en la vela (oraculo de Astra, a mano)`, rr.reloj === 60 && rr.trades.length === 1 && rr.trades[0].motivo === motivo && rr.trades[0].hora === 60 && rr.filas.length === 1, JSON.stringify(rr))
     b.caja.raiz.desmonta(); await asienta()
   }
   const sig = r => JSON.stringify({ ...r, modo: null })
