@@ -41,10 +41,10 @@ export function clasePosicion(Base, { AnchorPoint, PaneCursorType }) {
       }
       return super.setPoint(index, point)
     }
-    // Shift: el SL y el TP ya son solo verticales y el circulo solo horizontal; el cuadrado con Shift solo ensancha
+    // Shift: el SL y el TP ya son solo verticales y el circulo solo horizontal (sin esto, el Shift del plugin bloquearia
+    // el precio del SL). El cuadrado no tiene nada propio con Shift: el core no le aplica restriccion (no es un punto guardado)
     getShiftConstrainedPoint(pointIndex, rawScreenPoint, phase, originalLogicalPoint, all) {
       if (pointIndex === TIRADOR.SL || pointIndex === TIRADOR.TP || pointIndex === TIRADOR.ENTRADA_ANCHO) return { point: rawScreenPoint, snapAxis: 'none' }
-      if (pointIndex === TIRADOR.ENTRADA && all?.[0]) return super.getShiftConstrainedPoint(0, rawScreenPoint, phase, all[0], all)
       return super.getShiftConstrainedPoint(pointIndex, rawScreenPoint, phase, originalLogicalPoint, all)
     }
   }
