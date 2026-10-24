@@ -55,7 +55,9 @@ function corre(MO, cartera, par, lado, tipo, vela, nivel = null) {
     ...(tipo === 'manual' ? [{ tipo: 'avanzar', hasta: T + 60 }, { tipo: 'cerrar', id: 'p1', lotes: '0.25' }, { tipo: 'cerrar', id: 'p1' }] : [{ tipo: 'avanzar', hasta: T + 60 }])]
   return cmds.map(c => { const r = motor.aplica(e, c, vs); e = r.estado; return r })
 }
-const sinConversion = rs => rs.map(r => ({ ...r, eventos: r.eventos.map(({ conversion, ...resto }) => resto) }))
+// orden 1-119: la version del motor sube (motor@3) y los eventos ambiguos dicen recorrido@2: se comparan sin ellas
+const sinVersion = r => ({ ...r, estado: r.estado?.versiones ? { ...r.estado, versiones: { ...r.estado.versiones, motor: '(version)' } } : r.estado, eventos: r.eventos.map(x => (x.politica ? { ...x, politica: '(politica)' } : x)) })
+const sinConversion = rs => rs.map(r => sinVersion({ ...r, eventos: r.eventos.map(({ conversion, ...resto }) => resto) }))
 
 titulo('1 · contraste con la base 63be57d, quitando solo la conversion')
 const VELAS = { USDJPY: { p: 150, o: 150, h: 151, l: 149, c: 150.5, paso: 1 }, USDCAD: { p: 1.37, o: 1.37, h: 1.38, l: 1.36, c: 1.375, paso: 0.01 }, USDCHF: { p: 0.88, o: 0.88, h: 0.89, l: 0.87, c: 0.885, paso: 0.01 } }
@@ -68,7 +70,7 @@ const CAMBIA = new Set(['USDJPY SELL TP', 'USDCAD SELL TP', 'USDCHF SELL TP'])
 const sinEn = rs => rs.map(r => ({ ...r, eventos: r.eventos.map(({ en, ...resto }) => resto) }))
 let n = 0, distintos = [], cambiados = [], malCambiados = []
 for (const par of ['USDJPY', 'USDCAD', 'USDCHF']) for (const lado of ['BUY', 'SELL']) for (const tipo of ['manual', 'SL', 'TP']) for (const cartera of [false, true]) {
-  const a = sinConversion(corre(NUEVO, cartera, par, lado, tipo, VELAS[par])), b = corre(VIEJO, cartera, par, lado, tipo, VELAS[par])
+  const a = sinConversion(corre(NUEVO, cartera, par, lado, tipo, VELAS[par])), b = corre(VIEJO, cartera, par, lado, tipo, VELAS[par]).map(sinVersion)
   const nombre = `${par} ${lado} ${tipo}`, donde = `${nombre} ${cartera ? 'cartera' : 'un par'}`
   n++
   if (!CAMBIA.has(nombre)) { if (tx(a) !== tx(b)) distintos.push(donde); continue }
