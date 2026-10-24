@@ -172,16 +172,21 @@ try {
   oraculo('V1C01', 'L · ni uno de la misma version', (c2b.instala({ version: vAntes, epoca: 1, estado: { esquema: 'igual' } }), c2b.estado.estado.esquema !== 'igual'))
 
   titulo('M · respuestas de servicio')
-  const sv503 = { llama: async () => ({ http: 503, cuerpo: { ok: false, http: 503, motivo: 'mantenimiento' } }) }
-  const c5 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: sv503.llama, local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
+  // un servidor doble que da el escritor y contesta lo demas con la respuesta dada
+  const fijo = (http, motivo) => async ruta => (ruta === '/api/sim/tomar' ? { http: 200, cuerpo: { ok: true, http: 200, testigo: 'a'.repeat(64) } }
+    : ruta === '/api/sim/estado' ? { http: 200, cuerpo: { ok: true, http: 200, version: 3, epoca: 1, estado: {} } } : { http, cuerpo: { ok: false, http, motivo } })
+  const c5 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: fijo(503, 'mantenimiento'), local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
+  await c5.toma()
   const r12 = await c5.envia('avanzar', { hasta: m(60), motivo: 'paso' })
   oraculo('V1C01', 'M · 503 mantenimiento: «mantenimiento», sin cola', r12?.conclusion === 'mantenimiento' && c5.pendientes().length === 0, tx(r12))
   for (const [http, motivo, conclusion] of [[410, 'sesion_borrada', 'borrada'], [426, 'actualizar_cliente', 'actualizar'], [403, 'sin_acceso', 'sin_acceso']]) {
-    const c6 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: async () => ({ http, cuerpo: { ok: false, http, motivo } }), local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
+    const c6 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: fijo(http, motivo), local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
+    await c6.toma()
     const r = await c6.envia('cerrar', { id: 'p1' })
     oraculo('V1C01', `M · ${http} ${motivo}: «${conclusion}», sin cola`, r?.conclusion === conclusion && c6.pendientes().length === 0, tx(r))
   }
-  const c7 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: async () => ({ http: 500, cuerpo: { ok: false, http: 500, motivo: 'error_interno' } }), local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
+  const c7 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: fijo(500, 'error_interno'), local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
+  await c7.toma()
   const r13 = await c7.envia('cerrar', { id: 'p1' })
   oraculo('V1C01', 'M · 500 error_interno: incierto (pudo confirmarse): se queda en la cola para reenviar la misma clave', r13?.conclusion === 'incierto' && c7.pendientes().length === 1, tx(r13))
 } finally { pg.cierra() }
