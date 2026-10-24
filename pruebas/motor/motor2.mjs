@@ -100,6 +100,7 @@ titulo('margen@2 · el bid, fijado y proporcional')
   ap(c, { tipo: 'cerrar', id: 'p1', lotes: '0.25' })
   const usado = c.e.posiciones[0] ? c.e.posiciones[0].margen_fijado_µ - c.e.posiciones[0].margen_liberado_µ : null
   oraculo('MARGEN', 'margen fijado 1.100,00; cerrar 0,25 con el precio ya en 1,20000 libera 275,00 de la base (no recalcula): queda 825,00', usado === µ('825'), String(usado))
-  oraculo('VERSION', 'el estado dice motor@2 y margen@2', a.e.versiones?.motor === 'motor@2' && a.e.versiones?.margen === 'margen@2', enTexto(a.e.versiones))
+  // REHECHO (orden 1-119, punto 3): la politica del camino es la regla de la vela (recorrido@2): el motor pasa a motor@3
+  oraculo('VERSION', 'el estado dice motor@3 y margen@2', a.e.versiones?.motor === 'motor@3' && a.e.versiones?.margen === 'margen@2', enTexto(a.e.versiones))
 }
 fin()

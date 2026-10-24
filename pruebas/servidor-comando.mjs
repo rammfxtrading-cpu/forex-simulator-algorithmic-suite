@@ -64,7 +64,7 @@ for (const [que, c, en] of [
   ['mercado sin cotizadoEn', ab({ cotizadoEn: undefined }), 'cotizadoEn'],
   ['mercado con precio', ab({ precio: '1.1' }), 'precio'],
   ['limit sin precio', ab({ orden: 'limit', cotizadoEn: undefined }), 'precio'],
-  ['precio fuera de la rejilla', ab({ orden: 'limit', cotizadoEn: undefined, precio: '1.100001' }), 'precio'],
+  ['precio que no es un precio', ab({ orden: 'limit', cotizadoEn: undefined, precio: '1.1.1' }), 'precio'],
   ['sl que no es un precio', ab({ sl: 'abc' }), 'sl'],
   ['cerrar sin id', cmd({ tipo: 'cerrar', version_esperada: 1, testigo: T64 }), 'id'],
   ['cancelar una posicion', cmd({ tipo: 'cancelar', version_esperada: 1, testigo: T64, id: 'p1' }), 'id'],
@@ -76,6 +76,10 @@ for (const [que, c, en] of [
   const r = vc(c)
   oraculo('COMA', `${que}: 422 carga_invalida en «${en}»`, r.ok === false && r.http === 422 && r.motivo === 'carga_invalida' && r.en === en, tx(r))
 }
+// REHECHO (orden 1-119, punto 2): un precio fuera de la rejilla no se rechaza: se ajusta al tick del par, y la intencion
+// (y su sobre) lleva el precio ajustado: 1,100004 → 1,1 y 1,100005 → 1,10001 (la mitad, arriba)
+const fr = vc(ab({ orden: 'limit', cotizadoEn: undefined, precio: '1.100004', sl: '1.090005' }))
+oraculo('COMA', 'limit a 1,100004 con SL 1,090005: aceptado y ajustado (precio 1.1, sl 1.09001)', fr.ok === true && fr.intencion?.carga?.precio === '1.1' && fr.intencion?.carga?.sl === '1.09001', tx(fr))
 const s1 = CO ? CO.sobreComando(vc(ab({ orden: 'limit', cotizadoEn: undefined, precio: '1.1', sl: '1.09' })).intencion) : null
 const s2 = CO ? CO.sobreComando(vc(ab({ orden: 'limit', cotizadoEn: undefined, precio: '1.10000', sl: '1.09000', par: 'EUR/USD' })).intencion) : null
 oraculo('COMA', 'el sobre normaliza par y precios ("EUR/USD" = "EURUSD", "1.1" = "1.10000") y no lleva clave, version, testigo ni pestaña', s1 && s1 === s2 && JSON.parse(s1).tipo === 'abrir' && !/command_id|version|testigo|cliente_id|epoca/.test(s1), s1)

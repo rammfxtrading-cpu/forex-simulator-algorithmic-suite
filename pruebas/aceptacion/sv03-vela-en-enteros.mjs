@@ -8,6 +8,10 @@
  * EL ORACULO, independiente de lib/sim/vela.js, es el de Astra (astra-bordes-r2): precios construidos como ENTEROS en
  * centesimas de pip («unidades»: 0,000001 sin JPY, 0,0001 con JPY; diez unidades = una decima de pip), distancias del
  * doji floor((d+5)/10), toques exactos. Alcista O→L→H→C, bajista O→H→L→C, doji el extremo mas cercano, empate → SL.
+ * REHECHO (orden 1-119 del CTO, punto 2): un precio fuera de la rejilla del par se AJUSTA al tick al entrar (como
+ * TradingView, igual que el motor v1): desde su texto, en enteros, al tick mas cercano con la mitad hacia arriba. El
+ * oraculo ajusta primero cada precio (unidades → ticks: floor((u+5)/10)) y aplica la regla sobre los ticks (una decima de
+ * pip = un tick: nada que redondear). Antes comparaba los precios sin ajustar, a la escala comun.
  *   A · barrido de Astra: 9 pares × 4 aperturas × distancias 94..116 unidades arriba y abajo × BUY/SELL
  *   B · familias integradas de Astra en Step, Play y Go to, con la fila del doble: las simetricas 0,94/0,95/0,96 pip
  *       (las JPY con la apertura FUERA de la rejilla, 151,2345, y tambien EN ella, 151,234) y las JPY de mitades
@@ -34,6 +38,10 @@ function esperado({ side, o, h, l, c = o, sl, tp }) {
 const PARES = ['EUR/USD', 'GBP/USD', 'AUD/USD', 'NZD/USD', 'USD/CAD', 'USD/CHF', 'AUD/CAD', 'USD/JPY', 'GBP/JPY']
 const factor = par => par.includes('JPY') ? 10000 : 1000000
 
+// el ajuste al tick, en unidades (10 unidades = un tick), la mitad hacia arriba
+const ajU = u => Math.floor((u + 5) / 10) * 10
+const esperadoAjustado = ({ side, o, h, l, c = o, sl, tp }) => esperado({ side, o: ajU(o), h: ajU(h), l: ajU(l), c: ajU(c), sl: ajU(sl), tp: ajU(tp) })
+
 // ── A · barrido ───────────────────────────────────────────────────────────────
 for (const par of PARES) {
   const j = par.includes('JPY'), f = factor(par), orig = j ? [1500000, 1512345, 1400000, 999995] : [1100000, 1234567, 999995, 700000]
@@ -42,10 +50,10 @@ for (const par of PARES) {
     const sl = oi + (side === 'BUY' ? -50 : 50), tp = oi + (side === 'BUY' ? 50 : -50)
     const v = { open: oi / f, close: oi / f, high: (oi + up) / f, low: (oi - down) / f }
     const r = V.cierreEnVela({ pair: par, entry: oi / f, side, sl: sl / f, tp: tp / f }, v)
-    const e = esperado({ side, o: oi, h: oi + up, l: oi - down, sl, tp })
+    const e = esperadoAjustado({ side, o: oi, h: oi + up, l: oi - down, sl, tp })
     total++; if (r !== e && malos.length < 1e6) malos.push({ oi, up, down, side, e, r })
   }
-  oraculo('SV03', `A · ${par}: ${total} dojis de 0,94 a 1,16 pip, en enteros a escala comun`, malos.length === 0, JSON.stringify({ total, malos: malos.length, ejemplos: malos.slice(0, 3) }))
+  oraculo('SV03', `A · ${par}: ${total} dojis de 0,94 a 1,16 pip, ajustados al tick (orden 1-119)`, malos.length === 0, JSON.stringify({ total, malos: malos.length, ejemplos: malos.slice(0, 3) }))
 }
 
 // ── B · familias integradas, tres modos ───────────────────────────────────────
@@ -58,7 +66,7 @@ for (const par of ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/C
 for (const par of ['USD/JPY', 'GBP/JPY']) casos.push({ id: par + '-mitades-desiguales-fuera-de-rejilla', par, side: 'BUY', u: { o: 1512345, h: 1512450, l: 1512230, sl: 1512295, tp: 1512395 } })
 let ix = 0
 for (const c of casos) {
-  const f = factor(c.par), u = c.u, motivo = esperado({ side: c.side, ...u })
+  const f = factor(c.par), u = c.u, motivo = esperadoAjustado({ side: c.side, ...u })
   const vv = [u.o / f, u.h / f, u.l / f, u.o / f], entry = u.o / f, sl = u.sl / f, tp = u.tp / f
   let date = new Date(Date.UTC(2025, 0, 7 + ix++)); while (date.getUTCDay() !== 2) date = new Date(+date + 86400000)
   const dia = date.toISOString().slice(0, 10), ny12 = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', hourCycle: 'h23' }).format(new Date(+date + 12 * 3600000))), T = +date / 1000 + (ny12 === 8 ? 11 : 12) * 3600 - 60

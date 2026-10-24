@@ -33,7 +33,11 @@ oraculo('M1', '5/2→2, 7/2→4, −5/2→−2, −7/2→−4, 2,4→2, 2,6→3,
 titulo('3 · instrumentos: ticks y centesimas')
 oraculo('M1', 'los 9 pares, ni uno mas', JSON.stringify(Object.keys(I.INSTRUMENTOS).sort()) === JSON.stringify(['AUDCAD', 'AUDUSD', 'EURUSD', 'GBPJPY', 'GBPUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY']))
 oraculo('M1', 'EURUSD 1,10010 = 110.010 ticks; USDJPY 150,001 = 150.001 ticks; ida y vuelta', I.aTicks('EURUSD', '1.10010') === 110010n && I.aTicks('USDJPY', '150.001') === 150001n && I.deTicks('EURUSD', 110010n) === '1.10010' && I.deTicks('GBPJPY', 190000n) === '190.000')
-oraculo('M1', 'un precio fuera de la rejilla (1,100105) o no numerico se rechaza', lanza(() => I.aTicks('EURUSD', '1.100105')) && lanza(() => I.aTicks('EURUSD', 'abc')) && lanza(() => I.aTicks('EURUSD', '-1.1')))
+// REHECHO (orden 1-119, punto 2): un precio fuera de la rejilla ya no se rechaza: se AJUSTA al tick del par, desde su
+// texto y en enteros, al mas cercano con la mitad hacia arriba (como TradingView). 1,100105 → 1,10011 (la mitad, arriba);
+// 1,1001049 → 1,10010; 151,2345 → 151,235 en USDJPY. Lo que no es un precio (o no es positivo) se sigue rechazando
+const aj = (par, x) => { try { return I.aTicks(par, x) } catch { return null } }
+oraculo('M1', 'fuera de la rejilla se ajusta al tick (1,100105 → 110011; 1,1001049 → 110010; USDJPY 151,2345 → 151235); no numerico o no positivo se rechaza', aj('EURUSD', '1.100105') === 110011n && aj('EURUSD', '1.1001049') === 110010n && aj('USDJPY', '151.2345') === 151235n && lanza(() => I.aTicks('EURUSD', 'abc')) && lanza(() => I.aTicks('EURUSD', '-1.1')) && lanza(() => I.aTicks('EURUSD', '0.000004')), [aj('EURUSD', '1.100105'), aj('EURUSD', '1.1001049'), aj('USDJPY', '151.2345')].join(' · '))
 oraculo('M1', 'lotes en centesimas: 1 → 100, 0,25 → 25, 0,01 → 1; 0,005 y 0 se rechazan', I.aCentesimas('1') === 100n && I.aCentesimas('0.25') === 25n && I.aCentesimas('0.01') === 1n && lanza(() => I.aCentesimas('0.005')) && lanza(() => I.aCentesimas('0')))
 oraculo('M1', 'conversion: USD cotizada directa; USD base, entre su precio; cruces por su par (AUDCAD÷USDCAD, GBPJPY÷USDJPY)',
   I.INSTRUMENTOS.EURUSD.conversion === null && I.INSTRUMENTOS.USDJPY.conversion === 'USDJPY' && I.INSTRUMENTOS.AUDCAD.conversion === 'USDCAD' && I.INSTRUMENTOS.GBPJPY.conversion === 'USDJPY')
