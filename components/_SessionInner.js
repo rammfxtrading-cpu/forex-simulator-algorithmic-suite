@@ -41,6 +41,7 @@ import AntimatterLoader from './AntimatterLoader'
 import AvisoServicio from './AvisoServicio'
 import { useServicio } from '../lib/sim/servicio'
 import { fijaSaldoConfirmado } from '../lib/sim/cierre'
+import { alTick } from '../lib/sim/vela'
 import { useCola } from '../lib/sim/cola'
 import { saltaA, creaFrontera, pasoConFrontera, antesDeReanudar } from '../lib/sim/salto'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
@@ -1969,19 +1970,22 @@ export default function SessionPage(){
           isChallenge={!!session?.challenge_type}
           currentPrice={currentPrice}
           onClose={()=>setOrderModal(null)}
-          onConfirm={(posData)=>{
+          onConfirm={(posDatos)=>{
             if(soloLecturaRef.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); setOrderModal(null); return }
+            // orden 1-119: la entrada, el SL y el TP se ajustan al tick del par (el dibujo da cualquier decimal)
+            const posData={...posDatos, sl:alTick(posDatos.sl,orderModal.pair), tp:alTick(posDatos.tp,orderModal.pair)}
+            const entradaTick=alTick(orderModal.entry,orderModal.pair)
             if(servicio.motivo && (servicio.motivo!=='sin_estado' || servicio.falloLectura)){ avisa('Las operaciones están en pausa: el simulador no acepta operaciones ahora.'); setOrderModal(null); return }
             if(orderModal.isLimit){
               const ps=pairState.current[orderModal.pair]||{engine:null,ready:false,positions:[],trades:[],orders:[]}
               pairState.current[orderModal.pair]=ps
               if(!ps.orders) ps.orders=[]
-              const order={...posData,id:`L${Date.now()}`,pair:orderModal.pair,side:orderModal.side==='BUY'?'BUY_LIMIT':'SELL_LIMIT',entry:orderModal.entry,createdTime:currentTime}
+              const order={...posData,id:`L${Date.now()}`,pair:orderModal.pair,side:orderModal.side==='BUY'?'BUY_LIMIT':'SELL_LIMIT',entry:entradaTick,createdTime:currentTime}
               ps.orders=[...ps.orders,order]
             } else {
               const ps=pairState.current[orderModal.pair]; if(!ps) return
               const posId=`${Date.now()}`
-              const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}
+              const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:entradaTick,...posData,openTime:currentTime,initialSlPips:posData.slPips}
               ps.positions=[...ps.positions,newPos]
               createPositionLines(posId,orderModal.pair,newPos)
               setLastTrade(orderModal.side);setTimeout(()=>setLastTrade(null),700)

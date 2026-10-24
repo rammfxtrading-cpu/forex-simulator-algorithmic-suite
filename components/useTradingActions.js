@@ -19,7 +19,7 @@ import { pipMult } from '../lib/trading/pricing'
 import { sessionKeyAt } from '../lib/killzonesDomain'
 import { cierraPosicion, saldoConfirmado, nuevoIdTrade } from '../lib/sim/cierre'
 import { encola, posicionOcupada, hayBarrera, suscribeCola } from '../lib/sim/cola'
-import { cierreEnVela } from '../lib/sim/vela'
+import { cierreEnVela, rutaComun, alTick } from '../lib/sim/vela'
 import { avisa } from '../lib/sim/avisos'
 
 // La fila de sim_trades de un cierre (total o parcial), con su id generado aqui:
@@ -184,7 +184,8 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); setPreview(null); return }
     const ps=pairState.current[preview.pair]; if(!ps) return
     if(!ps.orders) ps.orders=[]
-    const order={...preview, id:`L${Date.now()}`, createdTime:currentTime}
+    // orden 1-119: lo que entra se ajusta al tick del par (el dibujo y el preview pueden traer cualquier decimal)
+    const order={...preview, entry:alTick(preview.entry,preview.pair), sl:alTick(preview.sl,preview.pair), tp:alTick(preview.tp,preview.pair), id:`L${Date.now()}`, createdTime:currentTime}
     ps.orders=[...ps.orders, order]
     // Price lines — subtle colors
     const cr=chartMap.current[preview.pair]
@@ -201,8 +202,10 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   const cancelPreview=useCallback(()=>setPreview(null),[])
 
   // Called by PositionOverlay when user finishes dragging a SL/TP line
-  const handlePositionDragEnd=useCallback((posId, type, newPrice)=>{
+  const handlePositionDragEnd=useCallback((posId, type, precioSoltado)=>{
     const ps=pairState.current[activePair]; if(!ps) return
+    // orden 1-119: coordinateToPrice da cualquier decimal: se guarda el tick del par mas cercano (la mitad, arriba)
+    const newPrice=alTick(precioSoltado,activePair)
     // Handle open positions
     const pos=ps.positions?.find(x=>x.id===posId)
     if(pos){
@@ -286,8 +289,23 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     const espera=pos=>hayBarrera(id)||posicionOcupada(id,pos.id)
 
     const toClose=[]
+    // orden 1-119: UN camino por vela y par para todas las posiciones (las del par vivas en esa vela y las pendientes
+    // que se llenan en ella), el del motor v1; solo cuenta en un doji equidistante. Se guarda por vela: la llamada de las
+    // recien llenadas (soloIds) y las reevaluaciones usan el mismo
+    const rutaDe=(candle,i)=>{
+      const cache=ps.rutasVela??(ps.rutasVela=new Map())
+      if(cache.has(candle.time)) return cache.get(candle.time)
+      const vivas=ps.positions.filter(p=>(p.openTime==null||candle.time>=p.openTime)&&!toClose.find(x=>x.id===p.id))
+        .map(p=>({side:p.side,entry:p.entry,sl:p.sl,tp:p.tp,lots:p.lots,llenadaAqui:!!(p.porLimite&&candle.time===p.openTime)}))
+      const llenan=(ps.orders||[]).filter(o=>(o.createdTime==null||candle.time>=o.createdTime)&&isFilled({isLong:isLongSide(o.side),entry:o.entry,high:candle.high,low:candle.low}))
+        .map(o=>({side:isLongSide(o.side)?'BUY':'SELL',entry:o.entry,sl:o.sl,tp:o.tp,lots:o.lots,llenadaAqui:true}))
+      const ruta=rutaComun([...vivas,...llenan],candle,{par:pair,previo:engine.candles[i-1]?.close??null})
+      if(ruta){ cache.set(candle.time,ruta); if(cache.size>500) cache.delete(cache.keys().next().value) }
+      return ruta
+    }
     for(let i=fromIdx; i<=curIdx; i++){
       const candle=engine.candles[i];if(!candle) continue
+      let ruta
       ps.positions.forEach(pos=>{
         if(soloIds && !soloIds.includes(pos.id)) return
         if(toClose.find(x=>x.id===pos.id)) return // already queued
@@ -298,7 +316,8 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
         if(espera(pos)){ ps.sltpDesde=Math.min(ps.sltpDesde??i,i); return }
         // la regla de la vela (Ramon, orden 1-085; lib/sim/vela.js): si toca el SL y el TP, el que el
         // recorrido de la vela alcanza antes; una pendiente llenada en esta vela, desde su entrada
-        const toca=cierreEnVela(pos,candle,{llenadaAqui:pos.porLimite&&candle.time===pos.openTime,par:pair})
+        if(ruta===undefined) ruta=rutaDe(candle,i)
+        const toca=cierreEnVela(pos,candle,{llenadaAqui:pos.porLimite&&candle.time===pos.openTime,par:pair,ruta})
         // la hora, la de la vela que lo toca: en una reevaluacion (reevaluaSLTP) es anterior al motor (GOTOG1-01)
         if(toca==='TP') toClose.push({id:pos.id,reason:'TP',price:pos.tp,hora:candle.time})
         else if(toca==='SL') toClose.push({id:pos.id,reason:'SL',price:pos.sl,hora:candle.time})

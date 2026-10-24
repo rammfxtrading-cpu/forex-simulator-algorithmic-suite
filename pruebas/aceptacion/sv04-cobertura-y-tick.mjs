@@ -14,7 +14,10 @@
  */
 import { ver, oraculo, fin, escenario, sesionSim, vela, importa, A, asienta, db } from '../lib.mjs'
 import { banco, velasEnStorage } from '../banco-motor.mjs'
-const SAL = await importa('lib/sim/salto.js'), CI = await importa('lib/sim/cierre.js'), SV = await importa('lib/sim/servicio.js'), COLA = await importa('lib/sim/cola.js'), OR = await importa('lib/trading/orders.js')
+const op = m => importa(m).catch(() => null)
+const SAL = await op('lib/sim/salto.js'), CI = await op('lib/sim/cierre.js'), SV = await op('lib/sim/servicio.js'), COLA = await op('lib/sim/cola.js'), OR = await op('lib/trading/orders.js')
+// contra el codigo auditado (historicas.sh) faltan modulos: rojo, no excepcion
+if (!SAL?.creaFrontera || !CI || !SV || !COLA || !OR?.priceFromPips) { for (let i = 0; i < 9; i++) oraculo('SV04', `caso ${i}: sin lib/sim ni lib/trading/orders no se puede`, false, 'no estan'); fin() }
 
 // ── A · cobertura en los tres modos ───────────────────────────────────────────
 const date = new Date(Date.UTC(2025, 0, 7)), dia = date.toISOString().slice(0, 10)

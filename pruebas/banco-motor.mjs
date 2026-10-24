@@ -21,6 +21,9 @@ const { nextSessionOpen } = await importa('lib/killzonesDomain.js')
 const saltaA = await importa('lib/sim/salto.js').then(m => m.saltaA, () => null)
 const pasoConFrontera = await importa('lib/sim/salto.js').then(m => m.pasoConFrontera ?? null, () => null)
 const { router } = await import('./next-falso.mjs')
+// orden 1-119: la pagina ajusta al tick lo que entra por el modal (alTick); en el codigo de antes no existe
+const LINEA_MERCADO_119 = 'const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:entradaTick,...posData,openTime:currentTime,initialSlPips:posData.slPips}'
+const alTick = fuente('components/_SessionInner.js').includes(LINEA_MERCADO_119) ? await importa('lib/sim/vela.js').then(m => m.alTick ?? null, () => null) : null
 
 // Pone las velas M1 (segundos) en forex-data/<PAR>/M1/<año>.json y un [] en los
 // años de contexto que pida la sesion, para que nadie llame al proveedor.
@@ -90,8 +93,10 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
   const motor = (p) => ps(p)?.engine
   return {
     refs, estado, caja, ps, motor, repinta,
-    // _SessionInner.js:1877-1880, tal cual: la entrada es la del modal y openTime el currentTime de la pagina
+    // _SessionInner.js (el onConfirm del modal a mercado), tal cual: la entrada es la del modal y openTime el currentTime de
+    // la pagina; desde la orden 1-119, la entrada, el SL y el TP ajustados al tick del par (alTick)
     abreMercado({ side, entry, sl, tp, lots, slPips = 10, tpPips = 20 }) {
+      if (alTick) { const p = estado.activa ?? par; entry = alTick(entry, p); sl = alTick(sl, p); tp = alTick(tp, p) }
       const posId = `${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
       const newPos = { id: posId, pair: estado.activa ?? par, side, entry, lots, sl, tp, slPips, tpPips, openTime: estado.currentTime, initialSlPips: slPips }
       ps().positions = [...ps().positions, newPos]
@@ -150,7 +155,8 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
 export function copiasVigentes() {
   const s = fuente('components/_SessionInner.js')
   return {
-    mercado: s.includes("const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}"),
+    mercado: s.includes(LINEA_MERCADO_119) ? /const posData=\{\.\.\.posDatos, sl:alTick\(posDatos\.sl,orderModal\.pair\), tp:alTick\(posDatos\.tp,orderModal\.pair\)\}\s*const entradaTick=alTick\(orderModal\.entry,orderModal\.pair\)/.test(s) && !!alTick
+      : s.includes("const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}"),
     paso: pasoConFrontera ? s.includes('await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') : /e\.nextCandle\(1\)/.test(s),
     irA: saltaA
       ? s.includes('await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') && !/lastSLTPIdx=e\.currentIndex/.test(s)
