@@ -386,7 +386,7 @@ try {
     ['solo excepciones (m.2): el {error} se ignora', 'lib/sim/cierre.js', "  if (!r.error) { st.confirmado[sessionId] = balance; return { estado: 'guardado', balance } }", "  { st.confirmado[sessionId] = balance; return { estado: 'guardado', balance } }", 'error'],
     ['incierto = fallido sin releer', 'lib/sim/cierre.js', '  if (errorCierto(r.error, r.status)) return', '  if (true) return', 'perdida'],
     ['sin comprobar el servicio', 'lib/sim/cierre.js', '  if (!permiso.permitido) return', '  if (false) return', 'mantenimiento'],
-    ['saldo confirmado antes de saber el resultado', 'lib/sim/cierre.js', '  let r\n  try {\n    r = await supabase.rpc(', '  st.confirmado[sessionId] = balance\n  let r\n  try {\n    r = await supabase.rpc(', 'cola'],
+    ['saldo confirmado antes de saber el resultado', 'lib/sim/cierre.js', '  let r\n  try {\n    r = await conPlazo(supabase.rpc(', '  st.confirmado[sessionId] = balance\n  let r\n  try {\n    r = await conPlazo(supabase.rpc(', 'cola'],   // orden 1-117: la llamada va con plazo
     ['revertir el incierto sin esperar', 'lib/sim/servicio.js', 'export const ESPERA_INCIERTO_MS = 20000', 'export const ESPERA_INCIERTO_MS = 0', 'tardio'],
   ]
   for (const [desc, fichero, de, a, caso] of MUTANTES) {

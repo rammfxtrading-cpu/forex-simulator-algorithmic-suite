@@ -42,7 +42,7 @@ import AvisoServicio from './AvisoServicio'
 import { useServicio } from '../lib/sim/servicio'
 import { fijaSaldoConfirmado } from '../lib/sim/cierre'
 import { useCola } from '../lib/sim/cola'
-import { saltaA, creaFrontera, pasoConFrontera } from '../lib/sim/salto'
+import { saltaA, creaFrontera, pasoConFrontera, antesDeReanudar } from '../lib/sim/salto'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import { COLUMNAS_SESION } from '../lib/sim/columnas'
@@ -1131,6 +1131,8 @@ export default function SessionPage(){
       // quita los handles de edición.
       try{ deselectAll() }catch{}
       // SGR6-01: si una pausa corto la puesta al dia del par, primero al dia; si no se puede (otra pausa), no arranca
+      // orden 1-117: tras un plazo vencido, primero se relee del servidor lo pendiente; si no consta, no arranca
+      if(!(await antesDeReanudar(id))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return
       if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return
       // la frontera economica del Play, la misma que la del Step y el salto (SIMGOTO2-01, orden 1-087)
       e.frontera=creaFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
@@ -1139,12 +1141,14 @@ export default function SessionPage(){
   },[activePair,saveProgress,deselectAll,ponAlDia])
   // Step: una vela con la frontera economica del salto (SIMGOTO2-01, orden 1-087): no se pasa a la siguiente
   // hasta aplicar los cierres y releer el reto; mientras espera, otro Step no hace nada (e.saltando)
-  const handleStep=useCallback(async()=>{const e=eng();if(!e||e.isPlaying||e.ocupado)return;if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
+  const handleStep=useCallback(async()=>{const e=eng();if(!e||e.isPlaying||e.ocupado)return;if(!(await antesDeReanudar(id))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
   const handleGoTo=useCallback(async(sessKey)=>{
     setGotoOpen(false)
     const e=eng();if(!e||e.ocupado)return
     if(e.isPlaying){e.pause();setIsPlaying(false)}
+    // orden 1-117: tras un plazo vencido, primero se relee del servidor lo pendiente
+    if(!(await antesDeReanudar(id))||activePairRef.current!==activePair||e.ocupado)return
     // SGR6-01: si una pausa corto la puesta al dia del par, primero al dia (el Go to se calcula desde el maestro)
     if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado)return
     const target=nextSessionOpen(e.candles,e.currentIndex,sessKey)

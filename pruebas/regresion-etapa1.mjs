@@ -33,7 +33,11 @@ const ids = ls => ls.map(l => /\[([^\]]+)\]/.exec(l)?.[1])
 titulo(`la prueba de la etapa 1 de produccion (${PRODUCCION}) contra esta rama, sin SIM_V1_ENDPOINTS`)
 ver('control: el entorno de la prueba no tiene SIM_V1_ENDPOINTS', !('SIM_V1_ENDPOINTS' in env))
 ver(`control: la prueba de produccion ha corrido entera (${verdes.length + rojos.length} oraculos, con su recuento final)`, verdes.length + rojos.length > 40 && /\d+ en rojo · \d+ en verde/.test(salida), `${verdes.length} verdes y ${rojos.length} rojos en la hija · codigo ${r.status}`)
-oraculo('REG1', 'todos los flujos de la etapa 1 como en produccion: el unico oraculo que cambia es, como mucho, API-503', rojos.every(l => l.includes('[API-503]')), ids(rojos).join(', ') || '-')
+// orden 1-117: la llamada a sim_cierre_v0 va con plazo (conPlazo(supabase.rpc(...))), asi que el mutante MUT-cola de la
+// prueba de produccion ya no encuentra su texto de anclaje. No es un flujo que cambie: es el texto del mutante. El mismo
+// mutante, con el anclaje nuevo, sigue en pruebas/etapa1-cliente.mjs de esta rama (y tiene que salir en verde alli)
+const anclaje = l => l.includes('[MUT-cola]') && l.includes('el texto a cambiar existe')
+oraculo('REG1', 'todos los flujos de la etapa 1 como en produccion: el unico oraculo que cambia es, como mucho, API-503 (y el anclaje del mutante MUT-cola, orden 1-117)', rojos.every(l => l.includes('[API-503]') || anclaje(l)), ids(rojos).join(', ') || '-')
 const api = rojos.find(l => l.includes('[API-503]'))
 const rutas = api ? api.split('  · ')[1]?.split(' | ') ?? [] : []
 oraculo('REG1', 'API-503 solo difiere en el motivo del cuerpo: las 5 rutas siguen en 503, sin tocar la base ni la autenticacion, con motivo «apagado»', !api || (rutas.length === 5 && rutas.every(x => /: 503 \{"ok":false,"http":503,"motivo":"apagado"\} \/ 503 · 0 ops$/.test(x))), rutas.join(' | ') || '-')

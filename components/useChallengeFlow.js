@@ -15,6 +15,7 @@ import { resolveBreach } from '../lib/trading/breach'
 import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera, posicionOcupada } from '../lib/sim/cola'
 import { inciertosDe } from '../lib/sim/servicio'
 import { avisa } from '../lib/sim/avisos'
+import { conPlazo, VENCIDO } from '../lib/sim/plazo'
 
 // CAS de challenge/advance: cuantas veces se vuelve a pasar por la barrera tras un 409, y
 // la espera antes de cada reintento: corta y creciente (ESPERA_FASE_MS, luego el doble)
@@ -86,9 +87,11 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
         || getMasterTime()
         || null
       const qs = ct ? `?session_id=${id}&current_time=${ct}` : `?session_id=${id}`
-      const res = await fetch(`/api/challenge/status${qs}`)
-      if (!res.ok) return null
-      const data = await res.json()
+      // orden 1-117: con plazo (lib/sim/plazo.js); sin respuesta, como un fallo: null
+      const res = await conPlazo(fetch(`/api/challenge/status${qs}`))
+      if (res === VENCIDO || !res.ok) return null
+      const data = await conPlazo(res.json())
+      if (data === VENCIDO) return null
       setChallengeStatus(data)
       // el espejo, ya: el breach de la vela siguiente del salto lo lee sin esperar al render
       challengeStatusRef.current = data

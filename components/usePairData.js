@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase'
 import ReplayEngine from '../lib/replayEngine'
 import { saltaA } from '../lib/sim/salto'
 import { encola } from '../lib/sim/cola'
+import { conPlazo, VENCIDO } from '../lib/sim/plazo'
 import { progresoMonotono, siembraProgreso } from '../lib/sim/progreso'
 import { puedeEscribir } from '../lib/sim/servicio'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
@@ -39,10 +40,12 @@ export default function usePairData({ id, session, activePair, pairState, chartM
     // lo cierra la sim-005 en la base
     return encola(id, async()=>{
       try{
-        const p=await puedeEscribir()
-        if(!p.permitido) return
+        // orden 1-117: con plazo; sin respuesta, la cola sigue (el progreso se vuelve a guardar en el siguiente)
+        const p=await conPlazo(puedeEscribir())
+        if(p===VENCIDO||!p.permitido) return
         // nunca hacia atras (SIMGOTO2-02, lib/sim/progreso.js)
-        const r=await supabase.from('sim_sessions').update({last_timestamp:progresoMonotono(id,ts),timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id)
+        const r=await conPlazo(supabase.from('sim_sessions').update({last_timestamp:progresoMonotono(id,ts),timeframe:pairTfRef.current[activePairRef.current]||"H1"}).eq('id',id))
+        if(r===VENCIDO){ avisa('No se ha podido guardar el avance de la sesión. Comprueba tu conexión.'); return }
         avisaSiError('el avance de la sesión')(r)
       }catch(e){ avisa('No se ha podido guardar el avance de la sesión. Comprueba tu conexión.') }
     })
