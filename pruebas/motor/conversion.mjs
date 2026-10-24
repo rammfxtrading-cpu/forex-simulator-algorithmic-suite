@@ -77,9 +77,13 @@ for (const k of casos) {
 
 titulo('2 · USDJPY, GBPJPY y EURUSD')
 const jpy = corre(() => cartera({ pares: ['USDJPY'], mins: { USDJPY: [plana('150.000'), ['150.000', '150.000', '149.000', '149.500']] }, pasos: [abrir('USDJPY', 'BUY', '1', { sl: '149.500' }), hasta1] }))
-oraculo('CONV', 'USDJPY: su propio bid en el cierre (SL, fase 2): { USDJPY, T1, 2, 149500 }', igual(jpy?.[0]?.conversion, conv('USDJPY', T1, 2, 149500n)), tx(jpy))
+// REHECHO (sim-motor-e1, regla de la vela): la vela O 150,000 C 149,500 es BAJISTA: la regla da A (O→H→L→C); O→H no se
+// mueve y la bajada al SL 149,500 es la FASE 3 (antes, el peor para la cartera: B, en la fase 2). El valor, el mismo bid
+oraculo('CONV', 'USDJPY: su propio bid en el cierre (SL, fase 3: vela bajista, la regla da A): { USDJPY, T1, 3, 149500 }', igual(jpy?.[0]?.conversion, conv('USDJPY', T1, 3, 149500n)), tx(jpy))
 const gj = corre(() => cartera({ pares: ['GBPJPY', 'GBPUSD', 'USDJPY'], mins: { GBPUSD: [plana('1.30000'), plana('1.30000')], USDJPY: [plana('150.000'), ['150.000', '151.000', '150.000', '151.000']], GBPJPY: [plana('190.000'), ['190.000', '190.000', '189.000', '189.500']] }, pasos: [abrir('GBPJPY', 'BUY', '1', { sl: '189.500' }), hasta1] }))
-oraculo('CONV', 'GBPJPY: USDJPY a la apertura del minuto (fase 2): { USDJPY, T1, 2, 150000 }', gj?.length === 1 && igual(gj[0].conversion, conv('USDJPY', T1, 2, 150000n)), tx(gj))
+// REHECHO (sim-motor-e1): GBPJPY O 190,000 C 189,500, BAJISTA: A, el SL en la fase 3; en las fases 1–3 la conversion es
+// la APERTURA de USDJPY (150,000), como antes en la fase 2
+oraculo('CONV', 'GBPJPY: USDJPY a la apertura del minuto (fase 3: vela bajista, la regla da A): { USDJPY, T1, 3, 150000 }', gj?.length === 1 && igual(gj[0].conversion, conv('USDJPY', T1, 3, 150000n)), tx(gj))
 const eu = corre(() => cartera({ pares: ['EURUSD'], mins: { EURUSD: [plana('1.10000'), ['1.10000', '1.10000', '1.09000', '1.09500']] }, pasos: [abrir('EURUSD', 'BUY', '1', { sl: '1.09500' }), hasta1] }))
 oraculo('CONV', 'EURUSD (USD cotizado): conversion null (presente, no ausente)', eu?.length === 1 && 'conversion' in eu[0] && eu[0].conversion === null, tx(eu))
 
@@ -95,7 +99,7 @@ oraculo('CONV', 'y es la tasa del P&L: bruto 50 CAD / 1,30000 = 38.461.538 µUSD
 titulo('4 · A37: el motor de un par y la cartera de ese par, la misma conversion byte a byte')
 const filasJ = [plana('150.000'), ['150.000', '150.000', '149.000', '149.500']]
 const mJ = corre(() => uno({ par: 'USDJPY', filas: filasJ, pasos: [abrir1('BUY', '1', { sl: '149.500' }), hasta1] }))
-oraculo('CONV', 'USDJPY SL en la fase 2: misma conversion en los dos motores', mJ?.length === 1 && jpy?.length === 1 && 'conversion' in mJ[0] && igual(mJ[0].conversion, jpy[0].conversion), tx({ uno: mJ?.[0]?.conversion, cartera: jpy?.[0]?.conversion }))
+oraculo('CONV', 'USDJPY SL en la fase 3: misma conversion en los dos motores', mJ?.length === 1 && jpy?.length === 1 && 'conversion' in mJ[0] && igual(mJ[0].conversion, jpy[0].conversion), tx({ uno: mJ?.[0]?.conversion, cartera: jpy?.[0]?.conversion }))
 const filasP = [plana('150.000'), plana('151.000')]
 const mP = corre(() => uno({ par: 'USDJPY', filas: filasP, pasos: [abrir1('BUY', '1'), hasta1, { tipo: 'cerrar', id: 'p1', lotes: '0.25' }] }))
 const cP = corre(() => cartera({ pares: ['USDJPY'], mins: { USDJPY: filasP }, pasos: [abrir('USDJPY', 'BUY', '1'), hasta1, { tipo: 'cerrar', id: 'p1', lotes: '0.25' }] }))

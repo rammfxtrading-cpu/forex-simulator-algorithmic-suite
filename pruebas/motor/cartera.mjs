@@ -66,7 +66,11 @@ const a29 = corre(() => {
   const r = avanza(s, 1); return { s, r }
 })
 const b29 = a29?.r ? de(a29.r.eventos, 'breach')[0] : null
-oraculo('A29', 'A06 en multipar: breach en fase 2, s = 833/1000, EURUSD 1,15002, GBPUSD 1,29167, equity 94.999; la orden de GBPUSD, cancelada por breach', !!b29 && b29.en?.fase === 2 && b29.en?.fraccion === '833/1000' && tx('EURUSD', b29.precios?.EURUSD) === '1.15002' && tx('GBPUSD', b29.precios?.GBPUSD) === '1.29167' && b29.equity_µ === µ('94999') && de(a29.r.eventos, 'orden_cancelada')[0]?.motivo === 'breach', a29?.error ?? enTexto(b29))
+// REHECHO (sim-motor-e1, regla de la vela): EURUSD es un doji equidistante (6.000 ticks arriba y abajo) y ningun camino
+// da SL: el peor para la cartera, B, como antes (baja en la fase 2). GBPUSD (O 1,30000 C 1,29000) es BAJISTA: la regla
+// da A (O→H→L→C) y en la fase 2 (O→H, 0 ticks) no se mueve: en s = 833/1000 sigue en 1,30000. ANTES (el peor) elegia
+// B y bajaba en la fase 2: 1,30000 − ⌊1.000 · 833/1000⌋ = 1,29167. El breach (EURUSD 1,15002, equity 94.999) no cambia
+oraculo('A29', 'A06 en multipar: breach en fase 2, s = 833/1000, EURUSD 1,15002, GBPUSD 1,30000 (bajista: la regla da A, quieto en la fase 2), equity 94.999; la orden de GBPUSD, cancelada por breach', !!b29 && b29.en?.fase === 2 && b29.en?.fraccion === '833/1000' && tx('EURUSD', b29.precios?.EURUSD) === '1.15002' && tx('GBPUSD', b29.precios?.GBPUSD) === '1.30000' && b29.equity_µ === µ('94999') && de(a29.r.eventos, 'orden_cancelada')[0]?.motivo === 'breach', a29?.error ?? enTexto(b29))
 const a30 = (suelo, nombres) => corre(() => {
   // nombres: [perdedor, ganador]; el que pierde, BUY 1 que baja 6.000 ticks; el que gana, SELL 1 que baja 4.000 ticks
   const [pp, pg] = nombres
@@ -80,7 +84,10 @@ const x30 = a30('95000', ['AUDUSD', 'EURUSD']), y30 = a30('95000', ['EURUSD', 'A
 oraculo('A30', 'A07 en multipar: AUDUSD −6.000 y EURUSD +4.000 en la fase 2: equity final 98.000, sin breach', !!x30?.s && x30.s.e.estado === 'activo' && CA.equity_µ(x30.s.e) === µ('98000'), x30?.error ?? enTexto(x30?.r?.eventos))
 oraculo('A31', 'intercambiar los nombres (EURUSD pierde, AUDUSD gana): tambien 98.000 y sin breach; el orden secuencial habria roto el suelo', !!y30?.s && y30.s.e.estado === 'activo' && CA.equity_µ(y30.s.e) === µ('98000'), y30?.error ?? enTexto(y30?.r?.eventos))
 const x32 = a30('98500', ['AUDUSD', 'EURUSD']), b32 = x32?.r ? de(x32.r.eventos, 'breach')[0] : null
-oraculo('A32', 'suelo 98.500: breach en fase 2, s = 4501/6000; AUDUSD 0,65499, EURUSD 1,07000; equity y saldo 98.499', !!b32 && b32.en?.fase === 2 && b32.en?.fraccion === '4501/6000' && tx('AUDUSD', b32.precios?.AUDUSD) === '0.65499' && tx('EURUSD', b32.precios?.EURUSD) === '1.07000' && b32.equity_µ === µ('98499') && x32.s.e.saldo_µ === µ('98499'), x32?.error ?? enTexto(b32))
+// REHECHO (sim-motor-e1): las dos velas (O = H, L = C) son BAJISTAS: la regla da A, O→H no se mueve y la bajada es el
+// segundo tramo, la FASE 3 (antes, el peor para la cartera: B, la bajada en la fase 2). Las cifras no cambian:
+// equity = 100.000 − ⌊6.000·s⌋ + ⌊4.000·s⌋ < 98.500 por primera vez en s = 4501/6000 (−4.501 + 3.000 = −1.501)
+oraculo('A32', 'suelo 98.500: breach en fase 3 (velas bajistas: la regla da A), s = 4501/6000; AUDUSD 0,65499, EURUSD 1,07000; equity y saldo 98.499', !!b32 && b32.en?.fase === 3 && b32.en?.fraccion === '4501/6000' && tx('AUDUSD', b32.precios?.AUDUSD) === '0.65499' && tx('EURUSD', b32.precios?.EURUSD) === '1.07000' && b32.equity_µ === µ('98499') && x32.s.e.saldo_µ === µ('98499'), x32?.error ?? enTexto(b32))
 const a33 = corre(() => {
   const s = sesion({ pares: ['EURUSD', 'GBPUSD'], capital: '120000', limites: [{ regla: 'perdida_diaria', limite: '115000' }], mins: { GBPUSD: [plana('1.30000'), ['1.30000', '1.30000', '1.18000', '1.18000']], EURUSD: [plana('1.10000'), ['1.10000', '1.10000', '1.02000', '1.02000']] } })
   abre(s, 'GBPUSD', 'BUY', '2', { sl: '1.26000' }); abre(s, 'EURUSD', 'SELL', '1', { tp: '1.06000' })
@@ -100,13 +107,22 @@ const a36 = conGbp => corre(() => {
 })
 const x36 = a36(true), y36 = a36(false)
 const el = x36?.eleccion?.EURUSD
-oraculo('A36', 'EURUSD elige A: minimos aislados 99.797 (A, variacion −203) y 99.947 (B, −53), netos de la comision del fill; ambigua', el?.camino === 'A' && el?.minimo_µ?.A === µ('99797') && el?.minimo_µ?.B === µ('99947') && el?.ambigua === true, enTexto(el ?? x36?.error))
+// REHECHO (sim-motor-e1, regla de la vela): EURUSD (O 1,10000 C 1,10050) es ALCISTA: la regla da B (O→L→H→C), aunque A
+// sea peor para la cartera. Las simulaciones aisladas se siguen haciendo (la marca de ambigua y el doji equidistante):
+// sus minimos no cambian. ANTES: A (el peor)
+oraculo('A36', 'EURUSD alcista: la regla da B; minimos aislados 99.797 (A, variacion −203) y 99.947 (B, −53), netos de la comision del fill; ambigua', el?.camino === 'B' && el?.regla === true && el?.minimo_µ?.A === µ('99797') && el?.minimo_µ?.B === µ('99947') && el?.ambigua === true, enTexto(el ?? x36?.error))
 oraculo('A36', 'GBPUSD elige B (empate en minimo −200 y cierre +200)', x36?.eleccion?.GBPUSD?.camino === 'B', enTexto(x36?.eleccion?.GBPUSD))
-oraculo('A36', 'la eleccion de EURUSD es la misma sin la posicion de GBPUSD (los demas pares, quietos en la apertura)', y36?.eleccion?.EURUSD?.camino === 'A' && y36?.eleccion?.EURUSD?.minimo_µ?.A === µ('99797') && y36?.eleccion?.EURUSD?.minimo_µ?.B === µ('99947'), enTexto(y36?.eleccion?.EURUSD ?? y36?.error))
+oraculo('A36', 'la eleccion de EURUSD es la misma sin la posicion de GBPUSD (los demas pares, quietos en la apertura)', y36?.eleccion?.EURUSD?.camino === 'B' && y36?.eleccion?.EURUSD?.minimo_µ?.A === µ('99797') && y36?.eleccion?.EURUSD?.minimo_µ?.B === µ('99947'), enTexto(y36?.eleccion?.EURUSD ?? y36?.error))
 const f36 = x36 && !x36.error ? de(x36.r.eventos, 'fill')[0] : null, c36 = x36 && !x36.error ? de(x36.r.eventos, 'cierre')[0] : null
-oraculo('A36', 'conjunta: fill de EURUSD en 1,10100 en la fase 2, s = 2/3; SL en 1,09900 en la fase 3, s = 5/6; bruto −200, neto −203', !!f36 && tx('EURUSD', f36.precio) === '1.10100' && f36.en?.fase === 2 && f36.en?.fraccion === '2/3' && !!c36 && c36.motivo === 'SL' && tx('EURUSD', c36.precio) === '1.09900' && c36.en?.fase === 3 && c36.en?.fraccion === '5/6' && c36.bruto_µ === µ('-200') && c36.neto_µ === µ('-203'), enTexto([f36?.en, c36?.en, c36?.neto_µ]))
-oraculo('A36', 'los eventos economicos del minuto (fill y SL) llevan sincronizacion: "modelada" (dos pares con exposicion se movieron) y la sesion cuenta minutos = 1', !!x36?.r && x36.r.eventos.filter(x => x.tipo !== 'fin_de_datos').length === 2 && x36.r.eventos.filter(x => x.tipo !== 'fin_de_datos').every(x => x.sincronizacion === 'modelada') && x36.s.e.sincronizacion?.minutos === 1, enTexto(x36?.r?.eventos?.map(x => x.sincronizacion)))
-oraculo('A36', 'al cierre: saldo 99.797, flotante de GBPUSD +200, equity 99.997', !!x36?.s && x36.s.e.saldo_µ === µ('99797') && CA.equity_µ(x36.s.e) === µ('99997'), x36?.s ? `${x36.s.e.saldo_µ} · ${CA.equity_µ(x36.s.e)}` : '')
+// REHECHO: por B, la fase 2 baja EURUSD de 1,10000 a 1,09850 (sin posicion: el BUY STOP no se llena bajando) y la fase 3
+// sube 300 ticks hasta 1,10150: el stop 1,10100 se llena en el tick 250, s = 250/300 = 5/6 (GBPUSD, B, sube 700 ticks en
+// la fase 3: 5/6 no es j/700, el punto lo pone EURUSD). La fase 4 baja a 1,10050: el SL 1,09900 no se toca. ANTES (A):
+// fill en la fase 2, s = 2/3, y SL en la fase 3, s = 5/6, −203 neto
+oraculo('A36', 'conjunta: fill de EURUSD en 1,10100 en la fase 3, s = 5/6; sin SL (la fase 4 acaba en 1,10050)', !!f36 && tx('EURUSD', f36.precio) === '1.10100' && f36.en?.fase === 3 && f36.en?.fraccion === '5/6' && !c36, enTexto([f36?.en, c36?.en ?? null]))
+oraculo('A36', 'el evento economico del minuto (el fill; ya no hay SL) lleva sincronizacion: "modelada" (dos pares con exposicion se movieron) y la sesion cuenta minutos = 1', !!x36?.r && x36.r.eventos.filter(x => x.tipo !== 'fin_de_datos').length === 1 && x36.r.eventos.filter(x => x.tipo !== 'fin_de_datos').every(x => x.sincronizacion === 'modelada') && x36.s.e.sincronizacion?.minutos === 1, enTexto(x36?.r?.eventos?.map(x => x.sincronizacion)))
+// REHECHO: saldo = 100.003 − 3 (comision de GBPUSD) − 3 (comision del fill de EURUSD) = 99.997; flotante de GBPUSD
+// (1,30200 − 1,30000) = +200 y de EURUSD (1,10050 − 1,10100) = −50: equity 100.147. ANTES: saldo 99.797 (el SL), 99.997
+oraculo('A36', 'al cierre: saldo 99.997, flotante de GBPUSD +200 y de EURUSD −50, equity 100.147', !!x36?.s && x36.s.e.saldo_µ === µ('99997') && CA.equity_µ(x36.s.e) === µ('100147'), x36?.s ? `${x36.s.e.saldo_µ} · ${CA.equity_µ(x36.s.e)}` : '')
 
 titulo('A37 · una cartera de un solo par = el motor de un par ajustado (motor@2)')
 // escenarios del subconjunto de un par (A01–A06, A08, A11, A12, A16, A17, C6-07): mismos comandos a los dos motores
@@ -332,7 +348,9 @@ for (const [gbp, x] of [[true, a40(true)], [false, a40(false)]]) {
 for (const [gbp, x] of [[true, a40(true)], [false, a40(false)]]) {
   const canc = x?.r ? de(x.r.eventos, 'orden_cancelada')[0] : null, t = canc?.causa_ambiguedad ?? ''
   const [gana, pierde] = gbp ? ['o1 (GBPUSD, seq 1)', 'o2 (seq 2)'] : ['o1 (EURUSD, seq 1)', 'o2 (seq 2)']
-  oraculo('P7C-03', `A40 (${gbp ? 'GBPUSD' : 'EURUSD'} primero): mismo instante (s = 1/2 de la fase 2) y desempate por seq, nombrando las dos ordenes`, t.includes(gana) && t.includes(pierde) && /mismo instante \(s = 1\/2 de la fase 2\)/.test(t) && /seq menor/.test(t), t)
+  // REHECHO (sim-motor-e1): las dos velas de A40 (O = H, L = C) son BAJISTAS: la regla da A y la bajada es la FASE 3
+  // (antes, el peor para la cartera: B, en la fase 2). La fraccion, el margen y la seq no cambian
+  oraculo('P7C-03', `A40 (${gbp ? 'GBPUSD' : 'EURUSD'} primero): mismo instante (s = 1/2 de la fase 3) y desempate por seq, nombrando las dos ordenes`, t.includes(gana) && t.includes(pierde) && /mismo instante \(s = 1\/2 de la fase 3\)/.test(t) && /seq menor/.test(t), t)
 }
 const a40v = corre(() => {
   const s = sesion({ pares: ['EURUSD', 'GBPUSD'], capital: '2400', mins: { EURUSD: [plana('1.10002'), ['1.10002', '1.10002', '1.10000', '1.10000']], GBPUSD: [plana('1.30004'), ['1.30004', '1.30004', '1.30000', '1.30000']] } })
@@ -342,7 +360,8 @@ const a40v = corre(() => {
 const v40 = a40v?.r ? { fill: de(a40v.r.eventos, 'fill'), canc: de(a40v.r.eventos, 'orden_cancelada') } : {}
 ver('control variante: o2 (GBPUSD, seq 2) se llena en s = 1/4 y o1 (EURUSD, seq 1) se cancela en s = 1/2 por margen', v40.fill?.length === 1 && v40.fill[0].orden === 'o2' && v40.fill[0].en?.fraccion === '1/4' && v40.canc?.length === 1 && v40.canc[0].orden === 'o1' && v40.canc[0].en?.fraccion === '1/2' && v40.canc[0].motivo === 'margen_insuficiente', a40v?.error ?? enTexto(v40))
 const tv = v40.canc?.[0]?.causa_ambiguedad ?? ''
-oraculo('P7C-03', 'variante de Astra: decidio el precio (o2 en s = 1/4 antes que o1 en s = 1/2), sin atribuirlo a la seq', !/seq/.test(tv) && tv.includes('o2 (GBPUSD)') && /s = 1\/4 de la fase 2/.test(tv) && /s = 1\/2 de la fase 2/.test(tv) && /decidio el precio/.test(tv) && /margen/.test(tv), tv)
+// REHECHO (sim-motor-e1): la misma bajada, en la fase 3 por la regla (velas bajistas)
+oraculo('P7C-03', 'variante de Astra: decidio el precio (o2 en s = 1/4 antes que o1 en s = 1/2, fase 3), sin atribuirlo a la seq', !/seq/.test(tv) && tv.includes('o2 (GBPUSD)') && /s = 1\/4 de la fase 3/.test(tv) && /s = 1\/2 de la fase 3/.test(tv) && /decidio el precio/.test(tv) && /margen/.test(tv), tv)
 // negativo: dos pares que no se tocan (cada SL en su par, margen sobrado): la conjunta = las aisladas, sin explicacion
 const sinDif = corre(() => {
   const s = sesion({ pares: ['EURUSD', 'GBPUSD'], mins: { EURUSD: [plana('1.10000'), ['1.10000', '1.10000', '1.09800', '1.09800']], GBPUSD: [plana('1.30000'), ['1.30000', '1.30000', '1.29800', '1.29800']] } })
@@ -358,7 +377,10 @@ const a41 = corre(() => {
   const r = avanza(s, 1); return { s, r }
 })
 const f41 = a41?.r ? Object.fromEntries(de(a41.r.eventos, 'fill').map(f => [f.par, f.en])) : {}
-oraculo('A41', 'GBPUSD llena en fase 2, s = 1/2; EURUSD (SELL STOP 1,10001) en s = 2/3, no en 1/2 (en 1/2 esta en 1,10002)', f41.GBPUSD?.fase === 2 && f41.GBPUSD?.fraccion === '1/2' && f41.EURUSD?.fase === 2 && f41.EURUSD?.fraccion === '2/3', a41?.error ?? enTexto(f41))
+// REHECHO (sim-motor-e1): EURUSD (O 1,10003 C 1,10000) es BAJISTA → A: O→H no se mueve y baja 3 ticks en la fase 3;
+// GBPUSD (O 1,30000 C 1,30002) es ALCISTA → B: O→L no se mueve y sube 2 ticks en la fase 3. Las dos en la fase 3 (antes,
+// el peor: las dos en la fase 2); las fracciones, iguales: GBPUSD 1,30001 en j = 1 de 2, EURUSD 1,10001 en j = 2 de 3
+oraculo('A41', 'GBPUSD llena en fase 3, s = 1/2; EURUSD (SELL STOP 1,10001) en fase 3, s = 2/3, no en 1/2 (en 1/2 esta en 1,10002)', f41.GBPUSD?.fase === 3 && f41.GBPUSD?.fraccion === '1/2' && f41.EURUSD?.fase === 3 && f41.EURUSD?.fraccion === '2/3', a41?.error ?? enTexto(f41))
 
 titulo('A42 · ejecucion y conversion separadas (V3-03)')
 const a42a = corre(() => {
@@ -377,7 +399,18 @@ const a42b = (velaGj, orden) => corre(() => {
 const c42b3 = a42b(['190.000', '190.700', '190.000', '190.700'], s => abre(s, 'GBPJPY', 'BUY', '1', { tp: '190.700' }))
 const c42b4 = a42b(['190.000', '191.000', '189.000', '189.300'], s => pend(s, 'GBPJPY', 'BUY', 'stop', '190.500', '1', { sl: '189.800' }))
 const cb3 = c42b3?.r ? de(c42b3.r.eventos, 'cierre')[0] : null, cb4 = c42b4?.r ? de(c42b4.r.eventos, 'cierre')[0] : null, fb4 = c42b4?.r ? de(c42b4.r.eventos, 'fill')[0] : null
-oraculo('A42', '(b) GBPJPY: TP de +70.000 JPY en la fase 3 → +500,000000 (apertura de USDJPY, 140); SL de −70.000 JPY en la fase 4 (posicion llenada en la fase 3) → −451,612903 (cierre, 155)', cb3?.en?.fase === 3 && cb3?.bruto_µ === µ('500') && fb4?.en?.fase === 3 && cb4?.motivo === 'SL' && cb4?.en?.fase === 4 && cb4?.bruto_µ === µ('-451.612903'), enTexto([c42b3?.error ?? [cb3?.en, cb3?.bruto_µ], c42b4?.error ?? [fb4?.en, cb4?.en, cb4?.bruto_µ]]))
+// REHECHO (sim-motor-e1, regla de la vela). La vela del BUY STOP (O 190,000 C 189,300) es BAJISTA: la regla da A
+// (O→H→L→C): sube en la fase 2 y se llena en 190,500 (j = 500 de 1.000, s = 1/2), y baja en la fase 3 hasta su SL
+// 189,800 (191,000 − 1,200: j = 1.200 de 2.000, s = 3/5): −70.000 JPY con la APERTURA de USDJPY (140) = −500,000000.
+// ANTES (el peor, B): fill en la fase 3 y SL en la fase 4 con el cierre (155), −451,612903
+oraculo('A42', '(b) GBPJPY: TP de +70.000 JPY en la fase 3 → +500,000000 (apertura de USDJPY, 140); vela bajista: fill en la fase 2 (s = 1/2) y SL de −70.000 JPY en la fase 3 (s = 3/5) → −500,000000 (apertura, 140)', cb3?.en?.fase === 3 && cb3?.bruto_µ === µ('500') && fb4?.en?.fase === 2 && fb4?.en?.fraccion === '1/2' && cb4?.motivo === 'SL' && cb4?.en?.fase === 3 && cb4?.en?.fraccion === '3/5' && cb4?.bruto_µ === µ('-500'), enTexto([c42b3?.error ?? [cb3?.en, cb3?.bruto_µ], c42b4?.error ?? [fb4?.en, cb4?.en, cb4?.bruto_µ]]))
+// NUEVO (sim-motor-e1): la conversion con el CIERRE en la fase 4 sigue cubierta con una vela ALCISTA (la regla da B):
+// O 190,000 L 189,000 H 191,000 C 190,100. Fase 2: baja sin posicion; fase 3: sube 2.000 ticks y el BUY STOP 190,500 se
+// llena en j = 1.500 (s = 3/4); fase 4: baja 900 ticks hasta 190,100 y el SL 190,200 salta en j = 800 (s = 8/9):
+// −30.000 JPY / 155 (cierre de USDJPY) = −193,548387
+const c42b5 = a42b(['190.000', '191.000', '189.000', '190.100'], s => pend(s, 'GBPJPY', 'BUY', 'stop', '190.500', '1', { sl: '190.200' }))
+const cb5 = c42b5?.r ? de(c42b5.r.eventos, 'cierre')[0] : null, fb5 = c42b5?.r ? de(c42b5.r.eventos, 'fill')[0] : null
+oraculo('A42', '(b\') GBPJPY alcista: fill en la fase 3 (s = 3/4) y SL de −30.000 JPY en la fase 4 (s = 8/9) → −193,548387 (cierre de USDJPY, 155)', fb5?.en?.fase === 3 && fb5?.en?.fraccion === '3/4' && cb5?.motivo === 'SL' && cb5?.en?.fase === 4 && cb5?.en?.fraccion === '8/9' && cb5?.bruto_µ === µ('-193.548387'), enTexto(c42b5?.error ?? [fb5?.en, cb5?.en, cb5?.bruto_µ]))
 
 titulo('A43 · margen@2 a los dos lados; pendiente con la apertura; parciales (V3-08)')
 const a43a = corre(() => { const s = sesion({ pares: ['EURUSD'], costes: COSTES_1, capital: '1100.01', mins: { EURUSD: [plana('1.10000')] } }); const r = abre(s, 'EURUSD', 'BUY', '1'); return { s, r } })

@@ -59,14 +59,28 @@ const sinConversion = rs => rs.map(r => ({ ...r, eventos: r.eventos.map(({ conve
 
 titulo('1 · contraste con la base 63be57d, quitando solo la conversion')
 const VELAS = { USDJPY: { p: 150, o: 150, h: 151, l: 149, c: 150.5, paso: 1 }, USDCAD: { p: 1.37, o: 1.37, h: 1.38, l: 1.36, c: 1.375, paso: 0.01 }, USDCHF: { p: 0.88, o: 0.88, h: 0.89, l: 0.87, c: 0.885, paso: 0.01 } }
-let n = 0, distintos = []
+// REHECHO (sim-motor-e1, regla de la vela). Las tres velas son ALCISTAS (C > O): la regla da B (O→L→H→C). La base elegia
+// el peor para la cartera; difiere SOLO en la SELL con TP (TP por debajo, a medio paso): por A sube primero (pierde) y
+// toca el TP bajando en la fase 3; por B lo toca en la fase 2. Los dos caminos dan el mismo TP: no es ambigua, y el
+// precio, el P&L y el estado son los de la base; cambia el momento (en: fase 2 en vez de 3). En los otros 30 (manual;
+// SL; BUY con TP), la base ya elegia B (empate en los dos minimos → B, o B peor): todo igual a la base
+const CAMBIA = new Set(['USDJPY SELL TP', 'USDCAD SELL TP', 'USDCHF SELL TP'])
+const sinEn = rs => rs.map(r => ({ ...r, eventos: r.eventos.map(({ en, ...resto }) => resto) }))
+let n = 0, distintos = [], cambiados = [], malCambiados = []
 for (const par of ['USDJPY', 'USDCAD', 'USDCHF']) for (const lado of ['BUY', 'SELL']) for (const tipo of ['manual', 'SL', 'TP']) for (const cartera of [false, true]) {
   const a = sinConversion(corre(NUEVO, cartera, par, lado, tipo, VELAS[par])), b = corre(VIEJO, cartera, par, lado, tipo, VELAS[par])
+  const nombre = `${par} ${lado} ${tipo}`, donde = `${nombre} ${cartera ? 'cartera' : 'un par'}`
   n++
-  if (tx(a) !== tx(b)) distintos.push(`${par} ${lado} ${tipo} ${cartera ? 'cartera' : 'un par'}`)
+  if (!CAMBIA.has(nombre)) { if (tx(a) !== tx(b)) distintos.push(donde); continue }
+  cambiados.push(donde)
+  const ca = a.flatMap(x => x.eventos).filter(x => x.tipo === 'cierre'), cb = b.flatMap(x => x.eventos).filter(x => x.tipo === 'cierre')
+  const fase = x => x?.en?.fase ?? (x?.en?.tramo != null ? x.en.tramo + 1 : null)
+  const ok = tx(sinEn(a)) === tx(sinEn(b)) && ca.length === 1 && cb.length === 1 && ca[0].motivo === 'TP' && !ca[0].ambigua && fase(ca[0]) === 2 && fase(cb[0]) === 3
+  if (!ok) malCambiados.push(`${donde}: ${tx([ca.map(x => [x.motivo, x.en, x.ambigua ?? false]), cb.map(x => [x.motivo, x.en])])}`)
 }
-ver('control: 36 escenarios con cierres', n === 36)
-oraculo('MCV1', `los 36 escenarios: sin la conversion, eventos (ambiguedad incluida) y estados iguales a la base`, distintos.length === 0, distintos.join(' · '))
+ver('control: 36 escenarios con cierres, 6 de ellos SELL con TP', n === 36 && cambiados.length === 6, cambiados.join(' · '))
+oraculo('MCV1', `los 30 escenarios en que la base ya seguia la regla: sin la conversion, eventos (ambiguedad incluida) y estados iguales a la base`, distintos.length === 0, distintos.join(' · '))
+oraculo('MCV1', `los 6 SELL con TP (vela alcista: la regla da B): el mismo TP, no ambiguo, mismo estado y P&L que la base; solo el momento cambia (fase 2 en vez de 3)`, malCambiados.length === 0, malCambiados.join(' · '))
 
 titulo('2 · el caso de Astra')
 for (const cartera of [false, true]) {

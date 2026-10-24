@@ -102,7 +102,12 @@ const sin = aislado('EURUSD', '0.0')
   const s = sesion({ costes: sin, filas: [plana('1.10000'), ['1.10000', '1.10150', '1.09850', '1.10050']] })
   ap(s, { tipo: 'abrir', orden: 'stop', lado: 'BUY', lotes: '1', precio: '1.10100', sl: '1.09900' })
   const r = avanza(s, 1), c = cierres(r)[0]
-  oraculo('A03', '(b) ambigua: se elige A (fill y SL), bruto −200.000.000, neto −203.000.000', c?.motivo === 'SL' && c?.bruto_µ === -200_000_000n && c?.neto_µ === -203_000_000n, `${c?.motivo} ${c?.bruto_µ} ${c?.neto_µ}`)
+  // REHECHO (sim-motor-e1, regla de la vela, ordenes 1-085 y 1-118). La vela O 1,10000 C 1,10050 es ALCISTA: la regla
+  // da B (O→L→H→C). Baja a 1,09850 sin posicion (el SL aun no existe), sube y se llena en 1,10100, llega a 1,10150 y
+  // cierra en 1,10050 sin volver a 1,09900: sin SL; posicion abierta, flotante (1,10050 − 1,10100) × 100.000 =
+  // −50.000.000 µ. ANTES, el peor para la cartera: A (fill y SL, −203.000.000 neto)
+  const f = fills(r)[0]
+  oraculo('A03', '(b) ambigua, alcista: la regla da B: fill en 1,10100, sin SL, posicion abierta, flotante −50.000.000 µ al cierre', tx('EURUSD', f?.precio) === '1.10100' && !c && s.e.posiciones.length === 1 && M.flotante_µ(s.e) === -50_000_000n, `${tx('EURUSD', f?.precio)} · ${c?.motivo ?? 'sin cierre'} · ${s.e.posiciones.length} · ${M.flotante_µ(s.e)}`)
   // fin_de_datos es del avance (la vela es la ultima), no de la vela: no lleva la marca
   const deLaVela = r.eventos.filter(x => x.tipo !== 'fin_de_datos')
   oraculo('A03', '(b) marcada: todos los eventos de la vela con ambigua === true y causa', deLaVela.length > 0 && deLaVela.every(x => x.ambigua === true && typeof x.causa_ambiguedad === 'string' && x.causa_ambiguedad.length > 10), deLaVela[0]?.causa_ambiguedad ?? '')
