@@ -145,7 +145,9 @@ try {
   await asentado(b1)
   await T1.closePosition(pA.id, 'MANUAL', 'EUR/USD', b1.estado.precio)
   await asentado(b1)
-  const tr = b1.ps().trades, fs = filas(s1)
+  // los dos cierres son de la misma vela (misma closed_at): se miran por lotes, no por el orden de la lectura
+  const porLotes = (a, b) => Number(a.lots) - Number(b.lots)
+  const tr = [...b1.ps().trades].sort(porLotes), fs = filas(s1).sort(porLotes)
   const cuadra = t => Math.abs((t.exit - t.entry) * 100000 * t.lots - t.comision - t.pnl) < 0.006
   oraculo('V1C10', 'K · las filas (parcial 0,5 y resto 1,5 lotes) llevan la comision de sim_trades: 1,5 y 4,5 USD',
     tr.length === 2 && tr[0].comision === 1.5 && tr[1].comision === 4.5 && fs.length === 2 && Number(fs[0].comision_micro) === 1500000 && Number(fs[1].comision_micro) === 4500000, tx({ tr: tr.map(t => [t.lots, t.comision]), fs: fs.map(f => [f.lots, f.comision_micro]) }))
