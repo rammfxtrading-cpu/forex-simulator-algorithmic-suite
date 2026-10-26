@@ -55,8 +55,10 @@ titulo('A · bandera apagada: la pendiente del dibujo se cancela; la llenada no 
 titulo('C · el cableado de la pagina')
 {
   const SI = fuente('components/_SessionInner.js'), DT = fuente('components/useDrawingTools.js')
+  // orden 1-137 (1-136 (2)): el modal del dibujo se abre por abreOrden (pausa al abrir con la bandera; la limit pasa tal
+  // cual, con su dibujo: v1c10 L), ya no por setOrderModal directo
   oraculo('OD01', 'C · _SessionInner: el id del dibujo viaja del LongShortModal al OrderModal y a la orden (sin bandera: dibujo; con ella: en lo que se pinta, extra.dibujo)',
-    SI.includes('setOrderModal({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData,dibujo:longShortModal.toolId})') && SI.includes('{entry:entradaTick,openTime:currentTime,dibujo:m.dibujo??null}') && SI.includes('dibujo:orderModal.dibujo??null}'))
+    SI.includes('abreOrden({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData,dibujo:longShortModal.toolId})') && SI.includes('{entry:entradaTick,openTime:currentTime,dibujo:m.dibujo??null}') && SI.includes('dibujo:orderModal.dibujo??null}'))
   oraculo('OD01', 'C · los borrados de dibujos avisan con sus ids: useDrawingTools (Supr, papelera, menu, borrar todo, deshacer) y el grupo; la pagina cancela con cancelaOrdenesDeDibujos',
     /const removeSelected = useCallback\(\(\) => \{[^\n]*quitados\(/.test(DT) && /const removeToolById = useCallback\([^\n]*quitados\(/.test(DT) && /const removeAll {6}= useCallback\([^\n]*quitados\(/.test(DT)
     && /removeLineToolsById\(_toDelete\)[^\n]*\n[^\n]*alQuitar/.test(SI) && SI.includes('drawingHandlersRef.current.alQuitar=cancelaOrdenesDeDibujos'))
