@@ -13,6 +13,10 @@ import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
 // EN fase1/ (lo que sigue roto, en rojo a proposito): contra c3b49cb la pantalla elige OTRO camino que el motor cuando
 // una pendiente se llena en los dos caminos en momentos distintos: la comision del fill (3 USD/lote) cae antes o despues
 // del minimo, y la cuenta lineal no la ve. Pendiente de decision del CTO (1-120 b)
+// DECIDIDO (orden 1-121 del CTO, opcion 3, SIMMOTOR1-01): NO es un requisito. Queda en fase1/ como MEDIDA documentada del
+// limite de la pantalla vieja (lib/sim/vela.js, que decide cierres por su cuenta hasta el corte). El paquete se despliega
+// una sola vez con el corte a la pantalla v1, y desde entonces decide el servidor (el motor): la igualdad motor = pantalla
+// solo se exige en lo que la pantalla v1 PINTA desde el servidor (lo confirmado), no en esta cuenta lineal
 const M = await importa('lib/motor/motor.mjs'), CA = await importa('lib/motor/cartera.mjs'), I = await importa('lib/motor/instrumentos.mjs')
 const { COSTES_1 } = await importa('lib/motor/costes.mjs')
 const V = await importa('lib/sim/vela.js')
