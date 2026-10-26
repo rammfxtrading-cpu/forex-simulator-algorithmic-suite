@@ -107,7 +107,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // horaCierre (opcional): la hora de la vela que origina el cierre (SIMGOTO-01, orden 1-083)
   const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null,horaCierre=null)=>{
     // modo v1 (pieza 6): el cierre es un comando; la pantalla lo pinta ya (optimista, orden 1-127) y queda lo confirmado
-    if(v1Ref?.current){ if(!pairState.current[pairOverride||activePair]?.positions?.some(p=>p.id===posId)) return; return v1Ref.current.envia(comandoCerrar(posId)) }
+    if(v1Ref?.current){ if(!pairState.current[pairOverride||activePair]?.positions?.some(p=>p.id===posId)) return; return v1Ref.current.envia(comandoCerrar(posId),{exit:exitPriceOverride||currentPrice,closeTime:currentTime,reason}) }
     const usePair=pairOverride||activePair
     const usePrice=exitPriceOverride||currentPrice
     const ps=pairState.current[usePair];if(!ps||!usePrice) return
@@ -152,7 +152,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // hoy. Ronda 2 (E1-02): en la cola y con la posicion ocupada, como el total; si no se
   // guarda, la posicion vuelve a sus lotes CONFIRMADOS.
   const closePartial=useCallback((posId,pair,lotsToClose,note=null)=>{
-    if(v1Ref?.current) return v1Ref.current.envia(comandoCerrar(posId,lotsToClose))
+    if(v1Ref?.current) return v1Ref.current.envia(comandoCerrar(posId,lotsToClose),{exit:currentPrice,closeTime:currentTime})
     const ps=pairState.current[pair]
     if(!ps?.positions?.some(p=>p.id===posId)||!currentPrice) return
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); return }
