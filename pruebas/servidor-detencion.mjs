@@ -44,7 +44,7 @@ try {
   const d = pg.base('det1'), AL = u(1)
   pg.alumno(d, AL)
   const leeSesion = async id => { const t = pg.uno(d, `select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
-  const pu = { almacen: mercado, rpc: pg.rpc(d), leeSesion, ahora: () => AHORA }
+  const pu = { almacen: mercado, rpc: pg.rpc(d), parDeId: pg.parDeId(d), leeSesion, ahora: () => AHORA }
   const sinTasa = () => pg.uno(d, 'update public.sim_alumnos set siguiente_avance_desde = null')
   const version = () => Number(pg.uno(d, `select version from public.sim_sessions where id = ${L(u(1001))}`))
   let n = 5000

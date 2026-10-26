@@ -64,7 +64,7 @@ try {
   ver('control: sim-004b aplicada en el montaje', a4b.ok, a4b.err.slice(0, 200))
   pg.alumno(d, AL)
   const leeSesion = async id => { const t = pg.uno(d, `select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
-  const pu = { almacen: mercado, rpc: pg.rpc(d), leeSesion, ahora: () => AHORA }
+  const pu = { almacen: mercado, rpc: pg.rpc(d), parDeId: pg.parDeId(d), leeSesion, ahora: () => AHORA }
   const sinTasa = () => pg.uno(d, 'update public.sim_alumnos set siguiente_avance_desde = null')
   const version = id => Number(pg.uno(d, `select version from public.sim_sessions where id = ${L(id)}`))
   const estadoDe = id => JSON.parse(pg.uno(d, `select estado::text from public.sim_sessions where id = ${L(id)}`))

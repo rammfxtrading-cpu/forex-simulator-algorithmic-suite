@@ -80,7 +80,7 @@ try {
     ver(`control (${d}): sim-004b y sim-006 aplicadas`, a4.ok && a6.ok, (a4.err + a6.err).slice(0, 200))
     pg.alumno(d, AL)
     const leeSesion = async id => { const t = pg.uno(d, `select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
-    const puertos = { almacen: mercado, rpc: pg.rpc(d), leeSesion, ahora: () => Date.parse('2026-10-14T10:00:00Z'), ...(limites ? { limites } : {}) }
+    const puertos = { almacen: mercado, rpc: pg.rpc(d), parDeId: pg.parDeId(d), leeSesion, ahora: () => Date.parse('2026-10-14T10:00:00Z'), ...(limites ? { limites } : {}) }
     const orden = { '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado }
     const fallos = [], vistos = []
     async function llama(ruta, { cuerpo }) {

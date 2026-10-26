@@ -85,7 +85,7 @@ const pg = montajeV1()
 try {
   pg.arranca(); pg.base('v2'); pg.alumno('v2', AL)
   const leeSesion = async id => { const t = pg.uno('v2', `select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
-  const puertos = { almacen: mercado, rpc: pg.rpc('v2'), leeSesion, ahora: () => Date.parse('2026-10-14T10:00:00Z') }
+  const puertos = { almacen: mercado, rpc: pg.rpc('v2'), parDeId: pg.parDeId('v2'), leeSesion, ahora: () => Date.parse('2026-10-14T10:00:00Z') }
   const orden = { '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado }
   const llama = async (ruta, { cuerpo }) => { const r = await orden[ruta]({ actor: AL, cuerpo, puertos }); return { http: r.http, cuerpo: r.cuerpo } }
   const sinTasa = () => pg.uno('v2', 'update public.sim_alumnos set siguiente_avance_desde = null')

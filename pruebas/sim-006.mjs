@@ -147,7 +147,7 @@ try {
     const a = pg.comoEjecutor(d, S4B)
     ver(`control (${d}): sim-004b aplicada en el montaje`, a.ok, a.err.slice(0, 300))
     pg.alumno(d, AL); pg.alumno(d, OT)
-    const puertos = { almacen: mercado, rpc: pg.rpc(d), leeSesion: leeSesion(d), ahora: () => Date.parse('2026-10-14T10:00:00Z') }
+    const puertos = { almacen: mercado, rpc: pg.rpc(d), parDeId: pg.parDeId(d), leeSesion: leeSesion(d), ahora: () => Date.parse('2026-10-14T10:00:00Z') }
     const ses = {}
     for (const [actor, sid] of [[AL, u(1001)], [OT, u(1002)]]) {
       const c = await CR.ordenCrear({ actor, cuerpo: { session_id: sid, command_id: u(++nCmd), epoca: 1, name: 'S', pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: null }, puertos })

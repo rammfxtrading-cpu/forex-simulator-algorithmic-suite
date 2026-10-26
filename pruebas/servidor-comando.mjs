@@ -120,7 +120,7 @@ try {
   const leeSesion = d => async id => { const t = pg.uno(d, `select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
   const monta = (d, extra = {}) => {
     pg.base(d); pg.alumno(d, AL); pg.alumno(d, OT)
-    return { almacen: mercado, rpc: pg.rpc(d), leeSesion: leeSesion(d), ahora: () => AHORA, ...extra }
+    return { almacen: mercado, rpc: pg.rpc(d), parDeId: pg.parDeId(d), leeSesion: leeSesion(d), ahora: () => AHORA, ...extra }
   }
   const crear = (k, actor, puertos, o = {}) => CR.ordenCrear({ actor, cuerpo: { session_id: u(1000 + k), command_id: u(2000 + k), epoca: 1, name: 'S' + k, pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: null, ...o }, puertos })
   const tomaDe = async (puertos, actor = AL, o = {}) => (await TO.ordenTomar({ actor, cuerpo: { session_id: u(1001), command_id: u(++nCmd), epoca: 1, cliente_id: 'pestana-1', forzar: true, ...o }, puertos })).cuerpo?.testigo

@@ -11,6 +11,7 @@
 //       con la forma de supabase-js: { data, error: { code, message } | null }
 //   m.uno('d1', sql)                                           una lectura como superusuario
 //   m.lectura('d1').from(t).select(c).eq(…).limit(n)           una lectura de tabla como supabase-js con service_role
+//   m.parDeId('d1')                                            el puerto parDeId de http.mjs sobre esa lectura (modificar)
 //   m.comoEjecutor('d1', texto)                                un fichero SQL como el ejecutor de s06 → { ok, out, err }
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -128,5 +129,8 @@ insert into public.profiles (id, email, plan, simulador_activo, rol_global) valu
       return b
     },
   })
-  return { pg, base, uno, alumno, rpc, lectura, comoEjecutor: (db, texto) => pgx(texto, db), arranca: () => pg.arranca(), cierra: () => pg.cierra() }
+  // el puerto parDeId REAL de lib/servidor/http.mjs (orden 1-137) sobre esa lectura; importado al usarse (el contraste
+  // historico corre este montaje contra codigo sin lib/servidor)
+  const parDeId = db => async (...a) => (await import('../lib/servidor/http.mjs')).puertosReales(lectura(db)).parDeId(...a)
+  return { pg, base, uno, alumno, rpc, lectura, parDeId, comoEjecutor: (db, texto) => pgx(texto, db), arranca: () => pg.arranca(), cierra: () => pg.cierra() }
 }
