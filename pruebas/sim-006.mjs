@@ -26,7 +26,7 @@ import { hayPostgres } from './pg-ensayo.mjs'
 import { montajeV1, L, conUidDelMontaje } from './montaje-v1.mjs'
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 
-const N = 27
+const N = 28
 const F_APLICA = 'sql/sim-006-tope-de-pasos.sql', F_VUELTA = 'sql/sim-006-vuelta-atras.sql'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 if (!existsSync(path.join(REPO, F_APLICA)) || !existsSync(path.join(REPO, F_VUELTA))) {
@@ -93,7 +93,7 @@ const FIRMA = 'public.sim_comando(uuid,uuid,uuid,text,text,integer,bigint,text,t
 // el catalogo que la migracion toca o no deberia tocar
 const FOTO = `select pg_catalog.concat_ws(' | ',
   (select encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') || ' acl=' || coalesce(p.proacl::text, '-') || ' dueno=' || p.proowner::regrole || ' cfg=' || coalesce(array_to_string(p.proconfig, ','), '-')
-          || ' def=' || p.prosecdef || ' vol=' || p.provolatile || ' leng=' || (select l.lanname from pg_language l where l.oid = p.prolang) || ' ret=' || p.prorettype::regtype
+          || ' def=' || p.prosecdef || ' vol=' || p.provolatile::text || ' leng=' || (select l.lanname from pg_language l where l.oid = p.prolang) || ' ret=' || p.prorettype::regtype
      from pg_proc p where p.oid = '${FIRMA}'::regprocedure),
   (select string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull || ':' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-') || ':' || coalesce(a.attacl::text, '-'), ',' order by a.attnum)
      from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum where a.attrelid = 'public.sim_alumnos'::regclass and a.attnum > 0 and not a.attisdropped),
@@ -176,8 +176,9 @@ try {
   oraculo('SIM006', 'B · el 11.º: 429 demasiados_pasos con mensaje «sim-006: …», tope 10, ventana 1000 ms y reintentar_en_ms en (0, 1000]',
     e11?.http === 429 && e11.ok === false && e11.motivo === 'demasiados_pasos' && /^sim-006: /.test(e11.mensaje ?? '') && e11.tope === 10 && e11.ventana_ms === 1000 && e11.reintentar_en_ms > 0 && e11.reintentar_en_ms <= 1000, tx(e11))
   oraculo('SIM006', 'B · el 11.º no deja efectos: sin recibo con su clave, la cuenta sigue en 10', Number(b.uno(`select count(*) from public.sim_recibos where command_id = ${L(u(800111))}`)) === 0 && b.uno(`select pasos_en_ventana from public.sim_alumnos where user_id = ${L(AL)}`) === '10', b.uno(`select pasos_en_ventana from public.sim_alumnos where user_id = ${L(AL)}`))
-  // un reintento con la MISMA clave de un paso confirmado, con el tope agotado: su recibo, no 429 (no cuenta)
-  const rep = b.rafaga([q(105)])[0]
+  // un reintento con la MISMA clave del ultimo paso confirmado, con el tope agotado: su recibo, no 429 (no cuenta). El
+  // ultimo: el recibo ultimo_avance de un paso se sobrescribe con el siguiente (S4-04)
+  const rep = b.rafaga([q(110)])[0]
   oraculo('SIM006', 'B · con el tope agotado, el reintento de un paso confirmado (misma clave) da su recibo repetido, no 429', rep?.http === 200 && rep.repetido === true, tx({ http: rep?.http, repetido: rep?.repetido, motivo: rep?.motivo }))
   const ot = b.rafaga([(await b.argsQuieto(OT, 'paso'))(201)])[0]
   oraculo('SIM006', 'B · por alumno: con el de AL agotado, el paso del otro alumno pasa', ot?.http === 200, tx(ot))
