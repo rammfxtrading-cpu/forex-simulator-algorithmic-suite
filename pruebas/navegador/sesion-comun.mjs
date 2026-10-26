@@ -14,9 +14,10 @@ export function velasDosSemanas() {
   return [...s1, ...s1.map(v => ({ ...v, time: v.time + 7 * 86400 }))]
 }
 
-export async function montaPagina({ sesion = {}, tope = 25 * 60000 } = {}) {
+// app (opcional): el `next dev` ya arrancado de otra pagina (od02: una pagina nueva por caso, el mismo servidor)
+export async function montaPagina({ sesion = {}, tope = 25 * 60000, app: deAntes = null } = {}) {
   const doble = dobleSupabase({ sesion: { timeframe: 'M15', date_to: '2026-03-13', last_timestamp: VIERNES_2030, ...sesion } })
-  const app = await arrancaNext()
+  const app = deAntes ?? await arrancaNext()
   const { b, fuera } = await abreSesion(app, { doble, velas: velasDosSemanas(), tope })
   const E = x => b.evalua(x)
   const CR = `window.__chartMap.current['EUR/USD']`
@@ -61,6 +62,8 @@ export async function montaPagina({ sesion = {}, tope = 25 * 60000 } = {}) {
       await g.play(); await espera(400); return n < tope
     },
     async sale(codigo, extra = '') { console.log(`\n${extra}`); b.cierra(); app.mata(); process.exit(codigo) },
+    // cierra solo el Chrome de esta pagina (el servidor sigue para la siguiente)
+    cierraPagina() { b.cierra() },
   }
   return g
 }
