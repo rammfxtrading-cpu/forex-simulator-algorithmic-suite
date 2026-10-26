@@ -70,7 +70,7 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
   const nada = () => {}
   const caja = sonda(() => {
     if (v1 && useSesionV1) useSesionV1({ id: sesion.id, session: estado.sesionVisible ?? null, pairState: refs.pairState, balanceRef: refs.balanceRef,
-      setBalance: v => { estado.saldo = v }, setTick: nada, v1Ref: refs.v1Ref, refrescaRetoRef: refs.refrescaRetoRef, puertos: v1.puertos })
+      setBalance: v => { estado.saldo = v }, setTick: nada, v1Ref: refs.v1Ref, refrescaRetoRef: refs.refrescaRetoRef, chartMap: refs.chartMap, puertos: v1.puertos })
     const datos = usePairData({ id: sesion.id, session: estado.sesionVisible ?? null, activePair: estado.activa ?? null, ...refs,
       setIsPlaying: v => { estado.isPlaying = typeof v === 'function' ? v(estado.isPlaying) : v },
       setCurrentTime: v => { estado.currentTime = v }, setProgress: nada, setCurrentPrice: v => { estado.precio = v }, setDataReady: nada, setTick: nada,

@@ -12,6 +12,21 @@
  *       cierreEnVela (pruebas/espias-vela.mjs) NO se llaman ni una vez
  *   D · control positivo con la bandera APAGADA (la misma sesion v1): v1Ref null, y los espias SI cuentan (el banco
  *       los ve)
+ * ORDEN 1-127 (pieza 6 con la bandera encendida: el alumno ve y siente lo mismo que hoy en produccion, f5b713b). Escritas
+ * ANTES que el codigo (en 5695a04: en rojo):
+ *   E · (1) optimista: abrir a mercado, la limit, el tirador, el parcial, el cierre y cancelar se pintan AL INSTANTE, con
+ *       la peticion aun retenida (una puerta en el transporte); al confirmar, lo pintado = el servidor. Un rechazo del
+ *       servidor (margen insuficiente) vuelve a lo confirmado con «El simulador ha rechazado la operación.». (2) los avisos
+ *       nuevos, con sus textos cortos: motor apagado (solo lectura), otra pestaña, rechazo y avance no confirmado
+ *   F · (3) un lote del Play (2 → 30) con el SL y el fill del 10 y el TP del 20: cada evento se pinta en SU vela (las
+ *       paradas del recibo): de la 11 a la 20 se ve la posicion llenada, 1 trade y el saldo tras el SL; desde la 21,
+ *       nada abierto, 2 trades y el saldo final. Nunca el estado del final del lote antes de tiempo. El Play no se para
+ *   G · (4) la limit dibuja sus tres lineas con la etiqueta en el eje (createPriceLine con axisLabelVisible, los mismos
+ *       colores y titulos que confirmLimitOrder de hoy); el tirador de la entrada la mueve y cancelar las quita
+ *   H · (5) el peor DD del modal de fallo, del minimo de equity: la equity del breach que guarda el motor (no el saldo
+ *       tras el cierre forzado); (6) un reto ya quemado vuelve a sacar el modal al abrir la pagina (hoy, la fila sigue
+ *       «active» hasta que el alumno lo reconoce, y al abrir sale)
+ *   En E, F, G y H los espias siguen a cero: lo optimista es solo la accion del alumno, nunca SL/TP, fills ni breach.
  * Contra lib/servidor REAL y PostgreSQL desechable (montaje-v1 + sim-004b + sim-006, como v1c04). Datos inventados.
  * Mercado: EURUSD 1,1 hasta el minuto 10 del 6-ene-2025; 1,09 del 10 al 19; 1,1 desde el 20. El resto, constante.
  */
@@ -21,7 +36,7 @@ const { titulo, ver, oraculo, fin, importa, fuente, asienta, escenario } = await
 const { hayPostgres } = await import('../pg-ensayo.mjs')
 const { montajeV1, L, conUidDelMontaje } = await import('../montaje-v1.mjs')
 const { cerrojoEnMemoria } = await import('../cerrojo-falso.mjs')
-const N = 18
+const N = 39
 const HOOK = await importa('components/useSesionV1.js').catch(() => null), CRV = await importa('lib/sim/v1/crear.js').catch(() => null)
 if (!HOOK?.default || !CRV?.creaSesionV1) { for (let i = 0; i < N; i++) oraculo('V1C05', `caso ${i}: sin components/useSesionV1.js ni lib/sim/v1/crear.js no se puede`, false, 'no esta'); fin() }
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay', false); fin() }
@@ -88,10 +103,10 @@ try {
     return { d, uno, llama, llamadas, leeSesion, puertos, trades, puertosPagina, servidor }
   }
   // la pagina con la pantalla v1 (si la bandera esta encendida); espera a que el par visible tenga velas
-  async function pagina(B, sid) {
+  async function pagina(B, sid, cambia = {}) {
     const fila = await B.leeSesion(sid)
     cero()
-    const b = await banco({ sesion: fila, userId: AL, v1: { puertos: B.puertosPagina(sid) }, espia })
+    const b = await banco({ sesion: fila, userId: AL, v1: { puertos: { ...B.puertosPagina(sid), ...cambia } }, espia })
     for (let k = 0; k < 50 && !b.ps()?.ready; k++) { await asienta(20); await b.repinta() }
     await b.refs.v1Ref.current?.arranca()
     await b.repinta()
@@ -187,6 +202,183 @@ try {
   const fh = hija ? await B2.leeSesion(hija) : null
   oraculo('V1C05', 'C · «Continuar» manda /api/sim/avanzar-fase y lleva a la hija (fase 2 v1)', !!hija && fh?.estado?.fase === 2 && fh.motor_version === 1 && tx(router.navegado.slice(nav0)) === tx([['push', `/session/${hija}`]]) && B2.llamadas.some(x => x.ruta === '/api/sim/avanzar-fase' && x.http < 300), tx({ hija, fase: fh?.estado?.fase, nav: router.navegado.slice(nav0) }))
   oraculo('V1C05', 'S · en todo C: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
+
+  // ── ORDEN 1-127 ──────────────────────────────────────────────────────────────
+  const AV = await importa('lib/sim/avisos.js')
+  const textos = () => AV.avisos().map(a => a.texto)
+  // una puerta en el transporte: los comandos de la cartera (no los avances) se retienen hasta soltarla
+  function conPuerta(llama) {
+    let retiene = false
+    const colas = []
+    const f = async (ruta, o) => {
+      if (retiene && ruta === '/api/sim/comando' && o?.cuerpo?.tipo !== 'avanzar') await new Promise(r => colas.push(r))
+      return llama(ruta, o)
+    }
+    f.retiene = () => { retiene = true }
+    f.retenidas = () => colas.length
+    f.suelta = () => { retiene = false; for (const r of colas.splice(0)) r() }
+    return f
+  }
+  const creaPractica = async (B, sid, name) => (await B.llama('/api/sim/crear', { cuerpo: { session_id: sid, command_id: nuevoId(), epoca: 1, name, pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: null } })).http === 201
+  // la pestaña de antes se cerro y su arrendamiento vencio (el alumno tiene un solo escritor: otra_sesion_activa)
+  const cierraPestanas = B => B.uno("update public.sim_arrendamientos set hasta = now() - interval '1 minute'")
+  const asentado = async b => { await b.refs.v1Ref.current.cliente.recupera(); await asienta(60); await b.repinta() }
+  const filas = ps => ({ pos: ps.positions.map(p => [p.side, p.entry, p.sl, p.tp, p.lots]), ord: (ps.orders ?? []).map(o => [o.side, o.entry, o.sl, o.tp, o.lots]) })
+
+  titulo('E · (1) optimista: lo que hace el alumno se pinta al instante; un rechazo vuelve a lo confirmado con su aviso')
+  process.env.NEXT_PUBLIC_SIM_V1_PANTALLA = 'encendido'
+  const SE = u(5005)
+  ver('control: practica creada por /api/sim/crear (E)', await creaPractica(B1, SE, 'E'))
+  const pu = conPuerta(B1.llama)
+  cierraPestanas(B1)
+  const e5 = await pagina(B1, SE, { llama: pu })
+  const v5 = e5.refs.v1Ref.current, T5 = e5.caja.valor.trading
+  cero()
+  await avance(e5).irA(m(2))
+  // a mercado (el OrderModal de _SessionInner manda la entrada que enseña y la hora de la pagina)
+  pu.retiene()
+  const pA = v5.envia(OR.comandoAbrir({ pair: 'EUR/USD', side: 'BUY', lots: 1, sl: 1.095, cursor: v5.cursor() }), { entry: 1.1, openTime: m(2) })
+  await asienta(10)
+  const oA = { ret: pu.retenidas(), ...filas(e5.ps()) }
+  pu.suelta(); const rA = await pA; await asentado(e5)
+  const iA = await igualServidor(B1, SE, e5)
+  oraculo('V1C05', 'E · a mercado: la posicion se pinta con la peticion aun retenida; al confirmar, la del servidor (id del motor)', oA.ret === 1 && tx(oA.pos) === tx([['BUY', 1.1, 1.095, null, 1]]) && rA.conclusion === 'confirmado' && iA.ok && /^p\d+$/.test(e5.ps().positions[0]?.id ?? ''), tx({ oA, c: rA.conclusion, iA }))
+  // la limit por confirmLimitOrder (la funcion REAL)
+  pu.retiene()
+  await e5.pendiente({ side: 'BUY_LIMIT', entry: 1.0901, sl: 1.08, tp: 1.095, lots: 1 })
+  const oL = { ret: pu.retenidas(), ...filas(e5.ps()) }
+  pu.suelta(); await asentado(e5)
+  const iL = await igualServidor(B1, SE, e5)
+  oraculo('V1C05', 'E · la limit (confirmLimitOrder): pintada al instante con la peticion retenida; al confirmar, la del servidor', oL.ret === 1 && tx(oL.ord) === tx([['BUY_LIMIT', 1.0901, 1.08, 1.095, 1]]) && iL.ok && e5.ps().orders.length === 1, tx({ oL, iL }))
+  // el tirador del SL (handlePositionDragEnd REAL)
+  const pid = e5.ps().positions[0]?.id
+  pu.retiene()
+  const pT = T5.handlePositionDragEnd(pid, 'sl', 1.095514)
+  await asienta(10)
+  const oT = { ret: pu.retenidas(), sl: e5.ps().positions[0]?.sl }
+  pu.suelta(); await pT; await asentado(e5)
+  const iT = await igualServidor(B1, SE, e5)
+  oraculo('V1C05', 'E · el tirador: el SL soltado se ve ya en 1,09551 (al tick) con la peticion retenida; al confirmar, igual que el servidor', oT.ret === 1 && oT.sl === 1.09551 && iT.ok && e5.ps().positions[0]?.sl === 1.09551, tx({ oT, iT }))
+  // parcial y total (closePartial y closePosition REALES)
+  pu.retiene()
+  const pP = T5.closePartial(pid, 'EUR/USD', 0.5)
+  await asienta(10)
+  const oP = { ret: pu.retenidas(), lots: e5.ps().positions[0]?.lots }
+  pu.suelta(); await pP; await asentado(e5)
+  pu.retiene()
+  const pC = T5.closePosition(pid, 'MANUAL', 'EUR/USD', 1.1)
+  await asienta(10)
+  const oC = { ret: pu.retenidas(), n: e5.ps().positions.length }
+  pu.suelta(); await pC; await asentado(e5)
+  const iC = await igualServidor(B1, SE, e5)
+  oraculo('V1C05', 'E · el parcial (quedan 0,5) y el cierre (sin posicion) se ven al instante con la peticion retenida; al confirmar, como el servidor, con 2 trades', oP.ret === 1 && oP.lots === 0.5 && oC.ret === 1 && oC.n === 0 && iC.ok && B1.trades(SE).length === 2 && e5.ps().trades.length === 2, tx({ oP, oC, iC, trades: B1.trades(SE).length }))
+  // cancelar (cancelLimitOrder REAL)
+  const oid = e5.ps().orders[0]?.id
+  pu.retiene()
+  const pX = T5.cancelLimitOrder(oid, 'EUR/USD')
+  await asienta(10)
+  const oX = { ret: pu.retenidas(), n: e5.ps().orders.length }
+  pu.suelta(); await pX; await asentado(e5)
+  oraculo('V1C05', 'E · cancelar: la pendiente desaparece al instante con la peticion retenida; al confirmar, sin pendientes como el servidor', oX.ret === 1 && oX.n === 0 && (await igualServidor(B1, SE, e5)).ok, tx(oX))
+  // un rechazo del motor (500 lotes: margen insuficiente): se pinta, y al rechazar vuelve a lo confirmado con el aviso
+  AV.vaciaAvisos()
+  pu.retiene()
+  const pR = v5.envia(OR.comandoAbrir({ pair: 'EUR/USD', side: 'BUY', lots: 500, cursor: v5.cursor() }), { entry: 1.1, openTime: m(2) })
+  await asienta(10)
+  const oR = { ret: pu.retenidas(), n: e5.ps().positions.length }
+  pu.suelta(); const rR = await pR; await asentado(e5)
+  oraculo('V1C05', 'E · rechazo (margen): pintada al instante; el servidor la rechaza y la pantalla vuelve a lo confirmado (sin posicion) con «El simulador ha rechazado la operación.»', oR.ret === 1 && oR.n === 1 && rR.conclusion === 'rechazado' && e5.ps().positions.length === 0 && (await igualServidor(B1, SE, e5)).ok && textos().includes('El simulador ha rechazado la operación.'), tx({ oR, c: rR.conclusion, avisos: textos() }))
+  oraculo('V1C05', 'S · en todo E: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
+  // la pagina: el OrderModal y el tirador del grafico pintan ya (la entrada que enseña y la hora; la linea al tick)
+  const SI = fuente('components/_SessionInner.js')
+  oraculo('V1C05', 'E · _SessionInner: el OrderModal manda la entrada y la hora para pintar ya, y el tirador del grafico mueve la linea al tick sin esperar', SI.includes('v1Ref.current.envia(comandoAbrir({pair:m.pair,side:m.isLimit?') && /comandoAbrir\(\{pair:m\.pair[^\n]*\}\),\{entry:entradaTick,openTime:currentTime\}\)/.test(SI) && /if\(v1Ref\.current\)\{\s*const sl=alTick\(newPrice,p\)\s*updatePositionLine\(posId,p,type,sl,pos\)/.test(SI))
+  // (2) los avisos nuevos, cortos
+  AV.vaciaAvisos()
+  const apagado = async () => ({ http: 503, cuerpo: { ok: false, http: 503, motivo: 'apagado' } })
+  const e5b = await pagina(B1, SE, { llama: apagado })
+  const rAp = await e5b.refs.v1Ref.current.envia(OR.comandoAbrir({ pair: 'EUR/USD', side: 'BUY', lots: 1, cursor: m(2) }), { entry: 1.1, openTime: m(2) })
+  await e5b.repinta()
+  oraculo('V1C05', 'E · (2) motor apagado: «El simulador está en pausa: sesión en solo lectura.», y la orden ni se pinta ni se manda', rAp.conclusion === 'solo_lectura' && e5b.ps()?.positions?.length === 0 && textos().includes('El simulador está en pausa: sesión en solo lectura.'), tx({ c: rAp.conclusion, avisos: textos() }))
+  AV.vaciaAvisos()
+  const e5c = await pagina(B1, SE)
+  oraculo('V1C05', 'E · (2) otra pestaña: «Esta sesión está abierta en otra pestaña.»', textos().includes('Esta sesión está abierta en otra pestaña.'), tx(textos()))
+  oraculo('V1C05', 'E · (2) avance no confirmado: «No se ha podido confirmar el avance.» en Step, Play y Go to', SI.split("avisa('No se ha podido confirmar el avance.')").length === 4, String(SI.split("avisa('No se ha podido confirmar el avance.')").length - 1))
+  void e5c
+
+  titulo('F · (3) en el Play, cada evento se pinta en su vela exacta (con las paradas del recibo), no con el final del lote')
+  const SF = u(6006)
+  ver('control: practica creada por /api/sim/crear (F)', await creaPractica(B1, SF, 'F'))
+  cierraPestanas(B1)
+  const f6 = await pagina(B1, SF)
+  const v6 = f6.refs.v1Ref.current
+  cero()
+  const fotos = []
+  const av6 = v6.avance({ engine: () => f6.motor(), espera: async () => { const ps = f6.ps(); fotos.push({ t: (f6.motor().currentTime - M0) / 60, ids: ps.positions.map(p => p.id).join(','), tr: ps.trades.length, saldo: f6.estado.saldo }) } })
+  await av6.irA(m(2))
+  await v6.envia(OR.comandoAbrir({ pair: 'EUR/USD', side: 'BUY', lots: 1, sl: 1.09551, cursor: v6.cursor() }), { entry: 1.1, openTime: m(2) })
+  await f6.pendiente({ side: 'BUY_LIMIT', entry: 1.0901, sl: 1.08, tp: 1.095, lots: 1 })
+  await asentado(f6)
+  const s0 = f6.estado.saldo, p0 = f6.ps().positions.map(p => p.id).join(',')
+  fotos.length = 0
+  const n0 = B1.llamadas.length
+  const rF = await av6.play({ lote: 30, hasta: m(30) })
+  await f6.repinta()
+  const lotes = B1.llamadas.slice(n0).filter(x => x.tipo === 'avanzar').length
+  const trF = B1.trades(SF), sF = f6.estado.saldo
+  // el saldo tras el SL y el fill = el final menos el bruto del TP (la comision ya salio en el fill)
+  const brutoTP = Number(B1.uno(`select bruto_micro from public.sim_trades where session_id = ${L(SF)} order by closed_at desc, id desc limit 1`)) / 1e6
+  const tramo = (a, b) => fotos.filter(f => f.t >= a && f.t <= b)
+  const antes = tramo(3, 10), medio = tramo(11, 20), despues = tramo(21, 30)
+  const okAntes = antes.length === 8 && antes.every(f => f.ids === p0 && f.tr === 0 && f.saldo === s0)
+  const idMedio = medio[0]?.ids
+  const okMedio = medio.length === 10 && medio.every(f => f.ids === idMedio && f.tr === 1) && idMedio && idMedio !== p0 && !idMedio.includes(',') && Math.abs(medio[0].saldo - (sF - brutoTP)) < 1e-6 && medio.every(f => f.saldo === medio[0].saldo)
+  const okDespues = despues.length === 10 && despues.every(f => f.ids === '' && f.tr === 2 && f.saldo === sF)
+  ver('control: un solo lote del Play (2 → 30) con los tres eventos dentro, y dos trades en la base', lotes === 1 && trF.length === 2, tx({ lotes, trades: trF.length }))
+  oraculo('V1C05', 'F · velas 3-10: la posicion de partida, 0 trades y el saldo de partida (nada del lote antes de tiempo)', okAntes, tx(antes.slice(-2)))
+  oraculo('V1C05', 'F · velas 11-20: tras el SL y el fill del 10, la posicion llenada sola, 1 trade y el saldo tras el SL (no el final)', okMedio, tx({ medio: medio.slice(0, 2), esperado: sF - brutoTP }))
+  oraculo('V1C05', 'F · velas 21-30: tras el TP del 20, nada abierto, 2 trades y el saldo final; el Play no se paro (llegado)', okDespues && rF.conclusion === 'llegado', tx({ c: rF.conclusion, despues: despues.slice(0, 2) }))
+  oraculo('V1C05', 'S · en todo F: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
+
+  titulo('G · (4) las limit dibujan su linea con la etiqueta en el eje, como confirmLimitOrder de hoy')
+  const lineas = []
+  const serie = { createPriceLine: o => { const l = { o, viva: true }; lineas.push(l); return l }, removePriceLine: l => { l.viva = false }, setData() {}, update() {} }
+  e5.refs.chartMap.current['EUR/USD'] = { series: serie, priceLines: {}, hasLoaded: true, chart: { timeScale: () => ({ getVisibleLogicalRange: () => null, setVisibleLogicalRange() {} }) } }
+  const vivas = () => lineas.filter(l => l.viva).map(l => [l.o.title, l.o.price, l.o.axisLabelVisible, l.o.color, l.o.lineWidth, l.o.lineStyle]).sort((a, b) => (a[0] < b[0] ? -1 : 1))
+  cero()
+  await e5.pendiente({ side: 'SELL_LIMIT', entry: 1.12, sl: 1.13, tp: 1.1, lots: 1 })
+  await asentado(e5)
+  const g1 = vivas()
+  oraculo('V1C05', 'G · la limit confirmada: tres lineas con etiqueta en el eje (S.LIM 1L, SL y TP), con los colores y estilos de hoy', tx(g1) === tx([['S.LIM 1L', 1.12, true, 'rgba(180,180,180,0.5)', 1, 0], ['SL', 1.13, true, 'rgba(239,83,80,0.4)', 1, 2], ['TP', 1.1, true, 'rgba(30,144,255,0.4)', 1, 2]]), tx(g1))
+  const og = e5.ps().orders[0]?.id
+  await T5.handlePositionDragEnd(og, 'lim_e', 1.121)
+  await asentado(e5)
+  const g2 = vivas()
+  await T5.cancelLimitOrder(og, 'EUR/USD')
+  await asentado(e5)
+  const g3 = vivas()
+  oraculo('V1C05', 'G · el tirador de la entrada mueve su linea (1,121) y cancelar quita las tres', g2.length === 3 && g2[0][0] === 'S.LIM 1L' && g2[0][1] === 1.121 && g3.length === 0, tx({ g2, g3 }))
+  oraculo('V1C05', 'S · en todo G: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
+
+  titulo('H · (5) el peor DD del modal de fallo, del minimo de equity; (6) un reto quemado saca el modal al abrir')
+  // en el 2F el cierre forzado es al mismo precio que la valoracion del breach (equity del breach = saldo tras cerrar);
+  // con empuje (1F, 3F) el saldo queda por debajo. Para distinguir, la equity guardada del breach se sube 500 $ (dato de
+  // prueba, como la fila superada de C): el modal tiene que salir de ESA equity, no del saldo
+  const fS2 = await B2.leeSesion(S2)
+  const eS2 = CA.deserializa(JSON.stringify(fS2.estado))
+  const saldoB = Number(eS2.motor.saldo_µ) / 1e6, medianoche = Number(eS2.saldo_medianoche_µ) / 1e6
+  const eqB_µ = eS2.motor.saldo_µ + 500_000000n
+  eS2.breach = { ...eS2.breach, equity_µ: eqB_µ }; eS2.motor.breach = { ...eS2.motor.breach, equity_µ: eqB_µ }
+  B2.uno(`update public.sim_sessions set estado = ${L(JSON.parse(CA.serializa(eS2)))}::jsonb where id = ${L(S2)}`)
+  const eqB = Number(eqB_µ) / 1e6
+  ver('control: el breach guarda una equity distinta del saldo tras el cierre forzado (la prueba distingue)', eS2.estado === 'breach' && Math.abs(eqB - saldoB) > 1, tx({ eqB, saldoB, medianoche }))
+  cero()
+  AV.vaciaAvisos()
+  const h2 = await pagina(B2, S2)
+  await h2.caja.valor.reto.refreshChallengeStatus(); await h2.repinta(); await asienta(40); await h2.repinta()
+  const stH = h2.caja.valor.reto.challengeStatus?.evaluation
+  oraculo('V1C05', 'H · (5) ddDailyWorstUSD = saldo de la medianoche − la equity del breach (y su %), no − el saldo', Math.abs(stH?.ddDailyWorstUSD - (medianoche - eqB)) < 1e-6 && Math.abs(stH?.ddDailyWorstPct - ((medianoche - eqB) / medianoche) * 100) < 1e-6, tx({ worst: stH?.ddDailyWorstUSD, esperado: medianoche - eqB, porSaldo: medianoche - saldoB }))
+  oraculo('V1C05', 'H · (6) al abrir de nuevo el reto quemado, el modal de fallo sale (como hoy) y el reto sigue bloqueado', h2.caja.valor.reto.challengeModal === 'failed' && h2.caja.valor.reto.challengeLocked === true, tx({ modal: h2.caja.valor.reto.challengeModal, locked: h2.caja.valor.reto.challengeLocked }))
+  oraculo('V1C05', 'S · en todo H: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
 
   titulo('D · control positivo: la bandera apagada, la misma clase de sesion v1')
   delete process.env.NEXT_PUBLIC_SIM_V1_PANTALLA
