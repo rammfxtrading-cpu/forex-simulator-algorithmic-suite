@@ -58,7 +58,7 @@ import usePairData from './usePairData'
 import useTradingActions from './useTradingActions'
 import useSesionV1 from './useSesionV1'
 import { comandoAbrir, comandoTirador } from '../lib/sim/v1/ordenes'
-import { LOTE_PLAY_MAX } from '../lib/sim/v1/topes.mjs'
+import { loteDelPlay } from '../lib/sim/v1/avance'
 import Estrellas from './Estrellas'
 
 // Segundos por barra de cada timeframe. Usado por el cálculo de phantoms y por
@@ -1171,8 +1171,8 @@ export default function SessionPage(){
       if(av.reproduciendo){ av.pausa(); setIsPlaying(false); return }
       try{ deselectAll() }catch{}
       setIsPlaying(true)
-      // el lote crece con la velocidad (lib/sim/v1/topes.mjs: a 500 velas/s, 100 por lote = 5 avances/s, bajo el tope de 10)
-      const r=await av.play({lote:Math.max(10,Math.min(LOTE_PLAY_MAX,Math.ceil((speedRef.current||1)/5)))})
+      // orden 1-135: el lote ≈ velocidad × 0,2 s (1, 1, 3, 12 y 100 velas a 1×, 5×, 15×, 60× e ∞; lib/sim/v1/avance.js)
+      const r=await av.play({lote:loteDelPlay(speedRef.current)})
       setIsPlaying(false)
       if(r?.conclusion==='incierto') avisa('No se ha podido confirmar el avance.')
       const e2=eng(); if(e2&&activePairRef.current===activePair){setCurrentTime(e2.currentTime);setProgress(Math.round(e2.progress*100))}
