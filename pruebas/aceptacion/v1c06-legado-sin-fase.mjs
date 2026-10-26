@@ -8,8 +8,9 @@
  *   B · la pagina (los hooks REALES en el banco, bandera apagada: la sesion legado no es v1): el reto superado saca su
  *       modal, pero «Continuar» no manda /api/challenge/advance; sale «Esta sesión es del Simulador anterior: solo
  *       lectura.» (el aviso que ya existe). Igual con el de fallo.
- *   C · los modales: con una madre legado, sin el boton de avanzar (ChallengePassedPhaseModal y ChallengePassedAllModal
- *       reciben soloLectura) y con el aviso de solo lectura en su lugar; _SessionInner se lo pasa.
+ *   C · los modales: con una madre legado, ChallengePassedPhaseModal (soloLectura) sin «Continue to Phase N» y con el aviso
+ *       de solo lectura en su lugar; ChallengePassedAllModal no tiene boton de avanzar (su onAdvance marca el reto
+ *       completado al pulsar cualquiera de sus botones): con una madre legado, _SessionInner no se lo pasa.
  * Datos inventados. Nada toca Supabase.
  */
 import { titulo, ver, oraculo, fin, escenario, sesionSim, tradeSim, importa, db, api, A, perfil, tok, fuente, asienta } from '../lib.mjs'
@@ -59,6 +60,6 @@ oraculo('V1C06', 'B · el de fallo con madre legado: tampoco manda /api/challeng
 titulo('C · los modales, sin el boton de avanzar con una madre legado')
 const MP = fuente('components/ChallengePassedPhaseModal.js'), MA = fuente('components/ChallengePassedAllModal.js'), SI = fuente('components/_SessionInner.js')
 const sinBoton = m => /export default function \w+\(\{[^}]*\bsoloLectura\b[^}]*\}\)/.test(m) && /\{soloLectura \? \([\s\S]{0,200}Esta sesión es del Simulador anterior: solo lectura\.[\s\S]{0,400}\) : \(/.test(m)
-oraculo('V1C06', 'C · ChallengePassedPhaseModal y ChallengePassedAllModal: con soloLectura, el aviso de solo lectura en lugar del boton de avanzar', sinBoton(MP) && sinBoton(MA))
-oraculo('V1C06', 'C · _SessionInner les pasa soloLectura con una madre legado', (SI.match(/soloLectura=\{session\?\.legado===true\}/g) ?? []).length === 2)
+oraculo('V1C06', 'C · ChallengePassedPhaseModal: con soloLectura, el aviso de solo lectura en lugar de «Continue to Phase N»', sinBoton(MP) && !sinBoton(MA))
+oraculo('V1C06', 'C · _SessionInner: soloLectura al modal de fase con una madre legado, y sin onAdvance en el de reto completado', (SI.match(/soloLectura=\{session\?\.legado===true\}/g) ?? []).length === 1 && SI.includes('onAdvance={session?.legado===true?null:async () => { await handleChallengePass() }}'))
 fin()

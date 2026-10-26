@@ -18,7 +18,7 @@ import { useEffect } from 'react'
 
 const FONT = "'Montserrat', sans-serif"
 
-export default function ChallengePassedPhaseModal({ status, onClose, onAdvance, onReview, advancing }) {
+export default function ChallengePassedPhaseModal({ status, onClose, onAdvance, onReview, advancing, soloLectura = false }) {
   // Cerrar con ESC
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !advancing) onClose?.() }
@@ -100,6 +100,10 @@ export default function ChallengePassedPhaseModal({ status, onClose, onAdvance, 
           </div>
 
           <div style={s.actions}>
+            {/* orden 1-127 (ii): una madre «Simulador anterior» no avanza de fase: el aviso de solo lectura en lugar del boton */}
+            {soloLectura ? (
+              <div style={{...s.motivational, textAlign:'center'}}>Esta sesión es del Simulador anterior: solo lectura.</div>
+            ) : (
             <button
               style={{
                 ...s.btn, ...s.btnPrimary,
@@ -109,6 +113,7 @@ export default function ChallengePassedPhaseModal({ status, onClose, onAdvance, 
               disabled={advancing}>
               {advancing ? 'Procesando…' : `Continue to Phase ${nextPhase} →`}
             </button>
+            )}
             <button
               style={{...s.btn, ...s.btnSecondary, ...(advancing ? {opacity:0.5, cursor:'not-allowed'} : {})}}
               onClick={onClose}

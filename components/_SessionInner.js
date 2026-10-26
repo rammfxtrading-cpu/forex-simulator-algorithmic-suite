@@ -2088,7 +2088,8 @@ export default function SessionPage(){
         <ChallengePassedPhaseModal
           status={challengeStatus}
           advancing={challengeAdvancing}
-          onAdvance={async () => { await handleChallengePass() }}
+          soloLectura={session?.legado===true}
+          onAdvance={session?.legado===true?null:async () => { await handleChallengePass() }}
           onClose={() => { setChallengeModal(null); handleGoToDashboard() }}
           onReview={() => { setChallengeModal(null) }}
         />
@@ -2097,7 +2098,7 @@ export default function SessionPage(){
         <ChallengePassedAllModal
           status={challengeStatus}
           advancing={challengeAdvancing}
-          onAdvance={async () => { await handleChallengePass() }}
+          onAdvance={session?.legado===true?null:async () => { await handleChallengePass() }}
           onCtaReal={handleCtaRealChallenge}
           onClose={() => { setChallengeModal(null); handleGoToDashboard() }}
           onReview={() => { setChallengeModal(null) }}

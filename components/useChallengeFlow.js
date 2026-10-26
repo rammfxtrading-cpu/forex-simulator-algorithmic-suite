@@ -328,6 +328,8 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
 
   // Handlers compartidos por los modales
   const handleChallengePass = useCallback(async () => {
+    // orden 1-127 (ii): una madre «Simulador anterior» es de solo lectura y no avanza de fase
+    if (sessionRef.current?.legado === true) { avisa('Esta sesión es del Simulador anterior: solo lectura.'); return }
     // modo v1: /api/sim/avanzar-fase (el servidor decide si la fase esta superada); a la hija, si la hay
     if (v1Ref?.current) {
       setChallengeAdvancing(true)
@@ -352,6 +354,8 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   }, [decideFase, router, refreshChallengeStatus])
 
   const handleChallengeFail = useCallback(async () => {
+    // orden 1-127 (ii): con una madre legado no se marca nada (solo lectura)
+    if (sessionRef.current?.legado === true) return
     // modo v1: el breach ya lo confirmo el servidor; no hay nada que mandar
     if (v1Ref?.current) { await refreshChallengeStatus(); return }
     const data = await decideFase('fail')

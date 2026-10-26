@@ -116,6 +116,16 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'La sesión no es un challenge' })
   }
 
+  // ── 3b. Orden 1-127 (ii), decision de Ramon: tras el corte, una sesion «Simulador anterior» (legado) es de solo lectura
+  //        y NO avanza de fase (ni pass ni fail: no se marca nada ni nace ninguna hija, tampoco v1). Una sesion v1 avanza
+  //        por /api/sim/avanzar-fase, nunca por aqui.
+  if (session.legado === true) {
+    return res.status(409).json({ error: 'Esta sesión es del Simulador anterior: solo lectura.', code: 'solo_lectura' })
+  }
+  if (session.motor_version === 1) {
+    return res.status(409).json({ error: 'Esta sesión avanza de fase por el simulador nuevo.', code: 'usa_avanzar_fase' })
+  }
+
   // ── 4. Idempotencia: si ya está cerrada, no hacer nada. Status NULL = activa, como
   //      en sim_cierre_v0 y en el cliente (o.14.2; Astra E1R2-02).
   if (session.status != null && session.status !== 'active') {
