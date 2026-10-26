@@ -228,7 +228,7 @@ try {
   const l2 = vivas()
   oraculo('V1C07', 'B3 · control: la limit de confirmLimitOrder si dibuja sus tres lineas (S.LIM 1L, SL, TP) y la del OrderModal sigue sin', tx(l2) === tx(['S.LIM 1L', 'SL', 'TP'].sort()) && p2b.ps().orders.length === 2, tx({ l2, n: p2b.ps().orders.length }))
   const SI = fuente('components/_SessionInner.js')
-  oraculo('V1C07', 'B3 · _SessionInner: el OrderModal en v1 sigue mandando { entry, openTime } (la linea que esta prueba copia)', /comandoAbrir\(\{pair:m\.pair[^\n]*\}\),\{entry:entradaTick,openTime:currentTime\}\)/.test(SI))
+  oraculo('V1C07', 'B3 · _SessionInner: el OrderModal en v1 sigue mandando { entry, openTime } (y, desde la 1-136, el dibujo del que nace; la linea que esta prueba copia)', /comandoAbrir\(\{pair:m\.pair[^\n]*\}\),\{entry:entradaTick,openTime:currentTime(,dibujo:m\.dibujo\?\?null)?\}\)/.test(SI))
   oraculo('V1C07', 'S · en B3: los espias de cierre a cero', sinCierres(), tx(espias()))
 
   titulo('B1 · el reto quemado reconocido queda marcado, como hoy')
