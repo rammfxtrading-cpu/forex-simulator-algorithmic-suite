@@ -3,7 +3,8 @@
  * ANTES que el codigo: no hay lib/sim/v1/avance.js y el servidor no para el Play en la vela de un evento (en rojo).
  *   Step = avanzar 1 vela M1 del par visible (motivo paso); Go to = avanzar en tramos (motivo goto; LIMITES del
  *   servidor, aqui 7 minutos para forzar varios); Play = lotes de N velas por delante (motivo play), animadas en el
- *   navegador; un fill, un cierre o un breach paran el Play EN SU VELA (el servidor corta ahi el avance del lote).
+ *   navegador; un fill, un cierre o un breach paran la ANIMACION del Play en su vela (el recibo del lote trae sus
+ *   paradas; el servidor NO corta el lote: el contrato de S4-08/E3-02 no cambia, ver la nota de abajo).
  *   A · Step = Play = Go to vela a vela: el mismo estado final, los mismos eventos y los mismos trades (practica con un
  *       SL que salta y una limit que se llena en el minuto 10, y un TP en el 20); el Play para en el 10 y en el 20 y
  *       anima cada vela una vez; el Go to no para en los eventos
@@ -16,6 +17,11 @@
  * Contra el servidor REAL (lib/servidor) y sim_comando en PostgreSQL desechable (montaje-v1 + sim-004b + sim-006, con
  * el hueco de su guarda sustituido como en pruebas/sim-006.mjs). Lo unico doble es el transporte. Datos inventados.
  * Mercado: EURUSD 1,1 hasta el minuto 10 del 6-ene-2025; 1,09 del 10 al 19; 1,1 desde el 20. El resto, constante.
+ *
+ * NOTA (tras el rojo, antes del verde): la primera version esperaba que el SERVIDOR cortase el lote del Play en la vela
+ * del evento. Hacerlo cambiaba el calculo de todo avanzar con motivo play, y servidor-tramos y motor/tramos-fuentes
+ * (contrato S4-08/E3-02, que usan motivo play como avance grande) se ponian en rojo. Se cambio a parar la animacion
+ * con las paradas del recibo; A mira ahora la vela MOSTRADA (av.mostrado), no el cursor confirmado.
  */
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import path from 'node:path'
@@ -105,8 +111,9 @@ try {
   while ((cursorDe(sS.c.estado) ?? 0) < m(30) && pasos < 40) { const r = await sS.av.paso(); if (r.conclusion !== 'confirmado') break; pasos++ }
   oraculo('V1C04', 'A · Step: 28 pasos confirmados, uno por vela M1 (motivo paso), hasta el minuto 30', pasos === 28 && cursorDe(sS.c.estado) === m(30) && sS.vistos.filter(v => v.motivo === 'paso' && v.http === 200).length === 28, tx({ pasos, cursor: cursorDe(sS.c.estado) }))
   const paradas = []
-  for (let k = 0; k < 6 && (cursorDe(sP.c.estado) ?? 0) < m(30); k++) { const r = await sP.av.play({ lote: 10, hasta: m(30) }); paradas.push({ conclusion: r.conclusion, en: cursorDe(sP.c.estado), parada: r.parada?.tipo ?? null }) }
-  oraculo('V1C04', 'A · Play (lotes de 10): para en la vela del fill/cierre del minuto 10, en la del TP del 20, y llega al 30', paradas.length === 3 && paradas[0].conclusion === 'parado' && paradas[0].en === m(10) && ['fill', 'cierre'].includes(paradas[0].parada) && paradas[1].conclusion === 'parado' && paradas[1].en === m(20) && paradas[1].parada === 'cierre' && paradas[2].conclusion === 'llegado' && paradas[2].en === m(30), tx(paradas.map(p => ({ ...p, en: p.en == null ? null : (p.en - M0) / 60 }))))
+  for (let k = 0; k < 6 && (sP.av.mostrado ?? 0) < m(30); k++) { const r = await sP.av.play({ lote: 10, hasta: m(30) }); paradas.push({ conclusion: r.conclusion, en: sP.av.mostrado, confirmado: cursorDe(sP.c.estado), parada: r.parada?.tipos?.join('+') ?? null }) }
+  const min = x => (x == null ? null : (x - M0) / 60)
+  oraculo('V1C04', 'A · Play (lotes de 10): la animacion para en la vela del fill y el SL del minuto 10, en la del TP del 20, y llega al 30', paradas.length === 3 && paradas[0].conclusion === 'parado' && paradas[0].en === m(10) && paradas[0].parada?.split('+').sort().join('+') === 'cierre+fill' && paradas[1].conclusion === 'parado' && paradas[1].en === m(20) && paradas[1].parada === 'cierre' && paradas[2].conclusion === 'llegado' && paradas[2].en === m(30) && cursorDe(sP.c.estado) === m(30), tx(paradas.map(p => ({ ...p, en: min(p.en), confirmado: min(p.confirmado) }))))
   const anP = sP.animadas.slice(animadasAntes.p)
   oraculo('V1C04', 'A · el Play anima cada vela del par visible UNA vez y en orden (minutos 3 a 30)', tx(anP) === tx(velasEntre(m(2), m(30))), tx(anP.map(t => (t - M0) / 60)))
   const rG = await sG.av.irA(m(30))
@@ -118,8 +125,8 @@ try {
   const tipos = eS.map(e => `${e.tipo}@${(e.t - M0) / 60}`)
   oraculo('V1C04', 'A · los mismos eventos en los tres (tipo, minuto y datos), con el fill y el SL en el 10 y el TP en el 20', tx(eS) === tx(eP) && tx(eS) === tx(eG) && tipos.filter(t => t === 'fill@10').length === 1 && tipos.filter(t => t === 'cierre@10').length === 1 && tipos.includes('cierre@20'), tx(tipos))
   oraculo('V1C04', 'A · los mismos trades en los tres (dos, con su neto)', tx(sS.trades()) === tx(sP.trades()) && tx(sS.trades()) === tx(sG.trades()) && sS.trades().length === 2, tx(sS.trades().map(t => t.neto)))
-  const resP = JSON.parse(sP.uno(`select resumen::text from public.sim_recibos where session_id = ${L(u(1102))} and tipo = 'avanzar' and resumen ? 'parada' order by id limit 1`) || 'null')
-  oraculo('V1C04', 'A · el servidor corta el lote del Play en la vela del evento y lo dice en el recibo (parada { tipo, t }, cortado)', resP?.parada?.t === m(10) && resP.alcanzado === m(10) && resP.cortado === true, tx(resP && { parada: resP.parada, alcanzado: resP.alcanzado, cortado: resP.cortado }))
+  const resP = JSON.parse(sP.uno(`select resumen::text from public.sim_recibos where session_id = ${L(u(1102))} and tipo = 'avanzar' and resumen ? 'paradas' order by id limit 1`) || 'null')
+  oraculo('V1C04', 'A · el recibo del primer lote (2 → 12, sin cortar) lista sus paradas: el fill y el cierre del minuto 10; el Step y el Go to no las llevan', resP?.alcanzado === m(12) && resP.cortado === false && tx(resP.paradas.map(p => p.tipo + '@' + min(p.t)).sort()) === tx(['cierre@10', 'fill@10']) && Number(sS.uno(`select count(*) from public.sim_recibos where resumen ? 'paradas'`)) === 0 && Number(sG.uno(`select count(*) from public.sim_recibos where resumen ? 'paradas'`)) === 0, tx(resP && { paradas: resP.paradas, alcanzado: min(resP.alcanzado), cortado: resP.cortado }))
 
   titulo('B · reto: el Play para en el breach')
   const sR = await sesion('p4r', u(1201), { reto: '2F' })
