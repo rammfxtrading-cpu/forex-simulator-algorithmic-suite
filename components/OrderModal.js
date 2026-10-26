@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { pipMult } from '../lib/trading/pricing'
+import { priceFromPips } from '../lib/trading/orders'
 
 // ─── Order Modal — Fintech / Algorithmic Suite ────────────────────────────────
 // Risk base: en sesiones de challenge (isChallenge=true) usamos `initialBalance`
@@ -15,7 +15,6 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
   const {side,entry,pair,isLimit,sl:initSl,tp:initTp,lots:initLots,slPips:initSlPips,tpPips:initTpPips,rr:initRr}=modal
   const isBuy=side==='BUY'
   const isJpy=pair?.includes('JPY')
-  const mult=pipMult(pair)
   const RISK_PRESETS=[0.3,0.5,0.7,1,2,3]
   const [riskPct,setRiskPct]=useState(1)
   const [slPips,setSlPips]=useState(initSlPips||10)
@@ -44,15 +43,16 @@ export default function OrderModal({modal,balance,initialBalance,isChallenge,cur
   const estLoss=(slPips*lots*pipVal).toFixed(2)
   const estProfit=(tpPips*lots*pipVal).toFixed(2)
   const rrRatio=slPips>0?(tpPips/slPips).toFixed(1):0
-  const pipSz=1/mult
   // Si el usuario NO ha tocado los pips y vino con sl/tp del long/short,
   // usamos esos precios sin recalcular. Si los tocó, recalculamos.
+  // orden 1-121 (a): entrada ± pips con la cuenta entera desde el texto y un solo ajuste al tick (priceFromPips, el
+  // arreglo de SIMMOTOR1-02): lo que se enseña es lo que se guarda (1,100005 + 30 pips = 1,10301, no 1,10300)
   const sl = (!pipsEdited && initSl != null)
     ? initSl
-    : (isBuy ? entry - slPips*pipSz : entry + slPips*pipSz)
+    : priceFromPips({isLong:isBuy,entry,pips:slPips,pair,leg:'SL'})
   const tp = (!pipsEdited && initTp != null)
     ? initTp
-    : (isBuy ? entry + tpPips*pipSz : entry - tpPips*pipSz)
+    : priceFromPips({isLong:isBuy,entry,pips:tpPips,pair,leg:'TP'})
   const fmtP=p=>p?.toFixed(isJpy?3:5)??'—'
   const accentColor=isBuy?'#1E90FF':'#ef5350'
   const accentRgb=isBuy?'30,144,255':'239,83,80'
