@@ -253,7 +253,9 @@ try {
   const oA = { ret: pu.retenidas(), ...filas(e5.ps()) }
   pu.suelta(); const rA = await pA; await asentado(e5)
   const iA = await igualServidor(B1, SE, e5)
-  oraculo('V1C05', 'E · a mercado: la posicion se pinta con la peticion aun retenida; al confirmar, la del servidor (id del motor)', oA.ret === 1 && tx(oA.pos) === tx([['BUY', 1.1, 1.095, null, 1]]) && rA.conclusion === 'confirmado' && iA.ok && /^p\d+$/.test(e5.ps().positions[0]?.id ?? ''), tx({ oA, c: rA.conclusion, iA }))
+  // orden 1-134 (Ramon: el motor v1 cobra spread): lo optimista se pinta ya con la entrada del motor, el ask de la cotizacion
+  // confirmada (1,1 + 0,3 pip = 1,10003), no con la del modal (1,1): asi no salta al confirmar y cuadra con el P&L (v1c08)
+  oraculo('V1C05', 'E · a mercado: la posicion se pinta con la peticion aun retenida (entrada del motor, 1,10003); al confirmar, la del servidor (id del motor)', oA.ret === 1 && tx(oA.pos) === tx([['BUY', 1.10003, 1.095, null, 1]]) && rA.conclusion === 'confirmado' && iA.ok && /^p\d+$/.test(e5.ps().positions[0]?.id ?? ''), tx({ oA, c: rA.conclusion, iA }))
   // la limit por confirmLimitOrder (la funcion REAL)
   pu.retiene()
   await e5.pendiente({ side: 'BUY_LIMIT', entry: 1.0901, sl: 1.08, tp: 1.095, lots: 1 })

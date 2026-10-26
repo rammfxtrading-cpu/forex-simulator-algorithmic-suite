@@ -12,11 +12,11 @@
  *        servidor; si el servidor rechaza, la fila desaparece y vuelve lo confirmado con el aviso.
  *   B3 · una limit abierta desde el OrderModal NO dibuja lineas de precio (f5b713b: el onConfirm del OrderModal solo la
  *        mete en ps.orders; las lineas con createPriceLine son de confirmLimitOrder). La de confirmLimitOrder si (control).
- *   B4 · el precio de entrada: en f5b713b (medido con el banco de hooks: orden-1-129/medidas/medida-entrada-f5b713b.log)
- *        la entrada de una orden a mercado es el close de la vela visible (1,1005) en la posicion y en sim_trades, BUY y
- *        SELL: sin spread. En v1 el motor llena el BUY al ask (bid + spread); la pantalla enseña la entrada sin spread
- *        (posicion, fill del Play y fila del trade), y la economia del motor no cambia (sim_trades.entry_price y el pnl
- *        del servidor, los mismos).
+ *   B4 · el precio de entrada. CONTRATO CAMBIADO por la orden 1-134 (decision de Ramon: «el motor v1 cobra spread, como
+ *        en una cuenta real»; cambio visible declarado: la entrada y la salida incluyen el spread y el P&L es algo menor
+ *        que hoy). En f5b713b la entrada a mercado es el close de la vela visible, sin spread (medido:
+ *        orden-1-129/medidas/medida-entrada-f5b713b.log). En v1 la pantalla enseña la entrada del motor: el BUY al ask
+ *        (close + spread), el SELL al bid; la fila del trade, la de sim_trades. Lo que se ve cuadra con el P&L (v1c08).
  *   S · en todo: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman.
  * Contra lib/servidor REAL y PostgreSQL desechable (montaje-v1 + sim-004b + sim-006, como v1c05). El advance de B1, sobre
  * supabase-falso con la MISMA fila de la sesion v1 (la pagina habla con una sola base; aqui son dos dobles). Datos
@@ -67,7 +67,7 @@ const textos = () => AV.avisos().map(a => a.texto)
 escenario({})
 velasEnStorage('EUR/USD', velasDe('EURUSD'), [2024], { tramoAbierto: true })
 
-titulo('B4 · la vista enseña la entrada sin spread (como f5b713b); la economia del motor no cambia')
+titulo('B4 · la vista enseña la entrada del motor, con su spread (orden 1-134)')
 {
   // un estado de cartera con un BUY y un SELL llenados a mercado con bid 1,1 (ask 1,10003: spread 0,3 pip = 3 ticks)
   const T = m(5)
@@ -77,8 +77,8 @@ titulo('B4 · la vista enseña la entrada sin spread (como f5b713b); la economia
     ordenes: [] } }
   const v = VI.vistaDe(snap)
   const [b, s] = v.posiciones
-  oraculo('V1C07', 'B4 · vista: el BUY llenado al ask 1,10003 se enseña con la entrada 1,1 (el bid, como el modal y la posicion de hoy); SL/TP intactos y sus pips desde 1,1',
-    b?.entry === 1.1 && b.sl === 1.09903 && b.tp === 1.10203 && b.slPips === 9.7 && b.tpPips === 20.3, tx(b))
+  oraculo('V1C07', 'B4 · vista: el BUY llenado al ask 1,10003 se enseña con esa entrada (la que cobra el motor, orden 1-134); SL/TP intactos y sus pips desde 1,10003',
+    b?.entry === 1.10003 && b.sl === 1.09903 && b.tp === 1.10203 && b.slPips === 10 && b.tpPips === 20, tx(b))
   oraculo('V1C07', 'B4 · vista: el SELL (llenado al bid) se enseña tal cual: 1,1', s?.entry === 1.1, tx(s))
 }
 
@@ -132,7 +132,7 @@ try {
   process.env.NEXT_PUBLIC_SIM_V1_PANTALLA = 'encendido'
   const B1 = await base('w1')
 
-  titulo('B4 · en la pagina: la entrada que se ve es la de hoy; sim_trades y el pnl, los del motor')
+  titulo('B4 · en la pagina: la entrada que se ve es la del motor (orden 1-134); la fila, la de sim_trades')
   const S4 = u(4104)
   ver('control: practica creada (B4)', await B1.crea(S4))
   const p4 = await pagina(B1, S4)
@@ -144,13 +144,13 @@ try {
   await v4.envia(OR.comandoAbrir({ pair: 'EUR/USD', side: 'BUY', lots: 1, cursor: v4.cursor() }), { entry: close2, openTime: m(2) })
   await asentado(p4)
   const pB = p4.ps().positions[0]
-  oraculo('V1C07', 'B4 · BUY a mercado: la posicion confirmada se ve con la entrada = el close de la vela visible (1,1), como el modal y la posicion de hoy',
-    close2 === 1.1 && pB?.entry === 1.1, tx({ close2, pos: pB }))
+  oraculo('V1C07', 'B4 · BUY a mercado: la posicion confirmada se ve con la entrada del motor = el close de la vela visible (1,1) + el spread = 1,10003 (orden 1-134)',
+    close2 === 1.1 && pB?.entry === 1.10003, tx({ close2, pos: pB }))
   await p4.caja.valor.trading.closePosition(pB.id, 'MANUAL', 'EUR/USD', 1.1)
   await asentado(p4)
   const fB = B1.filasTrades(S4)[0], tB = p4.ps().trades[0]
-  oraculo('V1C07', 'B4 · la fila del trade se ve con la entrada 1,1; en sim_trades el motor sigue guardando su ask (1,10003) y su pnl (no se toca la economia)',
-    tB?.entry === 1.1 && Number(fB?.entry_price) === 1.10003 && Number(tB?.pnl) === Number(fB?.pnl), tx({ pantalla: tB && { entry: tB.entry, pnl: tB.pnl }, base: fB && { entry: fB.entry_price, pnl: fB.pnl } }))
+  oraculo('V1C07', 'B4 · la fila del trade se ve como la guarda el motor en sim_trades: entrada 1,10003 (ask) y su pnl (orden 1-134)',
+    tB?.entry === 1.10003 && Number(fB?.entry_price) === 1.10003 && Number(tB?.pnl) === Number(fB?.pnl), tx({ pantalla: tB && { entry: tB.entry, pnl: tB.pnl }, base: fB && { entry: fB.entry_price, pnl: fB.pnl } }))
   await v4.envia(OR.comandoAbrir({ pair: 'EUR/USD', side: 'SELL', lots: 1, cursor: v4.cursor() }), { entry: close2, openTime: m(2) })
   await asentado(p4)
   oraculo('V1C07', 'B4 · SELL a mercado: entrada 1,1 (el motor ya llena al bid)', p4.ps().positions[0]?.entry === 1.1, tx(p4.ps().positions[0]))
@@ -173,7 +173,7 @@ try {
   await asienta(10)
   const oP = { ret: pu.retenidas(), tr: p2.ps().trades.map(t => [t.lots, t.exit, t.closeTime, t.reason]) }
   pu.suelta(); await pP; await asentado(p2)
-  oraculo('V1C07', 'B2 · parcial: con la peticion retenida ya se ve su fila (0,5 lotes, salida 1,1 la de la pagina, en la vela visible, PARTIAL); al confirmar, 1 fila del servidor',
+  oraculo('V1C07', 'B2 · parcial: con la peticion retenida ya se ve su fila (0,5 lotes, salida 1,1 al bid como el motor, en la vela visible, PARTIAL); al confirmar, 1 fila del servidor',
     oP.ret === 1 && tx(oP.tr) === tx([[0.5, 1.1, m(2), 'PARTIAL']]) && p2.ps().trades.length === 1 && B1.filasTrades(S2).length === 1, tx({ oP, tras: p2.ps().trades.length }))
   pu.retiene()
   const pC = T2.closePosition(pid, 'MANUAL', 'EUR/USD', 1.1)
