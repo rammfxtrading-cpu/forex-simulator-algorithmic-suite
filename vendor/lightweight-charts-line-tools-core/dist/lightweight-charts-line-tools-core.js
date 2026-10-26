@@ -1577,6 +1577,11 @@ function getExtendedVisiblePriceRange(tool) {
  * @param timestamp - The target timestamp to convert.
  * @returns The calculated `Logical` index, or `null` if the series has insufficient data.
  */
+// el mercado de divisas cerrado, como lo quita filterWeekends (lib/sessionData.js): orden 1-132
+function mercadoCerradoFx(t) {
+    const d = new Date(t * 1000), dia = d.getUTCDay(), hora = d.getUTCHours();
+    return dia === 6 || (dia === 5 && hora >= 21) || (dia === 0 && hora < 21);
+}
 function interpolateLogicalIndexFromTime(chart, series, timestamp) {
     if (!series) {
         console.warn("[interpolateLogicalIndexFromTime] series is not defined.");
@@ -1605,6 +1610,12 @@ function interpolateLogicalIndexFromTime(chart, series, timestamp) {
         const tHi = Number(cachedData[hi].time);
         if (tHi === tLo || givenTimeNum <= tLo) return lo;
         if (givenTimeNum >= tHi) return hi;
+        // Orden 1-132 (Go to y fin de semana): un instante con el mercado cerrado (sabado, viernes desde las 21:00 UTC,
+        // domingo antes de las 21:00 UTC: el filtro de lib/sessionData.js) no tiene vela propia. Solo pudo nacer
+        // extrapolado detras de la ultima vela (ultima + k velas, arriba). Cuando llegan las velas del lunes (Play o Go to),
+        // se le devuelve esa misma posicion: lo + k. Con el floor de abajo, todos los puntos del fin de semana caian en la
+        // ultima vela del viernes y el dibujo se quedaba sin ancho
+        if (mercadoCerradoFx(givenTimeNum) && interval > 0) return lo + Math.floor((givenTimeNum - tLo) / interval);
         // Deuda 4.6: snap al floor (lo) cuando timestamp cae entre dos velas existentes.
         // Devolver fractIdx hace que logicalToCoordinate de LWC core devuelva 0
         // (borde izquierdo) en vez de interpolar. Equivale al floor de TradingView.

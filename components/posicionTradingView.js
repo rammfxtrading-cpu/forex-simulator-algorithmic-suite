@@ -15,6 +15,8 @@
 // AnchorPoint y PaneCursorType llegan del core que ya carga useDrawingTools (el de vendor/, por el alias de next.config.js)
 
 export const TIRADOR = { ENTRADA_ANCHO: 0, SL: 1, TP: 2, ENTRADA: 3 }
+// px: por debajo, el circulo y el cuadrado de la entrada se pisan
+const SOLAPE = 8
 
 export function clasePosicion(Base, { AnchorPoint, PaneCursorType }) {
   return class PosicionTradingView extends Base {
@@ -62,5 +64,9 @@ export function tiradores(vista, renderer, AnchorPoint, PaneCursorType) {
     a(e.x, t.y, TIRADOR.TP, false, PaneCursorType.VerticalResize),
     a(s.x, e.y, TIRADOR.ENTRADA, true, PaneCursorType.Move),
   ]
+  // orden 1-132: un dibujo que ya se quedo sin ancho (o casi) tiene el circulo y el cuadrado en el mismo sitio, y el
+  // circulo, primero en la lista, se quedaba el clic: solo ensancha hacia la izquierda y hacia la derecha no se movia.
+  // Ahi gana el cuadrado, que ensancha hacia la derecha; el circulo sigue donde asoma
+  if (Math.abs(s.x - e.x) < SOLAPE) anclas.unshift(anclas.pop())
   renderer.append(vista.createLineAnchor({ points: anclas, defaultAnchorHoverCursor: PaneCursorType.VerticalResize, defaultAnchorDragCursor: PaneCursorType.VerticalResize }, 0))
 }

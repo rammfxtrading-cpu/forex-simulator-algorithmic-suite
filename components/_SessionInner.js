@@ -398,7 +398,9 @@ export default function SessionPage(){
   }
 
 
-  const sessionId = typeof window !== 'undefined' ? window.location.pathname.split('/').pop() : null
+  // orden 1-132: el id de la ruta, no el final de la URL del navegador. Durante un router.push la URL ya es /dashboard
+  // mientras esta pagina aun se repinta: se pedia session_chart_config con session_id=dashboard (400, no es un uuid)
+  const sessionId = typeof id === 'string' ? id : null
   const { config: chartConfig, saveConfig: saveChartConfig, loaded: chartConfigLoaded } = useChartConfig({
     sessionId,
     userId: userIdRef.current,
@@ -413,6 +415,29 @@ export default function SessionPage(){
 
   // Save session drawings to Supabase
   const saveDrawingsRef = useRef(null)
+  // Upsert manual: UPDATE primero, INSERT solo si no existía la fila (sin suponer la clave unica en la base). Si el INSERT
+  // choca con ella (23505: otra pestaña la creo entre medias), se vuelve a hacer el UPDATE: lo ultimo queda guardado
+  const guardadoDibujosRef = useRef({ pendientes: new Map(), enVuelo: null })
+  const escribeDibujos = async ({ uid, sid, pair, combined }) => {
+    try {
+      const actualiza = () => supabase
+        .from('session_drawings')
+        .update({ user_id: uid, pair, data: combined, updated_at: new Date().toISOString() })
+        .eq('session_id', sid)
+        .eq('pair', pair)
+        .select('session_id')
+      const { data: updated, error: upErr } = await actualiza()
+      if (upErr) { avisa('No se han podido guardar los dibujos. Comprueba tu conexión.'); return }
+      if (updated && updated.length > 0) return
+      const r = await supabase.from('session_drawings').insert(
+        { session_id: sid, user_id: uid, pair, data: combined, updated_at: new Date().toISOString() }
+      )
+      if (!r?.error) return
+      if (r.error.code !== '23505') { avisa('No se han podido guardar los dibujos. Comprueba tu conexión.'); return }
+      const r2 = await actualiza()
+      if (r2?.error) avisa('No se han podido guardar los dibujos. Comprueba tu conexión.')
+    } catch (e) { avisa('No se han podido guardar los dibujos. Comprueba tu conexión.') }
+  }
   const saveSessionDrawings = useCallback(async () => {
     const uid = userIdRef.current
     const sid = router.query?.id
@@ -430,27 +455,18 @@ export default function SessionPage(){
         c: customJson || '[]',
         tfMap: Object.keys(tfMap).length > 0 ? tfMap : undefined,
       })
-      // Upsert manual: UPDATE primero, INSERT solo si no existía la fila.
-      // El patrón anterior (delete + insert en dos llamadas) producía 409 cuando
-      // dos saves se solapaban — el delete del segundo aún no había resuelto y
-      // el insert del primero chocaba con la fila vieja. Este patrón es
-      // atómico-por-fila y no requiere constraint UNIQUE en BD (que no
-      // queremos asumir que esté creado).
-      const { data: updated, error: upErr } = await supabase
-        .from('session_drawings')
-        .update({ user_id: uid, pair, data: combined, updated_at: new Date().toISOString() })
-        .eq('session_id', sid)
-        .eq('pair', pair)
-        .select('session_id')
-      if (upErr) avisa('No se han podido guardar los dibujos. Comprueba tu conexión.')
-      if (!upErr && (!updated || updated.length === 0)) {
-        // No existía: insert. Si ahora otro tab se nos adelantó y ya creó la
-        // fila entre el UPDATE y el INSERT (carrera muy rara), el catch lo
-        // absorbe — el dato más reciente ya está en BD igualmente.
-        await supabase.from('session_drawings').insert(
-          { session_id: sid, user_id: uid, pair, data: combined, updated_at: new Date().toISOString() }
-        ).then(r=>{ if(r?.error && r.error.code!=='23505') avisa('No se han podido guardar los dibujos. Comprueba tu conexión.') }).catch(()=>avisa('No se han podido guardar los dibujos. Comprueba tu conexión.'))
-      }
+      // orden 1-132: los guardados van de uno en uno (por sesion y par, el ultimo que se pidio). Crear un dibujo dispara
+      // dos guardados a la vez (el plugin avisa dos veces); sin fila todavia, los dos UPDATE no encontraban nada, los dos
+      // hacian INSERT y el segundo chocaba con la clave unica (session_id, pair): 409. Lo que se guarda se toma AQUI (al
+      // pedirlo), no al escribir: el de la salida de la pagina no puede leer un grafico ya destruido
+      const g = guardadoDibujosRef.current
+      g.pendientes.set(`${sid}|${pair}`, { uid, sid, pair, combined })
+      if (g.enVuelo) return g.enVuelo
+      g.enVuelo = (async () => {
+        try { while (g.pendientes.size) { const [k, v] = g.pendientes.entries().next().value; g.pendientes.delete(k); await escribeDibujos(v) } }
+        finally { g.enVuelo = null }
+      })()
+      return g.enVuelo
     } catch(e) {}
   }, [exportTools, customDrawingsToJSON])
   useEffect(() => { saveDrawingsRef.current = saveSessionDrawings }, [saveSessionDrawings])
