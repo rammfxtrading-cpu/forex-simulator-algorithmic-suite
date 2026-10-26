@@ -10,6 +10,9 @@
  *   4 la orden DESAPARECE: un modificar de precio '1.300004' la vuelve ejecutable y se llena en el mismo comando (la
  *     orden ya no esta en el estado); respuesta perdida; el reintento con el mismo texto y con '1.3': 200 repetido y un
  *     solo fill. El par tiene que salir de la orden de forma estable, no del estado posterior (Astra; CTO 1-121).
+ *   5 (orden 1-137, opcion A) el puerto nuevo de lib/servidor/http.mjs (parDeId): el par del evento que creo el id en
+ *     sim_eventos (orden_creada / fill), leido como service_role; null si el id no es de esa sesion y alumno; y
+ *     modificar sin ese puerto falla cerrado.
  */
 import { cerrojoEnMemoria } from '../cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
@@ -19,6 +22,7 @@ const P = await importa('lib/mercado/publicador-v1.mjs')
 const PV = await importa('lib/mercado/publica-v1.mjs')
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
 const CR = await importa('lib/servidor/crear.mjs'), TO = await importa('lib/servidor/tomar.mjs'), SO = await importa('lib/servidor/sobre.mjs'), CO = await importa('lib/servidor/comando.mjs')
+const HT = await importa('lib/servidor/http.mjs')
 const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const AHORA = Date.parse('2026-10-14T10:00:00Z')
 const U = iso => Date.parse(iso) / 1000
@@ -53,7 +57,10 @@ try {
     if (n === 'sim_comando' && perder) { perder = false; throw new Error('respuesta perdida') }
     return r
   }
-  const pu = { almacen: mercado, rpc, leeSesion, ahora: () => AHORA }
+  // orden 1-137 (opcion A del CTO): el par de modificar sale del puerto REAL de lib/servidor/http.mjs (el evento que creo
+  // el id en sim_eventos), leido aqui como lo lee supabase-js con service_role (montaje-v1 lectura)
+  const parDeId = HT.puertosReales(pg.lectura(d)).parDeId
+  const pu = { almacen: mercado, rpc, leeSesion, ahora: () => AHORA, parDeId }
   const ordena = async c => { try { return await CO.ordenComando({ actor: AL, cuerpo: c, puertos: pu }) } catch (e) { return { http: null, perdida: e.message } } }
   const version = () => Number(pg.uno(d, `select version from public.sim_sessions where id = '${u(1001)}'`))
   const estado = () => JSON.parse(pg.uno(d, `select estado::text from public.sim_sessions where id = '${u(1001)}'`))
@@ -105,5 +112,15 @@ try {
   oraculo('MODT', "reintento con el mismo texto '1.300004' sin la orden en el estado: 200 repetido", r4b.http === 200 && r4b.cuerpo?.repetido === true, tx(r4b).slice(0, 300))
   const r4c = await ordena({ ...c4, precio: '1.3' })
   oraculo('MODT', "reintento con '1.3' sin la orden en el estado: 200 repetido y un solo fill", r4c.http === 200 && r4c.cuerpo?.repetido === true && pg.uno(d, `select count(*) from public.sim_eventos where tipo = 'fill' and datos->>'par' = 'GBPUSD'`) === '1', tx(r4c).slice(0, 300))
+
+  titulo('5 · el puerto de lib/servidor/http.mjs (orden 1-137): el par del evento que creo el id, no del estado')
+  const pid = pg.uno(d, `select datos->>'posicion' from public.sim_eventos where tipo = 'fill' and datos->>'par' = 'GBPUSD'`)
+  ver('control: el fill de GBPUSD creo una posicion p…', /^p[1-9]\d*$/.test(pid ?? ''), pid)
+  const par = async (o2 = {}) => { try { return await parDeId({ session_id: u(1001), user_id: AL, ...o2 }) } catch (e) { return `error: ${e.message}` } }
+  oraculo('MODT', `parDeId: la orden ${o.id} (ya llenada, fuera del estado) es GBPUSD; la posicion que nacio de ella, GBPUSD`, typeof parDeId === 'function' && await par({ id: o.id }) === 'GBPUSD' && await par({ id: pid }) === 'GBPUSD', tx([await par({ id: o.id }), await par({ id: pid })]))
+  oraculo('MODT', 'parDeId: un id que no se creo, la sesion de otro alumno o el id de otra sesion: null (sin par)', typeof parDeId === 'function' && await par({ id: 'o99' }) === null && await par({ id: o.id, user_id: u(2) }) === null && await par({ id: o.id, session_id: u(1002) }) === null, tx([await par({ id: 'o99' }), await par({ id: o.id, user_id: u(2) }), await par({ id: o.id, session_id: u(1002) })]))
+  let sinPuerto
+  try { sinPuerto = await CO.ordenComando({ actor: AL, cuerpo: cmd({ tipo: 'modificar', version_esperada: version(), testigo, id: o.id, sl: '1.5' }), puertos: { ...pu, parDeId: undefined } }) } catch (e) { sinPuerto = { error: e.message } }
+  oraculo('MODT', 'modificar sin el puerto del par: falla cerrado (error), no manda un sobre sin ajustar', !!sinPuerto?.error, tx(sinPuerto).slice(0, 200))
 } finally { pg.cierra() }
 fin()

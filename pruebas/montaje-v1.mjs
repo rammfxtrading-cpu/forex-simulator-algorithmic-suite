@@ -10,6 +10,7 @@
 //   m.rpc('d1')(nombre, args)                                  la RPC como service_role,
 //       con la forma de supabase-js: { data, error: { code, message } | null }
 //   m.uno('d1', sql)                                           una lectura como superusuario
+//   m.lectura('d1').from(t).select(c).eq(…).limit(n)           una lectura de tabla como supabase-js con service_role
 //   m.comoEjecutor('d1', texto)                                un fichero SQL como el ejecutor de s06 → { ok, out, err }
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -100,5 +101,32 @@ insert into public.profiles (id, email, plan, simulador_activo, rol_global) valu
     const linea = r.out.split('\n').filter(l => l && !/^(BEGIN|SET|COMMIT)$/.test(l)).at(-1)
     return { data: JSON.parse(linea), error: null }
   }
-  return { pg, base, uno, alumno, rpc, comoEjecutor: (db, texto) => pgx(texto, db), arranca: () => pg.arranca(), cierra: () => pg.cierra() }
+  // orden 1-137 (SIMMOTOR1-03): una LECTURA de tabla como la hace supabase-js con service_role, lo justo para los puertos
+  // de lib/servidor/http.mjs: from(t).select(columnas).eq(columna | 'json->>clave', valor)….limit(n) → { data, error }.
+  // Va como service_role (sus permisos y su RLS); lo que no sabe hacer, lo dice (no lo aproxima)
+  const lectura = db => ({
+    from(tabla) {
+      if (!/^[a-z_]+$/.test(tabla)) throw new Error(`lectura: tabla rara ${tabla}`)
+      const q = { columnas: null, conds: [], limite: null }
+      const b = {
+        select(c) { if (!/^[a-z_]+(, ?[a-z_]+)*$/.test(c)) throw new Error(`lectura: select no soportado: ${c}`); q.columnas = c; return b },
+        eq(col, v) {
+          const m = /^([a-z_]+)(?:->>([a-z_]+))?$/.exec(col)
+          if (!m) throw new Error(`lectura: eq no soportado: ${col}`)
+          q.conds.push(`${m[2] ? `${m[1]}->>${L(m[2])}` : m[1]} = ${L(v)}`); return b
+        },
+        limit(n) { if (!Number.isInteger(n)) throw new Error('lectura: limit'); q.limite = n; return b },
+        then(ok, mal) {
+          const sql = `select coalesce(json_agg(row_to_json(x)), '[]')::text from (select ${q.columnas} from public.${tabla}${q.conds.length ? ` where ${q.conds.join(' and ')}` : ''}${q.limite != null ? ` limit ${q.limite}` : ''}) x`
+          const r = pg.psql(`\\set VERBOSITY sqlstate\nbegin; set local role service_role;\n${sql};\ncommit;`, db)
+          let res
+          if (!r.ok) res = { data: null, error: { code: /ERROR:\s+([0-9A-Z]{5})/.exec(r.err)?.[1] ?? 'XX000', message: 'error de SQL' } }
+          else res = { data: JSON.parse(r.out.split('\n').filter(l => l && !/^(BEGIN|SET|COMMIT)$/.test(l)).at(-1)), error: null }
+          return Promise.resolve(res).then(ok, mal)
+        },
+      }
+      return b
+    },
+  })
+  return { pg, base, uno, alumno, rpc, lectura, comoEjecutor: (db, texto) => pgx(texto, db), arranca: () => pg.arranca(), cierra: () => pg.cierra() }
 }
