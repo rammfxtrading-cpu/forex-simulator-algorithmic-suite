@@ -11,4 +11,8 @@ export function getClaveServidor(env = process.env) {
   globalThis.__claveServidor = 'ficticia'
   return 'ficticia-de-pruebas'
 }
+// orden 1-137: la fuente para la linea de arranque de authApi.js; sin variables, «ficticia» (la clave del doble)
+export function fuenteClaveServidor(env = process.env) {
+  return real.hayClaveServidor(env) ? real.fuenteClaveServidor(env) : 'ficticia'
+}
 export const { hayClaveServidor, variableClaveServidor } = real

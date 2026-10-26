@@ -14,7 +14,15 @@
 // lo hay. El estado final no descarga nada.
 const { createClient } = require('@supabase/supabase-js')
 const fs = require('fs'), path = require('path')
-const { getClaveServidor, hayClaveServidor, variableClaveServidor } = require('../lib/claveServidor.cjs')
+const { getClaveServidor, hayClaveServidor, variableClaveServidor, fuenteClaveServidor } = require('../lib/claveServidor.cjs')
+
+// orden 1-137 (como 6ca9d5d del Macro): una línea al arrancar con la FUENTE de la clave («secret» o «vieja»), nunca el
+// valor. El prefijo, el workflow que corre el script (el fichero de GITHUB_WORKFLOW_REF, que pone GitHub):
+// [mercado-diario] o [actualizar-velas]; fuera de las Actions, [actualizar-diario]
+function avisaFuenteClave(env) {
+  const wf = /\/\.github\/workflows\/([A-Za-z0-9_.-]+)\.ya?ml@/.exec(process.env.GITHUB_WORKFLOW_REF ?? '')?.[1]
+  console.log(`[${wf ?? 'actualizar-diario'}] clave de servidor: ${fuenteClaveServidor(env)}`)
+}
 
 const SUBIR = process.argv.includes('--subir')
 
@@ -26,6 +34,7 @@ function getEnv() {
     // La clave: SUPABASE_SECRET_KEY y, si no está, la vieja (lib/claveServidor.cjs, orden 2-018; ya sin espacios)
     const u = process.env.NEXT_PUBLIC_SUPABASE_URL.trim()
     const k = getClaveServidor(process.env)
+    avisaFuenteClave(process.env)
     if (process.env.DIAG_CREDS === '1') {
       const variable = variableClaveServidor(process.env)
       const crudo = process.env[variable]
@@ -42,7 +51,9 @@ function getEnv() {
   const env = fs.readFileSync(path.join(__dirname,'..','.env.local'),'utf8')
     .split('\n').filter(l => l && !l.startsWith('#'))
     .reduce((a,l)=>{ const eq=l.indexOf('='); if(eq>0) a[l.slice(0,eq).trim()]=l.slice(eq+1).trim().replace(/^["']|["']$/g,''); return a },{})
-  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key: getClaveServidor(env) }
+  const key = getClaveServidor(env)
+  avisaFuenteClave(env)
+  return { url: env.NEXT_PUBLIC_SUPABASE_URL, key }
 }
 
 const { url, key } = getEnv()
