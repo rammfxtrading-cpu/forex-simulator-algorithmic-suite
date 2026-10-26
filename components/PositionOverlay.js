@@ -42,7 +42,8 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
       try{eY =cr.series.priceToCoordinate(pos.entry)}catch{}
       try{slY=cr.series.priceToCoordinate(pos.sl)}catch{}
       try{tpY=cr.series.priceToCoordinate(pos.tp)}catch{}
-      const slPnl=(-(pos.slPips*pos.lots*pipValue(activePair))).toFixed(2)
+      // orden 1-136: la perdida en positivo detras de «-$» (antes «SL -$-100.00», con doble signo)
+      const slPnl=(pos.slPips*pos.lots*pipValue(activePair)).toFixed(2)
       const tpPnl='+'+(pos.tpPips*pos.lots*pipValue(activePair)).toFixed(2)
       if(eY!=null)  all.push({id:pos.id+'_e', posId:pos.id,type:'entry',y:Math.round(eY),label:`${pos.side} ${pos.lots}L`,  color:'rgba(200,200,200,0.55)',drag:false,close:true})
       if(slY!=null) all.push({id:pos.id+'_sl',posId:pos.id,type:'sl',   y:Math.round(slY),label:`SL  -$${slPnl}`,            color:'rgba(239,83,80,0.65)',  drag:true, close:false})
