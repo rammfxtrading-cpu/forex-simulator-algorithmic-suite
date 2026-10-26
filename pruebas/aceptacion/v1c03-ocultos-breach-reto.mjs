@@ -11,6 +11,8 @@
  *       activo con su objetivo, DD diario y total en vivo y dias; breach diario → failed_dd_daily
  *   D · pasar de fase por /api/sim/avanzar-fase con el cliente: fase_no_superada en curso; superada → la hija (fase 2)
  * Mercado inventado: EURUSD 1,1 y GBPUSD 1,3 hasta el minuto 10 del 6-ene-2025; desde el 10, 1,09 y 1,29.
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
 import { hayPostgres } from '../pg-ensayo.mjs'
@@ -52,7 +54,7 @@ try {
     const c = C.creaCliente({ sessionId: sid, usuario: AL, epoca: 1, llama, local: web(), sesion: web(), nuevoId: () => u(++nId), plazoMs: 3000, espera429Ms: 5 })
     await c.toma(); await c.leeEstado()
     const sinTasa = () => pg.uno(d, 'update public.sim_alumnos set siguiente_avance_desde = null')
-    const avanza = async hasta => { sinTasa(); return c.envia('avanzar', { hasta, motivo: 'paso' }) }
+    const avanza = async hasta => { sinTasa(); return c.envia('avanzar', { hasta, motivo: 'goto' }) }
     const envia = x => c.envia(x.tipo, x.carga)
     return { c, avanza, envia, puertos, fila: id => leeSesion(id ?? sid), uno: q => pg.uno(d, q) }
   }

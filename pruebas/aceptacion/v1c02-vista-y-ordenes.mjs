@@ -8,6 +8,8 @@
  *       cancelar y cerrar total y parcial; precios ajustados al tick y en texto; lotes en texto
  *   C · ida y vuelta contra el SERVIDOR REAL (montaje-v1) con el cliente de la pieza 1: lo que la pantalla manda es lo
  *       que vuelve en la vista confirmada (y nada se pinta antes de la confirmacion)
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
 import { hayPostgres } from '../pg-ensayo.mjs'
@@ -89,7 +91,7 @@ try {
   const c = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama, local: web(), sesion: web(), nuevoId: () => u(++nId), plazoMs: 3000, espera429Ms: 5 })
   await c.toma(); await c.leeEstado(); sinTasa()
   const va = (cmd) => c.envia(cmd.tipo, cmd.carga)
-  await va({ tipo: 'avanzar', carga: { hasta: m(5), motivo: 'paso' } })
+  await va({ tipo: 'avanzar', carga: { hasta: m(5), motivo: 'goto' } })
   const vista = () => VI.vistaDe(c.estado)
   const v0 = vista()
   ver('control: el cursor esta en 00:05 y la cotizacion de EUR/USD es 1,1 / 1,10003', v0.cursor === m(5) && v0.cotizaciones['EUR/USD']?.ask === 1.10003, tx({ cursor: v0.cursor, cot: v0.cotizaciones['EUR/USD'] }))

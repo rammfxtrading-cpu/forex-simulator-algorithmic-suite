@@ -20,6 +20,8 @@
  *       de hora), con contadores minimos: si un grupo no ejercita lo suyo, control roto. Motor y
  *       servidor (calcula), estado final, eventos y trades byte a byte. Mutantes, incluido el de
  *       79f39a2 (la marca al principio).
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { titulo, oraculo, ver, fin, importa } from '../lib.mjs'
 const M = await importa('lib/motor/motor.mjs')
@@ -63,7 +65,7 @@ function mercadoDe(velas, { huecos = {}, sinTrozo = new Set(), fueraDelManifiest
   return { fuentes, mercado, almacen: { lee: async r => (objetos.has(r) ? Buffer.from(objetos.get(r)) : null) } }
 }
 // el servidor: calcula() de comando.mjs sobre el estado guardado (JSON, como en la base)
-const calcula = (estado, hasta, alm, date_from) => CO.calcula({ fila: { estado, date_from }, intencion: { tipo: 'avanzar', carga: { hasta, motivo: 'play' } }, puertos: { almacen: alm, reloj: () => 0, cache: ME.creaCache() } })
+const calcula = (estado, hasta, alm, date_from) => CO.calcula({ fila: { estado, date_from }, intencion: { tipo: 'avanzar', carga: { hasta, motivo: 'goto' } }, puertos: { almacen: alm, reloj: () => 0, cache: ME.creaCache() } })
 const sinOrdinal = xs => xs.map(({ ordinal, ...x }) => x)
 
 titulo('1 · el caso de Astra: TP a las 10:01 y hueco aceptado a las 10:21')

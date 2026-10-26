@@ -13,6 +13,8 @@
  *     superada (ultima fase) 200 completado, cartera (no es un reto) la RPC decide, sin leer mercado;
  *   · la repeticion del mismo comando devuelve el recibo guardado, con la misma causa, sin leer mercado.
  * Lo que NO entra: el paso a una fase hija SI lee el mercado (la hija nace con su mercado fijado), y es correcto.
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { readFileSync } from 'node:fs'
@@ -80,14 +82,14 @@ try {
     const c = await CR.ordenCrear({ actor: AL, cuerpo: { session_id: u(k), command_id: u(2000 + k), epoca: 1, name: nombre, pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: reto }, puertos: pu })
     testigos[k] = (await TO.ordenTomar({ actor: AL, cuerpo: { session_id: u(k), command_id: u(3000 + k), epoca: 1, cliente_id: 'p', forzar: true }, puertos: pu })).cuerpo?.testigo
     sinTasa()
-    const a = await CO.ordenComando({ actor: AL, cuerpo: { session_id: u(k), command_id: u(++n), epoca: 1, cliente_id: 'p', tipo: 'avanzar', version_esperada: version(u(k)), testigo: testigos[k], hasta: m(10), motivo: 'paso' }, puertos: pu })
+    const a = await CO.ordenComando({ actor: AL, cuerpo: { session_id: u(k), command_id: u(++n), epoca: 1, cliente_id: 'p', tipo: 'avanzar', version_esperada: version(u(k)), testigo: testigos[k], hasta: m(10), motivo: 'goto' }, puertos: pu })
     pon(u(k), terminal(CA.deserializa(JSON.stringify(estadoDe(u(k))))))
     ver(`control: ${nombre}: creada, tomada, avanzada con mercado y puesta en su estado terminal guardado`, c.http === 201 && !!testigos[k] && a.http === 200 && ['breach', 'superada', 'objetivo'].includes(estadoDe(u(k)).estado), tx({ c: c.http, a: a.http, e: estadoDe(u(k)).estado }))
   }
   pu.almacen = caido
   const recibo = (id, cid) => JSON.parse(pg.uno(d, `select json_build_object('resultado', resultado, 'motivo', motivo, 'resumen', resumen)::text from public.sim_recibos where session_id = ${L(id)} and command_id = ${L(cid)}`) || 'null')
   const CARGAS = {
-    avanzar: () => ({ hasta: m(60), motivo: 'play' }),
+    avanzar: () => ({ hasta: m(60), motivo: 'goto' }),
     abrir: () => ({ par: 'EURUSD', lado: 'BUY', orden: 'mercado', lotes: '1', cotizadoEn: m(10) }),
     modificar: () => ({ id: 'p1', sl: '1.00000' }),
     cancelar: () => ({ id: 'o1' }),
@@ -105,14 +107,17 @@ try {
       // R3E3-01: el retorno temprano (mercado caido) da el MISMO resultado, campo a campo, que el camino largo de
       // f252152 con el mercado bueno; y el horizonte confirmado (alcanzado, cortado) es el del estado guardado
       const fila = await leeSesion(id)
-      const intencion = { tipo: 'avanzar', carga: { hasta: m(60), motivo: 'play' } }
+      const intencion = { tipo: 'avanzar', carga: { hasta: m(60), motivo: 'goto' } }
       const l0 = lecturas
       const nuevo = await CO.calcula({ fila, intencion, puertos: { almacen: caido } })
       const largo = await COviejo.calcula({ fila, intencion, puertos: { almacen: mercado } })
       const e = CA.deserializa(JSON.stringify(fila.estado))
       const esperado = e.esquema === 'reto@1' ? e.horizonte : e.reloj.cursor
-      oraculo('TERM', `${nombre} · avanzar: el retorno temprano (sin leer mercado) es, campo a campo, el camino largo de ${VIEJO} con el mercado bueno; alcanzado = ${e.esquema === 'reto@1' ? 'el horizonte' : 'el cursor'} guardado y cortado = alcanzado < hasta`,
-        lecturas === l0 && tx(nuevo) === tx(largo) && nuevo.resumen.alcanzado === esperado && nuevo.resumen.cortado === (esperado < m(60)), tx({ lecturas: lecturas - l0, iguales: tx(nuevo) === tx(largo), alc: nuevo.resumen.alcanzado, esperado, cortado: nuevo.resumen.cortado }))
+      // orden 1-125 (f): el resumen del avance lleva ademas minutos (los minutos de mercado avanzados, que sim-006
+      // comprueba en un paso o un play); el camino largo de f252152 no lo tenia. Se compara sin ese campo y aparte: 0
+      const sinMin = r => ({ ...r, resumen: (({ minutos, ...x }) => x)(r.resumen ?? {}) })
+      oraculo('TERM', `${nombre} · avanzar: el retorno temprano (sin leer mercado) es, campo a campo, el camino largo de ${VIEJO} con el mercado bueno (salvo resumen.minutos, que es 0); alcanzado = ${e.esquema === 'reto@1' ? 'el horizonte' : 'el cursor'} guardado y cortado = alcanzado < hasta`,
+        lecturas === l0 && tx(sinMin(nuevo)) === tx(largo) && nuevo.resumen.minutos === 0 && nuevo.resumen.alcanzado === esperado && nuevo.resumen.cortado === (esperado < m(60)), tx({ lecturas: lecturas - l0, iguales: tx(sinMin(nuevo)) === tx(largo), minutos: nuevo.resumen.minutos, alc: nuevo.resumen.alcanzado, esperado, cortado: nuevo.resumen.cortado }))
     }
     for (const tipo of Object.keys(CARGAS)) {
       sinTasa()

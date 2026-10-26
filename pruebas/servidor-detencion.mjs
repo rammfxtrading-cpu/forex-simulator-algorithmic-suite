@@ -11,6 +11,8 @@
  * La practica del servidor no tiene limites: crear no se los pone, asi que no se quema (CTO 15-oct,
  * q.17.7): una practica de 80 lotes que pierde el 80 % no devuelve ninguna detencion de breach. (Una
  * practica CON limites, la del motor, sigue la regla del reto: pruebas/motor/tramos-fuentes.mjs.)
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
@@ -51,14 +53,14 @@ try {
   const testigo = (await TO.ordenTomar({ actor: AL, cuerpo: { session_id: u(1001), command_id: u(3001), epoca: 1, cliente_id: 'p', forzar: true }, puertos: pu })).cuerpo?.testigo
   const ordena = c => CO.ordenComando({ actor: AL, cuerpo: c, puertos: pu })
   sinTasa()
-  const a1 = await ordena(cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(10), motivo: 'paso' }))
+  const a1 = await ordena(cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(10), motivo: 'goto' }))
   const ab = await ordena(cmd({ tipo: 'abrir', version_esperada: version(), testigo, par: 'EURUSD', lado: 'BUY', orden: 'mercado', lotes: '10', cotizadoEn: m(10) }))
   ver('control: avanzar y abrir 10 lotes', a1.http === 200 && ab.http === 200, tx({ a1: a1.http, ab: ab.cuerpo?.motivo }))
 
   titulo('el avance que quema el reto')
   sinTasa()
   const v0 = version()
-  const q = await ordena(cmd({ tipo: 'avanzar', version_esperada: v0, testigo, hasta: m(40), motivo: 'play' }))
+  const q = await ordena(cmd({ tipo: 'avanzar', version_esperada: v0, testigo, hasta: m(40), motivo: 'goto' }))
   const ev = JSON.parse(pg.uno(d, `select coalesce(json_agg(datos order by seq), '[]')::text from public.sim_eventos where session_id = ${L(u(1001))} and tipo = 'breach'`))
   const resumen = JSON.parse(pg.uno(d, `select resumen::text from public.sim_recibos where session_id = ${L(u(1001))} and command_id = ${L(q.cuerpo?.recibo?.command_id ?? u(0))}`) || 'null')
   ver('control: el avance confirma y hay un evento breach guardado', q.http === 200 && ev.length === 1, tx({ q: q.http, ev: ev.length }))
@@ -68,7 +70,7 @@ try {
   titulo('la llamada siguiente, sobre el reto ya quemado')
   sinTasa()
   const v1 = version()
-  const t2 = await ordena(cmd({ tipo: 'avanzar', version_esperada: v1, testigo, hasta: m(60), motivo: 'play' }))
+  const t2 = await ordena(cmd({ tipo: 'avanzar', version_esperada: v1, testigo, hasta: m(60), motivo: 'goto' }))
   const r2 = JSON.parse(pg.uno(d, `select resumen::text from public.sim_recibos where session_id = ${L(u(1001))} and command_id = ${L(t2.cuerpo?.recibo?.command_id ?? u(0))}`) || 'null')
   oraculo('DETS', 'no calcula: recibo con resumen.detencion { motivo: sesion_terminada }, sin eventos y sin version nueva', t2.http === 200 && tx(r2?.detencion) === tx({ motivo: 'sesion_terminada' }) && r2?.eventos === 0 && version() === v1, tx({ t2: t2.http, r2 }))
   // CTO 16-oct (respuesta 4): ese avance lleva tambien la causa, copiada del estado terminal guardado
@@ -97,7 +99,7 @@ try {
   ver('control: practica creada (sin challenge_type)', (await CR.ordenCrear({ actor: AL, cuerpo: { session_id: P1, command_id: u(2002), epoca: 1, name: 'P', pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: null }, puertos: pu })).http === 201)
   const pt = (await TO.ordenTomar({ actor: AL, cuerpo: { session_id: P1, command_id: u(3002), epoca: 1, cliente_id: 'p', forzar: true }, puertos: pu })).cuerpo?.testigo
   sinTasa()
-  const p1 = await ordena(pcmd({ tipo: 'avanzar', version_esperada: pversion(), testigo: pt, hasta: m(10), motivo: 'paso' }))
+  const p1 = await ordena(pcmd({ tipo: 'avanzar', version_esperada: pversion(), testigo: pt, hasta: m(10), motivo: 'goto' }))
   const pab = await ordena(pcmd({ tipo: 'abrir', version_esperada: pversion(), testigo: pt, par: 'EURUSD', lado: 'BUY', orden: 'mercado', lotes: '80', cotizadoEn: m(10) }))
   ver('control: avanzar y abrir 80 lotes (la caida de 1.000 ticks pierde 80.000 de 100.000)', p1.http === 200 && pab.http === 200, tx({ p1: p1.http, ab: pab.cuerpo?.motivo }))
   const est0 = JSON.parse(pg.uno(d, `select estado::text from public.sim_sessions where id = ${L(P1)}`))
@@ -105,7 +107,7 @@ try {
   const dets = []
   for (const hasta of [m(29), m(30), m(31), m(120)]) {
     sinTasa()
-    const r = await ordena(pcmd({ tipo: 'avanzar', version_esperada: pversion(), testigo: pt, hasta, motivo: 'play' }))
+    const r = await ordena(pcmd({ tipo: 'avanzar', version_esperada: pversion(), testigo: pt, hasta, motivo: 'goto' }))
     const rs = JSON.parse(pg.uno(d, `select resumen::text from public.sim_recibos where session_id = ${L(P1)} and command_id = ${L(r.cuerpo?.recibo?.command_id ?? u(0))}`) || 'null')
     dets.push({ http: r.http, det: rs?.detencion ?? null })
   }

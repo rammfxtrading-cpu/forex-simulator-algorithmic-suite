@@ -25,6 +25,8 @@
  *   4 neto y saldo IDENTICOS con y sin spread_micro (otro spread_micro → mismo saldo,
  *     mismo neto_micro, mismo pnl);
  *   5 POST /api/sim/comando: apagado sin el interruptor; de punta a punta.
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa, escenario, perfil, tok, db } from './lib.mjs'
@@ -132,14 +134,14 @@ try {
     const testigo = await tomaDe(puertos)
     const r = {}
     sinTasa(d)
-    r.av1 = await ordena(puertos, cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(10), motivo: 'paso' }))
+    r.av1 = await ordena(puertos, cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(10), motivo: 'goto' }))
     r.cursor1 = JSON.parse(pg.uno(d, `select estado::text from public.sim_sessions where id = '${u(1001)}'`)).reloj?.cursor
     r.abEU = cmd({ tipo: 'abrir', version_esperada: 1, testigo, par: 'EURUSD', lado: 'BUY', orden: 'mercado', lotes: '1', cotizadoEn: m(10), sl: '1.09500' })
     r.ab1 = await ordena(puertos, r.abEU)
     r.ab2 = await ordena(puertos, cmd({ tipo: 'abrir', version_esperada: 2, testigo, par: 'USDJPY', lado: 'BUY', orden: 'mercado', lotes: '1', cotizadoEn: m(10) }))
     r.ce = await ordena(puertos, cmd({ tipo: 'cerrar', version_esperada: 3, testigo, id: 'p2', lotes: '0.25' }))
     sinTasa(d)
-    r.av2 = await ordena(puertos, cmd({ tipo: 'avanzar', version_esperada: 4, testigo, hasta: m(40), motivo: 'play' }))
+    r.av2 = await ordena(puertos, cmd({ tipo: 'avanzar', version_esperada: 4, testigo, hasta: m(40), motivo: 'goto' }))
     r.testigo = testigo
     return r
   }
@@ -173,11 +175,11 @@ try {
   const fut = await ordena(pu, cmd({ tipo: 'abrir', version_esperada: v0 + 7, testigo: g.testigo, par: 'EURUSD', lado: 'SELL', orden: 'mercado', lotes: '1', cotizadoEn: m(40) }))
   oraculo('COMA', 'una version del futuro: 409 conflicto con la vigente, sin calcular ni llamar a la RPC', fut.http === 409 && fut.cuerpo?.motivo === 'conflicto' && fut.cuerpo.version === v0 && version(d) === v0, tx(fut))
   sinTasa(d)
-  const cad = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v0 - 1, testigo: g.testigo, hasta: m(45), motivo: 'paso' }))
+  const cad = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v0 - 1, testigo: g.testigo, hasta: m(45), motivo: 'goto' }))
   oraculo('COMA', 'un avance desde una version vieja: 409 comando_caducado', cad.http === 409 && cad.cuerpo?.motivo === 'comando_caducado', tx(cad))
   sinTasa(d)
-  const a1 = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v0, testigo: g.testigo, hasta: m(45), motivo: 'paso' }))
-  const a2 = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v0 + 1, testigo: g.testigo, hasta: m(50), motivo: 'paso' }))
+  const a1 = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v0, testigo: g.testigo, hasta: m(45), motivo: 'goto' }))
+  const a2 = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v0 + 1, testigo: g.testigo, hasta: m(50), motivo: 'goto' }))
   oraculo('COMA', 'dos avances seguidos sin esperar 5 s: el segundo, 429 demasiados_avances', a1.http === 200 && a2.http === 429 && a2.cuerpo?.motivo === 'demasiados_avances', tx({ a1: a1.http, a2 }))
   const ck = await ordena(pu, cmd({ tipo: 'checkpoint', version_esperada: v0 + 1, testigo: g.testigo }))
   sinTasa(d)
@@ -207,7 +209,7 @@ try {
   const cojo = almacen(); for (const [k, x] of mercado.o) if (!/USDCHF\/manifiestos/.test(k)) cojo.o.set(k, x)
   let llamadas = 0
   sinTasa(d)
-  const sin = await ordena({ ...pu, almacen: cojo, rpc: (n, a) => { llamadas++; return pu.rpc(n, a) } }, cmd({ tipo: 'avanzar', version_esperada: version(d), testigo: t2, cliente_id: 'pestana-2', hasta: m(60), motivo: 'paso' }))
+  const sin = await ordena({ ...pu, almacen: cojo, rpc: (n, a) => { llamadas++; return pu.rpc(n, a) } }, cmd({ tipo: 'avanzar', version_esperada: version(d), testigo: t2, cliente_id: 'pestana-2', hasta: m(60), motivo: 'goto' }))
   oraculo('COMA', 'A26 · falta un manifiesto fijado: 503 mercado_no_disponible, sin llamar a la RPC', sin.http === 503 && sin.cuerpo?.motivo === 'mercado_no_disponible' && llamadas === 0, tx({ sin, llamadas }))
 
   // A24: borrar y reintentar
@@ -230,11 +232,11 @@ try {
   const espejo = () => { escenario({ perfiles: [perfil(AL, { simulador_activo: true })], sim_sessions: [JSON.parse(pg.uno(d3, `select row_to_json(s)::text from public.sim_sessions s where id = '${u(1001)}'`))] }); db.rpcExterno = pg.rpc(d3); db.storage.mercado = Object.fromEntries([...mercado.o].map(([k, v]) => [k, Buffer.from(v)])) }
   delete process.env.SIM_V1_ENDPOINTS
   espejo()
-  const off = await llama(handler, { method: 'POST', token: tok(AL), body: cmd({ tipo: 'avanzar', version_esperada: 0, testigo: t3, hasta: m(10), motivo: 'paso' }) })
+  const off = await llama(handler, { method: 'POST', token: tok(AL), body: cmd({ tipo: 'avanzar', version_esperada: 0, testigo: t3, hasta: m(10), motivo: 'goto' }) })
   oraculo('COMA', 'sin el interruptor: 503 apagado (literal) y nada', off.estado === 503 && JSON.stringify(off.cuerpo) === '{"ok":false,"http":503,"motivo":"apagado"}' && db.log.length === 0, tx(off.cuerpo))
   process.env.SIM_V1_ENDPOINTS = 'encendido'
   espejo(); sinTasa(d3)
-  const on = await llama(handler, { method: 'POST', token: tok(AL), body: cmd({ tipo: 'avanzar', version_esperada: 0, testigo: t3, hasta: m(10), motivo: 'paso' }) })
+  const on = await llama(handler, { method: 'POST', token: tok(AL), body: cmd({ tipo: 'avanzar', version_esperada: 0, testigo: t3, hasta: m(10), motivo: 'goto' }) })
   oraculo('COMA', 'de punta a punta: avanzar → 200 y la version 1 en la base real', on.estado === 200 && on.cuerpo?.version === 1 && version(d3) === 1, tx({ e: on.estado, c: on.cuerpo, x: on.excepcion?.message }).slice(0, 400))
   espejo()
   db.pierde = ctx => ctx.tabla === 'rpc:sim_comando'

@@ -17,6 +17,8 @@
  *   D · 429 demasiados_avances de un avance calculado: sin alcanzado ni cortado;
  *   E · pasar de fase: el ACK es la respuesta de sim_avanzar_fase tal cual (nuevo, repetido y
  *       error), sin claves añadidas.
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
@@ -89,7 +91,7 @@ try {
     const testigo = await toma(pu)
     sinTasa(d)
     const foto = await pu.leeSesion(u(1001))
-    const c = cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(120), motivo: 'play' })
+    const c = cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(120), motivo: 'goto' })
     const a = await ordena({ ...pu, leeSesion: async () => foto, reloj: primero() }, c)
     const datosA = pu.visto.at(-1)
     sinTasa(d)
@@ -118,16 +120,16 @@ try {
     const testigo = await toma(pu)
     sinTasa(d)
     const foto = await pu.leeSesion(u(1001))
-    const otro = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(10), motivo: 'paso' }))
+    const otro = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(10), motivo: 'goto' }))
     sinTasa(d)
-    const cad = await ordena({ ...pu, leeSesion: async () => foto }, cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(30), motivo: 'paso' }))
+    const cad = await ordena({ ...pu, leeSesion: async () => foto }, cmd({ tipo: 'avanzar', version_esperada: 0, testigo, hasta: m(30), motivo: 'goto' }))
     ver('control: otro avance confirmo antes (version 1) y este se calculo sobre la foto vieja', otro.http === 200 && cad.http === 409 && cad.cuerpo?.motivo === 'comando_caducado', tx(cad.cuerpo))
     oraculo('ACK', '409 comando_caducado: el cuerpo es el de la RPC, sin alcanzado ni cortado del calculo', !('alcanzado' in (cad.cuerpo ?? {})) && !('cortado' in (cad.cuerpo ?? {})) && tx(anadido(cad.cuerpo, pu.visto.at(-1))) === '{}', tx(cad.cuerpo))
 
     titulo('D · 429 demasiados_avances de un avance calculado: sin progreso')
     const v = Number(pg.uno(d, `select version from public.sim_sessions where id = '${u(1001)}'`))
-    const p1 = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v, testigo, hasta: m(20), motivo: 'paso' }))
-    const p2 = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v + 1, testigo, hasta: m(40), motivo: 'paso' }))
+    const p1 = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v, testigo, hasta: m(20), motivo: 'goto' }))
+    const p2 = await ordena(pu, cmd({ tipo: 'avanzar', version_esperada: v + 1, testigo, hasta: m(40), motivo: 'goto' }))
     ver('control: el segundo avance sin esperar 5 s es 429', p1.http === 200 && p2.http === 429 && p2.cuerpo?.motivo === 'demasiados_avances', tx(p2.cuerpo))
     oraculo('ACK', '429 demasiados_avances: el cuerpo es el de la RPC, sin alcanzado ni cortado del calculo', !('alcanzado' in (p2.cuerpo ?? {})) && !('cortado' in (p2.cuerpo ?? {})) && tx(anadido(p2.cuerpo, pu.visto.at(-1))) === '{}', tx(p2.cuerpo))
   }

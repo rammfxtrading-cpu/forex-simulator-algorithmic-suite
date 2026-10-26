@@ -3,17 +3,24 @@
  * ANTES que el codigo: no hay lib/sim/v1/avance.js y el servidor no para el Play en la vela de un evento (en rojo).
  *   Step = avanzar 1 vela M1 del par visible (motivo paso); Go to = avanzar en tramos (motivo goto; LIMITES del
  *   servidor, aqui 7 minutos para forzar varios); Play = lotes de N velas por delante (motivo play), animadas en el
- *   navegador; un fill, un cierre o un breach paran la ANIMACION del Play en su vela (el recibo del lote trae sus
- *   paradas; el servidor NO corta el lote: el contrato de S4-08/E3-02 no cambia, ver la nota de abajo).
+ *   navegador. ORDEN 1-125 (e): el Play NO se para en un fill, un cierre ni un breach; las paradas del recibo del lote
+ *   sirven SOLO para pintar cada evento en su vela exacta (alParada, justo despues de animar esa vela), nunca para
+ *   detener la reproduccion. Solo lo para el alumno (pausa) o el aviso del plazo de 12 s (el del cliente).
  *   A · Step = Play = Go to vela a vela: el mismo estado final, los mismos eventos y los mismos trades (practica con un
- *       SL que salta y una limit que se llena en el minuto 10, y un TP en el 20); el Play para en el 10 y en el 20 y
- *       anima cada vela una vez; el Go to no para en los eventos
- *   B · reto: el Play para en la vela del breach; despues no avanza
+ *       SL que salta y una limit que se llena en el minuto 10, y un TP en el 20); el Play llega al 30 en UNA llamada,
+ *       sin pararse, pinta el fill y el SL justo tras la vela 10 y el TP justo tras la 20, y anima cada vela una vez;
+ *       el Go to no para en los eventos
+ *   B · reto: el Play no se para en el breach: lo pinta en su vela (minuto 10) y acaba porque el servidor no confirma
+ *       nada despues (la sesion termina con el breach: terminada, no parado); despues no avanza
  *   C · Step rapido (mas de 10/s, con el tope de sim-006 agotado): 429 demasiados_pasos, reintento con la MISMA clave
  *       tras reintentar_en_ms; ni se pierde ni se duplica un avance
  *   D · respuesta perdida (despues y antes de llegar) en el Step y en el Play: reintento con la misma clave, ni de mas
  *       ni de menos
  *   E · apagado: ninguna pagina ni componente importa lib/sim/v1/ (la pantalla de hoy no cambia)
+ *   F · ORDEN 1-125 (f), el tope de TAMAÑO del servidor (lib/sim/v1/topes.mjs; sim-006): un avanzar «paso» llega como
+ *       mucho a 1 minuto de mercado y uno «play» a LOTE_PLAY_MAX (100): mas lejos, el servidor lo corta (cortado, como
+ *       los tramos de S4-08). Un Go to marcado «paso» avanza 1 minuto y el siguiente goto sigue teniendo sus 5 s (429
+ *       demasiados_avances). El cliente no pide un lote mayor que LOTE_PLAY_MAX
  * Contra el servidor REAL (lib/servidor) y sim_comando en PostgreSQL desechable (montaje-v1 + sim-004b + sim-006, con
  * el hueco de su guarda sustituido como en pruebas/sim-006.mjs). Lo unico doble es el transporte. Datos inventados.
  * Mercado: EURUSD 1,1 hasta el minuto 10 del 6-ene-2025; 1,09 del 10 al 19; 1,1 desde el 20. El resto, constante.
@@ -30,7 +37,7 @@ import { hayPostgres } from '../pg-ensayo.mjs'
 import { montajeV1, L, conUidDelMontaje } from '../montaje-v1.mjs'
 import { cerrojoEnMemoria } from '../cerrojo-falso.mjs'
 const AV = await importa('lib/sim/v1/avance.js').catch(() => null)
-const N = 18
+const N = 23
 if (!AV?.creaAvance) { for (let i = 0; i < N; i++) oraculo('V1C04', `caso ${i}: sin lib/sim/v1/avance.js no se puede`, false, 'no esta'); fin() }
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay', false); fin() }
 const C = await importa('lib/sim/v1/cliente.js'), OR = await importa('lib/sim/v1/ordenes.js'), VI = await importa('lib/sim/v1/vista.js')
@@ -40,6 +47,7 @@ const CR = await importa('lib/servidor/crear.mjs'), TO = await importa('lib/serv
 const CO = await importa('lib/servidor/comando.mjs'), ES = await importa('lib/servidor/estado.mjs')
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 const HUECO = "v_guarda pg_catalog.text := '⟦HUECO guarda canonica⟧';"
+const TO6 = await importa('lib/sim/v1/topes.mjs').catch(() => null)
 const deEnsayo = t => { if (t.split(HUECO).length !== 2) throw new Error('el hueco no esta una vez'); return t.replace(HUECO, "v_guarda pg_catalog.text := 'montaje de ensayo (v1c04)';") }
 const S4B = conUidDelMontaje(lee('sql/sim-004b-contrato-v1.sql')), S6 = deEnsayo(lee('sql/sim-006-tope-de-pasos.sql'))
 
@@ -85,13 +93,15 @@ try {
     ver(`control (${d}): sesion creada`, (await CR.ordenCrear({ actor: AL, cuerpo: { session_id: sid, command_id: u(++nId), epoca: 1, name: 'S', pair: 'EUR/USD', timeframe: 'M1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: reto }, puertos })).http === 201)
     const c = C.creaCliente({ sessionId: sid, usuario: AL, epoca: 1, llama, local: web(), sesion: web(), nuevoId: () => u(++nId), plazoMs: 3000, espera429Ms: 5 })
     await c.toma(); await c.leeEstado()
-    const animadas = []
-    const av = AV.creaAvance({ cliente: c, tiempos: () => TIEMPOS, alAnimar: async velas => { animadas.push(...velas) } })
+    // linea: lo que la pantalla hace, en orden: cada vela animada (v@minuto) y cada evento pintado (p:tipos@minuto)
+    const animadas = [], linea = []
+    const av = AV.creaAvance({ cliente: c, tiempos: () => TIEMPOS, alAnimar: async velas => { animadas.push(...velas); for (const t of velas) linea.push(`v@${(t - M0) / 60}`) },
+      alParada: async p => { linea.push(`p:${[...p.tipos].sort().join('+')}@${(p.t - M0) / 60}`) } })
     const uno = q => pg.uno(d, q)
     const eventos = () => JSON.parse(uno(`select coalesce(json_agg(json_build_object('tipo', tipo, 't', t_mercado, 'datos', datos) order by seq), '[]')::text from public.sim_eventos where session_id = ${L(sid)}`))
     const trades = () => JSON.parse(uno(`select coalesce(json_agg(json_build_object('pair', pair, 'side', side, 'entry', entry_price, 'exit', exit_price, 'pnl', pnl, 'neto', neto_micro, 'cerrado', closed_at) order by closed_at, evento_id), '[]')::text from public.sim_trades where session_id = ${L(sid)}`))
     const fila = async () => leeSesion(sid)
-    return { c, av, fallos, vistos, animadas, uno, eventos, trades, fila, envia: x => c.envia(x.tipo, x.carga) }
+    return { c, av, fallos, vistos, animadas, linea, uno, eventos, trades, fila, envia: x => c.envia(x.tipo, x.carga) }
   }
   const cursorDe = e => (e?.estado?.esquema === 'reto@1' ? e.estado.horizonte : e?.estado?.reloj?.cursor) ?? null
   const velasEntre = (a, b) => TIEMPOS.filter(t => t > a && t <= b)
@@ -106,14 +116,21 @@ try {
   titulo('A · Step = Play = Go to vela a vela')
   const sS = await sesion('p4s', u(1101)), sP = await sesion('p4p', u(1102)), sG = await sesion('p4g', u(1103), { limites: { minutos: 7 } })
   ver('control: las tres sesiones preparadas igual (minuto 2, una posicion y una limit)', (await prepara(sS)) && (await prepara(sP)) && (await prepara(sG)))
-  const animadasAntes = { s: sS.animadas.length, p: sP.animadas.length }
+  const animadasAntes = { s: sS.animadas.length, p: sP.animadas.length, lp: sP.linea.length }
   let pasos = 0
   while ((cursorDe(sS.c.estado) ?? 0) < m(30) && pasos < 40) { const r = await sS.av.paso(); if (r.conclusion !== 'confirmado') break; pasos++ }
   oraculo('V1C04', 'A · Step: 28 pasos confirmados, uno por vela M1 (motivo paso), hasta el minuto 30', pasos === 28 && cursorDe(sS.c.estado) === m(30) && sS.vistos.filter(v => v.motivo === 'paso' && v.http === 200).length === 28, tx({ pasos, cursor: cursorDe(sS.c.estado) }))
-  const paradas = []
-  for (let k = 0; k < 6 && (sP.av.mostrado ?? 0) < m(30); k++) { const r = await sP.av.play({ lote: 10, hasta: m(30) }); paradas.push({ conclusion: r.conclusion, en: sP.av.mostrado, confirmado: cursorDe(sP.c.estado), parada: r.parada?.tipos?.join('+') ?? null }) }
   const min = x => (x == null ? null : (x - M0) / 60)
-  oraculo('V1C04', 'A · Play (lotes de 10): la animacion para en la vela del fill y el SL del minuto 10, en la del TP del 20, y llega al 30', paradas.length === 3 && paradas[0].conclusion === 'parado' && paradas[0].en === m(10) && paradas[0].parada?.split('+').sort().join('+') === 'cierre+fill' && paradas[1].conclusion === 'parado' && paradas[1].en === m(20) && paradas[1].parada === 'cierre' && paradas[2].conclusion === 'llegado' && paradas[2].en === m(30) && cursorDe(sP.c.estado) === m(30), tx(paradas.map(p => ({ ...p, en: min(p.en), confirmado: min(p.confirmado) }))))
+  // orden 1-125 (e): UNA llamada al Play, sin pausa del alumno; antes (de99b21) se paraba en el 10 y en el 20
+  const nPlay0 = sP.vistos.length
+  const rP = await sP.av.play({ lote: 10, hasta: m(30) })
+  const lotesP = sP.vistos.slice(nPlay0).filter(v => v.motivo === 'play' && v.http === 200).map(v => min(v.alcanzado))
+  oraculo('V1C04', 'A · Play (lotes de 10): llega al 30 en UNA llamada, sin pararse en el fill y el SL del 10 ni en el TP del 20 (lotes 12, 22, 30)',
+    rP.conclusion === 'llegado' && rP.parada == null && sP.av.mostrado === m(30) && cursorDe(sP.c.estado) === m(30) && tx(lotesP) === tx([12, 22, 30]), tx({ c: rP.conclusion, parada: rP.parada ?? null, mostrado: min(sP.av.mostrado), lotes: lotesP }))
+  const lP = sP.linea.slice(animadasAntes.lp)
+  oraculo('V1C04', 'A · cada evento se pinta en su vela exacta (justo tras animarla) y la animacion sigue: fill+SL tras la vela 10, TP tras la 20',
+    lP.indexOf('p:cierre+fill@10') === lP.indexOf('v@10') + 1 && lP.indexOf('v@11') === lP.indexOf('v@10') + 2 && lP.indexOf('p:cierre@20') === lP.indexOf('v@20') + 1 && lP.indexOf('v@21') === lP.indexOf('v@20') + 2 && lP.filter(x => x.startsWith('p:')).length === 2 && lP.at(-1) === 'v@30',
+    tx(lP.filter((x, i) => x.startsWith('p:') || lP[i + 1]?.startsWith('p:') || lP[i - 1]?.startsWith('p:'))))
   const anP = sP.animadas.slice(animadasAntes.p)
   oraculo('V1C04', 'A · el Play anima cada vela del par visible UNA vez y en orden (minutos 3 a 30)', tx(anP) === tx(velasEntre(m(2), m(30))), tx(anP.map(t => (t - M0) / 60)))
   const rG = await sG.av.irA(m(30))
@@ -128,12 +145,16 @@ try {
   const resP = JSON.parse(sP.uno(`select resumen::text from public.sim_recibos where session_id = ${L(u(1102))} and tipo = 'avanzar' and resumen ? 'paradas' order by id limit 1`) || 'null')
   oraculo('V1C04', 'A · el recibo del primer lote (2 → 12, sin cortar) lista sus paradas: el fill y el cierre del minuto 10; el Step y el Go to no las llevan', resP?.alcanzado === m(12) && resP.cortado === false && tx(resP.paradas.map(p => p.tipo + '@' + min(p.t)).sort()) === tx(['cierre@10', 'fill@10']) && Number(sS.uno(`select count(*) from public.sim_recibos where resumen ? 'paradas'`)) === 0 && Number(sG.uno(`select count(*) from public.sim_recibos where resumen ? 'paradas'`)) === 0, tx(resP && { paradas: resP.paradas, alcanzado: min(resP.alcanzado), cortado: resP.cortado }))
 
-  titulo('B · reto: el Play para en el breach')
+  titulo('B · reto: el Play no se para en el breach (lo pinta en su vela)')
   const sR = await sesion('p4r', u(1201), { reto: '2F' })
   await sR.av.irA(m(5))
   ver('control: 6 lotes a mercado en el minuto 5', (await sR.envia(OR.comandoAbrir({ pair: 'EUR/USD', side: 'BUY', lots: 6, cursor: m(5) }))).conclusion === 'confirmado')
+  const lR0 = sR.linea.length
   const pr = await sR.av.play({ lote: 10 })
-  oraculo('V1C04', 'B · el Play para en la vela del breach (minuto 10), con el reto en breach', pr.conclusion === 'parado' && pr.parada?.tipo === 'breach' && cursorDe(sR.c.estado) === m(10) && sR.c.estado.estado.estado === 'breach', tx({ c: pr.conclusion, p: pr.parada, en: (cursorDe(sR.c.estado) - M0) / 60 }))
+  const lR = sR.linea.slice(lR0)
+  oraculo('V1C04', 'B · el Play no se para en el breach: lo pinta (con el cierre que fuerza) justo tras la vela 10 y acaba porque la sesion termino (terminada, nunca parado), con el reto en breach',
+    pr.conclusion === 'terminada' && pr.parada == null && lR.indexOf('p:breach+cierre@10') === lR.indexOf('v@10') + 1 && lR.at(-1) === 'p:breach+cierre@10' && sR.av.mostrado === m(10) && cursorDe(sR.c.estado) === m(10) && sR.c.estado.estado.estado === 'breach',
+    tx({ c: pr.conclusion, p: pr.parada ?? null, en: (cursorDe(sR.c.estado) - M0) / 60, linea: lR.slice(-3) }))
   const n0 = sR.vistos.length, pr2 = await sR.av.play({ lote: 10 })
   oraculo('V1C04', 'B · tras el breach, otro Play no avanza: termina (como mucho un comando, sin progreso)', pr2.conclusion === 'terminada' && cursorDe(sR.c.estado) === m(10) && sR.vistos.length - n0 <= 1, tx({ c: pr2.conclusion, comandos: sR.vistos.length - n0 }))
 
@@ -172,6 +193,28 @@ try {
   const anD = sD.animadas.slice(an0)
   oraculo('V1C04', 'D · Play con una respuesta perdida: para incierto; al reanudar recupera la misma clave y llega: 9 velas exactas, cada una animada una vez',
     q1.conclusion === 'incierto' && q2.conclusion === 'llegado' && cursorDe(sD.c.estado) === TIEMPOS[TIEMPOS.indexOf(d2) + 9] && tx(anD) === tx(velasEntre(d2, TIEMPOS[TIEMPOS.indexOf(d2) + 9])), tx({ q1: q1.conclusion, q2: q2.conclusion, animadas: anD.length }))
+
+  titulo('F · el tope de tamaño del servidor (orden 1-125 f)')
+  const sF = await sesion('p4f', u(1501))
+  await sF.av.irA(m(2))
+  sF.uno('update public.sim_alumnos set siguiente_avance_desde = null')
+  const resumenDe = cid => JSON.parse(sF.uno(`select resumen::text from public.sim_recibos where command_id = ${L(cid)}`) || 'null')
+  const fQ = await sF.c.envia('avanzar', { hasta: m(200), motivo: 'paso' })
+  const vP = sF.vistos.at(-1), rsP = resumenDe(vP.command_id)
+  oraculo('V1C04', 'F · un Go to marcado «paso» (hasta el minuto 200): el servidor lo corta en 1 minuto de mercado (el 3), cortado, minutos 1',
+    fQ.conclusion === 'confirmado' && vP.http === 200 && vP.alcanzado === m(3) && cursorDe(sF.c.estado) === m(3) && rsP?.cortado === true && rsP?.minutos === 1, tx({ c: fQ.conclusion, alcanzado: min(vP.alcanzado), resumen: rsP && { cortado: rsP.cortado, minutos: rsP.minutos } }))
+  const nF = sF.vistos.length
+  const fH = await sF.av.irA(m(6))
+  const gF = sF.vistos.slice(nF).filter(v => v.motivo === 'goto').map(v => v.http + (v.motivo_r ? ' ' + v.motivo_r : ''))
+  oraculo('V1C04', 'F · y el Go to de verdad justo despues sigue teniendo sus 5 s: primero 429 demasiados_avances, luego llega', fH.conclusion === 'llegado' && gF[0] === '429 demasiados_avances' && gF.at(-1) === '200', tx(gF))
+  const fY = await sF.c.envia('avanzar', { hasta: m(500), motivo: 'play' })
+  const vY = sF.vistos.at(-1), rsY = resumenDe(vY.command_id)
+  oraculo('V1C04', `F · un «play» hasta el minuto 500: cortado en LOTE_PLAY_MAX (${TO6?.LOTE_PLAY_MAX}) minutos de mercado (el 106)`,
+    TO6?.LOTE_PLAY_MAX === 100 && fY.conclusion === 'confirmado' && vY.alcanzado === m(106) && rsY?.cortado === true && rsY?.minutos === 100, tx({ c: fY.conclusion, alcanzado: min(vY.alcanzado), resumen: rsY && { cortado: rsY.cortado, minutos: rsY.minutos } }))
+  const c6 = cursorDe(sF.c.estado), i6 = TIEMPOS.indexOf(c6), nY = sF.vistos.length
+  const fL = await sF.av.play({ lote: 500, hasta: TIEMPOS[i6 + 150] })
+  const pedidos = sF.vistos.slice(nY).filter(v => v.motivo === 'play' && v.http === 200).map(v => TIEMPOS.indexOf(v.hasta) - i6)
+  oraculo('V1C04', 'F · el cliente no pide un lote mayor que LOTE_PLAY_MAX: lote 500 → pide 100 velas y luego las 50 que faltan, y llega', fL.conclusion === 'llegado' && tx(pedidos) === tx([100, 150]) && cursorDe(sF.c.estado) === TIEMPOS[i6 + 150], tx({ c: fL.conclusion, pedidos }))
 
   titulo('E · apagado')
   const usos = []

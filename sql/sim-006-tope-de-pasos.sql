@@ -1,7 +1,7 @@
 -- ============================================================================
 -- sim-006 — el tope de los avances «paso» (Step y Play): 10 por segundo y alumno, sin los 5 s
 --
--- POR QUE. Orden 1-122 del CTO (decision de Ramon y del CTO, 24/26-oct): los avances de tipo paso (Step y Play) ya no
+-- POR QUE. Ordenes 1-122 y 1-125 (f) del CTO (decision de Ramon y del CTO, 24/26-oct): los avances de tipo paso (Step y Play) ya no
 -- tienen el limite de 1 cada 5 s por alumno de sim-003/sim-004b (V4-03); solo un tope contra abusos de 10 por segundo
 -- y alumno, con un error claro y con prefijo. Todo lo demas conserva su limite.
 --
@@ -24,7 +24,14 @@
 --       limite de hoy (429 demasiados_avances si hubo cualquier avance del alumno en los ultimos 5 s);
 --     · un reintento con la misma clave de un paso ya confirmado devuelve su recibo antes del tope (no cuenta);
 --     · abrir, modificar, cancelar y cerrar: sin limite, como hoy.
---   El cuerpo nuevo es el de sim-004b con cuatro cambios (pruebas/sim-006.mjs lo comprueba al caracter).
+--     · ORDEN 1-125 (f), el tope de TAMAÑO: un avanzar paso llega como mucho a 1 minuto de mercado y uno play a 100
+--       (LOTE_PLAY_MAX, lib/sim/v1/topes.mjs). lib/servidor/comando.mjs corta el calculo ahi y lo declara en
+--       resumen.minutos; aqui, un paso o un play que declare mas (o no lo declare) → 422 avance_demasiado_grande, sin
+--       efectos, con { mensaje: 'sim-006: …', tope, minutos }. Va dentro del bloque del paso: tras el recibo repetido
+--       (un reintento con la misma clave sigue dando su recibo) y antes de contar en la ventana. Asi un Go to marcado
+--       paso ya no se salta los 5 s (avanza 1 minuto). La base no recuenta los minutos (no tiene el calendario de
+--       mercado): confia en el que declara el servidor, el unico que llama a sim_comando (service_role).
+--   El cuerpo nuevo es el de sim-004b con cinco cambios (pruebas/sim-006.mjs lo comprueba al caracter).
 --
 -- LO QUE NO TOCA: sim_bloquea_alumno, sim_error, las demas funciones, politicas, grants, indices, ni las otras tablas.
 --
@@ -183,6 +190,15 @@ DECLARE
       END IF;
       -- sim-006: un paso no mira los 5 s; su tope, 10 por segundo y alumno (ventana fija de 1 s desde el primero)
       IF v_paso THEN
+        -- sim-006 (orden 1-125 f): y su tope de TAMAÑO en minutos de mercado (resumen.minutos, de lib/servidor/comando.mjs):
+        -- paso 1, play 100 (LOTE_PLAY_MAX de lib/sim/v1/topes.mjs); mas, o sin declarar, rechazo puro sin efectos
+        IF jsonb_typeof(p_resultado->'resumen'->'minutos') IS DISTINCT FROM 'number'
+           OR (p_resultado->'resumen'->>'minutos')::numeric NOT BETWEEN 0 AND (CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END) THEN
+          RETURN public.sim_error(422, 'avance_demasiado_grande', jsonb_build_object(
+            'mensaje', 'sim-006: un avance paso llega como mucho a 1 minuto de mercado y uno play a 100; mas lejos, goto',
+            'tope', CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END,
+            'minutos', p_resultado->'resumen'->'minutos'));
+        END IF;
         SELECT a.pasos_ventana_desde, a.pasos_en_ventana INTO v_ventana, v_pasos FROM public.sim_alumnos a WHERE a.user_id = p_actor;
         IF v_ventana IS NULL OR v_t >= v_ventana + interval '1 second' THEN v_ventana := v_t; v_pasos := 0; END IF;
         IF v_pasos >= 10 THEN

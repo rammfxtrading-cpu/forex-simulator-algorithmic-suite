@@ -12,6 +12,8 @@
  * estado y los eventos de un tramo cortado son EXACTAMENTE los de avanzar de un tirón hasta
  * donde llego, y encadenar tramos da lo mismo que un avance sin cortes (nada a medias).
  * El tope de 4 MB de la llamada sigue (413, sin RPC).
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
@@ -38,7 +40,7 @@ let llamadas = []
 // sale de ahi, no del calculo)
 const puertos = (f, extra = {}) => ({ almacen: alm, leeSesion: async () => f, rpc: async (n, a) => { llamadas.push({ n, bytes: Buffer.byteLength(JSON.stringify(a), 'utf8'), a }); return { data: { ok: true, http: 200, version: 1, recibo: { resumen: a.p_resultado?.resumen ?? null } }, error: null } }, ...extra })
 let n = 3000
-const av = (hasta, version = 0) => ({ session_id: u(1001), command_id: u(++n), tipo: 'avanzar', epoca: 1, version_esperada: version, cliente_id: 'p', testigo: 'a'.repeat(64), hasta, motivo: 'play' })
+const av = (hasta, version = 0) => ({ session_id: u(1001), command_id: u(++n), tipo: 'avanzar', epoca: 1, version_esperada: version, cliente_id: 'p', testigo: 'a'.repeat(64), hasta, motivo: 'goto' })
 const enviado = () => llamadas.at(-1)?.a?.p_resultado
 const deEnviado = () => CA.deserializa(JSON.stringify(enviado()?.estado ?? null))
 // la referencia: avanzar de un tiron hasta h, con el motor directamente
@@ -70,7 +72,7 @@ oraculo('TRAM', `20 dias pedidos: un solo tramo, cortado en ${tope} minutos de m
 const ref1 = unTiron(ep, b1)
 // E3-02 (Astra 15-oct): los eventos COMPLETOS (tipo, instante y datos) y los trades, no su numero.
 // La referencia pasa por el mismo adaptador (resultadoDe) con los eventos del motor de un tiron.
-const adaptado = (antes, ref, h) => CO.resultadoDe({ tipo: 'avanzar', comando: { tipo: 'avanzar', hasta: h, motivo: 'play' }, antes, despues: ref.estado ?? ref.reto, eventos: ref.eventos })
+const adaptado = (antes, ref, h) => CO.resultadoDe({ tipo: 'avanzar', comando: { tipo: 'avanzar', hasta: h, motivo: 'goto' }, antes, despues: ref.estado ?? ref.reto, eventos: ref.eventos })
 const sinOrd = xs => JSON.stringify((xs ?? []).map(({ ordinal, ...x }) => x))
 const mismos = (enviados, ref) => sinOrd(enviados?.eventos) === sinOrd(ref.eventos) && sinOrd(enviados?.trades) === sinOrd(ref.trades)
 const a1 = adaptado(ep, ref1, b1)

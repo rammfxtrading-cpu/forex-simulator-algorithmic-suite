@@ -17,6 +17,8 @@
  *   J · 429 demasiados_avances: reintento con la MISMA clave al vencer
  *   K · otra pestaña toma el escritor (forzar): 409 sin_arrendamiento → «usar aqui»; con toma({forzar}) vuelve a escribir
  *   L · una respuesta vieja (snapshot de version menor) no rebaja el estado
+ *
+ * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
 import { hayPostgres } from '../pg-ensayo.mjs'
@@ -84,7 +86,7 @@ try {
   await c1.leeEstado()
   oraculo('V1C01', 'A · el estado confirmado es el del servidor (version 0)', c1.estado?.version === 0 && c1.estado?.estado?.esquema != null, tx({ v: c1.estado?.version }))
   s1.sinTasa()
-  const r1 = await c1.envia('avanzar', { hasta: m(5), motivo: 'paso' })
+  const r1 = await c1.envia('avanzar', { hasta: m(5), motivo: 'goto' })
   oraculo('V1C01', 'B · un avanzar: confirmado, sale de la cola, la version y el cursor son los del servidor', r1?.conclusion === 'confirmado' && c1.pendientes().length === 0 && c1.estado?.version === Number(s1.fila().version) && cursorDe(c1) === m(5), tx({ r1: r1?.conclusion, v: c1.estado?.version, cursor: cursorDe(c1) }))
   const r2 = await c1.envia('abrir', { par: 'EURUSD', lado: 'BUY', orden: 'mercado', lotes: '1', cotizadoEn: cursorDe(c1) })
   oraculo('V1C01', 'B · abrir a mercado: confirmado con su recibo, una posicion en el estado instalado; guardado', r2?.conclusion === 'confirmado' && c1.estado?.estado?.posiciones?.length === 1 && c1.guardado() === true, tx({ c: r2?.conclusion, motivo: r2?.motivo, pos: c1.estado?.estado?.posiciones?.length }))
@@ -136,7 +138,7 @@ try {
   titulo('H · 409 conflicto')
   // otra escritura (el servidor, con el testigo vigente de c2b) sube la version por detras del cliente
   s1.sinTasa()
-  const otro = await CO.ordenComando({ actor: AL, cuerpo: { session_id: SID, command_id: nuevoId(), tipo: 'avanzar', epoca: 1, version_esperada: Number(s1.fila().version), cliente_id: c2b.clienteId, testigo: c2b.testigo(), hasta: m(30), motivo: 'paso' }, puertos: s1.puertos })
+  const otro = await CO.ordenComando({ actor: AL, cuerpo: { session_id: SID, command_id: nuevoId(), tipo: 'avanzar', epoca: 1, version_esperada: Number(s1.fila().version), cliente_id: c2b.clienteId, testigo: c2b.testigo(), hasta: m(30), motivo: 'goto' }, puertos: s1.puertos })
   ver('control: la otra escritura confirmo', otro.http === 200, tx(otro.cuerpo))
   const r7 = await c2b.envia('abrir', { par: 'EURUSD', lado: 'BUY', orden: 'mercado', lotes: '1', cotizadoEn: cursorDe(c2b) })
   oraculo('V1C01', 'H · conflicto: sale de la cola sin efectos y relee el estado (version y cursor nuevos)', r7?.conclusion === 'conflicto' && c2b.pendientes().length === 0 && posiciones(s1) === 0 && c2b.estado?.version === Number(s1.fila().version) && cursorDe(c2b) === m(30), tx({ c: r7?.conclusion, v: c2b.estado?.version, cursor: cursorDe(c2b) }))
@@ -144,16 +146,16 @@ try {
   titulo('I · 409 comando_caducado')
   s1.sinTasa()
   s1.fallos.push({ ruta: '/api/sim/comando', tipo: 'avanzar', pierde: 'despues' })
-  await c2b.envia('avanzar', { hasta: m(40), motivo: 'paso' })      // confirmado en la base; la respuesta se pierde
+  await c2b.envia('avanzar', { hasta: m(40), motivo: 'goto' })      // confirmado en la base; la respuesta se pierde
   s1.sinTasa()
-  await CO.ordenComando({ actor: AL, cuerpo: { session_id: SID, command_id: nuevoId(), tipo: 'avanzar', epoca: 1, version_esperada: Number(s1.fila().version), cliente_id: c2b.clienteId, testigo: c2b.testigo(), hasta: m(50), motivo: 'paso' }, puertos: s1.puertos })
+  await CO.ordenComando({ actor: AL, cuerpo: { session_id: SID, command_id: nuevoId(), tipo: 'avanzar', epoca: 1, version_esperada: Number(s1.fila().version), cliente_id: c2b.clienteId, testigo: c2b.testigo(), hasta: m(50), motivo: 'goto' }, puertos: s1.puertos })
   s1.sinTasa()
   const r8 = await c2b.recupera()
   oraculo('V1C01', 'I · el reenvio del avance cuyo recibo se sobrescribio: comando_caducado → estado confirmado (cursor 00:50) y cola vacia', c2b.pendientes().length === 0 && cursorDe(c2b) === m(50) && c2b.estado?.version === Number(s1.fila().version), tx({ r8, cursor: cursorDe(c2b) }))
 
   titulo('J · 429 demasiados_avances')
   s1.conTasa()   // el siguiente avance del alumno, mas tarde: 429 (el transporte doble hace pasar el tiempo tras el 429)
-  const r9 = await c2b.envia('avanzar', { hasta: m(55), motivo: 'paso' })
+  const r9 = await c2b.envia('avanzar', { hasta: m(55), motivo: 'goto' })
   const j = s1.vistos.filter(x => x.ruta === '/api/sim/comando').slice(-2)
   oraculo('V1C01', 'J · 429: reintenta con la MISMA clave al vencer y confirma', r9?.conclusion === 'confirmado' && j.length === 2 && j[0].command_id === j[1].command_id && cursorDe(c2b) === m(55), tx({ c: r9?.conclusion, j }))
 
@@ -177,7 +179,7 @@ try {
     : ruta === '/api/sim/estado' ? { http: 200, cuerpo: { ok: true, http: 200, version: 3, epoca: 1, estado: {} } } : { http, cuerpo: { ok: false, http, motivo } })
   const c5 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: fijo(503, 'mantenimiento'), local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
   await c5.toma()
-  const r12 = await c5.envia('avanzar', { hasta: m(60), motivo: 'paso' })
+  const r12 = await c5.envia('avanzar', { hasta: m(60), motivo: 'goto' })
   oraculo('V1C01', 'M · 503 mantenimiento: «mantenimiento», sin cola', r12?.conclusion === 'mantenimiento' && c5.pendientes().length === 0, tx(r12))
   for (const [http, motivo, conclusion] of [[410, 'sesion_borrada', 'borrada'], [426, 'actualizar_cliente', 'actualizar'], [403, 'sin_acceso', 'sin_acceso']]) {
     const c6 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: fijo(http, motivo), local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
