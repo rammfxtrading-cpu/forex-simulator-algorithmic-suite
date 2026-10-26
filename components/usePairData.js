@@ -197,6 +197,12 @@ if(full||(curr!==prev&&curr!==prev+1)){
       //      logical index resuelve a posiciones ambiguas.
       //   2. OHLC desfasado: las phantoms quedarían ancladas al close de
       //      la vela TF anterior → cola plana visible a la derecha.
+      // Orden 1-138 (fp01): la vela nueva no es la siguiente de la serie (fin de semana o hueco de
+      // mercado: la primera fantasma vieja no cae en su hora). series.update la pondria DETRAS de
+      // esas fantasmas, sin lanzar, y el eje enseñaria el sabado hasta la vela siguiente. Se rehace
+      // entera en esta misma vela por el fallback de restoreOnNewBar, el mismo setData que ya hace
+      // cada vela consecutiva (su update lanza «Cannot update oldest data» en LWC 5).
+      const _noConsecutiva = !!cr.phantom?.length && cr.phantom[0].time !== _lastT
       let _phN
       try {
         const tools = JSON.parse(exportTools() || '[]')
@@ -207,6 +213,7 @@ if(full||(curr!==prev&&curr!==prev+1)){
       cr.phantom = Array.from({length:_phN},(_,i)=>_mkPhantom(_lastT+_tfS2*(i+1)))
       setSeriesData([...agg, ...cr.phantom], agg.length)
       restoreOnNewBar(cr, () => {
+        if (_noConsecutiva) throw new Error('vela no consecutiva: setData completo')
         applyNewBarUpdate(cr, agg, cr.phantom)
       }, {
         agg,
