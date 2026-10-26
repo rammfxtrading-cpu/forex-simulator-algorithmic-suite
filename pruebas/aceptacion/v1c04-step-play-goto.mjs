@@ -223,7 +223,8 @@ try {
   const usos = []
   const recorre = dir => { if (!existsSync(dir)) return; for (const n of readdirSync(dir)) { const p = path.join(dir, n); if (statSync(p).isDirectory()) recorre(p); else if (/\.(js|jsx|mjs)$/.test(n) && /sim\/v1\//.test(readFileSync(p, 'utf8'))) usos.push(path.relative(REPO, p)) } }
   recorre(path.join(REPO, 'pages')); recorre(path.join(REPO, 'components'))
-  const ENCENDIDO = ['components/_SessionInner.js', 'components/useChallengeFlow.js', 'components/useSesionV1.js', 'components/useTradingActions.js', 'pages/dashboard.js']
+  // orden 1-127 (i): tambien el modal de reto (crea el reto v1 por /api/sim/crear con la bandera encendida)
+  const ENCENDIDO = ['components/_SessionInner.js', 'components/useChallengeFlow.js', 'components/useSesionV1.js', 'components/useTradingActions.js', 'pages/dashboard.js', 'components/ChallengeSetupModal.js']
   const BA = await importa('lib/sim/v1/bandera.js').catch(() => null)
   const antes = process.env.NEXT_PUBLIC_SIM_V1_PANTALLA; delete process.env.NEXT_PUBLIC_SIM_V1_PANTALLA
   const apagada = BA ? BA.pantallaV1() === false : true
