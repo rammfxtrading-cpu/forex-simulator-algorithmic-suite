@@ -49,7 +49,8 @@ const casos = [
   ['par desconocido', base({ pair: 'EUR/GBP' }), 'pair'],
   ['timeframe desconocido', base({ timeframe: 'H2' }), 'timeframe'],
   ['inicio antes del 1-jul-2024', base({ date_from: '2024-06-30', date_to: '2025-06-30' }), 'date_from'],
-  ['fin despues de ayer', base({ date_from: '2026-01-01', date_to: '2026-10-14' }), 'date_to'],
+  // orden 1-127 (i): el fin puede ser HOY (el modal de reto lo manda asi); despues de hoy, no
+  ['fin despues de hoy', base({ date_from: '2026-01-01', date_to: '2026-10-15' }), 'date_to'],
   ['rango de 179 dias', base({ date_from: '2025-01-01', date_to: '2025-06-29' }), 'date_to'],
   ['fecha que no existe', base({ date_from: '2025-02-30' }), 'date_from'],
   ['capital con tres decimales', base({ capital: '10000.123' }), 'capital'],
@@ -63,7 +64,7 @@ for (const [que, c, en] of casos) {
   oraculo('CREA', `${que}: 422 carga_invalida en «${en}»`, r.ok === false && r.http === 422 && r.motivo === 'carga_invalida' && r.en === en, JSON.stringify(r))
 }
 const borde = valida(base({ date_from: '2024-07-01', date_to: '2024-12-28' }))
-oraculo('CREA', 'el borde: desde el 1-jul-2024 y 180 dias justos, valido; capital con dos decimales, valido', borde.ok === true && valida(base({ capital: '10000.50' })).ok === true && valida(base({ date_to: '2026-10-13' })).ok === true, JSON.stringify(borde))
+oraculo('CREA', 'el borde: desde el 1-jul-2024 y 180 dias justos, valido; capital con dos decimales, valido; hasta hoy, valido (orden 1-127 i)', borde.ok === true && valida(base({ capital: '10000.50' })).ok === true && valida(base({ date_to: '2026-10-13' })).ok === true && valida(base({ date_to: '2026-10-14' })).ok === true, JSON.stringify(borde))
 const c1 = SO ? SO.canonico({ b: 1, a: { d: 2, c: [3, { f: 1, e: 0 }] } }) : null
 oraculo('CREA', 'el sobre canonico ordena las claves (a todos los niveles) y no las listas', c1 === '{"a":{"c":[3,{"e":0,"f":1}],"d":2},"b":1}', c1)
 const s1 = SO && ok.ok ? SO.sobreCrear(ok.intencion) : null, s2 = SO ? SO.sobreCrear(valida({ ...base(), name: 'Mi sesion' }).intencion) : null

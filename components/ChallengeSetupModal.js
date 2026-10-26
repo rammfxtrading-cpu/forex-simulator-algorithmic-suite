@@ -10,6 +10,9 @@ import { useState, useMemo } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../lib/supabase'
 import { CHALLENGES, ACCOUNT_SIZES, formatAccountSize, getPhaseTarget } from '../lib/challengeRules'
+import { pantallaV1 } from '../lib/sim/v1/bandera'
+import { creaRetoV1 } from '../lib/sim/v1/crear'
+import { llamaConFetch } from '../lib/sim/v1/pantalla'
 
 const RECOMMENDED_TYPE = '2F'
 const POPULAR_SIZE = 100000
@@ -43,6 +46,14 @@ export default function ChallengeSetupModal({ open, onClose }) {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
       if (!token) throw new Error('Sesión expirada. Vuelve a iniciar sesión.')
+
+      // orden 1-127 (i): con la bandera de la pantalla v1, el reto nace v1 en /api/sim/crear, con lo mismo de abajo
+      if (pantallaV1()) {
+        const r = await creaRetoV1({ llama: llamaConFetch(supabase), nuevoId: () => crypto.randomUUID(), tipo: type, capital: size, hoy: today })
+        if (!r.ok) throw new Error(r.error)
+        router.push(`/session/${r.id}`)
+        return
+      }
 
       const res = await fetch('/api/challenge/create', {
         method: 'POST',
