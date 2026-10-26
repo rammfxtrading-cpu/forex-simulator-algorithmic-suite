@@ -12,6 +12,12 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
   const [lines,    setLines]    = useState([])
   const dragState = useRef(null) // {posId, type, active:bool}
   const chartElRef = useRef(null)
+  // orden 1-131: con el puntero sobre un tirador de un dibujo (p. ej. el SL del dibujo de posicion, que la orden creada
+  // desde el dibujo pinta en el MISMO precio), la banda de 20 px de la linea se quedaba el clic y se arrastraba la orden,
+  // no el dibujo. Ahi la banda deja pasar el puntero al grafico; la etiqueta, el ⠿ y la ✕ siguen igual
+  // (directo en el DOM, en el mismo mousemove: con un estado de React el clic podia llegar antes del repintado)
+  const capaRef = useRef(null)
+  const cedidoRef = useRef(false)
 
   // Get chart DOM element once
   useEffect(()=>{
@@ -119,17 +125,32 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
     }
   },[activePair,onDragEnd])
 
+  useEffect(()=>{
+    const onMove=e=>{
+      // con un boton pulsado (un arrastre en curso, de la linea o del dibujo) no se cambia nada
+      if(dragState.current?.active||e.buttons) return
+      const im=chartMap.current[activePair]?.plugin?._interactionManager
+      let tirador=false
+      try{ const pt=im&&im._eventToPoint(e); const hit=pt&&im._hitTest(pt); tirador=!!(hit&&hit.pointIndex!=null) }catch{}
+      if(tirador===cedidoRef.current) return
+      cedidoRef.current=tirador
+      for(const el of capaRef.current?.children??[]) el.style.pointerEvents=tirador?'none':'auto'
+    }
+    window.addEventListener('mousemove',onMove)
+    return()=>window.removeEventListener('mousemove',onMove)
+  },[activePair,chartMap])
+
   if(!dataReady||lines.length===0) return null
 
   return(
-    <div style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:5,overflow:'hidden'}}>
+    <div ref={capaRef} style={{position:'absolute',inset:0,pointerEvents:'none',zIndex:5,overflow:'hidden'}}>
       {lines.map(line=>(
         <div key={line.id} style={{
           position:'absolute',
           left:0,right:0,
           top:line.y-10,
           height:20,
-          pointerEvents:'auto',
+          pointerEvents:cedidoRef.current?'none':'auto',
           cursor:line.drag?'ns-resize':'default',
           userSelect:'none',
         }}
@@ -144,7 +165,7 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
           {/* Label + buttons */}
           <div style={{
             position:'absolute',right:56,top:'50%',transform:'translateY(-50%)',
-            display:'flex',gap:4,alignItems:'center',
+            display:'flex',gap:4,alignItems:'center',pointerEvents:'auto',
           }}>
             <div style={{
               background:'rgba(3,8,16,0.88)',

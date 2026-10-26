@@ -952,6 +952,9 @@ export default function SessionPage(){
       try{ clickPrice=cr.series.coordinateToPrice(clickY) }catch{}
       if(clickPrice==null||isNaN(clickPrice)) return
       const ps=pairState.current[pair]; if(!ps?.positions?.length) return
+      // orden 1-131: si debajo hay un tirador de un dibujo, el clic es del dibujo. La posicion abierta desde el dibujo de
+      // posicion tiene su SL y su TP en los MISMOS precios que el: sin esto se arrastraba la posicion y el dibujo no se estiraba
+      try{ const im=cr.plugin?._interactionManager; const h=im&&im._hitTest({x:e.clientX-rect.left,y:clickY}); if(h&&h.pointIndex!=null) return }catch{}
       // Threshold en PÍXELES, no en pips. Así el área activa es siempre 8px
       // verticales sin importar el zoom del eje Y, y un click de navegación
       // 100 pips abajo nunca puede confundirse con la línea.
