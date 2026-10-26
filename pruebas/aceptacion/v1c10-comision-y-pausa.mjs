@@ -8,6 +8,8 @@
  *   M · pulsar Buy o Sell (abrir el modal) con el Play en marcha lo pausa ya (no al confirmar), y el modal enseña el precio
  *       al que de verdad se abre: el ask para Buy y el bid para Sell, el del motor con su spread, en la vela visible
  *       (= la confirmada). Con el Play parado, lo mismo sin pausar
+ *   L · (orden 1-137; 1-136 (2)) las limit que nacen del menu o del dibujo tambien pausan al ABRIR su modal, como Buy y
+ *       Sell; el modal conserva su precio y su dibujo. Sin la bandera, como hoy
  *   P · a 15× o mas, cerrar, mover un tirador o cancelar con el Play en marcha: primero se pausa y se aplica en lo que se
  *       ve (= lo confirmado tras la pausa). A 5× (lote de 1 vela) no se pausa (como hasta ahora)
  *   S · en todo: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman
@@ -167,6 +169,29 @@ try {
   {
     const p = await b1.refs.v1Ref.current.preparaOrden?.('SELL', 'EUR/USD')
     oraculo('V1C10', 'M · con el Play parado: no pausa nada y enseña el bid de la vela visible', p === r5(precioEn('EURUSD', b1.motor().currentTime)), tx({ p, vis: min(b1.motor().currentTime) }))
+  }
+
+  titulo('L · las limit del menu y del dibujo: abrir su modal pausa el Play ya, como Buy y Sell (orden 1-137; 1-136 (2))')
+  // abreOrden REAL: su linea de _SessionInner, con los puertos de la pagina (v1Ref de la pantalla v1; los setters, espiados)
+  const lineaAbre = /const abreOrden=(async\s*m=>\{[^\n]*\})\n/.exec(SI)?.[1]
+  ver('control: abreOrden esta en _SessionInner, en una linea', !!lineaAbre)
+  const hazAbre = (v1Ref, log) => new Function('v1Ref', 'setIsPlaying', 'setOrderModal', `return (${lineaAbre})`)(v1Ref, x => log.push(['setIsPlaying', x]), x => log.push(['setOrderModal', x]))
+  oraculo('V1C10', 'L · _SessionInner: el menu (Buy Limit y Sell Limit) y el dibujo (LongShort) abren su modal por abreOrden, y ninguna limit por setOrderModal',
+    SI.includes("abreOrden({side:'BUY',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})") && SI.includes("abreOrden({side:'SELL',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})")
+    && SI.includes('abreOrden({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData,dibujo:longShortModal.toolId})') && !/setOrderModal\(\{[^\n]*isLimit:true/.test(SI))
+  for (const [v, K, m, que] of [[60, 17, { side: 'BUY', entry: 1.05, pair: 'EUR/USD', isLimit: true }, 'Buy Limit del menu'],
+    [15, 5, { side: 'SELL', entry: 1.2, pair: 'EUR/USD', isLimit: true, sl: 1.21, tp: 1.17, slPips: 100, tpPips: 300, dibujo: 'ls-1' }, 'Sell Limit del dibujo']]) {
+    const log = []
+    const o = await duranteElPlay(b1, v, K, () => hazAbre(b1.refs.v1Ref, log)(m))
+    const modal = log.find(x => x[0] === 'setOrderModal')?.[1]
+    oraculo('V1C10', `L · ${v}×, ${que}: al abrir su modal el Play se pausa ya en la vela confirmada; el modal se abre despues de pausar, con su precio y su dibujo tal cual`,
+      !!lineaAbre && !o.tope && o.r?.conclusion === 'pausado' && o.vis === o.cur && tx(log.map(x => x[0])) === tx(['setIsPlaying', 'setOrderModal']) && log[0][1] === false && tx(modal) === tx(m),
+      tx({ c: o.r?.conclusion, tope: o.tope, vis: min(o.vis), cur: min(o.cur), log }))
+  }
+  {
+    const log = [], m = { side: 'BUY', entry: 1.05, pair: 'EUR/USD', isLimit: true }
+    if (lineaAbre) await hazAbre({ current: null }, log)(m)
+    oraculo('V1C10', 'L · sin la bandera (sin pantalla v1): la limit abre su modal como hoy, sin tocar el Play', !!lineaAbre && tx(log) === tx([['setOrderModal', m]]), tx(log))
   }
 
   titulo('P · a 15× o mas, cerrar, mover un tirador o cancelar con el Play en marcha: pausa primero y se aplica en lo que se ve')
