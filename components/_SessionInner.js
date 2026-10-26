@@ -293,6 +293,7 @@ export default function SessionPage(){
       setGroupSel(null)
       setTimeout(()=>{
         try{ pluginRef.current?.removeLineToolsById(_toDelete) }catch{}
+        try{ drawingHandlersRef.current.alQuitar?.(_toDelete) }catch{}
         if(saveDrawingsRef.current) saveDrawingsRef.current()
       }, 0)
       return true
@@ -1262,13 +1263,15 @@ export default function SessionPage(){
     closePosition, closePartial, createPositionLines,
     previewOrder, confirmLimitOrder, cancelPreview, handlePositionDragEnd,
     cancelLimitOrder, updatePreviewSl, updatePreviewTp,
-    checkSLTP, checkLimitOrders,
+    checkSLTP, checkLimitOrders, cancelaOrdenesDeDibujos,
   } = useTradingActions({
     id, activePair, currentPrice, currentTime, lots, preview,
     pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef, checkSLTPRef,
     setBalance, setTick, setPreview, setCtxMenu, refreshChallengeStatus,
     soloLecturaRef, alBloqueo: pausaPorBloqueo, v1Ref,
   })
+  // orden 1-136: borrar un dibujo de posicion cancela la orden pendiente que nacio de el (useDrawingTools avisa con los ids)
+  drawingHandlersRef.current.alQuitar=cancelaOrdenesDeDibujos
 
   // Keep refs always pointing to latest values/functions
   balanceRef.current = balance
@@ -1865,7 +1868,7 @@ export default function SessionPage(){
             setLongShortModal(null)
             // Challenge lockout: no permitir crear orden desde dibujo si terminó
             if(challengeLocked) return
-            setOrderModal({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData})
+            setOrderModal({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData,dibujo:longShortModal.toolId})
           }}
         />
       )}
@@ -2057,7 +2060,7 @@ export default function SessionPage(){
             // que enseña el modal y la hora de la pagina, y quedan las del servidor al confirmar (o nada si lo rechaza)
             if(v1Ref.current){
               const m=orderModal
-              v1Ref.current.envia(comandoAbrir({pair:m.pair,side:m.isLimit?(m.side==='BUY'?'BUY_LIMIT':'SELL_LIMIT'):m.side,entry:entradaTick,lots:posData.lots,sl:posData.sl,tp:posData.tp,cursor:v1Ref.current.cursor()}),{entry:entradaTick,openTime:currentTime})
+              v1Ref.current.envia(comandoAbrir({pair:m.pair,side:m.isLimit?(m.side==='BUY'?'BUY_LIMIT':'SELL_LIMIT'):m.side,entry:entradaTick,lots:posData.lots,sl:posData.sl,tp:posData.tp,cursor:v1Ref.current.cursor()}),{entry:entradaTick,openTime:currentTime,dibujo:m.dibujo??null})
               if(!m.isLimit){setLastTrade(m.side);setTimeout(()=>setLastTrade(null),700)}
               setOrderModal(null);setTick(t=>t+1)
               return
@@ -2066,7 +2069,7 @@ export default function SessionPage(){
               const ps=pairState.current[orderModal.pair]||{engine:null,ready:false,positions:[],trades:[],orders:[]}
               pairState.current[orderModal.pair]=ps
               if(!ps.orders) ps.orders=[]
-              const order={...posData,id:`L${Date.now()}`,pair:orderModal.pair,side:orderModal.side==='BUY'?'BUY_LIMIT':'SELL_LIMIT',entry:entradaTick,createdTime:currentTime}
+              const order={...posData,id:`L${Date.now()}`,pair:orderModal.pair,side:orderModal.side==='BUY'?'BUY_LIMIT':'SELL_LIMIT',entry:entradaTick,createdTime:currentTime,dibujo:orderModal.dibujo??null}
               ps.orders=[...ps.orders,order]
             } else {
               const ps=pairState.current[orderModal.pair]; if(!ps) return

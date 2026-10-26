@@ -304,7 +304,7 @@ try {
   oraculo('V1C05', 'S · en todo E: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
   // la pagina: el OrderModal y el tirador del grafico pintan ya (la entrada que enseña y la hora; la linea al tick)
   const SI = fuente('components/_SessionInner.js')
-  oraculo('V1C05', 'E · _SessionInner: el OrderModal manda la entrada y la hora para pintar ya, y el tirador del grafico mueve la linea al tick sin esperar', SI.includes('v1Ref.current.envia(comandoAbrir({pair:m.pair,side:m.isLimit?') && /comandoAbrir\(\{pair:m\.pair[^\n]*\}\),\{entry:entradaTick,openTime:currentTime\}\)/.test(SI) && /if\(v1Ref\.current\)\{\s*const sl=alTick\(newPrice,p\)\s*updatePositionLine\(posId,p,type,sl,pos\)/.test(SI))
+  oraculo('V1C05', 'E · _SessionInner: el OrderModal manda la entrada y la hora para pintar ya, y el tirador del grafico mueve la linea al tick sin esperar', SI.includes('v1Ref.current.envia(comandoAbrir({pair:m.pair,side:m.isLimit?') && /comandoAbrir\(\{pair:m\.pair[^\n]*\}\),\{entry:entradaTick,openTime:currentTime(,dibujo:m\.dibujo\?\?null)?\}\)/.test(SI) && /if\(v1Ref\.current\)\{\s*const sl=alTick\(newPrice,p\)\s*updatePositionLine\(posId,p,type,sl,pos\)/.test(SI))
   // (2) los avisos nuevos, cortos
   AV.vaciaAvisos()
   const apagado = async () => ({ http: 503, cuerpo: { ok: false, http: 503, motivo: 'apagado' } })

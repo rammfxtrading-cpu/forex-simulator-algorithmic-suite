@@ -266,6 +266,16 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     setTick(t=>t+1)
   },[])
 
+  // orden 1-136: borrar dibujos de posicion cancela, por el camino de hoy (cancelLimitOrder; con la bandera v1, el comando
+  // cancelar), las pendientes que nacieron de ellos (order.dibujo, en memoria). Una posicion abierta desde el dibujo no se
+  // toca: cerrar sigue siendo una accion explicita
+  const cancelaOrdenesDeDibujos=useCallback((ids)=>{
+    const quita=new Set(ids??[]); if(!quita.size) return
+    const van=[]
+    for(const [pair,ps] of Object.entries(pairState.current)) for(const o of ps?.orders??[]) if(o.dibujo!=null&&quita.has(o.dibujo)) van.push(cancelLimitOrder(o.id,pair))
+    return Promise.all(van)
+  },[cancelLimitOrder])
+
   // Update preview SL/TP pips when dragged
   const updatePreviewSl=useCallback((pips)=>{
     setPreview(prev=>{
@@ -384,6 +394,6 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
     closePosition, closePartial, createPositionLines,
     previewOrder, confirmLimitOrder, cancelPreview, handlePositionDragEnd,
     cancelLimitOrder, updatePreviewSl, updatePreviewTp,
-    checkSLTP, checkLimitOrders,
+    checkSLTP, checkLimitOrders, cancelaOrdenesDeDibujos,
   }
 }

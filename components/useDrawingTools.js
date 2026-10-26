@@ -307,9 +307,13 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
     } catch { return false }
   }, [])
 
-  const removeSelected = useCallback(() => { try { pluginRef.current?.removeSelectedLineTools() } catch {} }, [])
-  const removeToolById = useCallback((id) => { try { if(id) pluginRef.current?.removeLineToolsById([id]) } catch {} }, [])
-  const removeAll      = useCallback(() => { try { pluginRef.current?.removeAllLineTools() } catch {} }, [])
+  // orden 1-136: los borrados de dibujos avisan con sus ids (handlersRef.current.alQuitar): la pagina cancela la orden
+  // pendiente que nacio de un dibujo de posicion borrado
+  const quitados = (ids) => { try { if (ids?.length) handlersRef?.current?.alQuitar?.(ids) } catch {} }
+  const idsDe = (json) => { try { return JSON.parse(json || '[]').map(t => t.id).filter(Boolean) } catch { return [] } }
+  const removeSelected = useCallback(() => { try { const ids = idsDe(pluginRef.current?.getSelectedLineTools()); pluginRef.current?.removeSelectedLineTools(); quitados(ids) } catch {} }, [])
+  const removeToolById = useCallback((id) => { try { if(id) { pluginRef.current?.removeLineToolsById([id]); quitados([id]) } } catch {} }, [])
+  const removeAll      = useCallback(() => { try { const ids = idsDe(pluginRef.current?.exportLineTools()); pluginRef.current?.removeAllLineTools(); quitados(ids) } catch {} }, [])
   const deselectAll    = useCallback(() => { try { pluginRef.current?.deselectAllTools() } catch {} }, [])
   const exportTools    = useCallback(() => { try { return pluginRef.current?.exportLineTools() ?? null } catch { return null } }, [])
   const importTools    = useCallback((json) => { try { pluginRef.current?.importLineTools(json) } catch (e) { console.error(e) } }, [])
