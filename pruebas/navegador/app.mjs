@@ -15,6 +15,7 @@ import { abre, REPO } from './cdp.mjs'
 export const USUARIO = 'aaaaaaaa-1111-4111-8111-111111111111'
 export const SESION = '5e5e5e5e-0000-4000-8000-000000000001'
 const SUPA = 'http://supabase.prueba'
+const UNICAS = { session_drawings: [[['session_id', 'pair'], 'session_drawings_session_id_pair_key']] }
 
 export async function arrancaNext() {
   const puerto = 3400 + Math.floor(Math.random() * 400)
@@ -71,13 +72,20 @@ export function dobleSupabase({ sesion = {} } = {}) {
     const filas = (tablas[t] ??= [])
     const objeto = /vnd\.pgrst\.object/.test(cab.accept || '')
     if (metodo === 'GET' || metodo === 'HEAD') {
+      // como PostgREST: un filtro uuid con algo que no lo es (p. ej. session_id=eq.dashboard) es 400 (22P02)
+      for (const [k, v] of u.searchParams) if (/^(session_id|user_id)$/.test(k) && /^eq\./.test(v) && !/^eq\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v)) { log.push(`400 ${t} ${k}=${v}`); return { estado: 400, cuerpo: { code: '22P02', message: `invalid input syntax for type uuid: "${v.slice(3)}"` } } }
       const r = filtra(filas, u.searchParams)
       if (objeto) return r.length === 1 ? { estado: 200, cuerpo: r[0] } : { estado: 406, cuerpo: { code: 'PGRST116', message: `JSON object requested, multiple (or no) rows returned`, details: `The result contains ${r.length} rows` } }
       return { estado: 200, cuerpo: r }
     }
     const cuerpo = req.postData ? JSON.parse(req.postData) : null
-    if (metodo === 'POST') { const nuevas = (Array.isArray(cuerpo) ? cuerpo : [cuerpo]).map(x => ({ id: crypto.randomUUID(), ...x })); filas.push(...nuevas); return { estado: 201, cuerpo: objeto ? nuevas[0] : nuevas } }
-    if (metodo === 'PATCH') { const r = filtra(filas, u.searchParams); for (const f of r) Object.assign(f, cuerpo); return { estado: objeto ? 200 : 204, cuerpo: objeto ? r[0] : '' } }
+    // como la base: la clave unica (session_id, pair) de session_drawings (session_drawings_session_id_pair_key) da 409
+    if (metodo === 'POST') { const nuevas = (Array.isArray(cuerpo) ? cuerpo : [cuerpo]).map(x => ({ id: crypto.randomUUID(), ...x }))
+      for (const [cols, nombre] of UNICAS[t] ?? []) for (const nf of nuevas) if (filas.some(f => cols.every(c => f[c] === nf[c]))) { log.push(`409 ${t}`); return { estado: 409, cuerpo: { code: '23505', message: `duplicate key value violates unique constraint "${nombre}"` } } }
+      filas.push(...nuevas); return { estado: 201, cuerpo: objeto ? nuevas[0] : nuevas } }
+    // con Prefer: return=representation (el .select() de supabase-js) devuelve las filas, como PostgREST
+    if (metodo === 'PATCH') { const r = filtra(filas, u.searchParams); for (const f of r) Object.assign(f, cuerpo); const rep = /return=representation/.test(cab.prefer || '')
+      return { estado: objeto || rep ? 200 : 204, cuerpo: objeto ? r[0] : rep ? r : '' } }
     if (metodo === 'DELETE') { const r = new Set(filtra(filas, u.searchParams)); tablas[t] = filas.filter(f => !r.has(f)); return { estado: 204, cuerpo: '' } }
     return { estado: 405, cuerpo: {} }
   }
