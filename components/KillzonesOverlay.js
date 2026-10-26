@@ -82,7 +82,9 @@ export default function KillzonesOverlay({ chartMap, activePair, dataReady, curr
     primitiveRef.current = kp
 
     return () => {
-      try { cr.series.detachPrimitive(kp) } catch {}
+      // orden 1-130: si el grafico ya se destruyo (la pagina se desmonta antes), soltarla pediria un repintado en un rAF
+      // que revienta con «Object is disposed»; con el grafico se fue tambien la primitiva
+      if (!cr.dispuesto) try { cr.series.detachPrimitive(kp) } catch {}
       primitiveRef.current = null
     }
   }, [activePair, chartMap, dataReady])

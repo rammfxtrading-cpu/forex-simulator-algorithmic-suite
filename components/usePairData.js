@@ -155,7 +155,7 @@ export default function usePairData({ id, session, activePair, pairState, chartM
 
   // ── Update chart ──────────────────────────────────────────────────────────────
   const updateChart=useCallback((pair,engine,full)=>{
-    const cr=chartMap.current[pair]; if(!cr||!engine) return
+    const cr=chartMap.current[pair]; if(!cr||!engine||cr.dispuesto) return
     const tf=pairTfRef.current[pair]||'H1'
     const agg=engine.getAggregated(tf); if(!agg.length) return
     const prev=cr.prevCount,curr=agg.length

@@ -1300,7 +1300,7 @@ export default function SessionPage(){
     // la ✕ no se muestra mientras las tenga (SessionTopBar.js) y, por si acaso, aqui no se quita; sin texto que obligue a
     // nada. GOTODESP1-01 (orden 1-099): tampoco con un cierre en vuelo o incierto (lib/sim/quitarPar.js)
     if(parConOperaciones(id,pairState.current[pair]))return
-    const cr=chartMap.current[pair];if(cr){try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{};delete chartMap.current[pair]}
+    const cr=chartMap.current[pair];if(cr){cr.dispuesto=true;try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{};delete chartMap.current[pair]}
     delete pairState.current[pair]
     const next=activePairs.filter(p=>p!==pair);setActivePairs(next)
     try{ localStorage.setItem('simPairs:'+id, JSON.stringify(next)) }catch{}
@@ -1472,7 +1472,9 @@ export default function SessionPage(){
     // hecho no escribia. El avance lo guarda el autoguardado cada 5 s
     // (usePairData) y el saldo, cada cierre.
     Object.values(pairState.current).forEach(ps=>ps?.engine?.pause())
-    Object.values(chartMap.current).forEach(cr=>{try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{}})
+    // orden 1-130: marcado ANTES de destruirlo; las limpiezas que lleguen despues (p. ej. la primitiva de killzones, que
+    // React desmonta tras la pagina) y los rAF pendientes lo miran y no tocan un grafico destruido («Object is disposed»)
+    Object.values(chartMap.current).forEach(cr=>{cr.dispuesto=true;try{cr.ro?.disconnect()}catch{};try{cr.chart.remove()}catch{}})
     // sin graficos: un Go to que estuviera esperando (orden 1-080) ve que se salio y no pinta ni guarda
     chartMap.current={}
   },[])
