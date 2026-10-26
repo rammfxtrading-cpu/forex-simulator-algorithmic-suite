@@ -16,7 +16,10 @@
  *       tras reintentar_en_ms; ni se pierde ni se duplica un avance
  *   D · respuesta perdida (despues y antes de llegar) en el Step y en el Play: reintento con la misma clave, ni de mas
  *       ni de menos
- *   E · apagado: ninguna pagina ni componente importa lib/sim/v1/ (la pantalla de hoy no cambia)
+ *   E · apagado: ninguna pagina ni componente importa lib/sim/v1/ (la pantalla de hoy no cambia). Desde la pieza 6 (orden
+ *       1-125) la importan solo los ficheros del encendido, detras de la bandera de cliente (lib/sim/v1/bandera.js), que
+ *       sin NEXT_PUBLIC_SIM_V1_PANTALLA esta apagada; la equivalencia con la bandera apagada la miden las pruebas de
+ *       pantalla de siempre (sg01–sg21, m04, sv01, kz01, dp02, c02–c04) y v1c05 D
  *   F · ORDEN 1-125 (f), el tope de TAMAÑO del servidor (lib/sim/v1/topes.mjs; sim-006): un avanzar «paso» llega como
  *       mucho a 1 minuto de mercado y uno «play» a LOTE_PLAY_MAX (100): mas lejos, el servidor lo corta (cortado, como
  *       los tramos de S4-08). Un Go to marcado «paso» avanza 1 minuto y el siguiente goto sigue teniendo sus 5 s (429
@@ -220,6 +223,11 @@ try {
   const usos = []
   const recorre = dir => { if (!existsSync(dir)) return; for (const n of readdirSync(dir)) { const p = path.join(dir, n); if (statSync(p).isDirectory()) recorre(p); else if (/\.(js|jsx|mjs)$/.test(n) && /sim\/v1\//.test(readFileSync(p, 'utf8'))) usos.push(path.relative(REPO, p)) } }
   recorre(path.join(REPO, 'pages')); recorre(path.join(REPO, 'components'))
-  oraculo('V1C04', 'E · ninguna pagina ni componente importa lib/sim/v1/: con todo apagado la pantalla de hoy no cambia', usos.length === 0, tx(usos))
+  const ENCENDIDO = ['components/_SessionInner.js', 'components/useSesionV1.js', 'components/useTradingActions.js', 'pages/dashboard.js']
+  const BA = await importa('lib/sim/v1/bandera.js').catch(() => null)
+  const antes = process.env.NEXT_PUBLIC_SIM_V1_PANTALLA; delete process.env.NEXT_PUBLIC_SIM_V1_PANTALLA
+  const apagada = BA ? BA.pantallaV1() === false : true
+  if (antes !== undefined) process.env.NEXT_PUBLIC_SIM_V1_PANTALLA = antes
+  oraculo('V1C04', 'E · solo los ficheros del encendido (pieza 6-7) importan lib/sim/v1/, y sin la variable la bandera de cliente esta apagada', usos.every(f => ENCENDIDO.includes(f)) && apagada, tx({ usos, apagada }))
 } finally { pg.cierra() }
 fin()

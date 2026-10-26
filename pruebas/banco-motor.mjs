@@ -16,6 +16,8 @@ import { importa, sonda, db, asienta, fuente } from './lib.mjs'
 const usePairData = (await importa('components/usePairData.js')).default
 const useTradingActions = (await importa('components/useTradingActions.js')).default
 const useChallengeFlow = (await importa('components/useChallengeFlow.js')).default
+// pieza 6 (orden 1-125): la pantalla v1, solo si la prueba la pide (banco({ v1 })); en el codigo de antes no existe
+const useSesionV1 = await importa('components/useSesionV1.js').then(m => m.default, () => null)
 const { nextSessionOpen } = await importa('lib/killzonesDomain.js')
 // antes de la orden 1-080 (historicas.sh, contra c470c8f) no existe: irA es el Go to de entonces
 const saltaA = await importa('lib/sim/salto.js').then(m => m.saltaA, () => null)
@@ -51,17 +53,24 @@ export function velasEnStorage(par, velas, anios = [], { tramoAbierto = false } 
   }
 }
 
-export async function banco({ sesion, par = sesion.pair, balance = Number(sesion.balance), userId = null }) {
+// v1 (pieza 6): { puertos } de components/useSesionV1.js (transporte, trades, hija…): la pagina con la pantalla v1 montada
+// como en _SessionInner.js (useSesionV1 con v1Ref, que reciben los tres hooks). Sin v1, v1Ref queda en null: lo de hoy.
+// espia(nombre, fn): envuelve las funciones que la pagina pone en las refs puente (checkSLTP, checkLimitOrders,
+// checkChallengeBreach, closePosition) para contar sus llamadas (SIMMOTOR1-01)
+export async function banco({ sesion, par = sesion.pair, balance = Number(sesion.balance), userId = null, v1 = null, espia = null }) {
   const refs = {
     pairState: { current: {} }, chartMap: { current: {} }, sessionRef: { current: sesion }, activePairRef: { current: par },
     pairTfRef: { current: { [par]: 'M1' } }, speedRef: { current: 1 },
     checkSLTPRef: { current: null }, checkLimitOrdersRef: { current: null }, checkChallengeBreachRef: { current: null },
     balanceRef: { current: balance }, userIdRef: { current: userId }, closePositionRef: { current: null },
     soloLecturaRef: { current: sesion.legado === true },   // etapa 1 (d2)
+    v1Ref: { current: null }, refrescaRetoRef: { current: null },
   }
   const estado = { saldo: balance, isPlaying: false, currentTime: null, bloqueos: [] }
   const nada = () => {}
   const caja = sonda(() => {
+    if (v1 && useSesionV1) useSesionV1({ id: sesion.id, session: estado.sesionVisible ?? null, pairState: refs.pairState, balanceRef: refs.balanceRef,
+      setBalance: v => { estado.saldo = v }, setTick: nada, v1Ref: refs.v1Ref, refrescaRetoRef: refs.refrescaRetoRef, puertos: v1.puertos })
     const datos = usePairData({ id: sesion.id, session: estado.sesionVisible ?? null, activePair: estado.activa ?? null, ...refs,
       setIsPlaying: v => { estado.isPlaying = typeof v === 'function' ? v(estado.isPlaying) : v },
       setCurrentTime: v => { estado.currentTime = v }, setProgress: nada, setCurrentPrice: v => { estado.precio = v }, setDataReady: nada, setTick: nada,
@@ -69,7 +78,7 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
       refrescaReto: ct => caja.valor?.reto?.refreshChallengeStatus(ct) })
     const reto = useChallengeFlow({ id: sesion.id, router, session: estado.sesionVisible ?? null, setSession: nada, sessionRef: refs.sessionRef,
       currentTime: estado.currentTime, pairState: refs.pairState, balanceRef: refs.balanceRef, closePositionRef: refs.closePositionRef,
-      setIsPlaying: v => { estado.isPlaying = v } })
+      setIsPlaying: v => { estado.isPlaying = v }, v1Ref: refs.v1Ref })
     const trading = useTradingActions({ id: sesion.id, activePair: estado.activa ?? par, currentPrice: estado.precio ?? null, currentTime: estado.currentTime,
       lots: 1, preview: estado.preview ?? null, ...refs, setBalance: v => { estado.saldo = v }, setTick: nada, setPreview: nada, setCtxMenu: nada,
       // alBloqueo, como la pagina (_SessionInner.js pausaPorBloqueo): pausa TODOS los motores y apaga el Play; antes
@@ -77,11 +86,13 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
       refreshChallengeStatus: reto.refreshChallengeStatus, alBloqueo: m => { estado.bloqueos.push(m); Object.values(refs.pairState.current).forEach(p => { try { p?.engine?.pause() } catch {} }); estado.isPlaying = false } })
     return { datos, reto, trading }
   })
+  const es = espia ?? ((n, f) => f)
   const puentes = () => {
-    refs.closePositionRef.current = caja.valor.trading.closePosition
-    refs.checkSLTPRef.current = caja.valor.trading.checkSLTP
-    refs.checkLimitOrdersRef.current = caja.valor.trading.checkLimitOrders
-    refs.checkChallengeBreachRef.current = caja.valor.reto.checkChallengeBreach
+    refs.closePositionRef.current = es('closePosition', caja.valor.trading.closePosition)
+    refs.checkSLTPRef.current = es('checkSLTP', caja.valor.trading.checkSLTP)
+    refs.checkLimitOrdersRef.current = es('checkLimitOrders', caja.valor.trading.checkLimitOrders)
+    refs.checkChallengeBreachRef.current = es('checkChallengeBreach', caja.valor.reto.checkChallengeBreach)
+    refs.refrescaRetoRef.current = caja.valor.reto.refreshChallengeStatus
   }
   const repinta = async () => { caja.repinta(); puentes(); await asienta() }
   puentes()
