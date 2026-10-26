@@ -221,7 +221,9 @@ export default function SessionPage(){
   useSesionV1({ id, session, pairState, balanceRef, setBalance, setTick, v1Ref, refrescaRetoRef, chartMap })
   // orden 1-136 (la regla de la 1-135): con la bandera v1, pulsar Buy o Sell pausa el Play YA (no al confirmar) y el modal
   // enseña el ask (Buy) o el bid (Sell) confirmados, el precio al que de verdad se abre. Sin la bandera, como hoy
-  const abreOrden=async m=>{ if(v1Ref.current&&m&&!m.isLimit){ const p=await v1Ref.current.preparaOrden(m.side,m.pair); setIsPlaying(false); setOrderModal({...m,entry:p??m.entry}); return } setOrderModal(m) }
+  // orden 1-137 (1-136 (2)): las limit del menu y del dibujo tambien pausan al ABRIR su modal; su precio es el suyo (el del
+  // menu o el del dibujo), no el ask/bid
+  const abreOrden=async m=>{ if(v1Ref.current&&m){ const p=await v1Ref.current.preparaOrden(m.side,m.pair); setIsPlaying(false); setOrderModal(m.isLimit?m:{...m,entry:p??m.entry}); return } setOrderModal(m) }
   const v1AvanceRef=useRef(null)
   const avanceV1=()=>{
     const p=v1Ref.current; if(!p) return null
@@ -1871,7 +1873,7 @@ export default function SessionPage(){
             setLongShortModal(null)
             // Challenge lockout: no permitir crear orden desde dibujo si terminó
             if(challengeLocked) return
-            setOrderModal({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData,dibujo:longShortModal.toolId})
+            abreOrden({side:posData.side,entry:posData.entry,pair:activePair,isLimit:true,...posData,dibujo:longShortModal.toolId})
           }}
         />
       )}
@@ -1954,13 +1956,13 @@ export default function SessionPage(){
           <div style={{position:'fixed',left:ctxMenu.x,top:ctxMenu.y,background:'rgba(4,10,24,0.92)',border:'1px solid rgba(30,144,255,0.35)',borderRadius:12,zIndex:999,minWidth:160,overflow:'hidden',boxShadow:'0 8px 40px rgba(0,0,0,0.6)',backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',fontFamily:"'Montserrat',sans-serif"}}>
             <div style={{padding:'8px 14px 6px',fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.92)',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>{ctxMenu.price.toFixed(5)}</div>
             {ctxMenu.price<(currentPrice||0)&&!challengeLocked&&(
-              <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'BUY',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
+              <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);abreOrden({side:'BUY',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
                 <span style={{color:'#4da6ff'}}>▲ Buy Limit</span>
                 <span style={{color:'#ffffff',fontSize:9}}>{ctxMenu.price.toFixed(5)}</span>
               </button>
             )}
             {ctxMenu.price>(currentPrice||0)&&!challengeLocked&&(
-              <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);setOrderModal({side:'SELL',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
+              <button style={s.ctxItem} onClick={()=>{setCtxMenu(null);abreOrden({side:'SELL',entry:ctxMenu.price,pair:ctxMenu.pair,isLimit:true})}}>
                 <span style={{color:'#ff6b6b'}}>▼ Sell Limit</span>
                 <span style={{color:'#ffffff',fontSize:9}}>{ctxMenu.price.toFixed(5)}</span>
               </button>
