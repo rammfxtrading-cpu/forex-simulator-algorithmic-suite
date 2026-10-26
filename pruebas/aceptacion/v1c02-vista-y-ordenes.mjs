@@ -36,7 +36,9 @@ titulo('A · vistaDe, cifras a mano')
   const v = VI.vistaDe({ version: 7, epoca: 1, estado: comoBase(e) })
   const p = v.posiciones[0], o = v.ordenes[0], s = v.ordenes[1]
   // BUY a mercado: ask = bid 1,09997 + spread 0,3 pip (3 ticks) = 1,10000; SL a 10 pips, TP a 20
-  oraculo('V1C02', 'A · la posicion: p1, EUR/USD, BUY, entrada 1,1 (ask), SL 1,099, TP 1,102, 1 lote, 10 y 20 pips, abierta en cursor + 60', p?.id === 'p1' && p.pair === 'EUR/USD' && p.side === 'BUY' && p.entry === 1.1 && p.sl === 1.099 && p.tp === 1.102 && p.lots === 1 && p.slPips === 10 && p.tpPips === 20 && p.openTime === T + 60, tx(p))
+  // orden 1-129 B4: la entrada que se ENSEÑA es la de hoy, sin spread (el bid 1,09997); la del motor (el ask 1,1) queda en
+  // entradaMotor. Los pips del SL/TP, desde la que se enseña
+  oraculo('V1C02', 'A · la posicion: p1, EUR/USD, BUY, entrada que se enseña 1,09997 (sin spread; la del motor, 1,1 ask), SL 1,099, TP 1,102, 1 lote, 9,7 y 20,3 pips, abierta en cursor + 60', p?.id === 'p1' && p.pair === 'EUR/USD' && p.side === 'BUY' && p.entry === 1.09997 && p.entradaMotor === 1.1 && p.sl === 1.099 && p.tp === 1.102 && p.lots === 1 && p.slPips === 9.7 && p.tpPips === 20.3 && p.openTime === T + 60, tx(p))
   oraculo('V1C02', 'A · la limit: o2, USD/JPY, SELL_LIMIT 150,5, SL 150,8 (30 pips), TP 150 (50 pips), 0,5 lotes', o?.id === 'o2' && o.pair === 'USD/JPY' && o.side === 'SELL_LIMIT' && o.entry === 150.5 && o.sl === 150.8 && o.tp === 150 && o.lots === 0.5 && o.slPips === 30 && o.tpPips === 50 && o.createdTime === T + 60, tx(o))
   oraculo('V1C02', 'A · el stop sin SL ni TP: BUY_STOP 1,101, 0,01 lotes, sl y tp null', s?.id === 'o3' && s.side === 'BUY_STOP' && s.entry === 1.101 && s.lots === 0.01 && s.sl === null && s.tp === null, tx(s))
   oraculo('V1C02', 'A · saldo 99.997 (comision de 3 USD del lote abierto; las pendientes no pagan hasta llenarse), cursor, version, activo', v.saldo === 99997 && v.cursor === T && v.version === 7 && v.estado === 'activo' && v.reto === null, tx({ saldo: v.saldo, cursor: v.cursor, estado: v.estado }))
@@ -97,7 +99,7 @@ try {
   ver('control: el cursor esta en 00:05 y la cotizacion de EUR/USD es 1,1 / 1,10003', v0.cursor === m(5) && v0.cotizaciones['EUR/USD']?.ask === 1.10003, tx({ cursor: v0.cursor, cot: v0.cotizaciones['EUR/USD'] }))
   const r1 = await va(OR.comandoAbrir({ pair: 'EUR/USD', side: 'BUY', lots: 1, sl: 1.10000 - 10 * 0.0001, tp: 1.1020000000000001, cursor: v0.cursor }))
   const p = vista().posiciones[0]
-  oraculo('V1C02', 'C · abrir a mercado con SL/TP de coma flotante: confirmado; la vista trae la posicion con entrada 1,10003 (ask), SL 1,099 y TP 1,102', r1.conclusion === 'confirmado' && p?.entry === 1.10003 && p.sl === 1.099 && p.tp === 1.102 && p.lots === 1, tx({ r1: r1.conclusion, p }))
+  oraculo('V1C02', 'C · abrir a mercado con SL/TP de coma flotante: confirmado; la vista trae la posicion con entrada 1,1 (la que se enseña, sin spread; la del motor 1,10003 ask), SL 1,099 y TP 1,102', r1.conclusion === 'confirmado' && p?.entry === 1.1 && p.entradaMotor === 1.10003 && p.sl === 1.099 && p.tp === 1.102 && p.lots === 1, tx({ r1: r1.conclusion, p }))
   const r2 = await va(OR.comandoAbrir({ pair: 'EUR/USD', side: 'BUY_LIMIT', entry: 1.0950000000000002, lots: 0.5, sl: 1.094, tp: 1.097 }))
   const o = vista().ordenes[0]
   oraculo('V1C02', 'C · limit: confirmada; en la vista BUY_LIMIT 1,095, 0,5 lotes', r2.conclusion === 'confirmado' && o?.side === 'BUY_LIMIT' && o.entry === 1.095 && o.lots === 0.5, tx({ r2: r2.conclusion, o }))
