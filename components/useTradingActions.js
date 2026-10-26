@@ -106,7 +106,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // closePosition accepts optional pair+exitPrice for use from engine.onTick
   // horaCierre (opcional): la hora de la vela que origina el cierre (SIMGOTO-01, orden 1-083)
   const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null,horaCierre=null)=>{
-    // modo v1 (pieza 6): el cierre es un comando; la pantalla cambia cuando vuelve el estado confirmado
+    // modo v1 (pieza 6): el cierre es un comando; la pantalla lo pinta ya (optimista, orden 1-127) y queda lo confirmado
     if(v1Ref?.current){ if(!pairState.current[pairOverride||activePair]?.positions?.some(p=>p.id===posId)) return; return v1Ref.current.envia(comandoCerrar(posId)) }
     const usePair=pairOverride||activePair
     const usePrice=exitPriceOverride||currentPrice
@@ -186,7 +186,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   const confirmLimitOrder=useCallback(()=>{
     if(!preview) return
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); setPreview(null); return }
-    if(v1Ref?.current){ const pv=preview; setPreview(null); return v1Ref.current.envia(comandoAbrir({pair:pv.pair,side:pv.side,entry:pv.entry,lots:pv.lots,sl:pv.sl,tp:pv.tp})) }
+    if(v1Ref?.current){ const pv=preview; setPreview(null); return v1Ref.current.envia(comandoAbrir({pair:pv.pair,side:pv.side,entry:pv.entry,lots:pv.lots,sl:pv.sl,tp:pv.tp}),{createdTime:currentTime}) }
     const ps=pairState.current[preview.pair]; if(!ps) return
     if(!ps.orders) ps.orders=[]
     // orden 1-119: lo que entra se ajusta al tick del par (el dibujo y el preview pueden traer cualquier decimal)
@@ -209,7 +209,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // Called by PositionOverlay when user finishes dragging a SL/TP line
   const handlePositionDragEnd=useCallback((posId, type, precioSoltado)=>{
     const ps=pairState.current[activePair]; if(!ps) return
-    // modo v1: el tirador manda modificar; la linea vuelve a donde diga el estado confirmado
+    // modo v1: el tirador manda modificar; se pinta ya (optimista) y la linea queda donde diga el estado confirmado
     if(v1Ref?.current) return v1Ref.current.envia(comandoTirador({id:posId,type,price:precioSoltado,pair:activePair}))
     // orden 1-119: coordinateToPrice da cualquier decimal: se guarda el tick del par mas cercano (la mitad, arriba)
     const newPrice=alTick(precioSoltado,activePair)

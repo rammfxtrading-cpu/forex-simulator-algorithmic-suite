@@ -10,13 +10,13 @@
 import { useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { modoV1 } from '../lib/sim/v1/bandera'
-import { creaPantallaV1, llamaConFetch } from '../lib/sim/v1/pantalla'
+import { creaPantallaV1, llamaConFetch, lineasDeOrdenes } from '../lib/sim/v1/pantalla'
 import { tradesDeSesion } from '../lib/tradesEstables'
 import { porColumnas } from '../lib/paginado'
 import { avisa } from '../lib/sim/avisos'
 
 // un trade de sim_trades como lo pinta la pagina (la misma forma que la carga de _SessionInner)
-const deFila = t => ({ id: t.id, pair: t.pair, side: t.side, entry: t.entry_price, exit: t.exit_price, lots: t.lots, sl: t.sl_price, tp: t.tp_price,
+export const deFila = t => ({ id: t.id, pair: t.pair, side: t.side, entry: t.entry_price, exit: t.exit_price, lots: t.lots, sl: t.sl_price, tp: t.tp_price,
   rr: t.rr, rrReal: t.rr, pnl: t.pnl, result: t.result, reason: '—',
   openTime: t.opened_at ? Math.floor(new Date(t.opened_at).getTime() / 1000) : null, closeTime: t.closed_at ? Math.floor(new Date(t.closed_at).getTime() / 1000) : null })
 
@@ -31,7 +31,7 @@ export function puertosNavegador(id) {
   }
 }
 
-export default function useSesionV1({ id, session, pairState, balanceRef, setBalance, setTick, v1Ref, refrescaRetoRef, puertos = null }) {
+export default function useSesionV1({ id, session, pairState, balanceRef, setBalance, setTick, v1Ref, refrescaRetoRef, chartMap = null, puertos = null }) {
   const de = useRef(null)
   const activo = !!session && session.id === id && modoV1(session)
   if (!activo && v1Ref.current) { v1Ref.current = null; de.current = null }
@@ -39,7 +39,8 @@ export default function useSesionV1({ id, session, pairState, balanceRef, setBal
     const p = puertos ?? puertosNavegador(id)
     v1Ref.current = creaPantallaV1({ sessionId: id, sesion: session, usuario: session.user_id, pairState, ...p, avisa,
       alSaldo: n => { if (n == null) return; balanceRef.current = n; setBalance(n) },
-      alCambio: () => setTick(t => t + 1),
+      // orden 1-127 (4): con cada cambio, las lineas de las pendientes de cada par en su grafico, como hoy
+      alCambio: () => { setTick(t => t + 1); const cm = chartMap?.current; if (cm) for (const [par, ps] of Object.entries(pairState.current)) lineasDeOrdenes(cm[par], ps?.orders ?? []) },
       alReto: () => refrescaRetoRef?.current?.() })
     de.current = id
   }

@@ -96,8 +96,11 @@ try {
       return { http: r.http, cuerpo: r.cuerpo }
     }
     const trades = sid => JSON.parse(uno(`select coalesce(json_agg(json_build_object('id', id, 'pair', pair, 'side', side, 'entry_price', entry_price, 'exit_price', exit_price, 'lots', lots, 'pnl', pnl, 'result', result, 'closed_at', closed_at) order by closed_at, id), '[]')::text from public.sim_trades where session_id = ${L(sid)}`))
+    const filasTrades = sid => JSON.parse(uno(`select coalesce(json_agg(t order by closed_at, id), '[]')::text from (select id, pair, side, entry_price, exit_price, lots, sl_price, tp_price, rr, pnl, result, opened_at, closed_at from public.sim_trades where session_id = ${L(sid)}) t`))
     const puertosPagina = sid => ({ llama, nuevoId, local: web(), almacenSesion: web(), plazoMs: 3000,
-      leeTrades: async () => trades(sid).map(t => ({ id: t.id, pair: t.pair, side: t.side, entry: t.entry_price, exit: t.exit_price, lots: t.lots, pnl: t.pnl, result: t.result })),
+      // las filas como las lee la pagina (useSesionV1: tradesDeSesion + deFila, con closeTime y openTime); sin deFila (codigo
+      // de antes), la forma de entonces
+      leeTrades: async () => (HOOK.deFila ? filasTrades(sid).map(HOOK.deFila) : trades(sid).map(t => ({ id: t.id, pair: t.pair, side: t.side, entry: t.entry_price, exit: t.exit_price, lots: t.lots, pnl: t.pnl, result: t.result }))),
       buscaHija: async () => uno(`select id from public.sim_sessions where challenge_parent_id = ${L(sid)} limit 1`) || null })
     const servidor = async sid => VI.vistaDe((await ES.ordenEstado({ actor: AL, cuerpo: { session_id: sid }, puertos })).cuerpo)
     return { d, uno, llama, llamadas, leeSesion, puertos, trades, puertosPagina, servidor }
@@ -340,21 +343,22 @@ try {
   oraculo('V1C05', 'S · en todo F: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
 
   titulo('G · (4) las limit dibujan su linea con la etiqueta en el eje, como confirmLimitOrder de hoy')
+  // en la pagina de F, que es la que escribe (el alumno tiene un solo escritor)
   const lineas = []
   const serie = { createPriceLine: o => { const l = { o, viva: true }; lineas.push(l); return l }, removePriceLine: l => { l.viva = false }, setData() {}, update() {} }
-  e5.refs.chartMap.current['EUR/USD'] = { series: serie, priceLines: {}, hasLoaded: true, chart: { timeScale: () => ({ getVisibleLogicalRange: () => null, setVisibleLogicalRange() {} }) } }
+  f6.refs.chartMap.current['EUR/USD'] = { series: serie, priceLines: {}, hasLoaded: true, chart: { timeScale: () => ({ getVisibleLogicalRange: () => null, setVisibleLogicalRange() {} }) } }
   const vivas = () => lineas.filter(l => l.viva).map(l => [l.o.title, l.o.price, l.o.axisLabelVisible, l.o.color, l.o.lineWidth, l.o.lineStyle]).sort((a, b) => (a[0] < b[0] ? -1 : 1))
   cero()
-  await e5.pendiente({ side: 'SELL_LIMIT', entry: 1.12, sl: 1.13, tp: 1.1, lots: 1 })
-  await asentado(e5)
+  await f6.pendiente({ side: 'SELL_LIMIT', entry: 1.12, sl: 1.13, tp: 1.1, lots: 1 })
+  await asentado(f6)
   const g1 = vivas()
-  oraculo('V1C05', 'G · la limit confirmada: tres lineas con etiqueta en el eje (S.LIM 1L, SL y TP), con los colores y estilos de hoy', tx(g1) === tx([['S.LIM 1L', 1.12, true, 'rgba(180,180,180,0.5)', 1, 0], ['SL', 1.13, true, 'rgba(239,83,80,0.4)', 1, 2], ['TP', 1.1, true, 'rgba(30,144,255,0.4)', 1, 2]]), tx(g1))
-  const og = e5.ps().orders[0]?.id
-  await T5.handlePositionDragEnd(og, 'lim_e', 1.121)
-  await asentado(e5)
+  oraculo('V1C05', 'G · la limit confirmada: tres lineas con etiqueta en el eje (S.LIM 1L, SL y TP), con los colores y estilos de hoy', tx(g1) === tx([['S.LIM 1L', 1.12, true, 'rgba(180,180,180,0.5)', 1, 0], ['SL', 1.13, true, 'rgba(239,83,80,0.4)', 1, 2], ['TP', 1.1, true, 'rgba(30,144,255,0.4)', 1, 2]]), tx({ g1, ...filas(f6.ps()), n: lineas.length, avisos: textos(), ult: f6.refs.v1Ref.current?.aviso }))
+  const og = f6.ps().orders[0]?.id
+  await f6.caja.valor.trading.handlePositionDragEnd(og, 'lim_e', 1.121)
+  await asentado(f6)
   const g2 = vivas()
-  await T5.cancelLimitOrder(og, 'EUR/USD')
-  await asentado(e5)
+  await f6.caja.valor.trading.cancelLimitOrder(og, 'EUR/USD')
+  await asentado(f6)
   const g3 = vivas()
   oraculo('V1C05', 'G · el tirador de la entrada mueve su linea (1,121) y cancelar quita las tres', g2.length === 3 && g2[0][0] === 'S.LIM 1L' && g2[0][1] === 1.121 && g3.length === 0, tx({ g2, g3 }))
   oraculo('V1C05', 'S · en todo G: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
