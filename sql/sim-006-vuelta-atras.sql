@@ -1,7 +1,7 @@
 -- ============================================================================
 -- sim-006 · VUELTA ATRAS — deja sim_comando con el cuerpo de sim-004b y quita las dos columnas de sim_alumnos
 --
--- Deshace sql/sim-006-tope-de-pasos.sql (ordenes 1-122 y 1-125 f del CTO): vuelve el limite de 1 avance cada 5 s por
+-- Deshace sql/sim-006-tope-de-pasos.sql (ordenes 1-122, 1-125 f y 1-127 g del CTO): vuelve el limite de 1 avance cada 5 s por
 -- alumno para todos los avances (Step, Play, Go to y checkpoint), exactamente como con sim-004b, y quita el tope de
 -- tamaño de los pasos (el servidor sigue cortandolos en Node: lib/servidor/comando.mjs). Las cuentas de pasos
 -- (pasos_ventana_desde, pasos_en_ventana) se pierden: no son economicas ni las lee el alumno.
@@ -148,13 +148,20 @@ DECLARE
       END IF;
       -- sim-006: un paso no mira los 5 s; su tope, 10 por segundo y alumno (ventana fija de 1 s desde el primero)
       IF v_paso THEN
-        -- sim-006 (orden 1-125 f): y su tope de TAMAÑO en minutos de mercado (resumen.minutos, de lib/servidor/comando.mjs):
-        -- paso 1, play 100 (LOTE_PLAY_MAX de lib/sim/v1/topes.mjs); mas, o sin declarar, rechazo puro sin efectos
-        IF jsonb_typeof(p_resultado->'resumen'->'minutos') IS DISTINCT FROM 'number'
-           OR (p_resultado->'resumen'->>'minutos')::numeric NOT BETWEEN 0 AND (CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END) THEN
+        -- sim-006 (ordenes 1-125 f y 1-127 g): y su tope de TAMAÑO, declarado por lib/servidor/comando.mjs (que tiene el
+        -- mercado; la base no tiene calendario). Un paso: resumen.velas, las velas CON DATOS que cruzo (del par del paso),
+        -- entre 0 y 1: llega a la siguiente vela con datos, salte el hueco o el festivo que salte, y nunca mas alla. Un
+        -- play: resumen.minutos, minutos de mercado, entre 0 y 100 (LOTE_PLAY_MAX de lib/sim/v1/topes.mjs). Mas, o sin
+        -- declarar, rechazo puro sin efectos
+        IF (v_sobre->'payload'->>'motivo' = 'paso' AND (jsonb_typeof(p_resultado->'resumen'->'velas') IS DISTINCT FROM 'number'
+              OR (p_resultado->'resumen'->>'velas')::numeric NOT BETWEEN 0 AND 1))
+           OR (v_sobre->'payload'->>'motivo' = 'play' AND (jsonb_typeof(p_resultado->'resumen'->'minutos') IS DISTINCT FROM 'number'
+              OR (p_resultado->'resumen'->>'minutos')::numeric NOT BETWEEN 0 AND 100)) THEN
           RETURN public.sim_error(422, 'avance_demasiado_grande', jsonb_build_object(
-            'mensaje', 'sim-006: un avance paso llega como mucho a 1 minuto de mercado y uno play a 100; mas lejos, goto',
+            'mensaje', 'sim-006: un avance paso llega como mucho a la siguiente vela con datos y uno play a 100 minutos de mercado; mas lejos, goto',
             'tope', CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END,
+            'unidad', CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 'velas' ELSE 'minutos' END,
+            'velas', p_resultado->'resumen'->'velas',
             'minutos', p_resultado->'resumen'->'minutos'));
         END IF;
         SELECT a.pasos_ventana_desde, a.pasos_en_ventana INTO v_ventana, v_pasos FROM public.sim_alumnos a WHERE a.user_id = p_actor;

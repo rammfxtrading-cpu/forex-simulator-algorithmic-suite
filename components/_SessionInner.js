@@ -226,7 +226,7 @@ export default function SessionPage(){
       // el ritmo del Play: speed velas por segundo, como el motor de hoy (una espera cada ~16 ms de velas)
       let acc=0
       const espera=()=>{ acc+=1000/Math.max(1,speedRef.current||1); if(acc<16) return; const ms=acc; acc=0; return new Promise(r=>setTimeout(r,ms)) }
-      v1AvanceRef.current={de:p,av:p.avance({engine:()=>pairState.current[activePairRef.current]?.engine,espera})}
+      v1AvanceRef.current={de:p,av:p.avance({engine:()=>pairState.current[activePairRef.current]?.engine,espera,par:()=>activePairRef.current})}
     }
     return v1AvanceRef.current.av
   }
