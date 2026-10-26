@@ -219,6 +219,9 @@ export default function SessionPage(){
   // estado confirmado del servidor); si no, null y la pagina es la de hoy
   const refrescaRetoRef=useRef(null); refrescaRetoRef.current=refreshChallengeStatus
   useSesionV1({ id, session, pairState, balanceRef, setBalance, setTick, v1Ref, refrescaRetoRef, chartMap })
+  // orden 1-136 (la regla de la 1-135): con la bandera v1, pulsar Buy o Sell pausa el Play YA (no al confirmar) y el modal
+  // enseña el ask (Buy) o el bid (Sell) confirmados, el precio al que de verdad se abre. Sin la bandera, como hoy
+  const abreOrden=async m=>{ if(v1Ref.current&&m&&!m.isLimit){ const p=await v1Ref.current.preparaOrden(m.side,m.pair); setIsPlaying(false); setOrderModal({...m,entry:p??m.entry}); return } setOrderModal(m) }
   const v1AvanceRef=useRef(null)
   const avanceV1=()=>{
     const p=v1Ref.current; if(!p) return null
@@ -1928,7 +1931,7 @@ export default function SessionPage(){
 
       {/* BOTTOM BAR — extraído a SessionBottomBar (Fase 7, Corte C) */}
       <SessionBottomBar
-        lastTrade={lastTrade} challengeLocked={challengeLocked} setOrderModal={setOrderModal}
+        lastTrade={lastTrade} challengeLocked={challengeLocked} setOrderModal={abreOrden}
         currentPrice={currentPrice} activePair={activePair} dataReady={dataReady}
         balance={balance} realized={realized} unrealized={unrealized}
         allTrades={allTrades} challengeStatus={challengeStatus}
