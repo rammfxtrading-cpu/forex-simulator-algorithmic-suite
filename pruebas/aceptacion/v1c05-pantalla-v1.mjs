@@ -26,6 +26,8 @@
  *   H · (5) el peor DD del modal de fallo, del minimo de equity: la equity del breach que guarda el motor (no el saldo
  *       tras el cierre forzado); (6) un reto ya quemado vuelve a sacar el modal al abrir la pagina (hoy, la fila sigue
  *       «active» hasta que el alumno lo reconoce, y al abrir sale)
+ *   I · (g) el Step es UNA VELA del par visible: en un hueco (EURUSD sin velas del minuto 100 al 109) salta a la siguiente
+ *       vela con datos (110) en un solo avance, nunca a un minuto vacio
  *   En E, F, G y H los espias siguen a cero: lo optimista es solo la accion del alumno, nunca SL/TP, fills ni breach.
  * Contra lib/servidor REAL y PostgreSQL desechable (montaje-v1 + sim-004b + sim-006, como v1c04). Datos inventados.
  * Mercado: EURUSD 1,1 hasta el minuto 10 del 6-ene-2025; 1,09 del 10 al 19; 1,1 desde el 20. El resto, constante.
@@ -36,7 +38,7 @@ const { titulo, ver, oraculo, fin, importa, fuente, asienta, escenario } = await
 const { hayPostgres } = await import('../pg-ensayo.mjs')
 const { montajeV1, L, conUidDelMontaje } = await import('../montaje-v1.mjs')
 const { cerrojoEnMemoria } = await import('../cerrojo-falso.mjs')
-const N = 39
+const N = 41
 const HOOK = await importa('components/useSesionV1.js').catch(() => null), CRV = await importa('lib/sim/v1/crear.js').catch(() => null)
 if (!HOOK?.default || !CRV?.creaSesionV1) { for (let i = 0; i < N; i++) oraculo('V1C05', `caso ${i}: sin components/useSesionV1.js ni lib/sim/v1/crear.js no se puede`, false, 'no esta'); fin() }
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay', false); fin() }
@@ -57,8 +59,10 @@ const U = iso => Date.parse(iso) / 1000
 const M0 = U('2025-01-06T00:00:00Z'), m = k => M0 + 60 * k
 const tx = x => JSON.stringify(x, (k, v) => (typeof v === 'bigint' ? `${v}n` : v))
 const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3, NZDUSD: 0.6, USDCAD: 1.37, USDCHF: 0.88, USDJPY: 150.2 }
+// orden 1-127 (g): EURUSD sin velas del minuto 100 al 109 (un hueco de 10 minutos, menor que el maximo de 15)
+const huecoI = (par, t) => par === 'EURUSD' && t >= m(100) && t < m(110)
 const precioEn = (par, t) => (par === 'EURUSD' && t >= m(10) && t < m(20) ? 1.09 : PX[par])
-function velasDe(par) { const o = []; for (let t = M0; t < U('2025-01-11T00:00:00Z'); t += 60) if (!minutoCerrado(t)) { const p = precioEn(par, t); o.push({ time: t, open: p, high: p, low: p, close: p, volume: 1 }) } return o }
+function velasDe(par) { const o = []; for (let t = M0; t < U('2025-01-11T00:00:00Z'); t += 60) if (!minutoCerrado(t) && !huecoI(par, t)) { const p = precioEn(par, t); o.push({ time: t, open: p, high: p, low: p, close: p, volume: 1 }) } return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
 await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
@@ -91,7 +95,7 @@ try {
     const llamadas = []
     async function llama(ruta, { cuerpo }) {
       const r = await orden[ruta]({ actor: AL, cuerpo, puertos })
-      llamadas.push({ ruta, tipo: cuerpo?.tipo ?? null, http: r.http })
+      llamadas.push({ ruta, tipo: cuerpo?.tipo ?? null, http: r.http, motivo: cuerpo?.motivo ?? null, par: cuerpo?.par ?? null, hasta: cuerpo?.hasta ?? null })
       if (r.http === 429 && r.cuerpo?.motivo === 'demasiados_avances') uno('update public.sim_alumnos set siguiente_avance_desde = null')
       return { http: r.http, cuerpo: r.cuerpo }
     }
@@ -115,7 +119,8 @@ try {
     await b.repinta()
     return b
   }
-  const avance = b => b.refs.v1Ref.current.avance({ engine: () => b.motor() })
+  // el par visible, como _SessionInner (avanceV1: par:()=>activePairRef.current)
+  const avance = b => b.refs.v1Ref.current.avance({ engine: () => b.motor(), par: () => b.estado.activa })
   const igualServidor = async (B, sid, b) => {
     const v = VI.delPar(await B.servidor(sid), 'EUR/USD'), ps = b.ps()
     const pos = x => x.map(p => [p.id, p.side, p.entry, p.sl, p.tp, p.lots]), ord = x => x.map(o => [o.id, o.side, o.entry, o.sl, o.tp, o.lots])
@@ -383,6 +388,23 @@ try {
   oraculo('V1C05', 'H · (5) ddDailyWorstUSD = saldo de la medianoche − la equity del breach (y su %), no − el saldo', Math.abs(stH?.ddDailyWorstUSD - (medianoche - eqB)) < 1e-6 && Math.abs(stH?.ddDailyWorstPct - ((medianoche - eqB) / medianoche) * 100) < 1e-6, tx({ worst: stH?.ddDailyWorstUSD, esperado: medianoche - eqB, porSaldo: medianoche - saldoB }))
   oraculo('V1C05', 'H · (6) al abrir de nuevo el reto quemado, el modal de fallo sale (como hoy) y el reto sigue bloqueado', h2.caja.valor.reto.challengeModal === 'failed' && h2.caja.valor.reto.challengeLocked === true, tx({ modal: h2.caja.valor.reto.challengeModal, locked: h2.caja.valor.reto.challengeLocked }))
   oraculo('V1C05', 'S · en todo H: checkSLTP, checkLimitOrders, checkChallengeBreach, rutaComun y cierreEnVela no se llaman', sinCierres(), tx(espias()))
+
+  titulo('I · (g) el Step es una vela del par visible: en un hueco salta a la siguiente vela con datos')
+  const SI2 = u(7007)
+  ver('control: practica creada por /api/sim/crear (I)', await creaPractica(B1, SI2, 'I'))
+  cierraPestanas(B1)
+  const i7 = await pagina(B1, SI2)
+  const av7 = avance(i7)
+  await av7.irA(m(99))
+  ver('control: en el minuto 99, y el par visible no tiene velas del 100 al 109', i7.motor().currentTime === m(99) && !i7.motor().candles.some(c => c.time >= m(100) && c.time < m(110)))
+  const n7 = B1.llamadas.length
+  const rI = await av7.paso()
+  const pasos = B1.llamadas.slice(n7).filter(x => x.tipo === 'avanzar')
+  oraculo('V1C05', 'I · un Step desde el 99: UN avance paso con el par visible (EURUSD) que llega a la vela del 110 (cursor y grafica), no al minuto vacio 100',
+    rI.conclusion === 'confirmado' && pasos.length === 1 && pasos[0].motivo === 'paso' && pasos[0].par === 'EURUSD' && pasos[0].http === 200 && i7.refs.v1Ref.current.cursor() === m(110) && i7.motor().currentTime === m(110) && fuente('components/_SessionInner.js').includes('par:()=>activePairRef.current'),
+    tx({ c: rI.conclusion, pasos, cursor: (i7.refs.v1Ref.current.cursor() - M0) / 60, grafica: (i7.motor().currentTime - M0) / 60 }))
+  const rI2 = await av7.paso()
+  oraculo('V1C05', 'I · el Step siguiente, a la vela del 111', rI2.conclusion === 'confirmado' && i7.refs.v1Ref.current.cursor() === m(111) && i7.motor().currentTime === m(111), tx({ c: rI2.conclusion, cursor: (i7.refs.v1Ref.current.cursor() - M0) / 60 }))
 
   titulo('D · control positivo: la bandera apagada, la misma clase de sesion v1')
   delete process.env.NEXT_PUBLIC_SIM_V1_PANTALLA

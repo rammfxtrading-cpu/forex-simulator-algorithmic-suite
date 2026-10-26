@@ -22,6 +22,12 @@
  *       en resumen.minutos; sim_comando rechaza (422 avance_demasiado_grande, «sim-006: …», sin efectos) un paso o un
  *       play que declare mas, o que no lo declare. El goto y el checkpoint no tienen este tope. Asi un Go to marcado
  *       «paso» ya no se salta los 5 s: avanza 1 minuto
+ *   ORDEN 1-127 (g): el paso es UNA VELA CON DATOS, no un minuto: en un hueco o un festivo salta a la siguiente vela con
+ *       datos (nunca un minuto vacio) y nunca mas alla. El servidor, que tiene el mercado, corta el paso en la siguiente
+ *       vela con datos del par del paso (carga.par, el par visible; sin el, la primera de cualquier par de la sesion) y
+ *       declara resumen.velas (las velas con datos que cruzo: 0 o 1). La base, sin calendario, exige velas entre 0 y 1
+ *       (y ya no mira los minutos del paso); el play sigue con sus 100 minutos. Un Go to disfrazado de «paso» llega a
+ *       la siguiente vela con datos y ahi para: no se salta los 5 s mas alla de una vela.
  */
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
@@ -31,7 +37,7 @@ import { hayPostgres } from './pg-ensayo.mjs'
 import { montajeV1, L, conUidDelMontaje } from './montaje-v1.mjs'
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 
-const N = 34
+const N = 36
 const F_APLICA = 'sql/sim-006-tope-de-pasos.sql', F_VUELTA = 'sql/sim-006-vuelta-atras.sql'
 const lee = p => readFileSync(path.join(REPO, p), 'utf8')
 if (!existsSync(path.join(REPO, F_APLICA)) || !existsSync(path.join(REPO, F_VUELTA))) {
@@ -60,7 +66,9 @@ const U = iso => Date.parse(iso) / 1000
 const M0 = U('2025-01-06T00:00:00Z'), m = k => M0 + 60 * k
 const tx = x => JSON.stringify(x)
 const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3, NZDUSD: 0.6, USDCAD: 1.37, USDCHF: 0.88, USDJPY: 150.2 }
-function velas(par) { const o = []; for (let t = M0; t < U('2025-01-09T00:00:00Z'); t += 60) if (!minutoCerrado(t)) o.push({ time: t, open: PX[par], high: PX[par], low: PX[par], close: PX[par], volume: 1 }); return o }
+// orden 1-127 (g): EURUSD sin velas del minuto 1500 al 1509 (un hueco de 10 minutos, menor que el maximo de 15: se valora)
+const HUECO_G = t => t >= m(1500) && t < m(1510)
+function velas(par) { const o = []; for (let t = M0; t < U('2025-01-09T00:00:00Z'); t += 60) if (!minutoCerrado(t) && !(par === 'EURUSD' && HUECO_G(t))) o.push({ time: t, open: PX[par], high: PX[par], low: PX[par], close: PX[par], volume: 1 }); return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
 await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
@@ -96,15 +104,23 @@ const CAMBIOS = [
   // clave sigue devolviendo su recibo) y antes de contar en la ventana
   ["      -- sim-006: un paso no mira los 5 s; su tope, 10 por segundo y alumno (ventana fija de 1 s desde el primero)\n      IF v_paso THEN\n",
    "      -- sim-006: un paso no mira los 5 s; su tope, 10 por segundo y alumno (ventana fija de 1 s desde el primero)\n      IF v_paso THEN\n" +
-   "        -- sim-006 (orden 1-125 f): y su tope de TAMAÑO en minutos de mercado (resumen.minutos, de lib/servidor/comando.mjs):\n" +
-   "        -- paso 1, play 100 (LOTE_PLAY_MAX de lib/sim/v1/topes.mjs); mas, o sin declarar, rechazo puro sin efectos\n" +
-   "        IF jsonb_typeof(p_resultado->'resumen'->'minutos') IS DISTINCT FROM 'number'\n" +
-   "           OR (p_resultado->'resumen'->>'minutos')::numeric NOT BETWEEN 0 AND (CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END) THEN\n" +
-   "          RETURN public.sim_error(422, 'avance_demasiado_grande', jsonb_build_object(\n" +
-   "            'mensaje', 'sim-006: un avance paso llega como mucho a 1 minuto de mercado y uno play a 100; mas lejos, goto',\n" +
-   "            'tope', CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END,\n" +
-   "            'minutos', p_resultado->'resumen'->'minutos'));\n" +
-   "        END IF;\n"],
+   `        -- sim-006 (ordenes 1-125 f y 1-127 g): y su tope de TAMAÑO, declarado por lib/servidor/comando.mjs (que tiene el
+        -- mercado; la base no tiene calendario). Un paso: resumen.velas, las velas CON DATOS que cruzo (del par del paso),
+        -- entre 0 y 1: llega a la siguiente vela con datos, salte el hueco o el festivo que salte, y nunca mas alla. Un
+        -- play: resumen.minutos, minutos de mercado, entre 0 y 100 (LOTE_PLAY_MAX de lib/sim/v1/topes.mjs). Mas, o sin
+        -- declarar, rechazo puro sin efectos
+        IF (v_sobre->'payload'->>'motivo' = 'paso' AND (jsonb_typeof(p_resultado->'resumen'->'velas') IS DISTINCT FROM 'number'
+              OR (p_resultado->'resumen'->>'velas')::numeric NOT BETWEEN 0 AND 1))
+           OR (v_sobre->'payload'->>'motivo' = 'play' AND (jsonb_typeof(p_resultado->'resumen'->'minutos') IS DISTINCT FROM 'number'
+              OR (p_resultado->'resumen'->>'minutos')::numeric NOT BETWEEN 0 AND 100)) THEN
+          RETURN public.sim_error(422, 'avance_demasiado_grande', jsonb_build_object(
+            'mensaje', 'sim-006: un avance paso llega como mucho a la siguiente vela con datos y uno play a 100 minutos de mercado; mas lejos, goto',
+            'tope', CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END,
+            'unidad', CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 'velas' ELSE 'minutos' END,
+            'velas', p_resultado->'resumen'->'velas',
+            'minutos', p_resultado->'resumen'->'minutos'));
+        END IF;
+`],
 ]
 const esperado = (() => { let t = CUERPO_004B; for (const [a, b] of CAMBIOS) { if (t == null || t.split(a).length !== 2) return null; t = t.replace(a, b) } return t })()
 
@@ -230,38 +246,50 @@ try {
   for (let k = 0; k < 12; k++) abiertos.push((await b.ordena(AL, { tipo: 'abrir', par: 'EURUSD', lado: 'BUY', orden: 'limit', lotes: '0.01', precio: '1.00000' })).http)
   oraculo('SIM006', 'C · abrir: 12 seguidos, los 12 confirmados (sin limite, como antes)', abiertos.every(x => x === 200), tx(abiertos))
 
-  titulo('T · el tope de TAMAÑO de un paso o un play (orden 1-125 f)')
+  titulo('T · el tope de TAMAÑO de un paso (una vela con datos: orden 1-127 g) o un play (100 minutos: orden 1-125 f)')
   await espera(1100)
   b.sinTasa()
-  const conMin = (f, n) => k => { const a = f(k); return { ...a, p_resultado: { ...a.p_resultado, resumen: { ...a.p_resultado.resumen, minutos: n } } } }
-  const sinMin = f => k => { const a = f(k); const { minutos, ...r } = a.p_resultado.resumen; return { ...a, p_resultado: { ...a.p_resultado, resumen: r } } }
+  const conRes = (f, extra) => k => { const a = f(k); return { ...a, p_resultado: { ...a.p_resultado, resumen: { ...a.p_resultado.resumen, ...extra } } } }
+  const sinCampo = (f, campo) => k => { const a = f(k); const r = { ...a.p_resultado.resumen }; delete r[campo]; return { ...a, p_resultado: { ...a.p_resultado, resumen: r } } }
   const qT = await b.argsQuieto(AL, 'paso'), qTp = await b.argsQuieto(AL, 'play')
-  const rT = b.rafaga([conMin(qT, 1)(901), conMin(qT, 2)(902), conMin(qTp, 100)(903), conMin(qTp, 101)(904), sinMin(qT)(905)])
-  const fx = x => x && `${x.http} ${x.motivo ?? ''} ${x.tope ?? ''} ${x.minutos ?? ''}`.trim()
-  oraculo('SIM006', 'T · un paso que declara 1 minuto y un play que declara 100: pasan (200)', rT[0]?.http === 200 && rT[2]?.http === 200, tx(rT.map(fx)))
-  oraculo('SIM006', 'T · un paso de 2 minutos y un play de 101: 422 avance_demasiado_grande, «sim-006: …», con su tope (1 y 100) y sus minutos',
-    rT[1]?.http === 422 && rT[1].motivo === 'avance_demasiado_grande' && /^sim-006: /.test(rT[1].mensaje ?? '') && rT[1].tope === 1 && rT[1].minutos === 2 &&
-    rT[3]?.http === 422 && rT[3].motivo === 'avance_demasiado_grande' && /^sim-006: /.test(rT[3].mensaje ?? '') && rT[3].tope === 100 && rT[3].minutos === 101, tx(rT.map(fx)))
-  oraculo('SIM006', 'T · un paso que no declara sus minutos: 422 avance_demasiado_grande (falla cerrado)', rT[4]?.http === 422 && rT[4].motivo === 'avance_demasiado_grande', tx(fx(rT[4])))
+  const rT = b.rafaga([conRes(qT, { velas: 1, minutos: 3000 })(901), conRes(qT, { velas: 2, minutos: 2 })(902), conRes(qTp, { minutos: 100 })(903), conRes(qTp, { minutos: 101 })(904), sinCampo(conRes(qT, { minutos: 1 }), 'velas')(905)])
+  const fx = x => x && `${x.http} ${x.motivo ?? ''} ${x.tope ?? ''} ${x.unidad ?? ''} ${x.velas ?? ''} ${x.minutos ?? ''}`.trim()
+  oraculo('SIM006', 'T · un paso que declara 1 vela (aunque cruce 3.000 minutos: un hueco o un festivo) y un play que declara 100 minutos: pasan (200)', rT[0]?.http === 200 && rT[2]?.http === 200, tx(rT.map(fx)))
+  oraculo('SIM006', 'T · un paso de 2 velas y un play de 101 minutos: 422 avance_demasiado_grande, «sim-006: …», con su tope (1 vela, 100 minutos) y lo declarado',
+    rT[1]?.http === 422 && rT[1].motivo === 'avance_demasiado_grande' && /^sim-006: /.test(rT[1].mensaje ?? '') && rT[1].tope === 1 && rT[1].unidad === 'velas' && rT[1].velas === 2 &&
+    rT[3]?.http === 422 && rT[3].motivo === 'avance_demasiado_grande' && /^sim-006: /.test(rT[3].mensaje ?? '') && rT[3].tope === 100 && rT[3].unidad === 'minutos' && rT[3].minutos === 101, tx(rT.map(fx)))
+  oraculo('SIM006', 'T · un paso que no declara sus velas (solo minutos, como antes): 422 avance_demasiado_grande (falla cerrado)', rT[4]?.http === 422 && rT[4].motivo === 'avance_demasiado_grande', tx(fx(rT[4])))
   oraculo('SIM006', 'T · los rechazos no dejan efectos: sin recibo con sus claves y la ventana cuenta solo los 2 que pasaron',
     Number(b.uno(`select count(*) from public.sim_recibos where command_id in (${[902, 904, 905].map(k => L(u(800000 + k))).join(', ')})`)) === 0 && b.uno(`select pasos_en_ventana from public.sim_alumnos where user_id = ${L(AL)}`) === '2',
     b.uno(`select pasos_en_ventana from public.sim_alumnos where user_id = ${L(AL)}`))
   b.sinTasa()
-  const rTg = b.rafaga([conMin(await b.argsQuieto(AL, 'goto'), 5000)(911)])[0]
+  const rTg = b.rafaga([conRes(await b.argsQuieto(AL, 'goto'), { minutos: 5000 })(911)])[0]
   oraculo('SIM006', 'T · el goto no tiene tope de tamaño (declara 5.000 minutos y pasa)', rTg?.http === 200, tx(fx(rTg)))
   // el servidor (Node): corta el calculo en el tope y lo declara; los numeros del SQL son los de lib/sim/v1/topes.mjs. Los
-  // avances quietos de antes no mueven el cursor: la base es la que haya (todos los minutos del 6-ene estan abiertos)
-  const calculaA = async (motivo, hasta) => {
-    const fila = await b.puertos.leeSesion(b.ses[AL].sid)
-    const v = CO.validaComando({ session_id: b.ses[AL].sid, command_id: u(++nCmd), epoca: 1, cliente_id: 'pestana-1', testigo: b.ses[AL].testigo, version_esperada: Number(fila.version), tipo: 'avanzar', hasta, motivo })
+  // avances quietos de antes no mueven el cursor: la base es la que haya (todos los minutos del 6-ene tienen velas)
+  const calculaA = async (motivo, hasta, actor = AL, extra = {}) => {
+    const fila = await b.puertos.leeSesion(b.ses[actor].sid)
+    const v = CO.validaComando({ session_id: b.ses[actor].sid, command_id: u(++nCmd), epoca: 1, cliente_id: 'pestana-1', testigo: b.ses[actor].testigo, version_esperada: Number(fila.version), tipo: 'avanzar', hasta, motivo, ...extra })
+    if (!v.ok) return { invalido: v.en }
     const r = await CO.calcula({ fila, intencion: v.intencion, puertos: b.puertos })
-    return { base: (fila.estado.reloj.cursor - M0) / 60, alcanzado: (r.resumen?.alcanzado - M0) / 60, cortado: r.resumen?.cortado, minutos: r.resumen?.minutos }
+    return { base: (fila.estado.reloj.cursor - M0) / 60, alcanzado: (r.resumen?.alcanzado - M0) / 60, cortado: r.resumen?.cortado, minutos: r.resumen?.minutos, velas: r.resumen?.velas }
   }
   const nP = await calculaA('paso', m(1000)), nY = await calculaA('play', m(1000)), nG = await calculaA('goto', m(300))
-  oraculo('SIM006', 'T · lib/servidor/comando.mjs corta un paso en 1 minuto de mercado y un play en 100 (cortado, minutos declarados); un goto hasta el minuto 300 llega entero',
-    nP.alcanzado === nP.base + 1 && nP.cortado === true && nP.minutos === 1 && nY.alcanzado === nY.base + 100 && nY.cortado === true && nY.minutos === 100 && nG.alcanzado === 300 && nG.cortado === false && nG.minutos === 300 - nG.base &&
-    TO6?.TOPE_AVANCE?.paso === 1 && TO6?.TOPE_AVANCE?.play === 100 && TO6?.LOTE_PLAY_MAX === 100 && APLICA0.includes("CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END"),
+  oraculo('SIM006', 'T · lib/servidor/comando.mjs corta un paso en la siguiente vela con datos (velas 1) y un play en 100 minutos (cortado, declarados); un goto hasta el minuto 300 llega entero',
+    nP.alcanzado === nP.base + 1 && nP.cortado === true && nP.velas === 1 && nY.alcanzado === nY.base + 100 && nY.cortado === true && nY.minutos === 100 && nY.velas === undefined && nG.alcanzado === 300 && nG.cortado === false && nG.minutos === 300 - nG.base &&
+    TO6?.TOPE_AVANCE?.paso === 1 && TO6?.TOPE_AVANCE?.play === 100 && TO6?.LOTE_PLAY_MAX === 100 && APLICA0.includes("CASE v_sobre->'payload'->>'motivo' WHEN 'paso' THEN 1 ELSE 100 END") && APLICA0.includes("(p_resultado->'resumen'->>'velas')::numeric NOT BETWEEN 0 AND 1"),
     tx({ nP, nY, nG, topes: TO6?.TOPE_AVANCE ?? null }))
+  // (g) un hueco: EURUSD no tiene velas del minuto 1500 al 1509. El otro alumno llega al 1499 con un goto
+  b.sinTasa()
+  ver('control: el otro alumno, con un goto, en el minuto 1499', (await b.ordena(OT, { tipo: 'avanzar', hasta: m(1499), motivo: 'goto' })).http === 200 && (await calculaA('paso', m(1499), OT)).base === 1499)
+  const gE = await calculaA('paso', m(2000), OT, { par: 'EURUSD' }), gS = await calculaA('paso', m(2000), OT), gG = await calculaA('paso', m(2000), OT, { par: 'GBPUSD' })
+  oraculo('SIM006', 'T · (g) un paso del par visible (EURUSD) en el hueco salta a su siguiente vela con datos (1510: 11 minutos, 1 vela) y ahi para aunque pida el 2000; de GBPUSD o sin par, la vela del 1500',
+    gE.alcanzado === 1510 && gE.velas === 1 && gE.minutos === 11 && gE.cortado === true && gS.alcanzado === 1500 && gS.velas === 1 && gG.alcanzado === 1500 && gG.velas === 1, tx({ gE, gS, gG }))
+  b.sinTasa()
+  const rgE = await b.ordena(OT, { tipo: 'avanzar', hasta: m(2000), motivo: 'paso', par: 'EURUSD' })
+  const rgE2 = await b.ordena(OT, { tipo: 'avanzar', hasta: m(2000), motivo: 'paso', par: 'EURUSD' })
+  oraculo('SIM006', 'T · (g) por la base: ese paso se confirma (200, alcanzado 1510) y el siguiente, sin esperar los 5 s del goto, llega solo a la vela 1511: un Go to disfrazado de paso no salta mas alla de una vela',
+    rgE.http === 200 && (rgE.cuerpo?.alcanzado - M0) / 60 === 1510 && rgE2.http === 200 && (rgE2.cuerpo?.alcanzado - M0) / 60 === 1511, tx({ a: rgE.http, al: (rgE.cuerpo?.alcanzado - M0) / 60, b: rgE2.http, al2: (rgE2.cuerpo?.alcanzado - M0) / 60, m: rgE.cuerpo?.motivo }))
 
   titulo('D · idempotente; sim-004b no se vuelve a ejecutar encima; a medias, para')
   const cuenta = b.uno(`select pasos_en_ventana || ' ' || pasos_ventana_desde from public.sim_alumnos where user_id = ${L(AL)}`)
