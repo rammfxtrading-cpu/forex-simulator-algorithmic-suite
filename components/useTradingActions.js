@@ -21,6 +21,7 @@ import { cierraPosicion, saldoConfirmado, nuevoIdTrade } from '../lib/sim/cierre
 import { encola, posicionOcupada, hayBarrera, suscribeCola } from '../lib/sim/cola'
 import { cierreEnVela, rutaComun, alTick } from '../lib/sim/vela'
 import { avisa } from '../lib/sim/avisos'
+import { comandoCerrar, comandoCancelar, comandoTirador, comandoAbrir } from '../lib/sim/v1/ordenes'
 
 // La fila de sim_trades de un cierre (total o parcial), con su id generado aqui:
 // si la respuesta se pierde, se relee por ese id (diseño sim-004, n.5, o.7)
@@ -47,7 +48,7 @@ export function filaTrade({ userId, pos, lots, exit, rrReal, pnl, result, note, 
   }
 }
 
-export default function useTradingActions({ id, activePair, currentPrice, currentTime, lots, preview, pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef, checkSLTPRef, setBalance, setTick, setPreview, setCtxMenu, refreshChallengeStatus, soloLecturaRef, alBloqueo }){
+export default function useTradingActions({ id, activePair, currentPrice, currentTime, lots, preview, pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef, checkSLTPRef, setBalance, setTick, setPreview, setCtxMenu, refreshChallengeStatus, soloLecturaRef, alBloqueo, v1Ref }){
   function createPositionLines(posId,pair,pos){
     // Lines are rendered by HTML overlay — no LWC price lines needed
   }
@@ -105,6 +106,8 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // closePosition accepts optional pair+exitPrice for use from engine.onTick
   // horaCierre (opcional): la hora de la vela que origina el cierre (SIMGOTO-01, orden 1-083)
   const closePosition=useCallback(async(posId,reason='MANUAL',pairOverride,exitPriceOverride,note=null,horaCierre=null)=>{
+    // modo v1 (pieza 6): el cierre es un comando; la pantalla cambia cuando vuelve el estado confirmado
+    if(v1Ref?.current){ if(!pairState.current[pairOverride||activePair]?.positions?.some(p=>p.id===posId)) return; return v1Ref.current.envia(comandoCerrar(posId)) }
     const usePair=pairOverride||activePair
     const usePrice=exitPriceOverride||currentPrice
     const ps=pairState.current[usePair];if(!ps||!usePrice) return
@@ -149,6 +152,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // hoy. Ronda 2 (E1-02): en la cola y con la posicion ocupada, como el total; si no se
   // guarda, la posicion vuelve a sus lotes CONFIRMADOS.
   const closePartial=useCallback((posId,pair,lotsToClose,note=null)=>{
+    if(v1Ref?.current) return v1Ref.current.envia(comandoCerrar(posId,lotsToClose))
     const ps=pairState.current[pair]
     if(!ps?.positions?.some(p=>p.id===posId)||!currentPrice) return
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); return }
@@ -182,6 +186,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   const confirmLimitOrder=useCallback(()=>{
     if(!preview) return
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); setPreview(null); return }
+    if(v1Ref?.current){ const pv=preview; setPreview(null); return v1Ref.current.envia(comandoAbrir({pair:pv.pair,side:pv.side,entry:pv.entry,lots:pv.lots,sl:pv.sl,tp:pv.tp})) }
     const ps=pairState.current[preview.pair]; if(!ps) return
     if(!ps.orders) ps.orders=[]
     // orden 1-119: lo que entra se ajusta al tick del par (el dibujo y el preview pueden traer cualquier decimal)
@@ -204,6 +209,8 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // Called by PositionOverlay when user finishes dragging a SL/TP line
   const handlePositionDragEnd=useCallback((posId, type, precioSoltado)=>{
     const ps=pairState.current[activePair]; if(!ps) return
+    // modo v1: el tirador manda modificar; la linea vuelve a donde diga el estado confirmado
+    if(v1Ref?.current) return v1Ref.current.envia(comandoTirador({id:posId,type,price:precioSoltado,pair:activePair}))
     // orden 1-119: coordinateToPrice da cualquier decimal: se guarda el tick del par mas cercano (la mitad, arriba)
     const newPrice=alTick(precioSoltado,activePair)
     // Handle open positions
@@ -244,6 +251,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   },[activePair])
 
   const cancelLimitOrder=useCallback((orderId,pair)=>{
+    if(v1Ref?.current) return v1Ref.current.envia(comandoCancelar(orderId))
     const ps=pairState.current[pair]; if(!ps?.orders) return
     ps.orders=ps.orders.filter(o=>o.id!==orderId)
     const cr=chartMap.current[pair]
@@ -278,6 +286,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // desdeIdx (opcional): reevaluar desde esa vela (reevaluaSLTP, al liberarse una posicion)
   // soloIds (opcional): solo esas posiciones (las que una pendiente acaba de abrir: M04, orden 1-081)
   const checkSLTP=useCallback((pair,engine,desdeIdx,soloIds)=>{
+    if(v1Ref?.current) return
     const ps=pairState.current[pair];if(!ps?.positions?.length) return
     const curIdx=engine.currentIndex
     // Determine range to check — from last checked index+1 to current
@@ -329,6 +338,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // Devuelve las posiciones que abre ({ids, desdeIdx}: la primera vela de llenado) o null; el onTick
   // les mira SL/TP desde esa vela, la del llenado incluida (M04, orden 1-081)
   const checkLimitOrders=useCallback((pair,engine)=>{
+    if(v1Ref?.current) return null
     const ps=pairState.current[pair]; if(!ps?.orders?.length) return null
     const curIdx=engine.currentIndex
     const fromIdx = ps.lastLimitIdx != null ? ps.lastLimitIdx + 1 : curIdx

@@ -15,6 +15,9 @@ import { useServicio, puedeEscribir, TEXTO_BLOQUEO } from '../lib/sim/servicio'
 import { sinLapidas, esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import { interpretaBorrado } from '../lib/sim/respuestas'
 import { COLUMNAS_SESION } from '../lib/sim/columnas'
+import { pantallaV1 } from '../lib/sim/v1/bandera'
+import { creaSesionV1 } from '../lib/sim/v1/crear'
+import { llamaConFetch } from '../lib/sim/v1/pantalla'
 
 /**
  * Deriva el estado visual de una sesión a partir de su `status` y `challenge_phase`.
@@ -216,6 +219,17 @@ export default function Dashboard() {
     // Escritura economica (o.5): antes, el estado del servicio
     const permiso = await puedeEscribir()
     if (!permiso.permitido) { setCreating(false); setNewErr(`No se ha creado la sesión: ${TEXTO_BLOQUEO[permiso.motivo]}`); return }
+    // Pieza 7 (orden 1-125): con la bandera de la pantalla v1, la sesion nace en /api/sim/crear (v1, desde cero)
+    if (pantallaV1()) {
+      const r = await creaSesionV1({ llama: llamaConFetch(supabase), nuevoId: () => crypto.randomUUID(), form, plan: profile?.plan ?? null })
+      setCreating(false)
+      if (!r.ok) { setNewErr(r.error); return }
+      setShowNew(false)
+      setForm({ name: '', pair: 'EUR/USD', dateFrom: '', dateTo: '', capital: 10000 })
+      await loadSessions(user.id)
+      router.push(`/session/${r.id}`)
+      return
+    }
     const { data, error } = await supabase.from('sim_sessions').insert({
       user_id: user.id, name: form.name, pair: form.pair,
       timeframe: 'H1', date_from: form.dateFrom, date_to: form.dateTo,

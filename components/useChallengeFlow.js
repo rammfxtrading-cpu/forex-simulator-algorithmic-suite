@@ -22,7 +22,7 @@ import { conPlazo, VENCIDO } from '../lib/sim/plazo'
 export const INTENTOS_FASE = 3
 export const ESPERA_FASE_MS = 250
 
-export default function useChallengeFlow({ id, router, session, setSession, sessionRef, currentTime, pairState, balanceRef, closePositionRef, setIsPlaying }){
+export default function useChallengeFlow({ id, router, session, setSession, sessionRef, currentTime, pairState, balanceRef, closePositionRef, setIsPlaying, v1Ref }){
   const currentTimeRef = useRef(null) // timestamp de la vela actual del simulador (unix segundos). Se usa en refreshChallengeStatus.
   const lastMadridDayRef = useRef(null) // ultimo dia Madrid detectado para evitar refetch en cada tick
   const [challengeStatus, setChallengeStatus] = useState(null) // FTMO-style: {session,config,evaluation} o null si no es challenge
@@ -77,6 +77,17 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   // de la vela en curso, que el estado de React aun no tiene (orden 1-080)
   const refrescaAhora = useCallback(async (ctSalto) => {
     if (!id || !sessionRef.current?.challenge_type) return null
+    // modo v1 (pieza 6): el reto es el del estado confirmado del servidor (lib/sim/v1/hud.js), sin /api/challenge/status
+    if (v1Ref?.current) {
+      const data = v1Ref.current.estadoReto()
+      if (!data) return null
+      setChallengeStatus(data)
+      challengeStatusRef.current = data
+      const s = data.session
+      setSession(prev => prev ? { ...prev, status: s.status, balance: s.balance, challenge_phase: s.challenge_phase } : prev)
+      if (sessionRef.current) sessionRef.current = { ...sessionRef.current, status: s.status, balance: s.balance, challenge_phase: s.challenge_phase }
+      return data
+    }
     try {
       // Pasamos currentTime del simulador: así el motor sabe qué día es HOY en el backtest.
       // El DD diario se resetea en el día Madrid de esta vela, no de la fecha real del ordenador.
@@ -317,6 +328,17 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
 
   // Handlers compartidos por los modales
   const handleChallengePass = useCallback(async () => {
+    // modo v1: /api/sim/avanzar-fase (el servidor decide si la fase esta superada); a la hija, si la hay
+    if (v1Ref?.current) {
+      setChallengeAdvancing(true)
+      try {
+        const r = await v1Ref.current.pasaFase()
+        if (r?.hija) { router.push(`/session/${r.hija}`); return }
+        if (r?.conclusion !== 'confirmado') { challengeModalShownRef.current = false; setChallengeModal(null); avisa('No se ha podido pasar de fase. Inténtalo de nuevo.') }
+        await refreshChallengeStatus()
+      } finally { setChallengeAdvancing(false) }
+      return
+    }
     const data = await decideFase('pass')
     if (!data) return
     if (data.action === 'phase_passed' && data.next_session?.id) {
@@ -330,6 +352,8 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   }, [decideFase, router, refreshChallengeStatus])
 
   const handleChallengeFail = useCallback(async () => {
+    // modo v1: el breach ya lo confirmo el servidor; no hay nada que mandar
+    if (v1Ref?.current) { await refreshChallengeStatus(); return }
     const data = await decideFase('fail')
     if (!data) return
     await refreshChallengeStatus()
@@ -370,6 +394,7 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   //   sigue siendo cerrada — no necesita búsqueda binaria.
   const checkChallengeBreach = useCallback((pair, engine) => {
     const sess = sessionRef.current
+    if (v1Ref?.current) return
     if (!sess?.challenge_type) return
     // Si el challenge ya está terminado (failed/passed), no recheckar.
     const cs = challengeStatusRef.current

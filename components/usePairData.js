@@ -25,7 +25,7 @@ import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/char
 import { computePhantomsNeeded } from '../lib/sessionUi'
 import { fechaCorta, listaDiasCortos } from '../lib/mercado/calidad.mjs'
 
-export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools, refrescaReto }){
+export default function usePairData({ id, session, activePair, pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef, checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef, setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick, exportTools, refrescaReto, v1Ref }){
   // el refresco del reto con hora (useChallengeFlow), para el salto al volver a un par (orden 1-081)
   const refrescaRetoRef=useRef(refrescaReto); refrescaRetoRef.current=refrescaReto
   const saveProgress=useCallback(async(ts)=>{
@@ -34,6 +34,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
     // guardado es una escritura economica (last_timestamp): antes, el estado del
     // servicio; despues, el {error}, que solo avisa
     if(sessionRef.current?.legado===true) return
+    // modo v1: el avance lo guarda el servidor (el cursor del estado confirmado); last_timestamp no se escribe
+    if(v1Ref?.current) return
     // GOTODESP1-02 (Astra; orden 1-099): el guardado va por la COLA de la sesion, como los cierres (lib/sim/cola.js): ninguna
     // escritura de last_timestamp sale hasta que termina la anterior, y su valor se calcula al salir (el mayor hasta
     // entonces). Asi una peticion antigua no llega despues de una nueva. Lo que no cubre (otra pestaña, otro navegador)
@@ -84,7 +86,10 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       // Doble protección: además de limpiarla al cambiar id, validamos que
       // masterTime caiga dentro del rango temporal de ESTA sesión. Si está fuera
       // (por race condition entre montajes), la ignoramos y caemos al fallback.
-      const rawMaster = getMasterTime()
+      // modo v1: la grafica empieza en el cursor confirmado del servidor (el estado se lee antes)
+      const pv=v1Ref?.current; if(pv) await pv.arranca()
+      const cursorV1=pv?pv.cursor():null
+      const rawMaster = cursorV1 ?? getMasterTime()
       const masterTime = (rawMaster && rawMaster >= replayTs && rawMaster <= toTs) ? rawMaster : null
       // Convert real masterTime/resumeTs to ordinal if needed
       const toOrdinal = (t) => t ?? null  // real timestamps — no conversion needed
@@ -97,6 +102,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       engine.onTick=()=>{
         // en el salto del Go to (avanzaHasta) el grafico se pinta una vez, al llegar
         if(!engine.saltando) updateChart(pair,engine,false)
+        // pieza 6 (SIMMOTOR1-01): en modo v1 el navegador no cierra, no llena ni quema: lo confirma el servidor
+        if(!v1Ref?.current){
         checkSLTPRef.current?.(pair,engine)
         // M04 (orden 1-081): una pendiente llenada en esta vela mira su SL/TP en ella, con la regla
         // de la vela de checkSLTP (orden 1-085, lib/sim/vela.js), desde el punto de su entrada
@@ -106,6 +113,7 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         // el cap diario o total, fuerza cierre de TODAS las posiciones al
         // precio exacto donde se cruzó el cap. Estilo FTMO real.
         checkChallengeBreachRef.current?.(pair,engine)
+        }
         if(pair===activePairRef.current){
           setCurrentTime(engine.currentTime)
           setProgress(Math.round(engine.progress*100))
@@ -129,6 +137,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         ].filter(Boolean).join(' '),
       }
       pairState.current[pair]=ps
+      // modo v1: las posiciones, pendientes y trades del par, los confirmados (el ps de arriba nace vacio)
+      v1Ref?.current?.vuelca()
       updateChart(pair,engine,true)
       if(pair===activePairRef.current){
         setDataReady(true);setCurrentTime(engine.currentTime);setProgress(Math.round(engine.progress*100))

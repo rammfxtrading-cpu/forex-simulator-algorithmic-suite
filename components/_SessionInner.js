@@ -56,6 +56,9 @@ import SessionPanels from './SessionPanels'
 import useChallengeFlow from './useChallengeFlow'
 import usePairData from './usePairData'
 import useTradingActions from './useTradingActions'
+import useSesionV1 from './useSesionV1'
+import { comandoAbrir, comandoTirador } from '../lib/sim/v1/ordenes'
+import { LOTE_PLAY_MAX } from '../lib/sim/v1/topes.mjs'
 import Estrellas from './Estrellas'
 
 // Segundos por barra de cada timeframe. Usado por el cálculo de phantoms y por
@@ -119,6 +122,7 @@ export default function SessionPage(){
   const checkLimitOrdersRef = useRef(null)
   const checkChallengeBreachRef = useRef(null)
   const balanceRef          = useRef(10000)
+  const v1Ref               = useRef(null)  // pieza 6: la pantalla v1 (components/useSesionV1.js) o null
   // Etapa 1 (diseño sim-004, d2, o.5–o.7): sesion legado = solo lectura; estado
   // del servicio leido al montar y cada 30 s
   const soloLecturaRef      = useRef(false)
@@ -210,7 +214,22 @@ export default function SessionPage(){
     challengeAdvancing, refreshChallengeStatus, checkChallengeBreach,
     handleChallengePass, handleChallengeFail, handleCtaRealChallenge,
     handleGoToDashboard, handleGoToNewChallenge,
-  } = useChallengeFlow({ id, router, session, setSession, sessionRef, currentTime, pairState, balanceRef, closePositionRef, setIsPlaying })
+  } = useChallengeFlow({ id, router, session, setSession, sessionRef, currentTime, pairState, balanceRef, closePositionRef, setIsPlaying, v1Ref })
+  // Pieza 6 (orden 1-125): con NEXT_PUBLIC_SIM_V1_PANTALLA=encendido y una sesion v1, v1Ref es la pantalla v1 (comandos y
+  // estado confirmado del servidor); si no, null y la pagina es la de hoy
+  const refrescaRetoRef=useRef(null); refrescaRetoRef.current=refreshChallengeStatus
+  useSesionV1({ id, session, pairState, balanceRef, setBalance, setTick, v1Ref, refrescaRetoRef })
+  const v1AvanceRef=useRef(null)
+  const avanceV1=()=>{
+    const p=v1Ref.current; if(!p) return null
+    if(v1AvanceRef.current?.de!==p){
+      // el ritmo del Play: speed velas por segundo, como el motor de hoy (una espera cada ~16 ms de velas)
+      let acc=0
+      const espera=()=>{ acc+=1000/Math.max(1,speedRef.current||1); if(acc<16) return; const ms=acc; acc=0; return new Promise(r=>setTimeout(r,ms)) }
+      v1AvanceRef.current={de:p,av:p.avance({engine:()=>pairState.current[activePairRef.current]?.engine,espera})}
+    }
+    return v1AvanceRef.current.av
+  }
 
   useEffect(()=>{selectedDrawingRef.current=selectedDrawing},[selectedDrawing])
   const textPillDragRef = useRef(null)
@@ -764,7 +783,7 @@ export default function SessionPage(){
     pairState, chartMap, sessionRef, activePairRef, pairTfRef, speedRef,
     checkSLTPRef, checkLimitOrdersRef, checkChallengeBreachRef,
     setIsPlaying, setCurrentTime, setProgress, setCurrentPrice, setDataReady, setTick,
-    exportTools, refrescaReto: refreshChallengeStatus,
+    exportTools, refrescaReto: refreshChallengeStatus, v1Ref,
   })
 
   // ── Mount chart ───────────────────────────────────────────────────────────────
@@ -975,6 +994,14 @@ export default function SessionPage(){
         if(!ps?.positions) return
         const pos=ps.positions.find(x=>x.id===posId)
         if(!pos) return
+        // modo v1: no se pinta antes de confirmar; el tirador manda modificar y la linea va a lo confirmado
+        if(v1Ref.current){
+          v1Ref.current.envia(comandoTirador({id:posId,type,price:newPrice,pair:p})).then(()=>{
+            const c=pairState.current[p]?.positions?.find(x=>x.id===posId); if(c) updatePositionLine(posId,p,type,c[type],c)
+            setTick(t=>t+1)
+          })
+          return
+        }
         const pips=Math.abs((newPrice-pos.entry)*pipMult(p))
         if(type==='sl'){pos.sl=newPrice;pos.slPips=parseFloat(pips.toFixed(1))}
         else{pos.tp=newPrice;pos.tpPips=parseFloat(pips.toFixed(1))}
@@ -1115,6 +1142,19 @@ export default function SessionPage(){
   const eng=()=>pairState.current[activePair]?.engine
   const handlePlayPause=useCallback(async()=>{
     // durante el salto del Go to (o su espera inicial: engine.ocupado, SGR6-02) ni Play ni Step: el salto termina o para solo
+    // modo v1: el Play por lotes del servidor (lib/sim/v1/avance.js); solo lo para el alumno o el aviso del plazo
+    if(v1Ref.current){
+      const av=avanceV1(); if(!av||!eng()) return
+      if(av.reproduciendo){ av.pausa(); setIsPlaying(false); return }
+      try{ deselectAll() }catch{}
+      setIsPlaying(true)
+      // el lote crece con la velocidad (lib/sim/v1/topes.mjs: a 500 velas/s, 100 por lote = 5 avances/s, bajo el tope de 10)
+      const r=await av.play({lote:Math.max(10,Math.min(LOTE_PLAY_MAX,Math.ceil((speedRef.current||1)/5)))})
+      setIsPlaying(false)
+      if(r?.conclusion==='incierto') avisa('No se ha podido confirmar el avance. Comprueba tu conexión.')
+      const e2=eng(); if(e2&&activePairRef.current===activePair){setCurrentTime(e2.currentTime);setProgress(Math.round(e2.progress*100))}
+      return
+    }
     const e=eng();if(!e||e.ocupado)return
     if(e.isPlaying){
       e.pause();setIsPlaying(false)
@@ -1142,10 +1182,22 @@ export default function SessionPage(){
   },[activePair,saveProgress,deselectAll,ponAlDia])
   // Step: una vela con la frontera economica del salto (SIMGOTO2-01, orden 1-087): no se pasa a la siguiente
   // hasta aplicar los cierres y releer el reto; mientras espera, otro Step no hace nada (e.saltando)
-  const handleStep=useCallback(async()=>{const e=eng();if(!e||e.isPlaying||e.ocupado)return;if(!(await antesDeReanudar(id))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
+  const handleStep=useCallback(async()=>{if(v1Ref.current){const av=avanceV1(),e=eng();if(!av||!e||av.reproduciendo)return;const r=await av.paso();if(r?.conclusion==='incierto')avisa('No se ha podido confirmar el avance. Comprueba tu conexión.');if(activePairRef.current!==activePair)return;setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));return}const e=eng();if(!e||e.isPlaying||e.ocupado)return;if(!(await antesDeReanudar(id))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return;await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100));saveProgress(e.currentTime)},[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
   const handleSpeed=useCallback((v)=>{speedRef.current=v;setSpeed(v);Object.values(pairState.current).forEach(ps=>ps?.engine?.setSpeed(v))},[])
   const handleGoTo=useCallback(async(sessKey)=>{
     setGotoOpen(false)
+    // modo v1: el Go to es avanzar con motivo goto, en tramos del servidor (no para en los eventos)
+    if(v1Ref.current){
+      const av=avanceV1(),e=eng(); if(!av||!e) return
+      if(av.reproduciendo){ av.pausa(); setIsPlaying(false) }
+      const target=nextSessionOpen(e.candles,e.currentIndex,sessKey)
+      if(!target){setGotoMiss(true);setTimeout(()=>setGotoMiss(false),1500);return}
+      const r=await av.irA(target.time)
+      if(r?.conclusion==='incierto') avisa('No se ha podido confirmar el avance. Comprueba tu conexión.')
+      if(activePairRef.current!==activePair) return
+      setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
+      return
+    }
     const e=eng();if(!e||e.ocupado)return
     if(e.isPlaying){e.pause();setIsPlaying(false)}
     // orden 1-117: tras un plazo vencido, primero se relee del servidor lo pendiente
@@ -1192,7 +1244,7 @@ export default function SessionPage(){
     id, activePair, currentPrice, currentTime, lots, preview,
     pairState, chartMap, sessionRef, balanceRef, userIdRef, closePositionRef, checkSLTPRef,
     setBalance, setTick, setPreview, setCtxMenu, refreshChallengeStatus,
-    soloLecturaRef, alBloqueo: pausaPorBloqueo,
+    soloLecturaRef, alBloqueo: pausaPorBloqueo, v1Ref,
   })
 
   // Keep refs always pointing to latest values/functions
@@ -1976,6 +2028,14 @@ export default function SessionPage(){
             const posData={...posDatos, sl:alTick(posDatos.sl,orderModal.pair), tp:alTick(posDatos.tp,orderModal.pair)}
             const entradaTick=alTick(orderModal.entry,orderModal.pair)
             if(servicio.motivo && (servicio.motivo!=='sin_estado' || servicio.falloLectura)){ avisa('Las operaciones están en pausa: el simulador no acepta operaciones ahora.'); setOrderModal(null); return }
+            // modo v1: abrir es un comando; la posicion o la pendiente aparecen con el estado confirmado
+            if(v1Ref.current){
+              const m=orderModal
+              v1Ref.current.envia(comandoAbrir({pair:m.pair,side:m.isLimit?(m.side==='BUY'?'BUY_LIMIT':'SELL_LIMIT'):m.side,entry:entradaTick,lots:posData.lots,sl:posData.sl,tp:posData.tp,cursor:v1Ref.current.cursor()}))
+                .then(r=>{ if(r?.conclusion==='confirmado'&&!m.isLimit){setLastTrade(m.side);setTimeout(()=>setLastTrade(null),700)} })
+              setOrderModal(null);setTick(t=>t+1)
+              return
+            }
             if(orderModal.isLimit){
               const ps=pairState.current[orderModal.pair]||{engine:null,ready:false,positions:[],trades:[],orders:[]}
               pairState.current[orderModal.pair]=ps
