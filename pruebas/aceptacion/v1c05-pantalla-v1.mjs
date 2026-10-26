@@ -28,6 +28,9 @@
  *       «active» hasta que el alumno lo reconoce, y al abrir sale)
  *   I · (g) el Step es UNA VELA del par visible: en un hueco (EURUSD sin velas del minuto 100 al 109) salta a la siguiente
  *       vela con datos (110) en un solo avance, nunca a un minuto vacio
+ *   J · (i) /api/sim/crear acepta date_to = hoy (y no mañana); con la bandera encendida, el modal de reto
+ *       (ChallengeSetupModal) crea el reto v1 por /api/sim/crear con lo mismo que manda hoy (EURUSD, M15, desde hace 6
+ *       meses hasta HOY, sin recortar) y el mismo nombre automatico que /api/challenge/create
  *   En E, F, G y H los espias siguen a cero: lo optimista es solo la accion del alumno, nunca SL/TP, fills ni breach.
  * Contra lib/servidor REAL y PostgreSQL desechable (montaje-v1 + sim-004b + sim-006, como v1c04). Datos inventados.
  * Mercado: EURUSD 1,1 hasta el minuto 10 del 6-ene-2025; 1,09 del 10 al 19; 1,1 desde el 20. El resto, constante.
@@ -38,7 +41,7 @@ const { titulo, ver, oraculo, fin, importa, fuente, asienta, escenario } = await
 const { hayPostgres } = await import('../pg-ensayo.mjs')
 const { montajeV1, L, conUidDelMontaje } = await import('../montaje-v1.mjs')
 const { cerrojoEnMemoria } = await import('../cerrojo-falso.mjs')
-const N = 41
+const N = 44
 const HOOK = await importa('components/useSesionV1.js').catch(() => null), CRV = await importa('lib/sim/v1/crear.js').catch(() => null)
 if (!HOOK?.default || !CRV?.creaSesionV1) { for (let i = 0; i < N; i++) oraculo('V1C05', `caso ${i}: sin components/useSesionV1.js ni lib/sim/v1/crear.js no se puede`, false, 'no esta'); fin() }
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay', false); fin() }
@@ -405,6 +408,20 @@ try {
     tx({ c: rI.conclusion, pasos, cursor: (i7.refs.v1Ref.current.cursor() - M0) / 60, grafica: (i7.motor().currentTime - M0) / 60 }))
   const rI2 = await av7.paso()
   oraculo('V1C05', 'I · el Step siguiente, a la vela del 111', rI2.conclusion === 'confirmado' && i7.refs.v1Ref.current.cursor() === m(111) && i7.motor().currentTime === m(111), tx({ c: rI2.conclusion, cursor: (i7.refs.v1Ref.current.cursor() - M0) / 60 }))
+
+  titulo('J · (i) date_to = hoy: /api/sim/crear lo acepta y el modal de reto no recorta nada')
+  const hoyJ = new Date(B2.puertos.ahora()).toISOString().slice(0, 10)
+  const cJ = fecha => B2.llama('/api/sim/crear', { cuerpo: { session_id: nuevoId(), command_id: nuevoId(), epoca: 1, name: 'J', pair: 'EUR/USD', timeframe: 'M15', date_from: '2026-04-01', date_to: fecha, capital: '100000', challenge_type: '2F' } })
+  const jHoy = await cJ(hoyJ), jManana = await cJ(new Date(B2.puertos.ahora() + 86400000).toISOString().slice(0, 10))
+  oraculo('V1C05', 'J · /api/sim/crear: date_to = hoy se crea (201); mañana, 422 carga_invalida en date_to', jHoy.http === 201 && jManana.http === 422 && jManana.cuerpo?.en === 'date_to', tx({ hoy: hoyJ, a: jHoy.http, b: jManana.http, en: jManana.cuerpo?.en }))
+  const rJ = CRV.creaRetoV1 ? await CRV.creaRetoV1({ llama: B2.llama, nuevoId, tipo: '2F', capital: 100000, hoy: new Date(B2.puertos.ahora()) }) : null
+  const fJ = rJ?.ok ? await B2.leeSesion(rJ.id) : null
+  const desdeJ = (() => { const d = new Date(B2.puertos.ahora()); d.setMonth(d.getMonth() - 6); return d.toISOString().slice(0, 10) })()
+  oraculo('V1C05', 'J · creaRetoV1 (el modal con la bandera): reto 2F v1 por /api/sim/crear con EURUSD, M15, desde hace 6 meses hasta HOY y el nombre de hoy',
+    rJ?.ok === true && fJ?.motor_version === 1 && fJ.challenge_type === '2F' && fJ.date_to === hoyJ && fJ.date_from === desdeJ && fJ.timeframe === 'M15' && fJ.pair === 'EUR/USD' && Number(fJ.capital) === 100000 && fJ.name === 'Challenge 2 Fases · $100K · EURUSD',
+    tx({ rJ, fila: fJ && { mv: fJ.motor_version, t: fJ.challenge_type, desde: fJ.date_from, hasta: fJ.date_to, tf: fJ.timeframe, par: fJ.pair, nombre: fJ.name } }))
+  const MJ = fuente('components/ChallengeSetupModal.js'), iJ = MJ.indexOf('if (pantallaV1()) {'), iF = MJ.indexOf("fetch('/api/challenge/create'")
+  oraculo('V1C05', 'J · ChallengeSetupModal: con pantallaV1() llama a creaRetoV1 ANTES del /api/challenge/create de hoy, que sigue para la bandera apagada', iJ > 0 && iF > iJ && MJ.slice(iJ, iF).includes('creaRetoV1('))
 
   titulo('D · control positivo: la bandera apagada, la misma clase de sesion v1')
   delete process.env.NEXT_PUBLIC_SIM_V1_PANTALLA
