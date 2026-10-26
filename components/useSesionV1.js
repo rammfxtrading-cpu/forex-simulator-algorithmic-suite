@@ -18,6 +18,8 @@ import { avisa } from '../lib/sim/avisos'
 // un trade de sim_trades como lo pinta la pagina (la misma forma que la carga de _SessionInner)
 export const deFila = t => ({ id: t.id, pair: t.pair, side: t.side, entry: t.entry_price, exit: t.exit_price, lots: t.lots, sl: t.sl_price, tp: t.tp_price,
   rr: t.rr, rrReal: t.rr, pnl: t.pnl, result: t.result, reason: '—',
+  // orden 1-136: la comision que cobro el motor (sim_trades.comision_micro, µUSD); null en las filas del motor de antes
+  comision: t.comision_micro != null ? Number(t.comision_micro) / 1e6 : null,
   openTime: t.opened_at ? Math.floor(new Date(t.opened_at).getTime() / 1000) : null, closeTime: t.closed_at ? Math.floor(new Date(t.closed_at).getTime() / 1000) : null })
 
 export function puertosNavegador(id) {

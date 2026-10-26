@@ -7,7 +7,10 @@ import { s } from './sessionStyles'
 import { fmtPx, pnlColor, fmtPnl, fmtTs } from '../lib/sessionUi'
 import { calcPnl } from '../lib/trading/pricing'
 
-export default function SessionPanels({showPos,setShowPos,openPositions,closePosition,currentPrice,activePair,setCloseModal,showOrders,setShowOrders,pendingOrders,cancelLimitOrder,showTrades,setShowTrades,allTrades,ocupadas}){
+// orden 1-136: conComision (solo con la bandera v1, donde el motor cobra 3 USD por lote) añade la columna «COMISIÓN» con la
+// del servidor, en negativo como en MT5; sin ella, las tablas de hoy
+const fmtCom=c=>c==null||isNaN(c)?'—':fmtPnl(-c)
+export default function SessionPanels({showPos,setShowPos,openPositions,closePosition,currentPrice,activePair,setCloseModal,showOrders,setShowOrders,pendingOrders,cancelLimitOrder,showTrades,setShowTrades,allTrades,ocupadas,conComision=false}){
   return(<>
       {/* POSITIONS PANEL */}
       {showPos&&openPositions.length>0&&(
@@ -21,7 +24,7 @@ export default function SessionPanels({showPos,setShowPos,openPositions,closePos
           </div>
           <div style={{overflowX:'auto'}}>
             <table style={s.tbl}>
-              <thead><tr>{['PAR','DIR','ENTRADA','ACTUAL','SL','TP','LOTS','P&L',''].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+              <thead><tr>{(conComision?['PAR','DIR','ENTRADA','ACTUAL','SL','TP','LOTS','COMISIÓN','P&L','']:['PAR','DIR','ENTRADA','ACTUAL','SL','TP','LOTS','P&L','']).map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {openPositions.map(pos=>{
                   const pnl=calcPnl(pos.side,pos.entry,currentPrice??pos.entry,pos.lots,activePair)
@@ -34,6 +37,7 @@ export default function SessionPanels({showPos,setShowPos,openPositions,closePos
                       <td style={{...s.td,color:'rgba(239,83,80,0.7)'}}>{fmtPx(pos.sl,pos.pair)}</td>
                       <td style={{...s.td,color:'rgba(30,144,255,0.7)'}}>{fmtPx(pos.tp,pos.pair)}</td>
                       <td style={s.td}>{pos.lots}</td>
+                      {conComision&&<td style={s.td}>{fmtCom(pos.comision)}</td>}
                       <td style={{...s.td,color:pnlColor(pnl),fontWeight:700}}>{fmtPnl(pnl)}</td>
                       <td style={s.td}><button style={{...s.closeBtn,...(ocupadas?.has(pos.id)?{opacity:0.4,cursor:'not-allowed'}:{})}} disabled={!!ocupadas?.has(pos.id)} title={ocupadas?.has(pos.id)?'Cierre en curso':undefined} onClick={()=>{if(!ocupadas?.has(pos.id))setCloseModal({posId:pos.id,pair:activePair,pos})}}>✕</button></td>
                     </tr>
@@ -82,7 +86,7 @@ export default function SessionPanels({showPos,setShowPos,openPositions,closePos
           </div>
           <div style={{overflowX:'auto'}}>
             <table style={s.tbl}>
-              <thead><tr>{['PAR','DIR','ENTRY','EXIT','LOTS','R:R','P&L','RESULT','ABIERTO','CERRADO','NOTA'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+              <thead><tr>{(conComision?['PAR','DIR','ENTRY','EXIT','LOTS','R:R','COMISIÓN','P&L','RESULT','ABIERTO','CERRADO','NOTA']:['PAR','DIR','ENTRY','EXIT','LOTS','R:R','P&L','RESULT','ABIERTO','CERRADO','NOTA']).map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
               <tbody>
                 {allTrades.map((t,i)=>(
                   <tr key={i} style={s.tblRow}>
@@ -92,6 +96,7 @@ export default function SessionPanels({showPos,setShowPos,openPositions,closePos
                     <td style={s.td}>{fmtPx(t.exit,t.pair)}</td>
                     <td style={s.td}>{t.lots}</td>
                     <td style={s.td}>{t.rrReal}R</td>
+                    {conComision&&<td style={s.td}>{fmtCom(t.comision)}</td>}
                     <td style={{...s.td,color:pnlColor(t.pnl),fontWeight:700}}>{fmtPnl(t.pnl)}</td>
                     <td style={{...s.td,color:t.result==='WIN'?'#1E90FF':t.result==='LOSS'?'#ef5350':'#a0b8d0',fontWeight:700}}>{t.result}</td>
                     <td style={{...s.td,color:'rgba(255,255,255,0.5)',fontSize:9}}>{fmtTs(t.openTime)}</td>

@@ -1941,7 +1941,7 @@ export default function SessionPage(){
         showPos={showPos} setShowPos={setShowPos} openPositions={openPositions} closePosition={closePosition}
         currentPrice={currentPrice} activePair={activePair} setCloseModal={setCloseModal} ocupadas={cola.ocupadas}
         showOrders={showOrders} setShowOrders={setShowOrders} pendingOrders={pendingOrders} cancelLimitOrder={cancelLimitOrder}
-        showTrades={showTrades} setShowTrades={setShowTrades} allTrades={allTrades}
+        showTrades={showTrades} setShowTrades={setShowTrades} allTrades={allTrades} conComision={!!v1Ref.current}
       />
 
       {/* CONTEXT MENU */}
