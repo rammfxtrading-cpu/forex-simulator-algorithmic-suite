@@ -37,8 +37,12 @@
 --
 -- DEPENDE DE: sim-003, sim-004a-preparatoria y sim-004b APLICADAS (sim-004b el 20-oct; el cuerpo de sim_comando que
 -- espera es el de sim-004b: sha256 94f4db481cc09a2bc9b5d86512931186d8ec5aa98689bf6dc54bd6418798bc36, el medido por la
--- s16 tras aplicarla). No depende de sim-005 (otra rama: un disparador sobre sim_sessions.last_timestamp) ni la toca;
--- que las dos convivan en cualquier orden NO esta ensayado.
+-- s16 tras aplicarla). No depende de sim-005 (otra rama: un disparador sobre sim_sessions.last_timestamp) ni la toca.
+-- ENSAYADAS JUNTAS (orden 1-125, PostgreSQL 17 local, con una copia de sim-005 de e03c81b): sim-004b → sim-005 → sim-006,
+-- sim-006 → vuelta atras → otra vez, y el orden contrario: conviven (el disparador no estorba al tope ni al reves) y las
+-- pruebas de cada una pasan con la otra puesta. ⚠️ Con sim-006 puesta, sim-005 (reejecutada o SU vuelta atras, con lo
+-- esperado medido antes de sim-006) PARA sin tocar nada (S005-CC / V005-CC): su guarda mira la ficha de sim_alumnos, que
+-- sim-006 cambia. Retirada: primero la vuelta atras de sim-006 y despues la de sim-005 (ensayado).
 --
 -- ⚠️ Tras aplicarla, sim-004b NO se vuelve a ejecutar (paraba «sim-004b: A MEDIAS …» sin tocar nada: ensayado) y la s16
 -- y el inventario de sim-004b veran otro cuerpo de sim_comando y dos columnas mas en sim_alumnos: su esperado se
