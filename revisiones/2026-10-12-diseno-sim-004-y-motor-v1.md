@@ -418,6 +418,15 @@ Responden a las preguntas de § g, por número. **Donde chocan con el cuerpo de 
 
 Los corchetes los rellena Ramón cuando elija la ventana (decisión 5: ≤ 30 min).
 
+**Decisiones de Ramón del 26-oct (orden 1-123 del CTO, respuesta a `decisiones-ramon.md`):**
+- **D-13, D-14 y D-15:** siguen como las decidió en octubre (sin objeciones).
+- **Día y hora del corte:** el mismo día en que el paquete esté aprobado y Ramón esté delante, a una hora de poco uso. El aviso se publica **unas horas antes** (no 3 días).
+- **Frase añadida al aviso:** «Cierra tus operaciones abiertas antes de esa hora.» Texto completo, con la frase detrás de la primera:
+
+> El simulador estará en mantenimiento el [día] de [hora] a [hora], unos 30 minutos. Cierra tus operaciones abiertas antes de esa hora. Tus sesiones están a salvo. Al volver verás el simulador nuevo, y tus sesiones anteriores seguirán ahí como "Simulador anterior".
+
+- **Sesión nueva:** desde cero (saldo y fase iniciales del reto). La antigua queda entera como «Simulador anterior».
+
 **Nota a la decisión 8:** el veredicto se calcula fuera, con `lib/challengeEngine.js` sobre los trades de cada reto legado, y entra en sim-004 como datos literales, revisables antes de pegar. También cabe una reimplementación en SQL contrastada contra el JS. Lo decido en el ensayo y se lo enseño a Astra.
 
 **Inventario de escritores con `service_role` en `sim_sessions` y `sim_trades` (decisión 3, 12-oct)**
