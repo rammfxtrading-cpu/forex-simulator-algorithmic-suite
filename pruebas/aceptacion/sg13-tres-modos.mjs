@@ -4,6 +4,11 @@
  * modos. Antes (06e053c), en la vela de un breach el Step devolvia el control antes de confirmar el reto y admitia mas
  * pasos (reloj y progreso a las 12:00; salto y Play, 11:57). Ahora la frontera se resuelve tambien en esa vela y, si el
  * reto ya no esta activo, el motor queda bloqueado para los tres (lib/replayEngine.js, bloqueado).
+ * ORDEN 1-124 (cambia el contrato del Play en el objetivo): el Play no se para al alcanzar el objetivo (Ramon: el
+ * Play solo lo para el alumno o el aviso del plazo; f5b713b, produccion, tampoco lo paraba). Lo economico (saldo,
+ * estado, abiertas, cierres) sigue siendo el mismo en los tres modos; en el objetivo, el reloj y el progreso del Play
+ * siguen hasta donde esta prueba lo corta (T+300) en vez de quedarse en la vela del objetivo. En el breach, igual que
+ * antes: los tres en la vela del breach (al Play lo pausa useChallengeFlow, como en f5b713b).
  */
 import {ver,oraculo,fin,escenario,sesionSim,vela,importa,A,asienta,db,retenApi} from '../lib.mjs'
 import {banco,velasEnStorage} from '../banco-motor.mjs'
@@ -34,6 +39,8 @@ for(const side of ['SELL','BUY'])for(const win of [false,true])for(const mediano
   resultados.push({modo,r:{saldo:b.estado.saldo,reloj:e.currentTime-T,estado:b.caja.valor.reto.challengeStatus?.evaluation?.status,last:db.tablas.sim_sessions[0].last_timestamp-T,abiertas:b.ps().positions.length,trades:db.tablas.sim_trades.map(t=>[+t.pnl,t.closed_at])}});b.caja.raiz.desmonta?.();
  }
  console.log('FAMILIA',JSON.stringify({side,win,medianoche,delay,resultados}));
- oraculo('ASTRA-3',`${side} win=${win} medianoche=${medianoche} delay=${delay}: salto=Step=Play`,resultados.every(x=>JSON.stringify(x.r)===JSON.stringify(resultados[0].r)));resumen.push(resultados);
+ // orden 1-124: con objetivo (win), el Play sigue: su reloj y su progreso, los del corte de la prueba (T+300)
+ const comoSalto=x=>JSON.stringify(x.modo==='play'&&win?{...x.r,reloj:resultados[0].r.reloj,last:resultados[0].r.last}:x.r),play=resultados[2].r;
+ oraculo('ASTRA-3',`${side} win=${win} medianoche=${medianoche} delay=${delay}: salto=Step=Play en lo economico${win?'; el Play sigue tras el objetivo (orden 1-124)':''}`,resultados.every(x=>comoSalto(x)===JSON.stringify(resultados[0].r))&&(!win||(play.reloj===300&&play.last===300)),JSON.stringify(resultados.map(x=>[x.modo,x.r.reloj,x.r.estado])));resumen.push(resultados);
 }
 fin()

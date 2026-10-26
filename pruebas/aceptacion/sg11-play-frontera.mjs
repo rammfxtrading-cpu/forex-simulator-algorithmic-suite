@@ -3,7 +3,8 @@
  *
  * lib/replayEngine.js, _tickFrame: tras cada vela, si engine.frontera() devuelve una promesa (la vela trajo
  * algo: lib/sim/salto.js creaFrontera), el Play no consume la siguiente hasta que se resuelve; false (el reto
- * ya no esta activo) lo pausa. requestAnimationFrame no corre en las pruebas (entorno.mjs): los fotogramas se
+ * ya no esta activo) deja el motor bloqueado pero NO pausa el Play (orden 1-124, cambia el contrato de SIMGOTO2-01:
+ * el Play solo lo para el alumno o el aviso del plazo; en f5b713b, produccion, el objetivo no lo paraba). requestAnimationFrame no corre en las pruebas (entorno.mjs): los fotogramas se
  * dan a mano con _tickFrame. ORACULOS, a mano: 20 velas, velocidad 60 (15 velas por fotograma de 250 ms); la
  * vela 3 trae algo.
  */
@@ -28,12 +29,12 @@ titulo('la vela 3 trae algo: el Play se para ahi hasta que la frontera se resuel
   e._tickFrame(1000); e._tickFrame(1250)
   oraculo('SG11', 'resuelta (true), el Play sigue', e.currentIndex > 3 && e.isPlaying, `${e.currentIndex} · ${e.isPlaying}`)
 }
-titulo('la frontera dice que el reto ya no esta activo (false): el Play se pausa en esa vela')
+titulo('la frontera dice que el reto ya no esta activo (false): el Play NO se pausa (orden 1-124); el motor queda bloqueado')
 {
   const { e, abrir } = motor(3, false)
   e.play(); e._tickFrame(0); e._tickFrame(250); abrir(); await espera()
   e._tickFrame(500); e._tickFrame(750)
-  oraculo('SG11', 'pausado en la vela 3', !e.isPlaying && e.currentIndex === 3, `${e.currentIndex} · ${e.isPlaying}`)
+  oraculo('SG11', 'sigue reproduciendo tras la vela 3 (no se pausa) y el motor queda bloqueado para el Step y el Go to', e.isPlaying && e.currentIndex > 3 && e.bloqueado === true, `${e.currentIndex} · ${e.isPlaying} · ${e.bloqueado}`)
 }
 ver('control: sin frontera, un fotograma avanza 15 velas', (() => { const e = new ReplayEngine(); e.load(velas); e.speed = 60; e.play(); e._tickFrame(0); e._tickFrame(250); return e.currentIndex === 15 })())
 fin()
