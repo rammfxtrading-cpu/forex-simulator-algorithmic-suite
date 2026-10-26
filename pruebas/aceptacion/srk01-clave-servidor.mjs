@@ -22,6 +22,8 @@ try { helper = createRequire(import.meta.url)('../../lib/claveServidor.cjs') } c
   helper = { getClaveServidor: falta, hayClaveServidor: falta, variableClaveServidor: falta }
 }
 const { getClaveServidor, hayClaveServidor, variableClaveServidor } = helper
+// orden 1-137: la fuente para el log de arranque; sin ella (codigo de antes), sus oraculos salen en ROJO, no como excepcion
+const fuenteClaveServidor = helper.fuenteClaveServidor ?? (() => { throw new Error('fuenteClaveServidor no existe') })
 const prueba = (f) => { try { return f() } catch { return undefined } }
 const NUEVA = 'sb_secret_ficticia_NUEVA_0123456789'
 const VIEJA = 'eyJficticia.VIEJA.firma'
@@ -215,6 +217,64 @@ titulo('5 · la app y el sitio unico')
     : e.isDirectory() ? todos(dir + e.name + '/') : /\.(js|mjs|cjs|ts)$/.test(e.name) ? [dir + e.name] : [])
   const lee = todos('').filter((f) => /SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY/.test(fuente(f).replace(/^\s*(\/\/|\*).*$/gm, '')))
   oraculo('SRK01', 'solo lib/claveServidor.cjs lee las variables (recorrido del disco, sin comentarios)', lee.join() === 'lib/claveServidor.cjs', lee.join(', '))
+}
+
+titulo('6 · la FUENTE de la clave en una linea al arrancar, nunca el valor (orden 1-137; como 6ca9d5d del Macro)')
+{
+  // los cuatro casos de entorno: solo la nueva, las dos, solo la vieja, la nueva vacia (un secreto de Actions que no existe)
+  const CASOS = [[{ SUPABASE_SECRET_KEY: NUEVA }, 'secret'], [{ SUPABASE_SECRET_KEY: NUEVA, SUPABASE_SERVICE_ROLE_KEY: VIEJA }, 'secret'],
+    [{ SUPABASE_SERVICE_ROLE_KEY: VIEJA }, 'vieja'], [{ SUPABASE_SECRET_KEY: '', SUPABASE_SERVICE_ROLE_KEY: VIEJA }, 'vieja']]
+  const f = (env) => callado(() => fuenteClaveServidor(env))
+  oraculo('SRK01', 'fuenteClaveServidor: «secret» con la nueva (aunque este la vieja), «vieja» sin la nueva o con la nueva vacia; sin escribir nada',
+    CASOS.every(([env, esperado]) => { const r = f(env); return r.valor === esperado && r.escrito.length === 0 }), JSON.stringify(CASOS.map(([env]) => f(env).valor ?? f(env).error?.message)))
+  const mala = f({ SUPABASE_SECRET_KEY: 'sb_publishable_ficticia_0123', SUPABASE_SERVICE_ROLE_KEY: VIEJA })
+  oraculo('SRK01', 'fuenteClaveServidor con una nueva que no es secret key: el mismo error que getClaveServidor (no dice «vieja»), sin valor',
+    mala.error instanceof Error && /no tiene forma de secret key/.test(mala.error.message) && sinClave(mala.error.message, 'sb_publishable_ficticia_0123', VIEJA), String(mala.valor ?? mala.error?.message))
+
+  // la app: UNA linea en lib/authApi.js, y de verdad al cargar el modulo (proceso aparte, SDK real, sin red)
+  const app = fuente('lib/authApi.js')
+  const lineas = app.split('\n').filter((l) => /console\./.test(l) && !/^\s*(\/\/|\*)/.test(l))
+  oraculo('SRK01', 'lib/authApi.js: UNA linea de log, «[simulador] clave de servidor: <fuente>», con fuenteClaveServidor() y nada mas',
+    lineas.length === 1 && lineas[0].trim() === 'console.log(`[simulador] clave de servidor: ${fuenteClaveServidor()}`)', JSON.stringify(lineas))
+  const { spawnSync } = await import('node:child_process')
+  const { fileURLToPath: aRuta } = await import('node:url')
+  const R = aRuta(new globalThis.URL('../../', import.meta.url))
+  const CODIGO = [
+    "import { pathToFileURL } from 'node:url'",
+    'const R = ' + JSON.stringify(R),
+    "globalThis.fetch = async () => { throw new Error('sin red') }",
+    "const logs = []; for (const k of ['log', 'error', 'warn', 'info', 'debug']) console[k] = (...v) => logs.push(v.map((x) => String(x)).join(' '))",
+    "process.stderr.write = (c) => { logs.push(String(c)); return true }",
+    "let error = ''; try { await import(pathToFileURL(R + 'lib/authApi.js').href) } catch (e) { error = String(e?.message ?? e) }",
+    'process.stdout.write(JSON.stringify({ logs, error }))',
+  ].join('\n')
+  const carga = (env) => {
+    const h = spawnSync(process.execPath, ['--input-type=module', '-e', CODIGO], { cwd: R, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: process.env.HOME ?? '/tmp', NEXT_PUBLIC_SUPABASE_URL: 'https://ficticio.invalid', ...env } })
+    try { return JSON.parse(h.stdout) } catch { return { roto: (h.stderr || h.stdout).slice(0, 300) } }
+  }
+  const vistos = CASOS.map(([env, esperado]) => ({ esperado, r: carga(env) }))
+  oraculo('SRK01', 'lib/authApi.js al cargar, en los cuatro casos: UNA sola linea, «[simulador] clave de servidor: secret|vieja», y ningun trozo de la clave',
+    vistos.every(({ esperado, r }) => !r.error && Array.isArray(r.logs) && r.logs.length === 1 && r.logs[0] === `[simulador] clave de servidor: ${esperado}` && sinClave(r.logs.join('\n'), NUEVA, VIEJA)),
+    JSON.stringify(vistos.map(({ r }) => r.logs ?? r.roto ?? r.error)))
+
+  // las Actions: actualizar-diario.js REAL (en seco); el prefijo, el del workflow que lo corre (GITHUB_WORKFLOW_REF, que pone GitHub)
+  const corre = async (env) => {
+    escenario({ storage: { 'forex-data': {} } })
+    proveedor.responde = a => diaM1(a.dates.from.toISOString().slice(0, 10))
+    const r = await correScript('scripts/actualizar-diario.js', { ahora: '2026-01-07T06:00:00Z', argv: [], env: { NEXT_PUBLIC_SUPABASE_URL: URL, ...env } })
+    return r.salida.filter((l) => /clave de servidor/.test(l))
+  }
+  const REF = (wf) => `algorithmic-suite/forex-simulator/.github/workflows/${wf}.yml@refs/heads/main`
+  for (const wf of ['mercado-diario', 'actualizar-velas']) {
+    const malos = []
+    for (const [env, esperado] of CASOS) {
+      const l = await corre({ GITHUB_WORKFLOW_REF: REF(wf), ...env })
+      if (l.length !== 1 || l[0] !== `[${wf}] clave de servidor: ${esperado}` || !sinClave(l.join('\n'), NUEVA, VIEJA)) malos.push(JSON.stringify(l))
+    }
+    oraculo('SRK01', `actualizar-diario.js en ${wf}.yml, en los cuatro casos: UNA sola linea, «[${wf}] clave de servidor: secret|vieja», sin valor`, malos.length === 0, malos.join(' · '))
+  }
+  const fuera = await corre({ GITHUB_WORKFLOW_REF: '', SUPABASE_SECRET_KEY: NUEVA })
+  oraculo('SRK01', 'actualizar-diario.js fuera de las Actions: la linea con su propio nombre, «[actualizar-diario] clave de servidor: secret»', fuera.length === 1 && fuera[0] === '[actualizar-diario] clave de servidor: secret', JSON.stringify(fuera))
 }
 
 fin()
