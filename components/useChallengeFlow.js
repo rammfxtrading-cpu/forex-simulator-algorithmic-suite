@@ -383,12 +383,21 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   const handleChallengeFail = useCallback(async () => {
     // orden 1-127 (ii): con una madre legado no se marca nada (solo lectura)
     if (sessionRef.current?.legado === true) return
-    // modo v1: el breach ya lo confirmo el servidor; no hay nada que mandar
-    if (v1Ref?.current) { await refreshChallengeStatus(); return }
+    // modo v1: el breach ya lo confirmo el servidor. Orden 1-129 B1: el reconocimiento se marca como hoy (la fila en
+    // failed_dd_*, por /api/challenge/advance 'fail', que en v1 solo escribe el status si el estado confirmado es un breach)
+    if (v1Ref?.current) {
+      setChallengeAdvancing(true)
+      try {
+        const data = await callChallengeAdvance('fail')
+        if (data?.session?.status) v1Ref.current?.marcaFila?.(data.session.status)
+      } finally { setChallengeAdvancing(false) }
+      await refreshChallengeStatus()
+      return
+    }
     const data = await decideFase('fail')
     if (!data) return
     await refreshChallengeStatus()
-  }, [decideFase, refreshChallengeStatus])
+  }, [decideFase, refreshChallengeStatus, callChallengeAdvance])
 
   // CTA "Comenzar Challenge Real" — abre afiliado FTMO en pestaña nueva
   const handleCtaRealChallenge = useCallback(() => {

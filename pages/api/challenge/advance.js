@@ -131,6 +131,7 @@ export default async function handler(req, res) {
     return res.status(409).json({ error: 'Esta sesión es del Simulador anterior: solo lectura.', code: 'solo_lectura' })
   }
   if (session.motor_version === 1) {
+    if (outcome === 'fail') return reconoceBreachV1({ session, res, supabaseAdmin, rechaza })
     return res.status(409).json({ error: 'Esta sesión avanza de fase por el simulador nuevo.', code: 'usa_avanzar_fase' })
   }
 
@@ -340,6 +341,38 @@ export default async function handler(req, res) {
     session: closed,
     next_session: nextSession,
   })
+}
+
+/**
+ * Orden 1-129 B1: el reconocimiento del reto quemado en una sesion v1, como hoy (la fila en failed_dd_daily /
+ * failed_dd_total, que el dashboard y la pagina leen como reto cerrado). El breach lo decidio el motor y esta en el
+ * estado confirmado (reto@1): aqui solo se comprueba y se escribe el STATUS. Ni el saldo, ni last_timestamp, ni el estado
+ * (los lleva la RPC). Sin breach confirmado: 400. Con el servicio en mantenimiento, como hoy: no se escribe. La escritura,
+ * con CAS sobre la version de la sesion y su status (activa: NULL o 'active'); ya marcada con ese status: 200 igual.
+ */
+async function reconoceBreachV1({ session, res, supabaseAdmin, rechaza }) {
+  const reto = session.estado?.esquema === 'reto@1' ? session.estado : null
+  if (!reto || reto.estado !== 'breach') {
+    return rechaza('no_quemado', { error: 'La sesión no está quemada según el motor' })
+  }
+  const status = reto.breach?.regla === 'perdida_diaria' ? 'failed_dd_daily' : 'failed_dd_total'
+  const reason = status === 'failed_dd_daily' ? 'dd_daily' : 'dd_total'
+  const hecho = fila => res.status(200).json({ ok: true, action: 'challenge_failed', reason, session: fila, next_session: null })
+  if (session.status === status) return hecho(session)
+  if (session.status != null && session.status !== 'active') {
+    return res.status(409).json({ error: 'La sesión ya está cerrada', currentStatus: session.status })
+  }
+  if (!(await servicioPermite(supabaseAdmin, res, 'challenge/advance'))) return
+  const { data, error } = await supabaseAdmin
+    .from('sim_sessions')
+    .update({ status })
+    .eq('id', session.id)
+    .eq('version', session.version)
+    .or('status.is.null,status.eq.active')
+    .select('*')
+  if (error) return (registra('challenge/advance', error), res.status(500).json({ error: 'Error cerrando sesión' }))
+  if (!Array.isArray(data) || data.length !== 1) return res.status(409).json({ error: 'La sesión ha cambiado, vuelve a intentarlo', code: 'saldo_cambiado' })
+  return hecho(data[0])
 }
 
 /**
