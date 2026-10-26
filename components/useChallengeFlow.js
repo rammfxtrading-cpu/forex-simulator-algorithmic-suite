@@ -22,6 +22,20 @@ import { conPlazo, VENCIDO } from '../lib/sim/plazo'
 export const INTENTOS_FASE = 3
 export const ESPERA_FASE_MS = 250
 
+// Orden 1-129 A: una hora del simulador en segundos enteros (Math.floor de un numero finito; mas de 1e11 son
+// milisegundos y se pasan a segundos), o null si no vale (nula, texto, NaN, 0 o negativa)
+export function horaDeCierre(x) {
+  if (typeof x !== 'number' || !Number.isFinite(x)) return null
+  const s = Math.floor(x > 1e11 ? x / 1000 : x)
+  return s > 0 ? s : null
+}
+// la hora de cierre del ultimo trade que la pagina tiene cargado (closeTime, en segundos), o null
+export function ultimoCierre(pairState) {
+  let m = null
+  for (const ps of Object.values(pairState ?? {})) for (const t of ps?.trades ?? []) { const h = horaDeCierre(t?.closeTime); if (h != null && (m == null || h > m)) m = h }
+  return m
+}
+
 export default function useChallengeFlow({ id, router, session, setSession, sessionRef, currentTime, pairState, balanceRef, closePositionRef, setIsPlaying, v1Ref }){
   const currentTimeRef = useRef(null) // timestamp de la vela actual del simulador (unix segundos). Se usa en refreshChallengeStatus.
   const lastMadridDayRef = useRef(null) // ultimo dia Madrid detectado para evitar refetch en cada tick
@@ -265,6 +279,16 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
   // outcome='pass' o 'fail' según contexto. Devuelve el nextSession (si aplica).
   const callChallengeAdvance = useCallback(async (outcome) => {
     if (!id) return null
+    const que = outcome === 'pass' ? 'No se ha podido pasar de fase' : 'No se ha podido guardar el resultado del reto'
+    // orden 1-129 A: la hora del cierre, en segundos enteros y comprobada ANTES de enviar. Sin una valida del simulador,
+    // la last_timestamp de la sesion; sin ella, la hora de cierre del ultimo trade; sin nada, se avisa y no se envia
+    const end_timestamp = horaDeCierre(getMasterTime())
+      ?? horaDeCierre(sessionRef.current?.last_timestamp)
+      ?? ultimoCierre(pairState.current)
+    if (end_timestamp == null) {
+      avisa(`${que}: falta la hora del simulador. Recarga la página e inténtalo de nuevo.`)
+      return null
+    }
     try {
       const res = await fetch('/api/challenge/advance', {
         method: 'POST',
@@ -272,7 +296,7 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
         body: JSON.stringify({
           session_id: id,
           outcome,
-          end_timestamp: getMasterTime(),   // B4: endTime real del cierre, fuente de verdad cliente
+          end_timestamp,   // B4: endTime real del cierre, fuente de verdad cliente
           open_positions: collectOpenPositions(),   // B1: flotantes vivos en el momento del cierre, servidor los descarta
         }),
       })
@@ -281,11 +305,14 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       if (res.status === 409 && data?.code === 'saldo_cambiado') return { saldoCambiado: true }
       if (!res.ok) {
         console.error('[challenge/advance] error:', data?.error || res.statusText)
+        // orden 1-129 A: el alumno ve el motivo (no vuelve al boton en silencio)
+        avisa(`${que}: ${data?.error || `error ${res.status}`}`)
         return null
       }
       return data
     } catch (e) {
       console.error('[challenge/advance] fetch failed', e)
+      avisa(`${que}. Comprueba tu conexión e inténtalo de nuevo.`)
       return null
     }
   }, [id])

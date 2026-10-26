@@ -66,27 +66,35 @@ export default async function handler(req, res) {
   if (!auth) return
   const { user, supabaseAdmin } = auth
 
-  const { session_id, outcome, end_timestamp, open_positions: openPositionsRaw } = req.body || {}
+  const { session_id, outcome, end_timestamp: endRaw, open_positions: openPositionsRaw } = req.body || {}
+  // Orden 1-129 A: cada 400 se registra (solo el motivo y el session_id, como el resto de logs de este fichero: S05)
+  const sid = typeof session_id === 'string' ? session_id : null
+  const rechaza = (motivo, cuerpo) => {
+    console.error(`[challenge/advance] 400 ${motivo}`, { session_id: sid })
+    return res.status(400).json(cuerpo)
+  }
   // B1: el cliente envía las posiciones vivas en el momento del cierre.
   // Servidor las descarta sin persistirlas (doctrina "fase nueva = virgen").
   // No validamos estructura porque NO se persiste — solo se loguea.
   const open_positions = Array.isArray(openPositionsRaw) ? openPositionsRaw : []
   if (!session_id || typeof session_id !== 'string') {
-    return res.status(400).json({ error: 'session_id requerido' })
+    return rechaza('session_id', { error: 'session_id requerido' })
   }
   if (outcome !== 'pass' && outcome !== 'fail') {
-    return res.status(400).json({ error: "outcome debe ser 'pass' o 'fail'" })
+    return rechaza('outcome', { error: "outcome debe ser 'pass' o 'fail'" })
   }
   // B4: end_timestamp es el momento exacto del cierre del trade que disparó la
   // transición de fase. Lo envía el cliente leyendo getMasterTime() de la API
   // del data layer (lib/sessionData.js, fase 2a). Sin este campo no podemos
   // persistir el last_timestamp correcto en la sesión que se cierra.
-  if (!Number.isInteger(end_timestamp) || end_timestamp <= 0) {
-    return res.status(400).json({ error: 'end_timestamp requerido (integer > 0)' })
+  // Orden 1-129 A: un decimal o una cadena numerica se redondean hacia abajo (Math.floor); lo demas, 400.
+  const end_timestamp = segundosEnteros(endRaw)
+  if (end_timestamp == null) {
+    return rechaza('end_timestamp_no_valido', { error: 'Falta la hora del cierre de la fase o no es válida.' })
   }
   const maxAllowed = Math.floor(Date.now() / 1000) + 86400
   if (end_timestamp > maxAllowed) {
-    return res.status(400).json({ error: 'end_timestamp fuera de rango razonable' })
+    return rechaza('end_timestamp_fuera_de_rango', { error: 'La hora del cierre de la fase está fuera de rango.' })
   }
 
   // ── 1. Cargar la sesión. balance_texto: el saldo como TEXTO de la base (numeric
@@ -113,7 +121,7 @@ export default async function handler(req, res) {
 
   // ── 3. Verificar que es challenge
   if (!session.challenge_type) {
-    return res.status(400).json({ error: 'La sesión no es un challenge' })
+    return rechaza('no_es_reto', { error: 'La sesión no es un challenge' })
   }
 
   // ── 3b. Orden 1-127 (ii), decision de Ramon: tras el corte, una sesion «Simulador anterior» (legado) es de solo lectura
@@ -166,7 +174,7 @@ export default async function handler(req, res) {
 
   // ── 6. Validar coherencia cliente ↔ servidor
   if (outcome === 'pass' && evaluation.status !== 'target_reached') {
-    return res.status(400).json({
+    return rechaza('objetivo_no_alcanzado', {
       error: 'Aún no has alcanzado el profit target de esta fase',
       evaluation,
     })
@@ -174,7 +182,7 @@ export default async function handler(req, res) {
   if (outcome === 'fail' &&
       evaluation.status !== 'failed_dd_daily' &&
       evaluation.status !== 'failed_dd_total') {
-    return res.status(400).json({
+    return rechaza('no_quemado', {
       error: 'La sesión no está quemada según el motor',
       evaluation,
     })
@@ -332,6 +340,17 @@ export default async function handler(req, res) {
     session: closed,
     next_session: nextSession,
   })
+}
+
+/**
+ * Orden 1-129 A: la hora del cierre en segundos enteros. Un numero finito o una cadena numerica (decimal incluido) →
+ * Math.floor; > 0. Cualquier otra cosa (nulo, texto, NaN, 0 o negativo) → null.
+ */
+export function segundosEnteros(x) {
+  const n = typeof x === 'number' ? x : (typeof x === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(x) ? Number(x) : NaN)
+  if (!Number.isFinite(n)) return null
+  const e = Math.floor(n)
+  return e > 0 ? e : null
 }
 
 /**
