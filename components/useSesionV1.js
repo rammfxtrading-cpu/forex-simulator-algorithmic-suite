@@ -39,8 +39,9 @@ export default function useSesionV1({ id, session, pairState, balanceRef, setBal
     const p = puertos ?? puertosNavegador(id)
     v1Ref.current = creaPantallaV1({ sessionId: id, sesion: session, usuario: session.user_id, pairState, ...p, avisa,
       alSaldo: n => { if (n == null) return; balanceRef.current = n; setBalance(n) },
-      // orden 1-127 (4): con cada cambio, las lineas de las pendientes de cada par en su grafico, como hoy
-      alCambio: () => { setTick(t => t + 1); const cm = chartMap?.current; if (cm) for (const [par, ps] of Object.entries(pairState.current)) lineasDeOrdenes(cm[par], ps?.orders ?? []) },
+      // orden 1-127 (4): con cada cambio, las lineas de las pendientes de cada par en su grafico, como hoy; orden 1-129 B3: solo
+      // las de confirmLimitOrder (pv.conLineas), no las del OrderModal (hoy no dibuja lineas de precio)
+      alCambio: () => { setTick(t => t + 1); const cm = chartMap?.current, pv = v1Ref.current; if (cm) for (const [par, ps] of Object.entries(pairState.current)) lineasDeOrdenes(cm[par], (ps?.orders ?? []).filter(o => pv?.conLineas?.(o.id) ?? true)) },
       alReto: () => refrescaRetoRef?.current?.() })
     de.current = id
   }

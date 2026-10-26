@@ -186,7 +186,7 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   const confirmLimitOrder=useCallback(()=>{
     if(!preview) return
     if(soloLecturaRef?.current){ avisa('Esta sesión es del Simulador anterior: solo lectura.'); setPreview(null); return }
-    if(v1Ref?.current){ const pv=preview; setPreview(null); return v1Ref.current.envia(comandoAbrir({pair:pv.pair,side:pv.side,entry:pv.entry,lots:pv.lots,sl:pv.sl,tp:pv.tp}),{createdTime:currentTime}) }
+    if(v1Ref?.current){ const pv=preview; setPreview(null); return v1Ref.current.envia(comandoAbrir({pair:pv.pair,side:pv.side,entry:pv.entry,lots:pv.lots,sl:pv.sl,tp:pv.tp}),{createdTime:currentTime,lineas:true}) }
     const ps=pairState.current[preview.pair]; if(!ps) return
     if(!ps.orders) ps.orders=[]
     // orden 1-119: lo que entra se ajusta al tick del par (el dibujo y el preview pueden traer cualquier decimal)
