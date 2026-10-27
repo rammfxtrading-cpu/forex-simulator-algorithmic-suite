@@ -172,6 +172,9 @@ export default function usePairData({ id, session, activePair, pairState, chartM
     // autoscale las ignora correctamente.
     const _mkPhantom = (t) => ({ time: t, open: _lastC, high: _lastC, low: _lastC, close: _lastC })
 
+    // Orden 1-141: el desplazamiento del encuadre que produccion (f5b713b) aplica al primer tick tras una vela no
+    // consecutiva (abajo). Una vela nueva o un render completo antes de ese tick lo anulan: alli produccion restaura el rango
+    const _findeN = cr._findeDesplaza || 0; cr._findeDesplaza = 0
 if(full||(curr!==prev&&curr!==prev+1)){
       // Cantidad de phantoms: por defecto 10. Si hay drawings cuyos puntos
       // caen más allá, el effect de cambio de TF setea cr._phantomsNeeded para
@@ -203,6 +206,11 @@ if(full||(curr!==prev&&curr!==prev+1)){
       // entera en esta misma vela por el fallback de restoreOnNewBar, el mismo setData que ya hace
       // cada vela consecutiva (su update lanza «Cannot update oldest data» en LWC 5).
       const _noConsecutiva = !!cr.phantom?.length && cr.phantom[0].time !== _lastT
+      // Orden 1-141 (fp01, encuadre tras pausar): en produccion la vela quedaba DETRAS de las fantasmas viejas y el
+      // siguiente tick de esa vela (applyTickUpdate: su update lanza) rehacia la serie con setData sin restaurar el rango:
+      // LWC conserva el desplazamiento a la derecha y el rango se movia hacia atras tantos puntos como fantasmas viejas
+      // quitaba (M15: 10). Se apunta aqui y se aplica en ese mismo tick
+      if (_noConsecutiva) cr._findeDesplaza = cr.phantom.length
       let _phN
       try {
         const tools = JSON.parse(exportTools() || '[]')
@@ -224,6 +232,11 @@ if(full||(curr!==prev&&curr!==prev+1)){
     } else {
       // Within-bucket: actualiza última vela + phantoms in-place (ver applyTickUpdate JSDoc).
       applyTickUpdate(cr, agg, cr.phantom, _lastC)
+      if (_findeN) {
+        let _r = null
+        try { _r = cr.chart.timeScale().getVisibleLogicalRange() } catch {}
+        if (_r) restoreSavedRange(cr, { from: _r.from - _findeN, to: _r.to - _findeN })
+      }
     }
     cr.prevCount=curr
     if(pair===activePairRef.current) setCurrentPrice(agg[agg.length-1].close)
