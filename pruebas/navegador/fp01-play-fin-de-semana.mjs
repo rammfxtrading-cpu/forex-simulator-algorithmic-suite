@@ -48,12 +48,13 @@ const TFS = {
 }
 // EL ENCUADRE TRAS PAUSAR, EL DE PRODUCCION (f5b713b; orden 1-141). Medido en Chrome el 27-oct con esta misma prueba en un
 // worktree de f5b713b: rango logico visible y x (px) de la ultima vela del viernes y de la primera del domingo, por encuadre
-// de partida (el de antes del Play: en M1 la pagina abre unas veces con las 80 velas de initVisibleRange y otras sin el,
+// de partida (el de antes del Play: la pagina abre unas veces con las 80 velas de initVisibleRange y otras sin el,
 // tambien en f5b713b). En M15 el cruce del fin de semana desplaza el rango 10 puntos (las 10 fantasmas del viernes); en M1
 // (la ultima vela real lejos del borde derecho) no lo mueve. f0ed9ff conservaba el rango como en una vela normal (M15: x
 // del viernes 1169 en vez de 1289)
 const PRODUCCION = {
-  M15: [{ antes: { from: -2, to: 112 }, tras: { from: -12, to: 102, xv: 1289, xd: 1301 } }],
+  M15: [{ antes: { from: -2, to: 112 }, tras: { from: -12, to: 102, xv: 1289, xd: 1301 } },
+    { antes: { from: 40, to: 100 }, tras: { from: 30, to: 90, xv: 1480.8, xd: 1503.4 } }],
   M1: [{ antes: { from: 1361, to: 1441 }, tras: { from: 1361, to: 1441, xv: 1336.4, xd: 1353.4 } },
     { antes: { from: 1339, to: 1453 }, tras: { from: 1339, to: 1453, xv: 1205, xd: 1217 } }],
 }
