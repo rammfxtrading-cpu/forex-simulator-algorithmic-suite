@@ -1,7 +1,7 @@
 /**
  * HD01 · TODAS LAS HERRAMIENTAS DE DIBUJO, COMO EN PRODUCCION (f5b713b), Y EL TIEMPO DEL GO TO (orden 1-139 del CTO)
- * PESADA: Chrome y `next dev`. SIEMPRE con el turno:  revisiones-suite/con-turno node pruebas/navegador/hd01-herramientas.mjs [dibujos|goto]
- * (sin argumento: las dos partes). La pagina real (pruebas/navegador/app.mjs: Supabase y /api/candles interceptados, nada
+ * PESADA: Chrome y `next dev`. SIEMPRE con el turno:  revisiones-suite/con-turno node pruebas/navegador/hd01-herramientas.mjs [dibujos|goto|shift]
+ * (sin argumento: las tres partes; SHIFT, la orden 1-142, se explica en su funcion). La pagina real (pruebas/navegador/app.mjs: Supabase y /api/candles interceptados, nada
  * sale de la maquina), dos semanas de velas, el replay en M15 el viernes a las 20:30 UTC, y el raton de verdad (CDP).
  *
  * DIBUJOS. Linea de tendencia, path, rayo horizontal, rectangulo, Fibonacci, posicion larga y posicion corta, sobre velas
@@ -28,7 +28,7 @@ import { arrancaNext } from './app.mjs'
 let rojos = 0, verdes = 0, rotos = 0
 const oraculo = (d, ok, extra = '') => { ok ? verdes++ : rojos++; console.log(`  ${ok ? '🟢 VERDE' : '🔴 ROJO '} [HD01] ${d}${extra ? '  · ' + extra : ''}`) }
 const control = (d, ok, extra = '') => { if (!ok) rotos++; console.log(`  ${ok ? '✓' : '✗ CONTROL ROTO'} ${d}${extra ? '  · ' + extra : ''}`) }
-const PARTES = process.argv[2] ? [process.argv[2]] : ['dibujos', 'goto']
+const PARTES = process.argv[2] ? [process.argv[2]] : ['dibujos', 'goto', 'shift']
 const MIDE = process.env.HD01_MIDE === '1'   // solo imprime las firmas (para medir produccion), sin oraculos de firma
 
 // las firmas de PRODUCCION (f5b713b), tirador → por punto guardado: t+/t-/t· y p+/p-/p·; medidas en f5b713b (hd01 con HD01_MIDE=1, 27-oct; iguales en 2e4dbd7/f0ed9ff para estas cinco)
@@ -36,7 +36,7 @@ const PRODUCCION = {
   TrendLine: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p·", "tirador 1 @1": "0:t·p· 1:t+p-", "cuerpo": "0:t+p- 1:t+p-"},
   Rectangle: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p·", "tirador 6 (cuadrado) @1": "0:t·p- 1:t·p·", "tirador 3 @2": "0:t·p- 1:t+p·", "tirador 5 (cuadrado) @3": "0:t·p· 1:t+p·", "tirador 1 @4": "0:t·p· 1:t+p-", "tirador 7 (cuadrado) @5": "0:t·p· 1:t·p-", "tirador 2 @6": "0:t+p· 1:t·p-", "tirador 4 (cuadrado) @7": "0:t+p· 1:t·p·", "cuerpo": "0:t+p- 1:t+p-"},
   FibRetracement: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p·", "tirador 1 @1": "0:t·p· 1:t+p-", "cuerpo": "0:t+p- 1:t+p-"},
-  Path: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t+p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t+p-", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
+  Path: {"borrar": "borrado", "tirador 0 (cuadrado) @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t+p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t+p-", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
   HorizontalRay: {"borrar": "borrado", "tirador 0 @0": "0:t+p-", "cuerpo": "0:t+p-"},
 }
 // el dibujo de posicion aprobado: 1-110 (SL y TP a la izquierda, solo verticales) con la entrada dada la vuelta (1-139 punto 4):
@@ -44,6 +44,16 @@ const PRODUCCION = {
 const POSICION = {
   Largo: {"borrar": "borrado", "tirador 0 (cuadrado) @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t·p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t·p-", "tirador 3 @3": "0:t·p· 1:t+p· 2:t+p·", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
   Corto: {"borrar": "borrado", "tirador 0 (cuadrado) @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t·p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t·p-", "tirador 3 @3": "0:t·p· 1:t+p· 2:t+p·", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
+}
+// con Shift pulsado DE VERDAD, las firmas de PRODUCCION (f5b713b, hd01 shift con HD01_MIDE=1, 27-oct): desde antes de
+// pulsar, la regla se queda el gesto y el dibujo no se mueve; a mitad del arrastre, el plugin restringe un eje
+const SHIFT_REAL = {
+  "TrendLine · de verdad": {"tirador 0 @0": "0:t·p· 1:t·p·", "tirador 1 @1": "0:t·p· 1:t·p·", "cuerpo": "0:t·p· 1:t·p·"},
+  "TrendLine · a mitad": {"tirador 0 @0": "0:t+p+ 1:t·p·", "tirador 1 @1": "0:t·p· 1:t+p-", "cuerpo": "0:t+p- 1:t+p-"},
+  "Rectangle · de verdad": {"tirador 0 @0": "0:t·p· 1:t·p·", "tirador 6 (cuadrado) @1": "0:t·p· 1:t·p·", "tirador 3 @2": "0:t·p· 1:t·p·", "tirador 5 (cuadrado) @3": "0:t·p· 1:t·p·", "tirador 1 @4": "0:t·p· 1:t·p·", "tirador 7 (cuadrado) @5": "0:t·p· 1:t·p·", "tirador 2 @6": "0:t·p· 1:t·p·", "tirador 4 (cuadrado) @7": "0:t·p· 1:t·p·", "cuerpo": "0:t·p· 1:t·p·"},
+  "Rectangle · a mitad": {"tirador 0 @0": "0:t+p· 1:t·p·", "tirador 6 (cuadrado) @1": "0:t·p- 1:t·p·", "tirador 3 @2": "0:t·p· 1:t+p·", "tirador 5 (cuadrado) @3": "0:t·p· 1:t+p·", "tirador 1 @4": "0:t·p· 1:t+p·", "tirador 7 (cuadrado) @5": "0:t·p· 1:t·p-", "tirador 2 @6": "0:t+p· 1:t·p·", "tirador 4 (cuadrado) @7": "0:t+p· 1:t·p·", "cuerpo": "0:t+p- 1:t+p-"},
+  "FibRetracement · de verdad": {"tirador 0 @0": "0:t·p· 1:t·p·", "tirador 1 @1": "0:t·p· 1:t·p·", "cuerpo": "0:t·p· 1:t·p·"},
+  "FibRetracement · a mitad": {"tirador 0 @0": "0:t+p· 1:t·p·", "tirador 1 @1": "0:t·p· 1:t+p·", "cuerpo": "0:t+p- 1:t+p-"},
 }
 // mediana del Go to en f5b713b (ms, 6 repeticiones, medida el 27-oct) y el tope: + 100 ms (la maquina mete ±10 ms de ruido
 // en medianas de 15-30 ms; la ida y vuelta al servidor de un reto, la regresion de la 1-139, son 300 ms en el doble)
@@ -55,6 +65,7 @@ const salir = c => { console.log(`\n${rojos} en rojo · ${verdes} en verde · ${
 
 if (PARTES.includes('dibujos')) await dibujos()
 if (PARTES.includes('goto')) await goto()
+if (PARTES.includes('shift')) await shift()
 salir(rotos ? 2 : rojos ? 1 : 0)
 
 async function dibujos() {
@@ -63,58 +74,7 @@ async function dibujos() {
   const { E, CR, b } = g
   control('pagina real montada con el grafico y el plugin de dibujo', await E(`!!${CR}?.plugin`))
   if (rotos) return g.cierraPagina()
-  const TOOLS = `[...${CR}.plugin._interactionManager._tools.values()]`
-  const RECT = `${CR}.chart.chartElement().getBoundingClientRect()`
-  const n = await E(`window.__algSuiteRealDataLen`)
-  // la zona: velas ya pintadas (n-45 … n-12), precios alrededor del cierre
-  const z = await E(`(()=>{const d=window.__algSuiteSeriesData,n=window.__algSuiteRealDataLen;let lo=1e9,hi=-1e9;for(let i=n-45;i<n-12;i++){lo=Math.min(lo,d[i].low);hi=Math.max(hi,d[i].high)}return {t:[d[n-45].time,d[n-35].time,d[n-25].time,d[n-12].time],lo,hi,c:d[n-1].close}})()`)
-  const px = (t, p) => g.px(t, p)
-  // la escala de precio: que el alto de la zona sea de verdad alto en pantalla (si no, los dibujos son una raya)
-  const mid = (z.lo + z.hi) / 2, alto = Math.max(z.hi - z.lo, 0.0012)
-  const P = { arriba: mid + alto * 0.45, abajo: mid - alto * 0.45, mid }
-  const pt = id => E(`(()=>{const t=${TOOLS}.find(x=>x.id()===${JSON.stringify(id)});return t?t.points().map(p=>({t:Number(p.timestamp),p:p.price})):null})()`)
-  const anclas = id => E(`(()=>{const t=${TOOLS}.find(x=>x.id()===${JSON.stringify(id)});if(!t)return null;const r=${RECT};const v=t._paneViews[0];t.updateAllViews();v.update?.();v.renderer();
-    const a=(v._lineAnchorRenderers||[]).flatMap(x=>x._data?.points||[]);return a.map(p=>({x:r.left+p.x,y:r.top+p.y,i:p.data,sq:!!p.square}))})()`)
-  const ids = () => E(`${TOOLS}.map(t=>t.id())`)
-  const tipo = id => E(`${TOOLS}.find(x=>x.id()===${JSON.stringify(id)})?.toolType??null`)
-  const exporta = () => E(`${CR}.plugin.exportLineTools()`)
-  const importa = json => E(`(()=>{${CR}.plugin.removeAllLineTools();${CR}.plugin.importLineTools(${JSON.stringify(json)});return true})()`)
-  const vacio = async () => { await b.clic(150, 760); await espera(200) }
-  const barra = titulo => E(`(()=>{const x=[...document.querySelectorAll('button')].find(x=>x.title===${JSON.stringify(titulo)});if(!x)return false;x.click();return true})()`)
-
-  const crea = {
-    async TrendLine() { await barra('Línea de tendencia'); await espera(200); const a = await px(z.t[0], P.abajo), c = await px(z.t[3], P.arriba); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
-    async Rectangle() { await barra('Rectángulo'); await espera(200); const a = await px(z.t[0], P.arriba), c = await px(z.t[3], P.abajo); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
-    async FibRetracement() { await barra('Fibonacci'); await espera(200); const a = await px(z.t[0], P.abajo), c = await px(z.t[3], P.arriba); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
-    async Path() { await barra('Path'); await espera(200); const a = await px(z.t[0], P.abajo), c = await px(z.t[1], P.arriba), d = await px(z.t[3], P.mid)
-      await b.clic(a.x, a.y); await b.clic(c.x, c.y)
-      // el ultimo, doble clic (Click → Click → Double-Click: el plugin del path)
-      await b.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: d.x, y: d.y, button: 'none', buttons: 0 }); await espera(20)
-      for (const cc of [1, 2]) { await b.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: d.x, y: d.y, button: 'left', buttons: 1, clickCount: cc }); await b.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: d.x, y: d.y, button: 'left', buttons: 0, clickCount: cc }); await espera(40) }
-      await espera(150) },
-    // sin boton en la barra (DrawingToolbarV2): por el plugin, como lo crea la copia de dibujos (_SessionInner)
-    async HorizontalRay() { await E(`${CR}.plugin.addLineTool('HorizontalRay',[{timestamp:${z.t[1]},price:${P.mid}}],{})`) },
-    async Largo() { await barra('Long / Short'); await espera(200); const a = await px(z.t[0], P.mid), c = await px(z.t[3], P.mid - alto * 0.12); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
-    async Corto() { await barra('Long / Short'); await espera(200); const a = await px(z.t[0], P.mid), c = await px(z.t[3], P.mid + alto * 0.12); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
-  }
-  const TIPO = { TrendLine: 'TrendLine', Rectangle: 'Rectangle', FibRetracement: 'FibRetracement', Path: 'Path', HorizontalRay: 'HorizontalRay', Largo: 'LongShortPosition', Corto: 'LongShortPosition' }
-  const signo = (x, y, eps) => Math.abs(y - x) <= eps ? '·' : (y > x ? '+' : '-')
-  const firma = (antes, despues) => {
-    if (!antes || !despues || antes.length !== despues.length) return 'roto'
-    const eps = Math.abs(P.arriba - P.abajo) / 500
-    return antes.map((a, i) => `${i}:t${signo(a.t, despues[i].t, 0)}p${signo(a.p, despues[i].p, eps)}`).join(' ')
-  }
-  const DX = 35, DY = 25
-  // un punto del CUERPO (no un tirador) donde el plugin lo da por tocado: la linea a un cuarto de su largo; el
-  // rectangulo y el Fibonacci, su borde de arriba a un cuarto (por dentro no se toca: hitTestBackground false); la
-  // posicion, su linea de entrada a un cuarto; el rayo, 80 px a la derecha de su origen
-  const cuerpo = async (id, nombre) => {
-    const q = await pt(id), s0 = await g.px(q[0].t, q[0].p), s1 = q[1] ? await g.px(q[1].t, q[1].p) : null
-    if (nombre === 'HorizontalRay') return { x: s0.x + 80, y: s0.y }
-    if (nombre === 'Largo' || nombre === 'Corto') return g.px(q[0].t + (q[1].t - q[0].t) / 4, q[0].p)
-    if (nombre === 'Rectangle' || nombre === 'FibRetracement') return { x: s0.x + (s1.x - s0.x) / 4, y: Math.min(s0.y, s1.y) }
-    return { x: s0.x + (s1.x - s0.x) / 4, y: s0.y + (s1.y - s0.y) / 4 }
-  }
+  const { TOOLS, n, z, px, P, pt, anclas, ids, tipo, exporta, importa, vacio, barra, crea, TIPO, signo, firma, DX, DY, cuerpo } = await utiles(g)
   const medidas = {}
 
   for (const nombre of Object.keys(crea)) {
@@ -192,6 +152,177 @@ async function dibujos() {
   control('la pagina no ha pedido nada fuera de la maquina salvo la fuente de Google (bloqueada)', g.fuera.every(u => u.startsWith('https://fonts.googleapis.com/')), JSON.stringify(g.fuera))
   control('sin errores en la consola de la pagina', b.errores.length === 0, JSON.stringify(b.errores.slice(0, 5)))
   g.cierraPagina()
+}
+
+// SHIFT (orden 1-142). El plugin guarda si Shift esta pulsado con keydown/keyup de la ventana. Si se pierde el keyup
+// (Cmd+Tab, otra ventana o pestaña con Shift pulsado), cree que sigue pulsado y restringe un eje en cada arrastre:
+// el rectangulo no ensancha y alarga a la vez, el Fibonacci solo se estira a los lados, la linea solo en horizontal.
+// Tres casos por herramienta (linea, rectangulo y Fibonacci; cada tirador y el cuerpo, en diagonal como en DIBUJOS):
+//   · «pegado + blur»: keydown de Shift SIN su keyup, la ventana pierde el foco, y el raton sin Shift → libre (PRODUCCION)
+//   · «pegado»: keydown de Shift sin su keyup, sin perder el foco, y el raton sin Shift → libre (PRODUCCION)
+//   · «de verdad»: Shift pulsado desde antes de pulsar el raton (keydown, el raton con Shift, keyup) → como f5b713b
+//     (SHIFT_REAL): Shift+clic en el grafico abre la regla y el dibujo no se mueve (medido en f5b713b el 27-oct)
+//   · «a mitad»: el raton pulsado sin Shift y Shift pulsado de verdad a mitad del arrastre → restringido como f5b713b
+// y la regla (Shift+clic en el grafico, _SessionInner): con Shift pegado + blur, un clic normal NO la abre; con Shift+clic, si.
+async function shift() {
+  console.log('\n── SHIFT')
+  const g = await montaPagina({ app })
+  const { E, CR, b } = g
+  control('pagina real montada con el grafico y el plugin de dibujo', await E(`!!${CR}?.plugin`))
+  if (rotos) return g.cierraPagina()
+  const { pt, anclas, ids, tipo, exporta, importa, vacio, crea, TIPO, firma, DX, DY, cuerpo } = await utiles(g)
+  const SHIFT = 8
+  const tecla = (type, mod) => b.cdp('Input.dispatchKeyEvent', { type, key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16, modifiers: mod })
+  const estado = () => E(`${CR}.plugin._interactionManager._isShiftKeyDown`)
+  const CASOS = {
+    'pegado + blur': { async antes() { await tecla('keyDown', SHIFT); await espera(30); await E(`window.dispatchEvent(new Event('blur'))`); await espera(30) }, mod: 0 },
+    'pegado': { async antes() { await tecla('keyDown', SHIFT); await espera(30) }, mod: 0 },
+    'de verdad': { async antes() { await tecla('keyDown', SHIFT); await espera(30) }, mod: SHIFT },
+    'a mitad': { async antes() {}, mod: 0, mitad: true },
+  }
+  // el arrastre de «a mitad»: pulsa sin Shift, a mitad pulsa Shift (keydown y el raton con Shift), suelta con Shift
+  const arrastraMitad = async (de, a, pasos = 12) => {
+    const r = (type, x, y, mod, extra = {}) => b.cdp('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, modifiers: mod, ...extra })
+    await r('mouseMoved', de.x, de.y, 0, { button: 'none', buttons: 0 }); await espera(30)
+    await r('mousePressed', de.x, de.y, 0); await espera(30)
+    for (let i = 1; i <= pasos; i++) { const f = i / pasos
+      if (i === pasos / 2) { await tecla('keyDown', SHIFT); await espera(30) }
+      await r('mouseMoved', de.x + (a.x - de.x) * f, de.y + (a.y - de.y) * f, i >= pasos / 2 ? SHIFT : 0); await espera(16) }
+    await r('mouseReleased', a.x, a.y, SHIFT); await espera(60)
+  }
+  const mueve = (c, de, a) => c.mitad ? arrastraMitad(de, a) : b.arrastra(de, a, { modificadores: c.mod })
+  // suelta Shift y, si un Shift+clic abrio la regla, la cierra (Escape), para que no se quede los clics siguientes
+  const esc = async () => { for (const type of ['keyDown', 'keyUp']) await b.cdp('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await espera(200) }
+  const suelta = async () => { await tecla('keyUp', 0); await espera(30); await esc() }
+  const medidas = {}
+  // el plugin cree que Shift esta pulsado tras un keydown sin keyup (si no, la prueba no reproduce nada)
+  await tecla('keyDown', SHIFT); await espera(30)
+  control('tras un keydown de Shift sin su keyup, el plugin cree que Shift esta pulsado', (await estado()) === true)
+  await E(`window.dispatchEvent(new Event('blur'))`); await espera(30)
+  const trasBlur = await estado()
+  await suelta()
+  await tecla('keyDown', SHIFT); await espera(30)
+  await E(`document.dispatchEvent(new Event('visibilitychange'))`); await espera(30)
+  const trasVis = await estado()
+  await suelta()
+  control('tras el keyup, el plugin ya no cree que Shift este pulsado', (await estado()) === false)
+  for (const nombre of ['TrendLine', 'Rectangle', 'FibRetracement']) {
+    console.log(`\n── ${nombre}`)
+    await E(`${CR}.plugin.removeAllLineTools()`); await espera(200)
+    await crea[nombre](); await vacio()
+    const todos = await ids(), id = todos.at(-1)
+    control(`${nombre}: creado (${await tipo(id)})`, todos.length === 1 && (await tipo(id)) === TIPO[nombre], JSON.stringify(await pt(id)))
+    if (todos.length !== 1) continue
+    const inicial = await exporta()
+    const lista = await anclas(id)
+    control(`${nombre}: el plugin pinta ${lista?.length ?? 0} tiradores`, !!lista?.length)
+    for (const [caso, c] of Object.entries(CASOS)) {
+      const m = medidas[`${nombre} · ${caso}`] = {}
+      for (let k = 0; k < (lista?.length ?? 0); k++) {
+        await importa(inicial); await espera(150)
+        const a = (await anclas(id))[k], antes = await pt(id)
+        await c.antes()
+        await mueve(c, { x: a.x, y: a.y }, { x: a.x + DX, y: a.y + DY })
+        await suelta(); await vacio()
+        m[`tirador ${a.i}${a.sq ? ' (cuadrado)' : ''} @${k}`] = firma(antes, await pt(id))
+      }
+      await importa(inicial); await espera(150)
+      const de = await cuerpo(id, nombre), antes = await pt(id)
+      await c.antes()
+      await mueve(c, de, { x: de.x + DX, y: de.y + DY })
+      await suelta(); await vacio()
+      m.cuerpo = firma(antes, await pt(id))
+      for (const [k, v] of Object.entries(m)) console.log(`    ${nombre} · ${caso} · ${k}: ${v}`)
+    }
+  }
+  // la regla: un clic normal con Shift pegado (+ blur) no la abre; Shift+clic de verdad, si
+  console.log('\n── regla')
+  await E(`${CR}.plugin.removeAllLineTools()`); await espera(200)
+  const regla = () => E(`[...document.querySelectorAll('canvas')].some(c=>c.style.cursor==='crosshair'&&c.style.pointerEvents==='all')`)
+  const sitio = await E(`(()=>{const r=${CR}.chart.chartElement().getBoundingClientRect();return {x:r.left+r.width*0.4,y:r.top+r.height*0.5}})()`)
+  control('la regla esta cerrada al empezar', (await regla()) === false)
+  await CASOS['pegado + blur'].antes(); await b.clic(sitio.x, sitio.y); await espera(200)
+  medidas.regla = { 'pegado + blur, clic normal': (await regla()) ? 'abierta' : 'cerrada' }
+  await suelta(); await esc()
+  await tecla('keyDown', SHIFT); await b.clic(sitio.x, sitio.y, { modificadores: SHIFT }); await espera(200)
+  medidas.regla['Shift+clic de verdad'] = (await regla()) ? 'abierta' : 'cerrada'
+  await suelta(); await esc(); await esc()
+  for (const [k, v] of Object.entries(medidas.regla)) console.log(`    regla · ${k}: ${v}`)
+  console.log('\nSHIFT ' + JSON.stringify(medidas))
+  if (!MIDE) {
+    oraculo('tras perder el foco (blur) con Shift pegado, el plugin ya no cree que Shift este pulsado', trasBlur === false, `medido ${trasBlur}`)
+    oraculo('tras visibilitychange con Shift pegado, el plugin ya no cree que Shift este pulsado', trasVis === false, `medido ${trasVis}`)
+    for (const nombre of ['TrendLine', 'Rectangle', 'FibRetracement']) for (const caso of Object.keys(CASOS)) {
+      const clave = `${nombre} · ${caso}`
+      const esperado = caso.startsWith('pegado') ? PRODUCCION[nombre] : SHIFT_REAL?.[clave]
+      const m = medidas[clave] || {}
+      for (const k of Object.keys(esperado || {})) if (k !== 'borrar') oraculo(`${clave} · ${k}: ${esperado[k]}`, m[k] === esperado[k], `medido ${m[k]}`)
+      for (const k of Object.keys(m)) if (!(k in (esperado || {}))) oraculo(`${clave} · ${k}: no lo tiene la referencia`, false, `medido ${m[k]}`)
+    }
+    oraculo('regla: con Shift pegado + blur, un clic normal no la abre', medidas.regla['pegado + blur, clic normal'] === 'cerrada')
+    oraculo('regla: Shift+clic de verdad la abre', medidas.regla['Shift+clic de verdad'] === 'abierta')
+  }
+  control('la pagina no ha pedido nada fuera de la maquina salvo la fuente de Google (bloqueada)', g.fuera.every(u => u.startsWith('https://fonts.googleapis.com/')), JSON.stringify(g.fuera))
+  control('sin errores en la consola de la pagina', b.errores.length === 0, JSON.stringify(b.errores.slice(0, 5)))
+  g.cierraPagina()
+}
+
+// lo comun de dibujos y shift: la zona de velas, los dibujos creados como la mano, sus tiradores y su «firma»
+async function utiles(g) {
+  const { E, CR, b } = g
+  const TOOLS = `[...${CR}.plugin._interactionManager._tools.values()]`
+  const RECT = `${CR}.chart.chartElement().getBoundingClientRect()`
+  const n = await E(`window.__algSuiteRealDataLen`)
+  // la zona: velas ya pintadas (n-45 … n-12), precios alrededor del cierre
+  const z = await E(`(()=>{const d=window.__algSuiteSeriesData,n=window.__algSuiteRealDataLen;let lo=1e9,hi=-1e9;for(let i=n-45;i<n-12;i++){lo=Math.min(lo,d[i].low);hi=Math.max(hi,d[i].high)}return {t:[d[n-45].time,d[n-35].time,d[n-25].time,d[n-12].time],lo,hi,c:d[n-1].close}})()`)
+  const px = (t, p) => g.px(t, p)
+  // la escala de precio: que el alto de la zona sea de verdad alto en pantalla (si no, los dibujos son una raya)
+  const mid = (z.lo + z.hi) / 2, alto = Math.max(z.hi - z.lo, 0.0012)
+  const P = { arriba: mid + alto * 0.45, abajo: mid - alto * 0.45, mid }
+  const pt = id => E(`(()=>{const t=${TOOLS}.find(x=>x.id()===${JSON.stringify(id)});return t?t.points().map(p=>({t:Number(p.timestamp),p:p.price})):null})()`)
+  const anclas = id => E(`(()=>{const t=${TOOLS}.find(x=>x.id()===${JSON.stringify(id)});if(!t)return null;const r=${RECT};const v=t._paneViews[0];t.updateAllViews();v.update?.();v.renderer();
+    const a=(v._lineAnchorRenderers||[]).flatMap(x=>x._data?.points||[]);return a.map(p=>({x:r.left+p.x,y:r.top+p.y,i:p.data,sq:!!p.square}))})()`)
+  const ids = () => E(`${TOOLS}.map(t=>t.id())`)
+  const tipo = id => E(`${TOOLS}.find(x=>x.id()===${JSON.stringify(id)})?.toolType??null`)
+  const exporta = () => E(`${CR}.plugin.exportLineTools()`)
+  const importa = json => E(`(()=>{${CR}.plugin.removeAllLineTools();${CR}.plugin.importLineTools(${JSON.stringify(json)});return true})()`)
+  const vacio = async () => { await b.clic(150, 760); await espera(200) }
+  const barra = titulo => E(`(()=>{const x=[...document.querySelectorAll('button')].find(x=>x.title===${JSON.stringify(titulo)});if(!x)return false;x.click();return true})()`)
+
+  const crea = {
+    async TrendLine() { await barra('Línea de tendencia'); await espera(200); const a = await px(z.t[0], P.abajo), c = await px(z.t[3], P.arriba); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
+    async Rectangle() { await barra('Rectángulo'); await espera(200); const a = await px(z.t[0], P.arriba), c = await px(z.t[3], P.abajo); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
+    async FibRetracement() { await barra('Fibonacci'); await espera(200); const a = await px(z.t[0], P.abajo), c = await px(z.t[3], P.arriba); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
+    async Path() { await barra('Path'); await espera(200); const a = await px(z.t[0], P.abajo), c = await px(z.t[1], P.arriba), d = await px(z.t[3], P.mid)
+      await b.clic(a.x, a.y); await b.clic(c.x, c.y)
+      // el ultimo, doble clic (Click → Click → Double-Click: el plugin del path)
+      await b.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: d.x, y: d.y, button: 'none', buttons: 0 }); await espera(20)
+      for (const cc of [1, 2]) { await b.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: d.x, y: d.y, button: 'left', buttons: 1, clickCount: cc }); await b.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: d.x, y: d.y, button: 'left', buttons: 0, clickCount: cc }); await espera(40) }
+      await espera(150) },
+    // sin boton en la barra (DrawingToolbarV2): por el plugin, como lo crea la copia de dibujos (_SessionInner)
+    async HorizontalRay() { await E(`${CR}.plugin.addLineTool('HorizontalRay',[{timestamp:${z.t[1]},price:${P.mid}}],{})`) },
+    async Largo() { await barra('Long / Short'); await espera(200); const a = await px(z.t[0], P.mid), c = await px(z.t[3], P.mid - alto * 0.12); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
+    async Corto() { await barra('Long / Short'); await espera(200); const a = await px(z.t[0], P.mid), c = await px(z.t[3], P.mid + alto * 0.12); await b.clic(a.x, a.y); await b.clic(c.x, c.y) },
+  }
+  const TIPO = { TrendLine: 'TrendLine', Rectangle: 'Rectangle', FibRetracement: 'FibRetracement', Path: 'Path', HorizontalRay: 'HorizontalRay', Largo: 'LongShortPosition', Corto: 'LongShortPosition' }
+  const signo = (x, y, eps) => Math.abs(y - x) <= eps ? '·' : (y > x ? '+' : '-')
+  const firma = (antes, despues) => {
+    if (!antes || !despues || antes.length !== despues.length) return 'roto'
+    const eps = Math.abs(P.arriba - P.abajo) / 500
+    return antes.map((a, i) => `${i}:t${signo(a.t, despues[i].t, 0)}p${signo(a.p, despues[i].p, eps)}`).join(' ')
+  }
+  const DX = 35, DY = 25
+  // un punto del CUERPO (no un tirador) donde el plugin lo da por tocado: la linea a un cuarto de su largo; el
+  // rectangulo y el Fibonacci, su borde de arriba a un cuarto (por dentro no se toca: hitTestBackground false); la
+  // posicion, su linea de entrada a un cuarto; el rayo, 80 px a la derecha de su origen
+  const cuerpo = async (id, nombre) => {
+    const q = await pt(id), s0 = await g.px(q[0].t, q[0].p), s1 = q[1] ? await g.px(q[1].t, q[1].p) : null
+    if (nombre === 'HorizontalRay') return { x: s0.x + 80, y: s0.y }
+    if (nombre === 'Largo' || nombre === 'Corto') return g.px(q[0].t + (q[1].t - q[0].t) / 4, q[0].p)
+    if (nombre === 'Rectangle' || nombre === 'FibRetracement') return { x: s0.x + (s1.x - s0.x) / 4, y: Math.min(s0.y, s1.y) }
+    return { x: s0.x + (s1.x - s0.x) / 4, y: s0.y + (s1.y - s0.y) / 4 }
+  }
+  return { TOOLS, n, z, px, P, pt, anclas, ids, tipo, exporta, importa, vacio, barra, crea, TIPO, signo, firma, DX, DY, cuerpo }
 }
 
 async function goto() {

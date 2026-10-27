@@ -56,14 +56,16 @@ export async function abre(url, { tope = 60000, antes = null, listo = '!!window.
   for (let t = Date.now(); Date.now() - t < esperaListo;) { if (await evalua(listo).catch(() => false)) break; await espera(100) }
   const raton = async (type, x, y, extra = {}) => cdp('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra })
   // un arrastre de verdad: pulsar, mover en pasos (con temblor opcional en vertical), soltar
-  const arrastra = async (de, a, { pasos = 12, temblor = 0 } = {}) => {
-    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: de.x, y: de.y, button: 'none', buttons: 0 }); await espera(30)
-    await raton('mousePressed', de.x, de.y); await espera(30)
+  // modificadores (CDP: 8 = Shift): los lleva cada evento del raton, como e.shiftKey de verdad (sin ellos, 0)
+  const arrastra = async (de, a, { pasos = 12, temblor = 0, modificadores = 0 } = {}) => {
+    const m = { modifiers: modificadores }
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: de.x, y: de.y, button: 'none', buttons: 0, ...m }); await espera(30)
+    await raton('mousePressed', de.x, de.y, m); await espera(30)
     for (let i = 1; i <= pasos; i++) { const f = i / pasos, tr = temblor ? (i % 2 ? temblor : -temblor) : 0
-      await raton('mouseMoved', de.x + (a.x - de.x) * f, de.y + (a.y - de.y) * f + (i < pasos ? tr : 0)); await espera(16) }
-    await raton('mouseReleased', a.x, a.y); await espera(60)
+      await raton('mouseMoved', de.x + (a.x - de.x) * f, de.y + (a.y - de.y) * f + (i < pasos ? tr : 0), m); await espera(16) }
+    await raton('mouseReleased', a.x, a.y, m); await espera(60)
   }
-  const clic = async (x, y) => { await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', buttons: 0 }); await espera(20); await raton('mousePressed', x, y); await espera(20); await raton('mouseReleased', x, y); await espera(60) }
+  const clic = async (x, y, { modificadores = 0 } = {}) => { const m = { modifiers: modificadores }; await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', buttons: 0, ...m }); await espera(20); await raton('mousePressed', x, y, m); await espera(20); await raton('mouseReleased', x, y, m); await espera(60) }
   const cierra = () => { clearTimeout(reloj); try { sock.close() } catch {} ; mata() }
   return { evalua, arrastra, clic, cierra, errores, cdp, on }
 }
