@@ -1794,6 +1794,16 @@ class InteractionManager {
         // Global Listeners for Persistent Key State **
         window.addEventListener('keydown', this._handleKey.bind(this));
         window.addEventListener('keyup', this._handleKey.bind(this));
+        // Orden 1-142 (Shift pegado): si el keyup de Shift no llega (Cmd+Tab, otra ventana o pestaña con Shift pulsado),
+        // el estado se quedaba en «pulsado» y getShiftConstrainedPoint bloqueaba un eje en cada arrastre (el rectangulo
+        // no ensanchaba y alargaba a la vez, el Fibonacci solo a los lados, la linea solo en horizontal). Ahora cada
+        // evento del raton trae el estado real (e.shiftKey), en captura en la ventana para que llegue antes que el
+        // grafico y el plugin lo lean; y perder el foco o la visibilidad lo suelta. Con Shift pulsado de verdad, igual.
+        const sincronizaShift = (e) => { if (typeof e.shiftKey === 'boolean') this._isShiftKeyDown = e.shiftKey; };
+        for (const tipo of ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup']) window.addEventListener(tipo, sincronizaShift, true);
+        const sueltaShift = () => { this._isShiftKeyDown = false; };
+        window.addEventListener('blur', sueltaShift);
+        document.addEventListener('visibilitychange', sueltaShift);
     }
     /**
      * Handles global `keydown` and `keyup` events, specifically tracking the state of the 'Shift' key.
