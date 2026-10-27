@@ -18,6 +18,8 @@
  * 65/66 (15×), M1 24/25 y 24/25; entre semana M15 30/30 y 91/91, M1 20/20 y 60/60. Oraculos:
  *   3 · cruzando el fin de semana: nunca mas setData que velas M1 avanzadas (con el arreglo, la del domingo tambien)
  *   4 · entre semana: exactamente uno por vela M1, como en 2e4dbd7 (el arreglo no añade ni quita ninguno)
+ *   5 · tras pausar, el encuadre de PRODUCCION (f5b713b; orden 1-141): rango logico visible y x de la vela del viernes y del
+ *       domingo, los de PRODUCCION (abajo) para el mismo encuadre de partida. Control: que la partida sea una medida alli
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -44,6 +46,20 @@ const TFS = {
   M1: { seg: 60, vieUltima: U('2026-04-24T20:59:00Z'), para: U('2026-04-24T20:55:00Z'), abre: U('2026-04-24T20:55:00Z'), objetivo: DOM_PRIMERA + 20 * 60,
     semana: { para: U('2026-04-24T08:00:00Z'), abre: U('2026-04-24T08:00:00Z'), objetivo: { 1: U('2026-04-24T08:20:00Z'), 15: U('2026-04-24T09:00:00Z') } } },
 }
+// EL ENCUADRE TRAS PAUSAR, EL DE PRODUCCION (f5b713b; orden 1-141). Medido en Chrome el 27-oct con esta misma prueba en un
+// worktree de f5b713b: rango logico visible y x (px) de la ultima vela del viernes y de la primera del domingo, por encuadre
+// de partida (el de antes del Play: en M1 la pagina abre unas veces con las 80 velas de initVisibleRange y otras sin el,
+// tambien en f5b713b). En M15 el cruce del fin de semana desplaza el rango 10 puntos (las 10 fantasmas del viernes); en M1
+// (la ultima vela real lejos del borde derecho) no lo mueve. f0ed9ff conservaba el rango como en una vela normal (M15: x
+// del viernes 1169 en vez de 1289)
+const PRODUCCION = {
+  M15: [{ antes: { from: -2, to: 112 }, tras: { from: -12, to: 102, xv: 1289, xd: 1301 } }],
+  M1: [{ antes: { from: 1361, to: 1441 }, tras: { from: 1361, to: 1441, xv: 1336.4, xd: 1353.4 } },
+    { antes: { from: 1339, to: 1453 }, tras: { from: 1339, to: 1453, xv: 1205, xd: 1217 } }],
+}
+// la tolerancia: la de f5b713b repetida contra si misma (rango identico; x con la misma decima)
+const TOL = { rango: 0.001, x: 0.1 }
+const cerca = (a, b, t) => typeof a === 'number' && Math.abs(a - b) <= t
 const pedidas = (process.argv[2] ? [process.argv[2]] : ['M15', 'M1'])
 if (!pedidas.every(t => TFS[t])) { console.log(`temporalidad desconocida: ${process.argv[2]} (M15 o M1)`); process.exit(2) }
 
@@ -96,11 +112,12 @@ async function finde(tf, velocidad) {
     const n=window.__algSuiteRealDataLen,sd=window.__algSuiteSeriesData;const ultima=sd&&n?sd[n-1].time:null;
     const hueco=d.filter(v=>v.time>${VIE_ULTIMA}&&v.time<${DOM_PRIMERA}).map(v=>v.time);
     const vr=ts.getVisibleRange();const visibles=vr?hueco.filter(t=>t>=vr.from&&t<=vr.to):[];
-    const xv=ts.timeToCoordinate(${VIE_ULTIMA}),xd=ts.timeToCoordinate(${DOM_PRIMERA});
-    return {pc:cr.prevCount,len:d.length,ultima,dom:d.some(v=>v.time===${DOM_PRIMERA}),xv,xd,bs:ts.options().barSpacing,hueco:hueco.length,visibles:visibles.length,primeroHueco:hueco[0]??null,ultimoHueco:hueco.at(-1)??null}})()`
+    const xv=ts.timeToCoordinate(${VIE_ULTIMA}),xd=ts.timeToCoordinate(${DOM_PRIMERA});const lr=ts.getVisibleLogicalRange();
+    return {rango:lr?{from:lr.from,to:lr.to}:null,pc:cr.prevCount,len:d.length,ultima,dom:d.some(v=>v.time===${DOM_PRIMERA}),xv,xd,bs:ts.options().barSpacing,hueco:hueco.length,visibles:visibles.length,primeroHueco:hueco[0]??null,ultimoHueco:hueco.at(-1)??null}})()`
   // el muestreo en cada frame, en la pagina (el rAF de la muestra va despues del de LWC del mismo frame: se pide desde dentro de otro)
   await E(`(()=>{window.__fp01=[];const m=()=>{try{window.__fp01.push(${MIDE})}catch(e){window.__fp01.push({error:String(e)})}if(window.__fp01Sigue)requestAnimationFrame(m)};window.__fp01Sigue=true;requestAnimationFrame(m);return true})()`)
   await E(CUENTA_SETDATA)
+  const antes = await E(MIDE)
   await juega(E, T.objetivo, Date.now() + (velocidad === 1 ? 240000 : 60000), () => foto('play'))
   await foto('play-fin')
   await E(`window.__fp01Sigue=false`)
@@ -122,6 +139,15 @@ async function finde(tf, velocidad) {
   oraculo(`${et}, durante el Play: en cada frame la vela del domingo esta a una vela de la del viernes`, malos.length === 0, `${malos.length}/${conDom.length} frames lejos · primero: ${JSON.stringify(ej(malos[0] ?? conDom[0]))}`)
   oraculo(`${et}, durante el Play: ningun punto del fin de semana en la escala (sin marcas del sabado)`, conHueco.length === 0, `${conHueco.length}/${conDom.length} frames con hueco · primero: ${JSON.stringify(ej(conHueco[0] ?? conDom[0]))}`)
   oraculo(`${et}, tras pausar: la vela del domingo a una vela de la del viernes y sin puntos del fin de semana`, !!tras?.dom && pegada(tras) && tras.hueco === 0, JSON.stringify(ej(tras)))
+  // el encuadre tras pausar, como en produccion (f5b713b): rango logico visible y x de la vela del viernes y del domingo
+  const enc = m => m && { from: m.rango?.from, to: m.rango?.to, xv: m.xv, xd: m.xd, bs: m.bs }
+  console.log(`  · ${et}, encuadre antes del Play: ${JSON.stringify(enc(antes))} · tras pausar: ${JSON.stringify(enc(tras))}`)
+  const P = PRODUCCION[tf].find(p => cerca(antes?.rango?.from, p.antes.from, TOL.rango) && cerca(antes?.rango?.to, p.antes.to, TOL.rango))
+  control(`${et}: antes del Play, un encuadre de partida medido en produccion (${PRODUCCION[tf].map(p => p.antes.from + '..' + p.antes.to).join(' o ')})`, !!P, JSON.stringify(enc(antes)))
+  if (P) {
+    const igual = !!tras && cerca(tras.rango?.from, P.tras.from, TOL.rango) && cerca(tras.rango?.to, P.tras.to, TOL.rango) && cerca(tras.xv, P.tras.xv, TOL.x) && cerca(tras.xd, P.tras.xd, TOL.x)
+    oraculo(`${et}, tras pausar: el encuadre de produccion (f5b713b) desde ${P.antes.from}..${P.antes.to}: rango ${P.tras.from}..${P.tras.to}, viernes en x=${P.tras.xv}, domingo en x=${P.tras.xd}`, igual, JSON.stringify(enc(tras)))
+  }
   oraculo(`${et}, durante el Play: no mas setData completos que velas M1 avanzadas`, setDatas.length <= nAv, `${setDatas.length} setData · ${nAv} velas M1`)
   control(`${et}: la pagina no ha pedido nada fuera de la maquina salvo la fuente de Google (bloqueada)`, fuera.every(u => u.startsWith('https://fonts.googleapis.com/')), JSON.stringify(fuera))
   control(`${et}: sin errores en la consola de la pagina`, b.errores.length === 0, JSON.stringify(b.errores.slice(0, 5)))
