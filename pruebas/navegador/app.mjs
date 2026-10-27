@@ -93,7 +93,8 @@ export function dobleSupabase({ sesion = {} } = {}) {
 }
 
 // abre la pagina de la sesion con todo interceptado; devuelve el navegador (cdp.mjs) y lo de fuera
-export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana() } = {}) {
+// latApi: lo que tarda en responder cada /api/* que no es de velas (por defecto, nada; como la red: hd01, el Go to de un reto)
+export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana(), latApi = 0 } = {}) {
   const fuera = []
   const sesionAuth = { access_token: 'tok-a', refresh_token: 'ref-a', token_type: 'bearer', expires_in: 360000, expires_at: Math.floor(Date.now() / 1000) + 360000,
     user: { id: USUARIO, email: 'a@ejemplo.test', aud: 'authenticated', role: 'authenticated' } }
@@ -118,6 +119,7 @@ export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, 
             const y = Number(u.searchParams.get('year')), from = Number(u.searchParams.get('from')), to = Number(u.searchParams.get('to'))
             return llena(requestId, 200, { candles: velas.filter(v => v.time >= from && v.time <= to && new Date(v.time * 1000).getUTCFullYear() === y) })
           }
+          if (latApi) await espera(latApi)
           return llena(requestId, 200, {})
         }
         if (u.origin === app.url) return cdp('Fetch.continueRequest', { requestId })
