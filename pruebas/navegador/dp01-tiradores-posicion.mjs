@@ -6,10 +6,11 @@
  * y soltarlo (clic fuera), se arrastra cada tirador:
  *   SL izquierdo       30 px alejandose de la entrada, la mano yendose 30 px a la derecha → cambia SOLO el SL
  *   TP izquierdo       igual                                        → cambia SOLO el TP
- *   entrada, circulo (derecha)   a la derecha y arriba              → cambia SOLO el borde derecho; el precio, igual
- *   entrada, cuadrado (izquierda) a la izquierda con la mano temblando ±15 px y acabando 25 px mas abajo
+ *   entrada, cuadrado (derecha)  a la derecha y arriba              → cambia SOLO el borde derecho; el precio, igual
+ *   entrada, circulo (izquierda) a la izquierda con la mano temblando ±15 px y acabando 25 px mas abajo
  *                                                                  → cambia el precio de entrada Y el borde izquierdo
- * (la linea de entrada, dada la vuelta por la orden 1-139, punto 4: hasta 2e4dbd7 era al reves)
+ * (la linea de entrada, dada la vuelta por la orden 1-139, punto 4: hasta 2e4dbd7 era al reves; las formas, donde siempre,
+ * orden 1-142: circulo a la izquierda y cuadrado a la derecha, lo que pinta el plugin, comprobado en cada lado)
  * y, al final, los pips del SL y el RR que pinta el dibujo son los de sus precios nuevos.
  * Contra 785d9a8 (el plugin con sus tres tiradores) sale en ROJO, codigo 1; contra 2e4dbd7 (la entrada sin dar la vuelta), tambien.
  */
@@ -50,6 +51,10 @@ for (const lado of ['largo', 'corto']) {
   control(`${lado}: dibujo creado (${e0 ? (e0.entry > e0.sl ? 'largo' : 'corto') : 'no'}) y soltado`, !!e0 && (lado === 'largo') === (e0.entry > e0.sl) && !(await E(`${herramienta}.isSelected()`)), JSON.stringify(e0))
   if (!e0) continue
 
+  // 0) las formas que pinta el plugin: entrada izquierda circulo, SL y TP circulos, entrada derecha cuadrado
+  const formas = await E(`(()=>{const t=${herramienta};const v=t._paneViews[0];t.updateAllViews();v.update?.();v.renderer();return (v._lineAnchorRenderers||[]).flatMap(x=>x._data?.points||[]).map(p=>[p.data,!!p.square])})()`)
+  oraculo(`${lado}: las formas de los tiradores: circulo a la izquierda de la entrada, cuadrado a la derecha (SL y TP, circulos)`, JSON.stringify(formas) === JSON.stringify([[0, false], [1, false], [2, false], [3, true]]), JSON.stringify(formas))
+
   // 1) SL izquierdo
   // alejandolo de la entrada (sin cruzarla: cruzarla es el giro largo/corto del plugin, que no cambia)
   let s = await estado(), de = await px(s.t0, s.sl), a1 = { x: de.x + 30, y: de.y + (lado === 'largo' ? 30 : -30) }
@@ -61,15 +66,15 @@ for (const lado of ['largo', 'corto']) {
   await b.arrastra(de, a1); n = await estado(); esperado = await precioEn(a1.y)
   oraculo(`${lado}: el tirador IZQUIERDO del TP mueve solo el TP, en vertical`, igual(n.tp, esperado) && n.entry === s.entry && n.sl === s.sl && n.t0 === s.t0 && n.t1 === s.t1, JSON.stringify({ antes: s, despues: n, esperado }))
 
-  // 3) entrada, circulo (derecha): solo ensancha por la derecha, aunque la mano suba
+  // 3) entrada, cuadrado (derecha): solo ensancha por la derecha, aunque la mano suba
   s = await estado(); de = await px(s.t1, s.entry); a1 = { x: de.x + 60, y: de.y + (lado === 'largo' ? -12 : 12) }
   await b.arrastra(de, a1); n = await estado()
-  oraculo(`${lado}: el CIRCULO (derecha) de la entrada solo ensancha por la derecha; el precio no se mueve aunque la mano si`, n.t1 > s.t1 && n.entry === s.entry && n.t0 === s.t0 && n.sl === s.sl && n.tp === s.tp, JSON.stringify({ antes: s, despues: n }))
+  oraculo(`${lado}: el CUADRADO (derecha) de la entrada solo ensancha por la derecha; el precio no se mueve aunque la mano si`, n.t1 > s.t1 && n.entry === s.entry && n.t0 === s.t0 && n.sl === s.sl && n.tp === s.tp, JSON.stringify({ antes: s, despues: n }))
 
-  // 4) entrada, cuadrado (izquierda): precio y ancho a la vez, con la mano temblando y acabando mas abajo
+  // 4) entrada, circulo (izquierda): precio y ancho a la vez, con la mano temblando y acabando mas abajo
   s = await estado(); de = await px(s.t0, s.entry); a1 = { x: de.x - 60, y: de.y + 25 }
   await b.arrastra(de, a1, { temblor: 15 }); n = await estado(); esperado = await precioEn(a1.y)
-  oraculo(`${lado}: el CUADRADO (izquierda) de la entrada mueve el precio de entrada y ensancha por la izquierda`, igual(n.entry, esperado) && n.t0 < s.t0 && n.t1 === s.t1 && n.sl === s.sl && n.tp === s.tp, JSON.stringify({ antes: s, despues: n, esperado }))
+  oraculo(`${lado}: el CIRCULO (izquierda) de la entrada mueve el precio de entrada y ensancha por la izquierda`, igual(n.entry, esperado) && n.t0 < s.t0 && n.t1 === s.t1 && n.sl === s.sl && n.tp === s.tp, JSON.stringify({ antes: s, despues: n, esperado }))
 
   // 5) pips y RR recalculados con los precios de ahora (la formula del dibujo: vendor long-short, etiquetas de lienzo)
   const f = await estado(), tx = await textos()

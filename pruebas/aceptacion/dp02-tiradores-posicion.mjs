@@ -2,9 +2,10 @@
  * DP02 · LOS TIRADORES DEL DIBUJO DE POSICION, SIN NAVEGADOR (ordenes 1-105 y 1-110 del CTO; la prueba de navegador es
  * pruebas/navegador/dp01-tiradores-posicion.mjs, con el turno). La clase que registra la app
  * (components/posicionTradingView.js sobre la del plugin de vendor/) con una serie doble (minMove 0,00001):
- *   · los cuatro tiradores salen donde dice Ramon: cuadrado a la izquierda de la entrada (precio y borde izquierdo),
- *     SL y TP a la izquierda, circulo a la derecha de la entrada (solo el borde derecho). La linea de entrada, dada la
- *     vuelta por la orden 1-139 (punto 4): hasta 2e4dbd7 el izquierdo solo ensanchaba y el derecho movia precio y ancho
+ *   · los cuatro tiradores salen donde dice Ramon: circulo a la izquierda de la entrada (precio y borde izquierdo),
+ *     SL y TP a la izquierda, cuadrado a la derecha de la entrada (solo el borde derecho). La linea de entrada, dada la
+ *     vuelta por la orden 1-139 (punto 4): hasta 2e4dbd7 el izquierdo solo ensanchaba y el derecho movia precio y ancho.
+ *     Las formas, donde siempre (orden 1-142): circulo a la izquierda y cuadrado a la derecha; 4edb3bd las cambio de lado
  *   · cada tirador mueve SOLO lo suyo, en largo y en corto (lo que llega a setPoint es el punto del raton, con su
  *     hora y su precio: la mano nunca va recta)
  *   · los tres puntos guardados no cambian de forma (los dibujos ya guardados se abren igual)
@@ -43,18 +44,18 @@ for (const [lado, entry, sl, tp] of [['largo', 1.1, 1.098, 1.106], ['corto', 1.1
   oraculo('DP02', `${lado}: el tirador del SL solo cambia el precio del SL`, JSON.stringify(foto(h)) === JSON.stringify([[1000, entry], [5000, r5(sl + aleja * 0.0005)], [5000, tp]]), JSON.stringify(foto(h)))
   h = herramienta(entry, sl, tp); h.setPoint(M.TIRADOR.TP, { timestamp: 200, price: tp - aleja * 0.0007 })
   oraculo('DP02', `${lado}: el tirador del TP solo cambia el precio del TP`, JSON.stringify(foto(h)) === JSON.stringify([[1000, entry], [5000, sl], [5000, r5(tp - aleja * 0.0007)]]), JSON.stringify(foto(h)))
-  // cuadrado (izquierda): la mano baja 15 pips mientras ensancha: el precio de entrada y el borde izquierdo a la vez
+  // circulo (izquierda): la mano baja 15 pips mientras ensancha: el precio de entrada y el borde izquierdo a la vez
   h = herramienta(entry, sl, tp); h.setPoint(M.TIRADOR.ENTRADA, { timestamp: 400, price: entry + 0.0015 })
-  oraculo('DP02', `${lado}: el cuadrado (izquierda) de la entrada cambia el precio de entrada y ensancha por la izquierda`, JSON.stringify(foto(h)) === JSON.stringify([[400, r5(entry + 0.0015)], [5000, sl], [5000, tp]]), JSON.stringify(foto(h)))
-  // cuadrado que intenta pasar el borde derecho: el precio si, el borde izquierdo no cruza (no se da la vuelta)
+  oraculo('DP02', `${lado}: el circulo (izquierda) de la entrada cambia el precio de entrada y ensancha por la izquierda`, JSON.stringify(foto(h)) === JSON.stringify([[400, r5(entry + 0.0015)], [5000, sl], [5000, tp]]), JSON.stringify(foto(h)))
+  // circulo que intenta pasar el borde derecho: el precio si, el borde izquierdo no cruza (no se da la vuelta)
   h = herramienta(entry, sl, tp); h.setPoint(M.TIRADOR.ENTRADA, { timestamp: 6000, price: entry - aleja * 0.0002 })
-  oraculo('DP02', `${lado}: el cuadrado no cruza el borde derecho`, JSON.stringify(foto(h)) === JSON.stringify([[1000, r5(entry - aleja * 0.0002)], [5000, sl], [5000, tp]]), JSON.stringify(foto(h)))
-  // circulo (derecha): solo ensancha por la derecha; el precio queda bloqueado aunque la mano se mueva (el TP sigue en el borde)
+  oraculo('DP02', `${lado}: el circulo no cruza el borde derecho`, JSON.stringify(foto(h)) === JSON.stringify([[1000, r5(entry - aleja * 0.0002)], [5000, sl], [5000, tp]]), JSON.stringify(foto(h)))
+  // cuadrado (derecha): solo ensancha por la derecha; el precio queda bloqueado aunque la mano se mueva (el TP sigue en el borde)
   h = herramienta(entry, sl, tp); h.setPoint(M.TIRADOR.ANCHO, { timestamp: 7000, price: entry - aleja * 0.0003 })
-  oraculo('DP02', `${lado}: el circulo (derecha) de la entrada solo ensancha por la derecha (precio bloqueado)`, JSON.stringify(foto(h)) === JSON.stringify([[1000, entry], [7000, sl], [7000, tp]]), JSON.stringify(foto(h)))
-  // circulo que intenta pasar el borde izquierdo: no se da la vuelta
+  oraculo('DP02', `${lado}: el cuadrado (derecha) de la entrada solo ensancha por la derecha (precio bloqueado)`, JSON.stringify(foto(h)) === JSON.stringify([[1000, entry], [7000, sl], [7000, tp]]), JSON.stringify(foto(h)))
+  // cuadrado que intenta pasar el borde izquierdo: no se da la vuelta
   h = herramienta(entry, sl, tp); h.setPoint(M.TIRADOR.ANCHO, { timestamp: 500, price: entry })
-  oraculo('DP02', `${lado}: el circulo no cruza el borde izquierdo`, JSON.stringify(foto(h)) === JSON.stringify([[1000, entry], [5000, sl], [5000, tp]]), JSON.stringify(foto(h)))
+  oraculo('DP02', `${lado}: el cuadrado no cruza el borde izquierdo`, JSON.stringify(foto(h)) === JSON.stringify([[1000, entry], [5000, sl], [5000, tp]]), JSON.stringify(foto(h)))
 }
 
 // donde salen los tiradores (la vista del plugin con sus tres puntos de pantalla: entrada izquierda, SL y TP derecha)
@@ -62,10 +63,10 @@ const h = herramienta(1.1, 1.098, 1.106)
 const pintados = []
 const vista = { _points: [{ x: 100, y: 300 }, { x: 400, y: 380 }, { x: 400, y: 60 }], createLineAnchor: d => (pintados.push(...d.points), { d }) }
 const tir = M.tiradores
-oraculo('DP02', 'los tiradores: cuadrado entrada-izquierda, SL-izquierda, TP-izquierda y circulo entrada-derecha', !!tir && (() => {
+oraculo('DP02', 'los tiradores: circulo entrada-izquierda, SL-izquierda, TP-izquierda y cuadrado entrada-derecha', !!tir && (() => {
   tir(vista, { append() {} }, CORE.AnchorPoint, CORE.PaneCursorType)
   const p = pintados.map(a => [a.x, a.y, a.data, !!a.square])
-  return JSON.stringify(p) === JSON.stringify([[100, 300, 0, true], [100, 380, 1, false], [100, 60, 2, false], [400, 300, 3, false]])
+  return JSON.stringify(p) === JSON.stringify([[100, 300, 0, false], [100, 380, 1, false], [100, 60, 2, false], [400, 300, 3, true]])
 })(), JSON.stringify(pintados.map(a => [a.x, a.y, a.data, !!a.square])))
 oraculo('DP02', 'los dibujos guardados no cambian de forma: siguen siendo tres puntos y el plugin sigue con 3 tiradores maximos', h._points.length === 3 && Clase.prototype.maxAnchorIndex.call(h) === 2)
 fin()

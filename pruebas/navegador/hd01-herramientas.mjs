@@ -36,14 +36,15 @@ const PRODUCCION = {
   TrendLine: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p·", "tirador 1 @1": "0:t·p· 1:t+p-", "cuerpo": "0:t+p- 1:t+p-"},
   Rectangle: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p·", "tirador 6 (cuadrado) @1": "0:t·p- 1:t·p·", "tirador 3 @2": "0:t·p- 1:t+p·", "tirador 5 (cuadrado) @3": "0:t·p· 1:t+p·", "tirador 1 @4": "0:t·p· 1:t+p-", "tirador 7 (cuadrado) @5": "0:t·p· 1:t·p-", "tirador 2 @6": "0:t+p· 1:t·p-", "tirador 4 (cuadrado) @7": "0:t+p· 1:t·p·", "cuerpo": "0:t+p- 1:t+p-"},
   FibRetracement: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p·", "tirador 1 @1": "0:t·p· 1:t+p-", "cuerpo": "0:t+p- 1:t+p-"},
-  Path: {"borrar": "borrado", "tirador 0 (cuadrado) @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t+p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t+p-", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
+  Path: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t+p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t+p-", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
   HorizontalRay: {"borrar": "borrado", "tirador 0 @0": "0:t+p-", "cuerpo": "0:t+p-"},
 }
 // el dibujo de posicion aprobado: 1-110 (SL y TP a la izquierda, solo verticales) con la entrada dada la vuelta (1-139 punto 4):
-// tirador 0 (cuadrado, izquierda) = precio de entrada y borde izquierdo; tirador 3 (circulo, derecha) = solo borde derecho
+// tirador 0 (circulo, izquierda) = precio de entrada y borde izquierdo; tirador 3 (cuadrado, derecha) = solo borde derecho
+// (las formas, donde siempre: orden 1-142)
 const POSICION = {
-  Largo: {"borrar": "borrado", "tirador 0 (cuadrado) @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t·p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t·p-", "tirador 3 @3": "0:t·p· 1:t+p· 2:t+p·", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
-  Corto: {"borrar": "borrado", "tirador 0 (cuadrado) @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t·p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t·p-", "tirador 3 @3": "0:t·p· 1:t+p· 2:t+p·", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
+  Largo: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t·p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t·p-", "tirador 3 (cuadrado) @3": "0:t·p· 1:t+p· 2:t+p·", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
+  Corto: {"borrar": "borrado", "tirador 0 @0": "0:t+p- 1:t·p· 2:t·p·", "tirador 1 @1": "0:t·p· 1:t·p- 2:t·p·", "tirador 2 @2": "0:t·p· 1:t·p· 2:t·p-", "tirador 3 (cuadrado) @3": "0:t·p· 1:t+p· 2:t+p·", "cuerpo": "0:t+p- 1:t+p- 2:t+p-"},
 }
 // con Shift pulsado DE VERDAD, las firmas de PRODUCCION (f5b713b, hd01 shift con HD01_MIDE=1, 27-oct): desde antes de
 // pulsar, la regla se queda el gesto y el dibujo no se mueve; a mitad del arrastre, el plugin restringe un eje
