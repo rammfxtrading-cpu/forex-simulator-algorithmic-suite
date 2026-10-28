@@ -94,7 +94,22 @@ export function dobleSupabase({ sesion = {} } = {}) {
 
 // abre la pagina de la sesion con todo interceptado; devuelve el navegador (cdp.mjs) y lo de fuera
 // latApi: lo que tarda en responder cada /api/* que no es de velas (por defecto, nada; como la red: hd01, el Go to de un reto)
-export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana(), latApi = 0 } = {}) {
+// reto (orden 1-158, pl03): /api/challenge/status responde con el reto evaluado por el motor de la app (lib/challengeEngine.js)
+// sobre la sesion y los trades del doble, con la hora que pide la pagina; sin el, {} como siempre
+// El motor de la app importa sin extension ('./challengeRules'): un resolutor minimo le pone el .js, solo en esta prueba
+let motorReto = null
+async function evaluaReto(doble, u) {
+  if (!motorReto) {
+    const { register } = await import('node:module')
+    register('data:text/javascript,' + encodeURIComponent("export async function resolve(s,c,n){try{return await n(s,c)}catch(e){if(/^\\.\\.?\\//.test(s)&&!/\\.[a-z]+$/.test(s))return n(s+'.js',c);throw e}}"))
+    motorReto = { ...(await import(path.join(REPO, 'lib/challengeEngine.js'))), ...(await import(path.join(REPO, 'lib/challengeRules.js'))) }
+  }
+  const ses = doble.tablas.sim_sessions[0], ct = Number(u.searchParams.get('current_time'))
+  const evaluation = motorReto.evaluateChallenge({ challengeType: ses.challenge_type, currentPhase: ses.challenge_phase || 1, capital: Number(ses.capital),
+    trades: doble.tablas.sim_trades, currentTimeIso: ct ? new Date(ct * 1000).toISOString() : undefined })
+  return { session: { ...ses, status: ses.status || 'active' }, config: motorReto.getChallengeConfig(ses.challenge_type), evaluation }
+}
+export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana(), latApi = 0, reto = false } = {}) {
   const fuera = []
   const sesionAuth = { access_token: 'tok-a', refresh_token: 'ref-a', token_type: 'bearer', expires_in: 360000, expires_at: Math.floor(Date.now() / 1000) + 360000,
     user: { id: USUARIO, email: 'a@ejemplo.test', aud: 'authenticated', role: 'authenticated' } }
@@ -120,6 +135,7 @@ export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, 
             return llena(requestId, 200, { candles: velas.filter(v => v.time >= from && v.time <= to && new Date(v.time * 1000).getUTCFullYear() === y) })
           }
           if (latApi) await espera(latApi)
+          if (reto && u.pathname === '/api/challenge/status') return llena(requestId, 200, await evaluaReto(doble, u))
           return llena(requestId, 200, {})
         }
         if (u.origin === app.url) return cdp('Fetch.continueRequest', { requestId })

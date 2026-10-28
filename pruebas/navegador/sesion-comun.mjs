@@ -15,10 +15,11 @@ export function velasDosSemanas() {
 }
 
 // app (opcional): el `next dev` ya arrancado de otra pagina (od02: una pagina nueva por caso, el mismo servidor)
-export async function montaPagina({ sesion = {}, tope = 25 * 60000, app: deAntes = null, latApi = 0 } = {}) {
+// reto (orden 1-158): /api/challenge/status con el reto evaluado (app.mjs abreSesion)
+export async function montaPagina({ sesion = {}, tope = 25 * 60000, app: deAntes = null, latApi = 0, reto = false } = {}) {
   const doble = dobleSupabase({ sesion: { timeframe: 'M15', date_to: '2026-03-13', last_timestamp: VIERNES_2030, ...sesion } })
   const app = deAntes ?? await arrancaNext()
-  const { b, fuera } = await abreSesion(app, { doble, velas: velasDosSemanas(), tope, latApi })
+  const { b, fuera } = await abreSesion(app, { doble, velas: velasDosSemanas(), tope, latApi, reto })
   const E = x => b.evalua(x)
   const CR = `window.__chartMap.current['EUR/USD']`
   const HER = `[...${CR}.plugin._interactionManager._tools.values()].filter(x=>x.toolType==='LongShortPosition').at(-1)`
