@@ -115,8 +115,14 @@ export default function usePairData({ id, session, activePair, pairState, chartM
         checkChallengeBreachRef.current?.(pair,engine)
         }
         if(pair===activePairRef.current){
+          // orden 1-153 (fallos 01 y 05): en el salto (Go to, Step, puesta al dia) la hora y el progreso se ponen al llegar,
+          // como el grafico. El salto corre en microtareas DENTRO del evento del clic: cada setState de aqui salia con
+          // prioridad de clic y React pintaba sincrono en cada vela (con las velas sin pintar: las killzones se calculaban con
+          // las viejas y no se recalculaban al llegar) y el clic duraba todo el salto (INP). En f5b713b el Go to pinta una vez
+          if(!engine.saltando){
           setCurrentTime(engine.currentTime)
           setProgress(Math.round(engine.progress*100))
+          }
           // el reloj maestro nunca retrocede (SIMGOTO-03): un par cuyo historico acaba antes no lo baja
           const m=getMasterTime(); if(!m||engine.currentTime>m) setMasterTime(engine.currentTime)
         }
