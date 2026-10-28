@@ -1247,6 +1247,10 @@ export default function SessionPage(){
     setCurrentTime(e.currentTime);setProgress(Math.round(e.progress*100))
     const cr=chartMap.current[activePair];if(cr)cr.prevCount=0
     updateChart(activePair,e,true)
+    // orden 1-153 (fallo 01): las killzones se recalculan con las velas YA pintadas. El salto es asincrono (1-080): si su
+    // ultima vela espera a la red (una limit llenada en un reto), React pinta antes con la hora nueva y las velas viejas, y
+    // la hora ya no cambia aqui; sin este tick, nada las recalculaba hasta el primer avance. En f5b713b el Go to es sincrono
+    setTick(t=>t+1)
     saveProgress(e.currentTime)
   },[activePair,updateChart,saveProgress,id,refreshChallengeStatus,ponAlDia])
 
