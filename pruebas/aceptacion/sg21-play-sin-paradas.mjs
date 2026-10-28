@@ -32,7 +32,7 @@ const COLA = await importa('lib/sim/cola.js').catch(() => null)
 // el banco copia el arranque del Play de la pagina: si la pagina cambia, el banco miente
 const pagina = fuente('components/_SessionInner.js')
 ver('el arranque del Play copiado sigue en _SessionInner.js', SAL?.creaFrontera
-  ? pagina.includes('e.frontera=creaFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})\n      e.play();setIsPlaying(true)')
+  ? pagina.includes('e.frontera=creaFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus,play:true})\n      e.play();setIsPlaying(true)')
   : /e\.play\(\);setIsPlaying\(true\)/.test(pagina))
 
 const T = Date.parse('2025-01-07T11:55:00Z') / 1000
@@ -51,7 +51,8 @@ async function reproduce({ ses, b }, hasta, maxFotogramas = 60) {
   const e = b.motor(), pausas = [], pausa = e.pause.bind(e)
   e.pause = () => { if (e.isPlaying) pausas.push(e.currentTime - T); pausa() }
   e._loop = () => {}
-  e.frontera = SAL?.creaFrontera?.({ engine: e, sid: ses.id, pairState: b.refs.pairState, esReto: true, refresca: b.caja.valor.reto.refreshChallengeStatus }) ?? null
+  // como la pagina (orden 1-153: la frontera del Play, play: true)
+  e.frontera = SAL?.creaFrontera?.({ engine: e, sid: ses.id, pairState: b.refs.pairState, esReto: true, refresca: b.caja.valor.reto.refreshChallengeStatus, play: true }) ?? null
   e.speed = 4; e.play(); b.estado.isPlaying = true
   let k = 0
   while (e.isPlaying && e.currentTime < T + hasta && k < maxFotogramas) {

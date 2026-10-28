@@ -1204,8 +1204,9 @@ export default function SessionPage(){
       // orden 1-117: tras un plazo vencido, primero se relee del servidor lo pendiente; si no consta, no arranca
       if(!(await antesDeReanudar(id))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return
       if(!(await ponAlDia(activePair))||activePairRef.current!==activePair||e.ocupado||e.isPlaying)return
-      // la frontera economica del Play, la misma que la del Step y el salto (SIMGOTO2-01, orden 1-087)
-      e.frontera=creaFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})
+      // la frontera economica del Play (SIMGOTO2-01, orden 1-087). Orden 1-153 (fallos 02 y 05): solo espera a un cierre
+      // pendiente; la relectura del reto va en segundo plano, como en produccion (lib/sim/salto.js, play)
+      e.frontera=creaFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus,play:true})
       e.play();setIsPlaying(true)
     }
   },[activePair,saveProgress,deselectAll,ponAlDia])
