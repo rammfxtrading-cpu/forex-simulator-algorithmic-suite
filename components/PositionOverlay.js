@@ -126,19 +126,40 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
     }
   },[activePair,onDragEnd])
 
+  // orden 1-153 (fallo 04): un arrastre que NO empieza en una linea de orden (el de un dibujo) pasa por encima de las bandas
+  // sin que lo corten. El plugin de dibujo escucha el mousemove en el elemento del grafico y las bandas no estan dentro: al
+  // cruzar una, el dibujo se quedaba quieto 20 px y luego saltaba. Mientras dura, ni las bandas ni sus etiquetas reciben el
+  // puntero; al soltar, como antes. Un arrastre que empieza en una linea (o su ⠿) la sigue moviendo como siempre
+  const arrastreRef = useRef(false)
+  const aplicaCapa = () => {
+    const fuera=arrastreRef.current||cedidoRef.current
+    for(const el of capaRef.current?.children??[]){
+      el.style.pointerEvents=fuera?'none':'auto'
+      const et=el.querySelector('[data-etiqueta]'); if(et) et.style.pointerEvents=arrastreRef.current?'none':'auto'
+    }
+  }
   useEffect(()=>{
     const onMove=e=>{
       // con un boton pulsado (un arrastre en curso, de la linea o del dibujo) no se cambia nada
-      if(dragState.current?.active||e.buttons) return
+      if(dragState.current?.active||e.buttons||arrastreRef.current) return
       const im=chartMap.current[activePair]?.plugin?._interactionManager
       let tirador=false
       try{ const pt=im&&im._eventToPoint(e); const hit=pt&&im._hitTest(pt); tirador=!!(hit&&hit.pointIndex!=null) }catch{}
       if(tirador===cedidoRef.current) return
       cedidoRef.current=tirador
-      for(const el of capaRef.current?.children??[]) el.style.pointerEvents=tirador?'none':'auto'
+      aplicaCapa()
     }
+    // en captura: antes que nadie, y sin tocar el evento
+    const onDown=e=>{ if(e.button!==0||capaRef.current?.contains(e.target)) return; arrastreRef.current=true; aplicaCapa() }
+    const onUp=()=>{ if(!arrastreRef.current) return; arrastreRef.current=false; aplicaCapa() }
     window.addEventListener('mousemove',onMove)
-    return()=>window.removeEventListener('mousemove',onMove)
+    window.addEventListener('mousedown',onDown,true)
+    window.addEventListener('mouseup',onUp,true)
+    return()=>{
+      window.removeEventListener('mousemove',onMove)
+      window.removeEventListener('mousedown',onDown,true)
+      window.removeEventListener('mouseup',onUp,true)
+    }
   },[activePair,chartMap])
 
   if(!dataReady||lines.length===0) return null
@@ -151,7 +172,7 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
           left:0,right:0,
           top:line.y-10,
           height:20,
-          pointerEvents:cedidoRef.current?'none':'auto',
+          pointerEvents:(cedidoRef.current||arrastreRef.current)?'none':'auto',
           cursor:line.drag?'ns-resize':'default',
           userSelect:'none',
         }}
@@ -164,9 +185,9 @@ export default function PositionOverlay({positions,pendingOrders,chartMap,active
             height:1,background:line.color,
           }}/>
           {/* Label + buttons */}
-          <div style={{
+          <div data-etiqueta="" style={{
             position:'absolute',right:56,top:'50%',transform:'translateY(-50%)',
-            display:'flex',gap:4,alignItems:'center',pointerEvents:'auto',
+            display:'flex',gap:4,alignItems:'center',pointerEvents:arrastreRef.current?'none':'auto',
           }}>
             <div style={{
               background:'rgba(3,8,16,0.88)',
