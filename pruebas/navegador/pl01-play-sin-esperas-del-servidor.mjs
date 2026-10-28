@@ -5,8 +5,9 @@
  * bandera v1 apagada, la pantalla de siempre), reto 2F de 100.000, M15, Play a 60× con clics de verdad. /api/challenge/status
  * (la relectura del reto) tarda 3 s. En produccion (f5b713b) el Play no espera a nada del servidor: el reto se relee en
  * segundo plano (al cambiar el dia de Madrid y tras cada cierre, useChallengeFlow y closePosition).
- *   A (fallo 02) · BUY limit nacida del dibujo de posicion que se llena durante el Play (lunes 07:15): desde que se llena,
- *       el reloj del Play no se queda quieto mas de 1 s (en 2835261: ~3 s, lo que tarda la relectura)
+ *   A (fallo 02) · BUY limit nacida del dibujo de posicion que se llena durante el Play (lunes 07:15): desde que se llena y
+ *       mientras la posicion sigue abierta, el reloj del Play no se queda quieto mas de 1 s (en 2835261: ~3 s, la relectura).
+ *       Tras el CIERRE de esa posicion el Play si espera a la cola y al reto (lo pactado: el breach que provoca, sg13 y sg14)
  *   B (fallo 05) · SELL limit pendiente (algo abierto) y el Play cruza la medianoche de Madrid (23:00 UTC), con el plazo de
  *       lib/sim/plazo.js a 1,5 s (window.__simPlazo; el real, 12 s) y la relectura a 3 s: sin el aviso «Un cierre está
  *       tardando en confirmarse» y el reloj sigue pasada la medianoche (en 2835261: parado con el aviso, sin ningun cierre)
@@ -54,12 +55,14 @@ const quieto = (m, i0 = 0) => { let max = 0, desde = m[i0]?.ms; for (let i = i0 
   const r = await g.limitDesdeDibujo()
   control('A: BUY limit colocada desde el dibujo (se llena hacia las 07:15)', /Buy Limit/.test(r.colocar || '') && (await g.limites()) === 1, JSON.stringify(r))
   await clicBoton(g, `b.innerText.trim()==='60×'`); await clicPlay(g)
-  const m = await muestras(g, 4500, async () => ({ lim: await g.limites() }))
+  const m = await muestras(g, 4500, async () => ({ lim: await g.limites(), pos: (await g.lineas()).some(l => /^BUY\b/.test(l.txt)) }))
   await clicPlay(g)
   const i0 = m.findIndex(x => x.lim === 0)
   control('A: la limit se ha llenado durante el Play', i0 > 0, JSON.stringify(m.map(x => [x.ms, hm(x.t), x.lim])))
-  const q = quieto(m, i0)
-  oraculo('A: desde que se llena la limit, el reloj del Play no se queda quieto mas de 1 s (produccion no espera)', i0 > 0 && q <= 1000, `quieto ${q} ms · ${JSON.stringify(m.slice(Math.max(0, i0 - 2), i0 + 12).map(x => [x.ms, hm(x.t), x.lim]))}`)
+  // hasta que la posicion se cierra (su TP o su SL: tras un cierre, el Play espera a la cola y al reto, lo pactado, sg13 y sg14)
+  const i1 = m.findIndex((x, i) => i > i0 && !x.pos)
+  const q = quieto(i1 > 0 ? m.slice(0, i1) : m, i0)
+  oraculo('A: desde que se llena la limit (y mientras la posicion sigue abierta), el reloj del Play no se queda quieto mas de 1 s (produccion no espera)', i0 > 0 && (i1 < 0 || i1 - i0 >= 5) && q <= 1000, `quieto ${q} ms · cerrada en la muestra ${i1} · ${JSON.stringify(m.slice(Math.max(0, i0 - 2), i0 + 12).map(x => [x.ms, hm(x.t), x.lim, x.pos]))}`)
   errores.push(...g.b.errores); fuera.push(...g.fuera); g.cierraPagina()
 }
 
