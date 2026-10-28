@@ -5,6 +5,7 @@
   "v1c10-comision-y-pausa": 20,
   "et01-etiqueta-sl": 3,
   "od01-orden-del-dibujo": 10,
+  "pc01-peor-caso-de-la-vela": 25,
   "af01-advance-end-timestamp": 16,
   "af02-modal-reabierto": 4,
   "ap01-errores-de-api": 13,

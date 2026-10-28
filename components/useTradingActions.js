@@ -15,7 +15,8 @@
 import { useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { realizePnl, priceFromPips, isFilled, isLongSide } from '../lib/trading/orders'
-import { pipMult } from '../lib/trading/pricing'
+import { pipMult, calcPnl } from '../lib/trading/pricing'
+import { apuntaCierre } from '../lib/sim/peorCaso'
 import { sessionKeyAt } from '../lib/killzonesDomain'
 import { cierraPosicion, saldoConfirmado, nuevoIdTrade } from '../lib/sim/cierre'
 import { encola, posicionOcupada, hayBarrera, suscribeCola } from '../lib/sim/cola'
@@ -134,13 +135,18 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
       const trade=userIdRef.current ? filaTrade({ userId:userIdRef.current, pos, lots:pos.lots, exit:usePrice, rrReal, pnl, result, note, currentTime:ct }) : null
       return { delta, trade, lastTimestamp:ct??null, revierte:()=>{ restaura(usePair,confirmada,enMemoria); reponSaldo(delta) } }
     }
+    // orden 1-158: el cierre se apunta al pedirlo, con su pnl, para el peor caso del Play (lib/sim/peorCaso.js)
+    const pos0=ps.positions.find(p=>p.id===posId)
+    const apunte={ posId, pair:usePair, side:pos0.side, entry:pos0.entry, sl:pos0.sl, lots:pos0.lots, pnl:calcPnl(pos0.side,pos0.entry,usePrice,pos0.lots,usePair) }
     if(!userIdRef.current){
       // sin usuario no se guarda nada (como antes); tambien en la cola
       if(hayBarrera(id)) return
+      apuntaCierre(id,apunte)
       await encola(id,()=>{ prepara() },{ cierre:true })
     } else {
       const r=cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:alResolver(usePair) })
       if(!r) return
+      apuntaCierre(id,apunte)
       await r
     }
     // Si es un challenge, refrescar HUD con nuevo balance/DD/target (en la cola, detras del cierre)
@@ -172,7 +178,10 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
       const trade=filaTrade({ userId:userIdRef.current, pos, lots:lotsToClose, exit:precio, rrReal, pnl, result, note, currentTime:ct })
       return { delta, trade, lastTimestamp:null, revierte:()=>{ restaura(pair,confirmada,enMemoria); reponSaldo(delta) } }
     }
-    return cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:alResolver(pair) })
+    const r=cierraPosicion({ sessionId:id, posId, prepara, alBloqueo, alResolver:alResolver(pair) })
+    // orden 1-158: apuntado al pedirlo, para el peor caso del Play (lib/sim/peorCaso.js)
+    if(r){ const p0=ps.positions.find(p=>p.id===posId); apuntaCierre(id,{ posId, pair, side:p0.side, entry:p0.entry, sl:p0.sl, lots:lotsToClose, pnl:calcPnl(p0.side,p0.entry,precio,lotsToClose,pair) }) }
+    return r
   },[currentPrice,currentTime,id])
 
   const previewOrder=useCallback((side, price, pair)=>{

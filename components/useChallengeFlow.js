@@ -16,6 +16,7 @@ import { encola, esperaCola, cierresPendientes, levantaBarrera, bajaBarrera, pos
 import { inciertosDe } from '../lib/sim/servicio'
 import { avisa } from '../lib/sim/avisos'
 import { conPlazo, VENCIDO } from '../lib/sim/plazo'
+import { tomaCierres, retoLeido } from '../lib/sim/peorCaso'
 
 // CAS de challenge/advance: cuantas veces se vuelve a pasar por la barrera tras un 409, y
 // la espera antes de cada reintento: corta y creciente (ESPERA_FASE_MS, luego el doble)
@@ -137,9 +138,16 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
       return null
     }
   }, [id])
+  // orden 1-158 (lib/sim/peorCaso.js): los cierres apuntados al encolarse la relectura van delante de ella en la cola; si
+  // responde, el reto leido ya los cuenta y se quitan de lo que el peor caso del Play suma aparte
   const refreshChallengeStatus = useCallback((ct) => {
     if (!id || !sessionRef.current?.challenge_type) return Promise.resolve(null)
-    return encola(id, () => refrescaAhora(ct))
+    const tomados = v1Ref?.current ? null : tomaCierres(id)
+    return encola(id, async () => {
+      const data = await refrescaAhora(ct)
+      if (tomados && data?.evaluation) retoLeido(id, { evaluation: data.evaluation, capital: Number(sessionRef.current?.capital) }, tomados)
+      return data
+    })
   }, [id, refrescaAhora])
 
   // La confirmacion explicita del reto (E1-04): se cierra la cola a cierres nuevos
@@ -156,7 +164,9 @@ export default function useChallengeFlow({ id, router, session, setSession, sess
         return null
       }
       return await encola(id, async () => {
+        const tomados = v1Ref?.current ? null : tomaCierres(id)   // con la barrera y la cola vacia: todos los apuntados
         const data = await refrescaAhora()
+        if (tomados && data?.evaluation) retoLeido(id, { evaluation: data.evaluation, capital: Number(sessionRef.current?.capital) }, tomados)
         return { data, valor: dentro ? await dentro(data) : null }
       })
     } finally {
