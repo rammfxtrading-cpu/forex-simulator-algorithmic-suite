@@ -3,10 +3,10 @@
  * PESADA: Chrome y `next dev`. SIEMPRE con el turno:  revisiones-suite/con-turno node pruebas/navegador/kz03-killzones-tras-goto.mjs
  * La pagina real (pruebas/navegador/app.mjs: Supabase y /api/* interceptados, nada sale de la maquina) con dos semanas de
  * velas en M15 (sesion-comun.mjs). En produccion (f5b713b) el Go to es sincrono: las killzones se recalculan despues de
- * pintar las velas nuevas. Desde la 1-080 el salto es asincrono (vela a vela, con la frontera economica): si algo del salto
- * espera a la red en su ULTIMA vela (en un reto, una limit que se llena justo ahi: la cola y el estado del reto), React
- * pinta con la hora nueva y las velas viejas, las killzones se calculan con esas y nada las vuelve a calcular hasta el
- * primer avance. Se leen las sesiones que tiene el primitive de las killzones (lo que pinta), SIN Play ni Step:
+ * pintar las velas nuevas. Desde la 1-080 el salto va vela a vela en microtareas DENTRO del evento del clic: cada
+ * setCurrentTime del onTick sale con prioridad de clic y React pinta sincrono en cada vela, con la hora nueva y las velas
+ * viejas (el salto no repinta el grafico hasta llegar); al llegar, la hora ya no cambia y nada recalcula las killzones
+ * hasta el primer avance. Lo mismo si la ULTIMA vela del salto espera a la red (B). Se leen las sesiones que tiene el primitive de las killzones (lo que pinta), SIN Play ni Step:
  *   A · practica y reto, desde el viernes 20:30 UTC, «Go to → Asia» y «Go to → Londres»: estan la Asia del lunes y, en
  *       Londres, la London del lunes (medido igual en f5b713b y 2835261: no cambia)
  *   B · reto (el status del reto a 300 ms, como hd01), desde el lunes 05:00 UTC, una BUY limit a 1,17641 nacida del dibujo
@@ -34,10 +34,12 @@ const delLunes = r => (r?.s || []).filter(x => x.ini >= U('2026-03-09T00:00:00Z'
 
 const app = await arrancaNext()
 const errores = [], fuera = []
-// el Go to como Ramon (la pildora y la sesion); se espera a que el replay llegue y un poco mas, sin avanzar
+// el Go to como Ramon: CLICS DE VERDAD (CDP) en la pildora y en la sesion. Un x.click() desde Runtime.evaluate no vale: sus
+// microtareas corren despues del evaluate, sin el evento en curso, y React no pinta sincrono durante el salto (medido)
+const clicBoton = async (g, f) => { const p = await g.E(`(()=>{const x=[...document.querySelectorAll('button')].find(b=>${f});if(!x||x.disabled)return null;const r=x.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`); if (p) await g.b.clic(p.x, p.y); return !!p }
 async function goTo(g, boton, llegada) {
-  await g.boton('Saltar a la próxima apertura de sesión'); await espera(300)
-  const ok = await g.boton(boton)
+  await clicBoton(g, `b.innerText.trim()==='Go to'`); await espera(300)
+  const ok = await clicBoton(g, `b.innerText.trim()===${JSON.stringify(boton)}`)
   let d
   for (let i = 0; i < 100; i++) { d = await g.datos(); if (iso(d.ultima) === llegada) break; await espera(50) }
   await espera(800)
@@ -81,6 +83,9 @@ for (const [caso, sesion, latApi] of [['practica', {}, 0], ['reto', RETO, 300]])
   errores.push(...g.b.errores); fuera.push(...g.fuera); g.cierraPagina()
 }
 control('la pagina no ha pedido nada fuera de la maquina salvo la fuente de Google (bloqueada)', fuera.every(u => u.startsWith('https://fonts.googleapis.com/')), JSON.stringify(fuera))
-control('sin errores en la consola de la pagina', errores.length === 0, JSON.stringify(errores.slice(0, 5)))
+// el salto pinta React en cada vela dentro del clic: en desarrollo, React lo avisa (y el clic tarda: INP)
+const profundidad = errores.filter(e => /Maximum update depth exceeded/.test(e))
+oraculo('ningun Go to hace que React avise «Maximum update depth exceeded» (un repintado sincrono por vela del salto)', profundidad.length === 0, `${profundidad.length} avisos`)
+control('sin otros errores en la consola de la pagina', errores.length === profundidad.length, JSON.stringify(errores.filter(e => !profundidad.includes(e)).slice(0, 5)))
 console.log(`\n${rojos} en rojo · ${verdes} en verde · ${rotos} controles rotos`)
 app.mata(); process.exit(rotos ? 2 : rojos ? 1 : 0)
