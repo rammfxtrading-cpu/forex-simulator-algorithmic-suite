@@ -10,7 +10,7 @@
  *   guardada   sim_cierre_v0 SI se guarda en la base pero la respuesta no llega nunca
  *   servicio   la lectura de sim_servicio del cierre no contesta nunca (no se manda nada)
  * ORACULOS, a mano:
- *   1 · vencido el plazo: parado, NO congelado (ni _esperando ni pidiendo ni saltando), el boton en pausa y un aviso
+ *   1 · vencido el plazo: parado, NO congelado (el Play, pasada la vela del TP: sigue mientras se confirma, orden 1-157) (ni _esperando ni pidiendo ni saltando), el boton en pausa y un aviso
  *   2 · rpc: al volver a pulsar se relee el trade del servidor; no consta y aun no han pasado 20 s: sigue parado, avisa
  *   3 · final (volviendo a pulsar; en rpc, pasados los 20 s del incierto):
  *         rpc       la posicion vuelve, abierta; ningun trade; saldo 100.000; el reloj pasa de la vela
@@ -64,7 +64,10 @@ for (const variante of ['rpc', 'guardada', 'servicio']) for (const modo of ['pla
   // 1) hasta la vela del TP y el plazo
   const corre = accion(); await espera(1500 + 1800); await p.asienta(10)
   const c1 = { reloj: (e.currentTime - T) / 60, congelado: congelado(), play: e.isPlaying, boton: pill().isPlaying, avisos: avisos() }
-  oraculo('SG20', `${id}: vencido el plazo, parado en la vela del TP y NO congelado, con aviso`, c1.reloj === 2 && !c1.congelado && !c1.play && !c1.boton && c1.avisos.length > 0, JSON.stringify(c1))
+  // orden 1-157: el Play no se para en el TP; la confirmacion va por detras y, vencido el plazo, se para donde este (pasada
+  // la vela del TP) con el aviso. El Step y el Go to, como antes: en la vela del TP
+  const r1 = modo === 'play' ? c1.reloj : 2
+  oraculo('SG20', `${id}: vencido el plazo, parado ${modo === 'play' ? 'PASADA la vela del TP (el Play siguio mientras se confirmaba)' : 'en la vela del TP'} y NO congelado, con aviso`, (modo === 'play' ? c1.reloj > 2 : c1.reloj === 2) && !c1.congelado && !c1.play && !c1.boton && c1.avisos.length > 0, JSON.stringify(c1))
   await Promise.race([corre, espera(200)])
   // 2) rpc: aun no consta y no han pasado 20 s
   if (variante === 'rpc') {
@@ -72,18 +75,18 @@ for (const variante of ['rpc', 'guardada', 'servicio']) for (const modo of ['pla
     // (con tope: en 785d9a8 la pulsacion se queda esperando para siempre)
     await Promise.race([accion(), espera(2500)]); await espera(600); await p.asienta(10)
     const c2 = { reloj: (e.currentTime - T) / 60, congelado: congelado(), relee: db.log.filter(c => c.tabla === 'sim_trades' && c.op === 'select').length > lecturas, ultimo: avisos().at(-1), abiertas: ps.positions.length }
-    oraculo('SG20', `${id}: al volver a pulsar se relee el trade del servidor; no consta (antes de 20 s): sigue parado y avisa`, c2.reloj === 2 && !c2.congelado && c2.relee && /No se sabe si tu último cierre se guardó/.test(c2.ultimo || ''), JSON.stringify(c2))
+    oraculo('SG20', `${id}: al volver a pulsar se relee el trade del servidor; no consta (antes de 20 s): sigue parado y avisa`, c2.reloj === r1 && !c2.congelado && c2.relee && /No se sabe si tu último cierre se guardó/.test(c2.ultimo || ''), JSON.stringify(c2))
     // pasan los 20 s del incierto (servicio.js ESPERA_INCIERTO_MS)
     for (const x of globalThis.__simServicio.inciertos) x.desde -= 21000
   }
   // 3) volver a pulsar hasta pasar de la vela
-  for (let k = 0; k < 4 && (e.currentTime - T) / 60 <= 2; k++) { await Promise.race([accion(), espera(2500)]); await espera(modo === 'play' ? 1200 : 300); await p.asienta(10) }
+  for (let k = 0; k < 4 && (e.currentTime - T) / 60 <= r1; k++) { await Promise.race([accion(), espera(2500)]); await espera(modo === 'play' ? 1200 : 300); await p.asienta(10) }
   if (e.isPlaying) await Promise.race([pill().handlePlayPause(), espera(2500)])
   await Promise.race([COLA.esperaCola(ses.id), espera(2500)]); await p.asienta(20)
   const fila = db.tablas.sim_sessions.find(x => x.id === ses.id)
   const c3 = { reloj: (e.currentTime - T) / 60, congelado: congelado(), abiertas: ps.positions.length, trades: db.tablas.sim_trades.length, pnl: db.tablas.sim_trades.map(t => +t.pnl), saldoBase: +fila.balance, ocupadas: COLA.hayOcupadas(ses.id) }
   const esperado = variante === 'guardada' ? c3.abiertas === 0 && c3.trades === 1 && c3.pnl[0] === 200 && c3.saldoBase === 100200 : c3.abiertas === 1 && c3.trades === 0 && c3.saldoBase === 100000
-  oraculo('SG20', `${id}: al reanudar, ${variante === 'guardada' ? 'consta guardado: cerrada con +200' : 'la posicion vuelve, abierta y sin trade'}, y el reloj pasa de la vela`, c3.reloj > 2 && !c3.congelado && !c3.ocupadas && esperado, JSON.stringify(c3))
+  oraculo('SG20', `${id}: al reanudar, ${variante === 'guardada' ? 'consta guardado: cerrada con +200' : 'la posicion vuelve, abierta y sin trade'}, y el reloj pasa de la vela`, c3.reloj > r1 && !c3.congelado && !c3.ocupadas && esperado, JSON.stringify(c3))
   db.pausa = null; db.rpcExterno = null; e.pause(); p.desmonta(); await asienta()
 }
 fin()
