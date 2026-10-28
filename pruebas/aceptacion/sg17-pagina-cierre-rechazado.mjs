@@ -8,7 +8,7 @@
  * quemaba el reto (11:57, -5050) mientras Step y Play se paraban.
  * ORACULOS, a mano, iguales en los tres modos:
  *   aceptado  cerrada a mano a 1,1000 (0, a las 11:55), saldo 100.000, activo, sin posiciones, reloj 12:00 (Go to NY)
- *   rechazo   la pausa de la pagina lo para a las 11:55: la posicion de vuelta, saldo 100.000, activo, sin filas, Play apagado
+ *   rechazo   la pausa de la pagina lo para a las 11:55 (el Play, donde le llega el rechazo: 11:56; orden 1-157): la posicion de vuelta, saldo 100.000, activo, sin filas, Play apagado
  */
 import {ver,oraculo,fin,escenario,sesionSim,vela,importa,A,asienta,db,puerta,monta,router} from '../lib.mjs'
 import {velasEnStorage} from '../banco-motor.mjs'
@@ -44,14 +44,17 @@ for(const side of ['BUY','SELL'])for(const rechazo of [false,true]){
    while((e.isPlaying||e._esperando)&&e.currentTime<T+300&&k<30){e._tickFrame(k++*250);if(e._esperando)await e._esperando;await asienta()}
    ver('control: Play no agota fotogramas',k<30);e.pause();
   };
-  const run=avanza();await asienta(80);ver('control: reloj inmovil hasta responder',e.currentTime===T);
-  gate.abrir();await closing;await run;await COLA.esperaCola(ses.id);await p.asienta(60);db.pausa=null;db.falla=null;
+  // orden 1-157: el Play no espera a la confirmacion del cierre (va por detras, como en produccion): su reloj sigue
+  const run=avanza();await asienta(80);ver(modo==='play'?'control: el Play sigue sin esperar la respuesta (orden 1-157)':'control: reloj inmovil hasta responder',modo==='play'?e.currentTime>T:e.currentTime===T);
+  const relojRespuesta=e.currentTime-T;gate.abrir();await closing;await run;await COLA.esperaCola(ses.id);await p.asienta(60);db.pausa=null;db.falla=null;
   ver('control: pagina sin errores tras el escenario',p.errores.length===0,JSON.stringify(p.errores.map(e=>e.message)));
-  const bottom=props(p,'SessionBottomBar');rr.push({modo,reloj:e.currentTime-T,saldo:bottom.balance,estado:bottom.challengeStatus?.evaluation?.status,abiertas:ps.positions.length,trades:db.tablas.sim_trades.map(t=>[+t.pnl,t.closed_at]),uiPlay:props(p,'ReplayPill').isPlaying});p.desmonta();await asienta();
+  const bottom=props(p,'SessionBottomBar');rr.push({modo,reloj:e.currentTime-T,relojRespuesta,saldo:bottom.balance,estado:bottom.challengeStatus?.evaluation?.status,abiertas:ps.positions.length,trades:db.tablas.sim_trades.map(t=>[+t.pnl,t.closed_at]),uiPlay:props(p,'ReplayPill').isPlaying});p.desmonta();await asienta();
  }
  // el Play apagado se exige con el rechazo (la pausa de la pagina); con el cierre aceptado, el guion para el motor a
  // mano al llegar a las 12:00 y el boton sigue en «reproduciendo» (como en la pagina, que no se detiene sola)
- const esperado=JSON.stringify(rechazo?[0,100000,'active',1,[]]:[300,100000,'active',0,[[0,'2025-01-07T11:55:00.000Z']]]);
- for(const x of rr)oraculo('SG17',`${side}, cierre ${rechazo?'RECHAZADO tarde':'aceptado'}, ${x.modo}: ${rechazo?'parado a las 11:55 con la posicion de vuelta y el Play apagado':'cerrada a mano y Go to NY'}`,JSON.stringify([x.reloj,x.saldo,x.estado,x.abiertas,x.trades])===esperado&&(!rechazo||x.uiPlay===false),JSON.stringify(x));
+ // orden 1-157: con el rechazo, el Play se para donde le llega la respuesta (aqui, la vela siguiente: 11:56, antes de la de
+ // 1,0940/1,1060), no a las 11:55; lo economico, igual que el salto y el Step
+ const esperado=x=>JSON.stringify(rechazo?[x.modo==='play'?x.relojRespuesta:0,100000,'active',1,[]]:[300,100000,'active',0,[[0,'2025-01-07T11:55:00.000Z']]]);
+ for(const x of rr)oraculo('SG17',`${side}, cierre ${rechazo?'RECHAZADO tarde':'aceptado'}, ${x.modo}: ${rechazo?(x.modo==='play'?'parado donde llega el rechazo (11:56), con la posicion de vuelta y el Play apagado':'parado a las 11:55 con la posicion de vuelta y el Play apagado'):'cerrada a mano y Go to NY'}`,JSON.stringify([x.reloj,x.saldo,x.estado,x.abiertas,x.trades])===esperado(x)&&(!rechazo||x.uiPlay===false)&&(x.modo!=='play'||!rechazo||x.relojRespuesta===60),JSON.stringify(x));
 }
 fin()
