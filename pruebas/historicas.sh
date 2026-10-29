@@ -34,9 +34,20 @@ LOG=.pruebas/historicas.log
 NODE_OPTS_RED="--import $PWD/pruebas/sin-red.mjs"
 NODO="node --import ./pruebas/sin-red.mjs --import ./pruebas/registro.mjs"
 mal=""
+# FUERA DEL CONTRASTE contra c470c8f (orden 1-167 del CTO), DECLARADAS: aceptaciones que no pueden correr sobre el codigo
+# auditado porque les falta lo que prueban; alli mueren con codigo 2 (fallo de la prueba), no con un rojo (1). Siguen en la
+# tanda contra esta rama; aqui no aprueban ni reproducen nada. Medido en la tanda del 29-oct (rama paquete-simulador-motor):
+#   af01-advance-end-timestamp   importa lib/sim/avisos.js (etapa 1, 324b429): no existe en c470c8f (ERR_MODULE_NOT_FOUND)
+#   srk01-clave-servidor         el codigo de c470c8f lee el .env.local del repo y la guarda de .env de las pruebas lo
+#                                deniega con una excepcion («LECTURA DE .env DENEGADA»): nunca llega a sus oraculos
+#   v1c01..v1c05, v1c07..v1c10   el motor v1: leen sql/sim-002-lectura-estable.sql (y lib/sim/v1/), que no existen en
+#                                c470c8f (ENOENT). v1c06 si corre alli y reproduce: se queda
+NO_CONTRA_AUDITADO="af01-advance-end-timestamp srk01-clave-servidor v1c01-cliente-comandos v1c02-vista-y-ordenes v1c03-ocultos-breach-reto v1c04-step-play-goto v1c05-pantalla-v1 v1c07-como-hoy v1c08-spread-a-la-vista v1c09-lote-pausa-autopausa v1c10-comision-y-pausa"
+fuera=0
 echo "contra $AUDITADO:"
 for f in pruebas/historicas/*.mjs pruebas/aceptacion/*.mjs; do
   nombre="$(basename "$(dirname "$f")")/$(basename "$f" .mjs)"
+  case " $NO_CONTRA_AUDITADO " in *" $(basename "$f" .mjs) "*) [ "$(basename "$(dirname "$f")")" = aceptacion ] && { echo "  ⚪ $nombre   fuera del contraste (declarada en historicas.sh: no puede correr contra $AUDITADO)"; fuera=$((fuera + 1)); continue; } ;; esac
   printf '\n######## %s\n' "$nombre" >> "$LOG"
   env -i PATH="$PATH" HOME="$HOME" TZ="Europe/Madrid" NODE_OPTIONS="$NODE_OPTS_RED" PRUEBAS_AISLADO="$AISLA_MODO" perl -e 'alarm shift; exec @ARGV' 300 $AISLA $NODO "$f" < /dev/null >> "$LOG" 2>&1
   case $? in
@@ -45,5 +56,5 @@ for f in pruebas/historicas/*.mjs pruebas/aceptacion/*.mjs; do
     *) echo "  ✗ $nombre   CONTROL ROTO o fallo (ver $DIR/$LOG)"; mal="$mal $nombre" ;;
   esac
 done
-[ -z "$mal" ] && { printf '\ntodas reproducen contra %s\n' "$AUDITADO"; exit 0; }
+[ -z "$mal" ] && { printf '\ntodas reproducen contra %s (%s fuera del contraste, declaradas)\n' "$AUDITADO" "$fuera"; exit 0; }
 printf '\nNO VALEN:%s\n' "$mal"; exit 1

@@ -135,7 +135,10 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
       for (let i = 0; i < n; i++) {
         const pon = caja.valor.datos.ponAlDia
         if (pon && !(await pon(estado.activa))) { await repinta(); continue }
-        if (pasoConFrontera) await pasoConFrontera({ engine: motor(), sid: sesion.id, pairState: refs.pairState, esReto: !!refs.sessionRef.current?.challenge_type, refresca: caja.valor.reto.refreshChallengeStatus })
+        // orden 1-167: como handleStep, la hora de la pagina se pone AL LLEGAR (setCurrentTime(e.currentTime)): desde 53c2546
+        // el onTick no la pone durante el salto (engine.saltando). Medido en Chrome (la pagina real): tras dos Step,
+        // p_last_timestamp de sim_cierre_v0 = la hora de llegada (06:00 + 120 s)
+        if (pasoConFrontera) { await pasoConFrontera({ engine: motor(), sid: sesion.id, pairState: refs.pairState, esReto: !!refs.sessionRef.current?.challenge_type, refresca: caja.valor.reto.refreshChallengeStatus }); estado.currentTime = motor().currentTime }
         else motor().nextCandle(1)
         await repinta()
       }
@@ -168,7 +171,7 @@ export function copiasVigentes() {
   return {
     mercado: s.includes(LINEA_MERCADO_119) ? /const posData=\{\.\.\.posDatos, sl:alTick\(posDatos\.sl,orderModal\.pair\), tp:alTick\(posDatos\.tp,orderModal\.pair\)\}\s*const entradaTick=alTick\(orderModal\.entry,orderModal\.pair\)/.test(s) && !!alTick
       : s.includes("const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}"),
-    paso: pasoConFrontera ? s.includes('await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') : /e\.nextCandle\(1\)/.test(s),
+    paso: pasoConFrontera ? s.includes('await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime)') : /e\.nextCandle\(1\)/.test(s),
     irA: saltaA
       ? s.includes('await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') && !/lastSLTPIdx=e\.currentIndex/.test(s)
       : /e\.seekToTime\(target\.time\)[\s\S]{0,200}if\(ps\)\{ps\.lastSLTPIdx=e\.currentIndex;ps\.lastLimitIdx=e\.currentIndex\}/.test(s),
