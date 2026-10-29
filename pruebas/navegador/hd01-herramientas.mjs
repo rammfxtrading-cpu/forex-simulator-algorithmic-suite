@@ -52,7 +52,9 @@ const SHIFT_REAL = {
   "TrendLine · de verdad": {"tirador 0 @0": "0:t·p· 1:t·p·", "tirador 1 @1": "0:t·p· 1:t·p·", "cuerpo": "0:t·p· 1:t·p·"},
   "TrendLine · a mitad": {"tirador 0 @0": "0:t+p+ 1:t·p·", "tirador 1 @1": "0:t·p· 1:t+p-", "cuerpo": "0:t+p- 1:t+p-"},
   "Rectangle · de verdad": {"tirador 0 @0": "0:t·p· 1:t·p·", "tirador 6 (cuadrado) @1": "0:t·p· 1:t·p·", "tirador 3 @2": "0:t·p· 1:t·p·", "tirador 5 (cuadrado) @3": "0:t·p· 1:t·p·", "tirador 1 @4": "0:t·p· 1:t·p·", "tirador 7 (cuadrado) @5": "0:t·p· 1:t·p·", "tirador 2 @6": "0:t·p· 1:t·p·", "tirador 4 (cuadrado) @7": "0:t·p· 1:t·p·", "cuerpo": "0:t·p· 1:t·p·"},
-  "Rectangle · a mitad": {"tirador 0 @0": "0:t+p· 1:t·p·", "tirador 6 (cuadrado) @1": "0:t·p- 1:t·p·", "tirador 3 @2": "0:t·p· 1:t+p·", "tirador 5 (cuadrado) @3": "0:t·p· 1:t+p·", "tirador 1 @4": "0:t·p· 1:t+p·", "tirador 7 (cuadrado) @5": "0:t·p· 1:t·p-", "tirador 2 @6": "0:t+p· 1:t·p·", "tirador 4 (cuadrado) @7": "0:t+p· 1:t·p·", "cuerpo": "0:t+p- 1:t+p-"},
+  // las cuatro esquinas (0-3) del rectangulo con Shift: cuadrado en pantalla, como TradingView (orden 1-164, punto 9; rc01);
+  // hasta 19b8858, el Shift del plugin bloqueaba su precio («0:t+p·», «0:t·p· 1:t+p·», «0:t+p· 1:t·p·»). El resto, igual
+  "Rectangle · a mitad": {"tirador 0 @0": "0:t+p+ 1:t·p·", "tirador 6 (cuadrado) @1": "0:t·p- 1:t·p·", "tirador 3 @2": "0:t·p+ 1:t+p·", "tirador 5 (cuadrado) @3": "0:t·p· 1:t+p·", "tirador 1 @4": "0:t·p· 1:t+p-", "tirador 7 (cuadrado) @5": "0:t·p· 1:t·p-", "tirador 2 @6": "0:t+p· 1:t·p-", "tirador 4 (cuadrado) @7": "0:t+p· 1:t·p·", "cuerpo": "0:t+p- 1:t+p-"},
   "FibRetracement · de verdad": {"tirador 0 @0": "0:t·p· 1:t·p·", "tirador 1 @1": "0:t·p· 1:t·p·", "cuerpo": "0:t·p· 1:t·p·"},
   "FibRetracement · a mitad": {"tirador 0 @0": "0:t+p· 1:t·p·", "tirador 1 @1": "0:t·p· 1:t+p·", "cuerpo": "0:t+p- 1:t+p-"},
 }

@@ -163,7 +163,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
     // NUNCA creamos uno encima ni dejamos huerfanos.
     if (cr.plugin) { pluginRef.current = cr.plugin; setPluginReady(true); return }
     try {
-      const { createLineToolsPlugin, AnchorPoint, PaneCursorType }               = await import('lightweight-charts-line-tools-core')
+      const { createLineToolsPlugin, AnchorPoint, PaneCursorType, InteractionPhase, Point } = await import('lightweight-charts-line-tools-core')
       const { LineToolTrendLine, LineToolHorizontalLine, LineToolHorizontalRay } = await import('lightweight-charts-line-tools-lines')
       const { LineToolPath }           = await import('lightweight-charts-line-tools-path')
       const { LineToolRectangle }      = await import('lightweight-charts-line-tools-rectangle')
@@ -171,6 +171,8 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
       const { LineToolLongShortPosition } = await import('lightweight-charts-line-tools-long-short-position')
       // tiradores como TradingView (ordenes 1-105 y 1-110): components/posicionTradingView.js
       const { clasePosicion } = await import('./posicionTradingView')
+      // rectangulo cuadrado con Shift en una esquina, como TradingView (orden 1-164, punto 9): components/rectanguloTradingView.js
+      const { claseRectangulo } = await import('./rectanguloTradingView')
 
       // Re-check tras el await: otra invocacion pudo construirlo mientras importabamos.
       if (cr.plugin) { pluginRef.current = cr.plugin; setPluginReady(true); return }
@@ -178,7 +180,7 @@ export function useDrawingTools({ chartMap, activePair, dataReady, userId, handl
       plugin.registerLineTool('TrendLine',          LineToolTrendLine)
       plugin.registerLineTool('Path',               LineToolPath)
       plugin.registerLineTool('HorizontalRay',      LineToolHorizontalRay)
-      plugin.registerLineTool('Rectangle',          LineToolRectangle)
+      plugin.registerLineTool('Rectangle',          claseRectangulo(LineToolRectangle, { InteractionPhase, Point }))
       plugin.registerLineTool('FibRetracement',     LineToolFibRetracement)
       plugin.registerLineTool('LongShortPosition',  clasePosicion(LineToolLongShortPosition, { AnchorPoint, PaneCursorType }))
       // ── Fix deseleccionar-todo para multi-selección (paridad TradingView) ──
