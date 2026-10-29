@@ -147,6 +147,7 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
     // lib/sim/salto.js, el de antes: un seekToTime y el reset de cursores
     async irA(sessKey) {
       const e = motor()
+      const par0 = refs.activePairRef.current
       const pon = caja.valor.datos.ponAlDia
       if (pon && !(await pon(estado.activa))) { await repinta(); return null }
       const target = nextSessionOpen(e.candles, e.currentIndex, sessKey)
@@ -159,6 +160,10 @@ export async function banco({ sesion, par = sesion.pair, balance = Number(sesion
       }
       const llego = await saltaA({ engine: e, hasta: target.time, sid: sesion.id, pairState: refs.pairState,
         esReto: !!refs.sessionRef.current?.challenge_type, refresca: caja.valor.reto.refreshChallengeStatus })
+      // orden 1-168: como handleGoTo, la hora de la pagina se pone AL LLEGAR (setCurrentTime(e.currentTime)), salvo si en el
+      // salto se cambio de par (la pagina vuelve sin pintar ni guardar). Medido en Chrome (orden 1-167): tras el Go to,
+      // p_last_timestamp de sim_cierre_v0 = la vela de llegada. pruebas/banco-hora-llegada.mjs lo caza
+      if (refs.activePairRef.current === par0) estado.currentTime = e.currentTime
       await repinta()
       return { ...target, llego }
     },
@@ -173,7 +178,7 @@ export function copiasVigentes() {
       : s.includes("const newPos={id:posId,pair:orderModal.pair,side:orderModal.side,entry:orderModal.entry,...posData,openTime:currentTime,initialSlPips:posData.slPips}"),
     paso: pasoConFrontera ? s.includes('await pasoConFrontera({engine:e,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus});if(activePairRef.current!==activePair||!chartMap.current[activePair])return;const cr=chartMap.current[activePair];if(cr)cr.prevCount=0;updateChart(activePair,e,true);setCurrentTime(e.currentTime)') : /e\.nextCandle\(1\)/.test(s),
     irA: saltaA
-      ? s.includes('await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') && !/lastSLTPIdx=e\.currentIndex/.test(s)
+      ? s.includes('await saltaA({engine:e,hasta:target.time,sid:id,pairState,esReto:!!sessionRef.current?.challenge_type,refresca:refreshChallengeStatus})') && /if\(activePairRef\.current!==activePair\|\|!chartMap\.current\[activePair\]\)\{[\s\S]{0,120}return\s*\}\s*setCurrentTime\(e\.currentTime\);setProgress\(Math\.round\(e\.progress\*100\)\)\s*const cr=chartMap\.current\[activePair\];if\(cr\)cr\.prevCount=0\s*updateChart\(activePair,e,true\)/.test(s) && !/lastSLTPIdx=e\.currentIndex/.test(s)
       : /e\.seekToTime\(target\.time\)[\s\S]{0,200}if\(ps\)\{ps\.lastSLTPIdx=e\.currentIndex;ps\.lastLimitIdx=e\.currentIndex\}/.test(s),
   }
 }
