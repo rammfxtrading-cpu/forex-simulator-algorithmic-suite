@@ -6,7 +6,8 @@ import { writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const CC = await import(pathToFileURL('/Users/principal/Desktop/revisiones-suite/guardas/contexto.mjs').href)
+// la canonica v4, la de esta migracion (copia congelada con su sha256; orden 1-166: no la viva)
+import { CC } from './guardas-v4/carga.mjs'
 const HUECO = '⟦HUECO s-contexto v4⟧'
 
 // el cierre de tablas de la canonica v4 (FALTAN), medido en el montaje de produccion del simulador (s04 + sim-002/003/

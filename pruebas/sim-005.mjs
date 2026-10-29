@@ -17,13 +17,12 @@
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { titulo, ver, oraculo, fin, REPO } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
 import { montajeV1, L } from './montaje-v1.mjs'
 import { TABLAS, CUERPO, DISPARADOR, migracion, vuelta, consulta } from './genera-sim-005.mjs'
-const CC = await import(pathToFileURL('/Users/principal/Desktop/revisiones-suite/guardas/contexto.mjs').href)
-const P = await import(pathToFileURL('/Users/principal/Desktop/revisiones-suite/guardas/produccion.mjs').href)
+// la canonica v4 y su produccion.mjs, con las que se escribio (copias congeladas con su sha256; orden 1-166: no la viva)
+import { CC, P } from './guardas-v4/carga.mjs'
 titulo('los .sql son los que genera pruebas/genera-sim-005.mjs (nadie los ha tocado a mano)')
 for (const [f, t] of [['sql/sim-005-progreso-monotono.sql', migracion], ['sql/sim-005-vuelta-atras.sql', vuelta], ['sql/consultas/s-contexto-sim.sql', consulta]])
   oraculo('S5', `${f}: identico al generado`, readFileSync(path.join(REPO, f), 'utf8') === t)
