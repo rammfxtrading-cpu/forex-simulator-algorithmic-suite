@@ -69,7 +69,9 @@ async function api({ ruta, cuerpo }) {
   if (r.http === 429 && r.cuerpo?.motivo === 'demasiados_avances') uno('update public.sim_alumnos set siguiente_avance_desde = null')
   return { http: r.http, cuerpo: r.cuerpo }
 }
-const ops = { prepara, api, fila: () => fila(), cierra: () => { pg.cierra(); return true } }
+// una pagina nueva toma el escritor como al abrir: el de la pagina cerrada caduca
+const caducaEscritor = () => { uno("update public.sim_arrendamientos set hasta = now() - interval '1 minute'"); return true }
+const ops = { prepara, api, fila: () => fila(), caducaEscritor, cierra: () => { pg.cierra(); return true } }
 process.on('message', async ({ id, op, arg }) => {
   try { const valor = await ops[op](arg); process.send({ id, ok: true, valor }); if (op === 'cierra') process.exit(0) }
   catch (e) { process.send({ id, ok: false, error: String(e?.stack ?? e) }) }

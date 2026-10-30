@@ -13,6 +13,9 @@
 //                                estadoCaido   todo GET de estado responde 503 (no_disponible)
 //                                caeTrasAbrir  tras el siguiente ACK 200 de un abrir, estadoCaido = true
 //                                retenerAbrir  el siguiente abrir se retiene hasta m.suelta()
+//                                pierdeAbrir   el siguiente abrir llega al servidor, pero a la pagina le llega un 500 (incierto)
+//                                conflictosCancelar  los N siguientes cancelar responden 409 conflicto sin llegar al servidor
+//   m.caducaEscritor()         el escritor de la pagina cerrada caduca (para abrir otra, como un alumno que vuelve)
 //   m.cierra()                 apaga el PostgreSQL y el hijo
 // Datos inventados.
 import { fork } from 'node:child_process'
@@ -29,7 +32,7 @@ export async function motorV1Real() {
   const pide = (op, arg) => new Promise((r, j) => { const id = ++n; pend.set(id, { r, j }); hijo.send({ id, op, arg }) })
   await arrancado
   const llamadas = [], retenidas = []
-  const trampas = { estadoCaido: false, caeTrasAbrir: false, retenerAbrir: false }
+  const trampas = { estadoCaido: false, caeTrasAbrir: false, retenerAbrir: false, pierdeAbrir: false, conflictosCancelar: 0 }
   const RUTAS = new Set(['/api/sim/tomar', '/api/sim/estado', '/api/sim/comando'])
   async function api(u, request) {
     const ruta = u.pathname
@@ -39,7 +42,9 @@ export async function motorV1Real() {
     llamadas.push(nota)
     if (ruta === '/api/sim/estado' && trampas.estadoCaido) { nota.http = 503; return { estado: 503, cuerpo: { ok: false, http: 503, motivo: 'no_disponible' } } }
     if (ruta === '/api/sim/comando' && cuerpo.tipo === 'abrir' && trampas.retenerAbrir) { trampas.retenerAbrir = false; await new Promise(r => retenidas.push(r)) }
+    if (ruta === '/api/sim/comando' && cuerpo.tipo === 'cancelar' && trampas.conflictosCancelar > 0) { trampas.conflictosCancelar--; nota.http = 409; return { estado: 409, cuerpo: { ok: false, http: 409, motivo: 'conflicto' } } }
     const r = await pide('api', { ruta, cuerpo })
+    if (ruta === '/api/sim/comando' && cuerpo.tipo === 'abrir' && trampas.pierdeAbrir) { trampas.pierdeAbrir = false; nota.http = 500; nota.real = r.http; return { estado: 500, cuerpo: { ok: false, motivo: 'error_interno' } } }
     if (ruta === '/api/sim/comando' && cuerpo.tipo === 'abrir' && r.http === 200 && trampas.caeTrasAbrir) { trampas.caeTrasAbrir = false; trampas.estadoCaido = true }
     nota.http = r.http
     return { estado: r.http, cuerpo: r.cuerpo }
@@ -47,7 +52,7 @@ export async function motorV1Real() {
   let cerrado = false
   const cierra = () => { if (cerrado) return; cerrado = true; try { hijo.send({ id: ++n, op: 'cierra' }) } catch {} ; setTimeout(() => { try { hijo.kill('SIGKILL') } catch {} }, 5000).unref() }
   process.on('exit', () => { try { hijo.kill('SIGKILL') } catch {} })
-  return { prepara: arg => pide('prepara', arg), api, fila: () => pide('fila'), llamadas, trampas, retenidas, suelta: () => { for (const r of retenidas.splice(0)) r() }, cierra }
+  return { prepara: arg => pide('prepara', arg), api, fila: () => pide('fila'), caducaEscritor: () => pide('caducaEscritor'), llamadas, trampas, retenidas, suelta: () => { for (const r of retenidas.splice(0)) r() }, cierra }
 }
 
 // la fila de la sesion v1 para el doble de Supabase de la pagina (lo que lee _SessionInner al abrir)

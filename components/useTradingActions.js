@@ -279,6 +279,9 @@ export default function useTradingActions({ id, activePair, currentPrice, curren
   // cancelar), las pendientes que nacieron de ellos (order.dibujo, en memoria). Una posicion abierta desde el dibujo no se
   // toca: cerrar sigue siendo una accion explicita
   const cancelaOrdenesDeDibujos=useCallback((ids)=>{
+    // R2-6 (orden 1-176): con la bandera v1, la pantalla lleva la cuenta (tambien las que se confirman despues y los
+    // cancelar que fallan)
+    if(v1Ref?.current?.borraDibujos) return v1Ref.current.borraDibujos(ids)
     const quita=new Set(ids??[]); if(!quita.size) return
     const van=[]
     for(const [pair,ps] of Object.entries(pairState.current)) for(const o of ps?.orders??[]) if(o.dibujo!=null&&quita.has(o.dibujo)) van.push(cancelLimitOrder(o.id,pair))
