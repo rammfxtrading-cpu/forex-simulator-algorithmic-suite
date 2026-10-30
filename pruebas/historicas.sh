@@ -45,7 +45,8 @@ mal=""
 #   v1c11, v1c12 (orden 1-175)   PSIMM1-01/02 de la pantalla v1: en c470c8f no hay lib/sim/v1/pantalla.js; alli saldrian en
 #                                rojo solo por AUSENCIA (no es una reproduccion). Su rojo semantico es contra d3fa792
 #                                (revisiones-suite/2026-10-30-psimm1-r2-evidencias/rojo-*.log)
-NO_CONTRA_AUDITADO="af01-advance-end-timestamp srk01-clave-servidor v1c01-cliente-comandos v1c02-vista-y-ordenes v1c03-ocultos-breach-reto v1c04-step-play-goto v1c05-pantalla-v1 v1c07-como-hoy v1c08-spread-a-la-vista v1c09-lote-pausa-autopausa v1c10-comision-y-pausa v1c11-ack-sin-relectura v1c12-aperturas-solapadas"
+#   v1c13 (orden 1-176)          igual (R2-5/R2-6/R2-7); su rojo semantico es contra 042976f (rojo-v1c13-huecos-r2-042976f.log)
+NO_CONTRA_AUDITADO="af01-advance-end-timestamp srk01-clave-servidor v1c01-cliente-comandos v1c02-vista-y-ordenes v1c03-ocultos-breach-reto v1c04-step-play-goto v1c05-pantalla-v1 v1c07-como-hoy v1c08-spread-a-la-vista v1c09-lote-pausa-autopausa v1c10-comision-y-pausa v1c11-ack-sin-relectura v1c12-aperturas-solapadas v1c13-huecos-r2"
 fuera=0
 echo "contra $AUDITADO:"
 for f in pruebas/historicas/*.mjs pruebas/aceptacion/*.mjs; do
