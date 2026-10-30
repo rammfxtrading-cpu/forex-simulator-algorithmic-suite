@@ -25,6 +25,12 @@ export const fuente = p => readFileSync(REPO + p, 'utf8')
 export const importa = p => import(pathToFileURL(REPO + p).href)
 export const puerta = () => { let abrir; const p = new Promise(r => { abrir = r }); return { p, abrir } }
 export const espera = ms => new Promise(r => setTimeout(r, ms))
+// ORDEN 1-182: el cuerpo de GET /api/sim/estado de un DOBLE, como lo manda el servidor (lib/servidor/estado.mjs): el sobre
+// entero y su huella (lib/sim/v1/huella.mjs), que el cliente v1 recalcula. Un doble sin huella seria una relectura fallida
+export async function cuerpoEstado({ sessionId, version, estado, epoca = 1, terminal = null, legado = false, escritor = null, valoracion = null }) {
+  const { huellaDe } = await importa('lib/sim/v1/huella.mjs')
+  return { ok: true, http: 200, session_id: sessionId, motor_version: 1, version, epoca, terminal, legado, escritor, estado, huella: huellaDe(version, estado), valoracion }
+}
 export const asienta = async (n = 40) => { for (let k = 0; k < n; k++) await new Promise(r => setImmediate(r)) }
 
 let controlesMal = 0, rojos = 0, verdes = 0, omitidas = 0

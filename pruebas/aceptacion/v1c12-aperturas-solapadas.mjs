@@ -23,7 +23,7 @@
 import { anclados } from '../mercado-ancla.mjs'
 import { register } from 'node:module'
 register('../espias-vela.mjs', import.meta.url)
-const { titulo, ver, oraculo, fin, importa, fuente, asienta, escenario } = await import('../lib.mjs')
+const { titulo, ver, oraculo, fin, importa, fuente, asienta, escenario, cuerpoEstado } = await import('../lib.mjs')
 const N = 12
 const PA = await importa('lib/sim/v1/pantalla.js').catch(() => null)
 const HOOK = await importa('components/useSesionV1.js').catch(() => null)
@@ -36,14 +36,15 @@ const ticks = x => (x == null ? null : String(Math.round(Number(x) * 1e5)))
 // el servidor sintetico (como la RPC: version esperada, recibo con version_partida y version_resultante); la PRIMERA
 // peticion de comando se retiene hasta suelta()
 function servidor() {
-  const s = { version: 0, estado: { esquema: 'cartera@1', estado: 'activo', pares: ['EURUSD'], reloj: { cursor: T0 }, saldo_µ: '100000000000', posiciones: [], ordenes: [],
+  // orden 1-182: la cartera del doble con el esquema del motor (sim-cartera@1) y el GET con su sobre y su huella (cuerpoEstado)
+  const s = { version: 0, estado: { esquema: 'sim-cartera@1', estado: 'activo', pares: ['EURUSD'], reloj: { cursor: T0 }, saldo_µ: '100000000000', posiciones: [], ordenes: [],
     cotizaciones: { EURUSD: { bid: '110000' } }, costes: { spread_ticks: { EURUSD: '3' } } } }
   let abre, retener = true
   const puerta = new Promise(r => { abre = r })
   const x = { s, comandos: [], seq: 0, conflictos: 0, suelta: () => abre() }
   x.llama = async (ruta, { cuerpo: c }) => {
     if (ruta.endsWith('/tomar')) return { http: 200, cuerpo: { ok: true, testigo: 'ensayo' } }
-    if (ruta.endsWith('/estado')) return { http: 200, cuerpo: { ok: true, version: s.version, epoca: 1, estado: structuredClone(s.estado) } }
+    if (ruta.endsWith('/estado')) return { http: 200, cuerpo: await cuerpoEstado({ sessionId: 'sesion-ficticia', version: s.version, estado: structuredClone(s.estado) }) }
     x.comandos.push({ tipo: c.tipo, id: c.id ?? null })
     if (retener) { retener = false; await puerta }
     if (c.version_esperada !== s.version) { x.conflictos++; return { http: 409, cuerpo: { ok: false, motivo: 'conflicto', version: s.version } } }

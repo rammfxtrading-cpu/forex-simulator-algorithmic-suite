@@ -20,7 +20,7 @@
  */
 // orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
 import { anclados } from '../mercado-ancla.mjs'
-const { titulo, ver, oraculo, fin, importa, fuente, asienta } = await import('../lib.mjs')
+const { titulo, ver, oraculo, fin, importa, fuente, asienta, cuerpoEstado } = await import('../lib.mjs')
 const N = 34
 const PA = await importa('lib/sim/v1/pantalla.js').catch(() => null)
 if (!PA?.creaPantallaV1) { for (let i = 0; i < N; i++) oraculo('V1C11', `caso ${i}: sin lib/sim/v1/pantalla.js no se puede`, false, 'no esta'); fin() }
@@ -33,7 +33,8 @@ const ticks = x => (x == null ? null : String(Math.round(Number(x) * 1e5)))
 // el servidor sintetico: aplica cada comando sobre su estado, sube la version y devuelve el ACK como la RPC (recibo con
 // version_partida y version_resultante); el GET de estado falla segun `fallo` (null: bien)
 function servidor() {
-  const s = { version: 0, estado: { esquema: 'cartera@1', estado: 'activo', pares: ['EURUSD'], reloj: { cursor: T0 }, saldo_µ: '100000000000', posiciones: [], ordenes: [],
+  // orden 1-182: la cartera del doble con el esquema del motor (sim-cartera@1) y el GET con su sobre y su huella (cuerpoEstado)
+  const s = { version: 0, estado: { esquema: 'sim-cartera@1', estado: 'activo', pares: ['EURUSD'], reloj: { cursor: T0 }, saldo_µ: '100000000000', posiciones: [], ordenes: [],
     cotizaciones: { EURUSD: { bid: '110000' } }, costes: { spread_ticks: { EURUSD: '3' } } } }
   const x = { s, fallo: null, falloTrasAck: null, gets: 0, comandos: [], seq: 0, conflictos: 0 }
   x.llama = async (ruta, { cuerpo: c }) => {
@@ -42,9 +43,9 @@ function servidor() {
       x.gets++
       if (x.fallo === 'red') throw new Error('corte de red ficticio')
       if (x.fallo === '503') return { http: 503, cuerpo: { ok: false, motivo: 'no_disponible' } }
-      if (x.fallo === '200_obsoleto') return { http: 200, cuerpo: { ok: true, version: 0, epoca: 1, estado: { ...structuredClone(s.estado), posiciones: [], ordenes: [] } } }
+      if (x.fallo === '200_obsoleto') return { http: 200, cuerpo: await cuerpoEstado({ sessionId: 'sesion-ficticia', version: 0, estado: { ...structuredClone(s.estado), posiciones: [], ordenes: [] } }) }
       if (x.fallo === '200_invalido') return { http: 200, cuerpo: { ok: true, version: 'no-es-un-numero', epoca: 1 } }
-      return { http: 200, cuerpo: { ok: true, version: s.version, epoca: 1, estado: structuredClone(s.estado) } }
+      return { http: 200, cuerpo: await cuerpoEstado({ sessionId: 'sesion-ficticia', version: s.version, estado: structuredClone(s.estado) }) }
     }
     x.comandos.push({ tipo: c.tipo, id: c.id ?? null, version_esperada: c.version_esperada })
     if (c.version_esperada !== s.version) { x.conflictos++; return { http: 409, cuerpo: { ok: false, motivo: 'conflicto', version: s.version } } }

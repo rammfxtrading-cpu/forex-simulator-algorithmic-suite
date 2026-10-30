@@ -11,7 +11,8 @@
  * transporte que devuelve lo capturado.
  * EL INVARIANTE, en cada forma: (1) nada lanza; (2) ninguna posicion u orden viva que se veia deja de verse; (3) si lo pintado
  * no es exactamente el servidor (o la version no es la suya), la pantalla esta desincronizada, con el aviso, y ni una orden
- * nueva ni un Step salen al servidor; (4) con la respuesta sana de vuelta (la misma version), se reconcilia y pinta = servidor.
+ * nueva ni un Step salen al servidor; (4) con la respuesta sana de vuelta (la misma version), se reconcilia y pinta = servidor
+ * (tras un avance, con los Steps de la recuperacion hasta el cursor confirmado, como en PSIMM3-02).
  * Controles: la forma sana se acepta sin bloqueo; el detector bloquea alguna forma (no aprueba en vacio); SHA-256 de la
  * huella = node:crypto. Datos inventados. Sin red.
  */
@@ -149,10 +150,12 @@ try {
     if (entrada === 'abrir') return p.envia({ tipo: 'abrir', carga: { ...MERCADO, cotizadoEn: p.cursor() } }, { entry: 1.1 })
     if (entrada === 'relectura') { await p.cliente.leeEstado(); p.vuelca(); return null }
     const av = p.avance({ engine: () => engine, par: () => 'EUR/USD' })
+    ultimoAvance = av
     if (entrada === 'paso') return av.paso()
     if (entrada === 'goto') return av.irA(m(14))
     return av.play({ lote: 12, hasta: m(14) })
   }
+  let ultimoAvance = null
   const capturado = {}
   for (const [tipo, reto] of [['cartera', null], ['reto', '2F']]) {
     for (const entrada of ENTRADAS.filter(e => e !== 'relectura')) {
@@ -224,7 +227,17 @@ try {
     mete('cuerpo null', { __cuerpo: null }); mete('cuerpo texto vacio', { __cuerpo: '' }); mete('cuerpo lista', { __cuerpo: [] })
     mete('cuerpo {}', { __cuerpo: {} }); mete('cuerpo {ok}', { __cuerpo: { ok: true } }); mete('cuerpo {ok, version}', { __cuerpo: { ok: true, version: cuerpo.version } })
     // la respuesta coherente de la version anterior (menor) y, en la misma version, otra cartera coherente
-    if (anterior && anterior.version !== cuerpo.version) mete('version anterior coherente (la respuesta real de antes)', structuredClone(anterior))
+    if (anterior && anterior.version !== cuerpo.version) {
+      mete('version anterior coherente (la respuesta real de antes)', structuredClone(anterior))
+      // la version que ya tiene la pantalla (la anterior), coherente pero con otra cartera: contradice la instalada
+      for (const [que, lista] of [['sin una posicion', 'posiciones'], ['sin una orden', 'ordenes']]) {
+        const c = structuredClone(anterior), e = c.estado.esquema === 'reto@1' ? c.estado.motor : c.estado
+        if (!e[lista].length) continue
+        e[lista] = e[lista].slice(1)
+        if (c.huella && HU?.huellaDe) c.huella = HU.huellaDe(c.version, c.estado)
+        mete(`version instalada (la anterior) coherente ${que} (huella recalculada)`, c)
+      }
+    }
     if (conCoherentes) for (const [que, lista] of [['sin una posicion', 'posiciones'], ['sin una orden', 'ordenes']]) {
       const c = structuredClone(cuerpo), e = c.estado.esquema === 'reto@1' ? c.estado.motor : c.estado
       if (!e[lista].length) continue
@@ -272,14 +285,16 @@ try {
       return { http: 404, cuerpo: { ok: false } }
     }
     const ps = { current: {} }, avisos = []
-    const p = PA.creaPantallaV1({ sessionId: u(7000), usuario: AL, sesion: { epoca: 1 }, nuevoId, local: web(), almacenSesion: web(), pairState: ps, llama: llamaF, avisa: a => avisos.push(a), esperasRelectura: [0, 0, 0], esperasCancelar: [5, 5, 5] })
+    const p = PA.creaPantallaV1({ sessionId: cap.antes.cuerpo.session_id, usuario: AL, sesion: { epoca: 1 }, nuevoId, local: web(), almacenSesion: web(), pairState: ps, llama: llamaF, avisa: a => avisos.push(a), esperasRelectura: [0, 0, 0], esperasCancelar: [5, 5, 5] })
     const out = { forma: forma?.nombre ?? 'sana', entrada, fallos: [] }
     enCurso = out
     try {
       await p.arranca(); p.vuelca()
       const visto = pintado(ps)
       if (entrada === 'relectura') fase.despues = true
+      ultimoAvance = null
       await hace(p, entrada); p.vuelca()
+      const avEntrada = ultimoAvance
       const srv = idsServidor(sano.cuerpo), pin = pintado(ps)
       const vivas = [...srv.pos, ...srv.ord]
       // (2) lo que se veia y sigue vivo se sigue viendo
@@ -300,6 +315,9 @@ try {
       // (4) la respuesta sana de vuelta: se reconcilia (la misma version, leida de nuevo y completa)
       fase.mutar = false
       await p.cliente.reconcilia(); await p.cliente.leeEstado(); p.vuelca()
+      // tras un avance confirmado sin relectura, lo confirmado se enseña con los Steps de la recuperacion (PSIMM3-02:
+      // vela a vela, con sus paradas): se dan hasta alcanzar el cursor confirmado
+      if (avEntrada) for (let k = 0; k < 20 && (avEntrada.mostrado ?? -1) < (p.cursor() ?? -1); k++) { await avEntrada.paso(); p.vuelca() }
       const fin2 = pintado(ps)
       if (p.cliente.desincronizado || !igual(fin2.pos, srv.pos) || !igual(fin2.ord, srv.ord)) out.recupera = false, out.fallos.push(`(4) no se recupera: ${tx({ fin2, srv, des: p.cliente.desincronizado })}`)
       else out.recupera = true
@@ -324,18 +342,22 @@ try {
     titulo(`${tipo} · ${entrada}`)
     const sana = await corre(cap, entrada, { nombre: 'sana', cuerpo: cap.despues.cuerpo })
     ver(`control: ${k} · la respuesta sana se acepta sin bloqueo y pinta = servidor`, !sana.bloqueada && !sana.fallos.length, tx(sana))
-    const fs_ = formas(cap.despues.cuerpo, entrada === 'relectura' ? null : cap.antes.cuerpo, true)
-    let mal = [], bloqueadas = 0, noRecupera = [], bloqueadasDe = []
+    // la misma version coherente con otra cartera solo contradice algo en la relectura (alli es la instalada); tras un ACK
+    // es una version NUEVA coherente: indistinguible de un servidor que dice otra cosa (limite declarado de la huella)
+    const fs_ = formas(cap.despues.cuerpo, entrada === 'relectura' ? null : cap.antes.cuerpo, entrada === 'relectura')
+    let mal = [], bloqueadas = 0, noRecupera = [], bloqueadasDe = [], aceptadas = []
     const DEBE = /^(estado ausente|estado null|cuerpo |misma version coherente|estado(\.motor)?\.(posiciones|ordenes) (vacia|sin el))/
     for (const f of fs_) {
       const r = await corre(cap, entrada, f)
       if (DEBE.test(f.nombre)) bloqueadasDe.push(r)
-      if (r.bloqueada) bloqueadas++
+      if (r.bloqueada) bloqueadas++; else aceptadas.push(r.forma)
       if (r.fallos.some(x => !x.startsWith('(4)'))) mal.push(r)
       if (r.recupera === false || r.fallos.some(x => x.startsWith('(1)'))) noRecupera.push(r)
     }
     total += fs_.length
     resumen[k] = { formas: fs_.length, bloqueadas, rompen: mal.length, sinRecuperar: noRecupera.length }
+    // las que se aceptan (sin bloqueo): el invariante ya exige que pinten = servidor; aqui, cuales son
+    console.log(`  aceptadas sin bloqueo (${aceptadas.length}): ${aceptadas.join(' | ')}`)
     if (entrada !== 'relectura') ver(`control: ${k} · el detector bloquea alguna forma (no aprueba en vacio)`, bloqueadas > 0, `${bloqueadas} de ${fs_.length}`)
     // la relectura de la version instalada: lo pintado sigue siendo el servidor aunque la respuesta falle, pero la 1-182 pide
     // que una relectura fallida avise y bloquee: al menos las que no traen cartera completa o traen otra en la misma version
@@ -344,7 +366,7 @@ try {
     oraculo('V1C19', `${k} · ${fs_.length} formas: ninguna deja una posicion u orden viva invisible ni una orden nueva sin bloqueo (y nada lanza)`, mal.length === 0,
       `${mal.length} rompen · ${tx(mal.slice(0, 4).map(r => ({ forma: r.forma, fallos: r.fallos.map(x => x.slice(0, 220)) })))}${mal.length ? ' · todas: ' + mal.map(r => r.forma).join(' | ').slice(0, 1500) : ''}`)
     oraculo('V1C19', `${k} · con la respuesta sana de la misma version de vuelta, las ${fs_.length} se reconcilian (pinta = servidor)`, noRecupera.length === 0,
-      `${noRecupera.length} sin recuperar · ${noRecupera.slice(0, 6).map(r => r.forma).join(' | ')}`)
+      `${noRecupera.length} sin recuperar · ${tx(noRecupera.slice(0, 3).map(r => ({ forma: r.forma, fallos: r.fallos.map(x => x.slice(0, 300)) })))} · ${noRecupera.slice(3, 12).map(r => r.forma).join(' | ')}`)
   }
   console.log(`\nFORMAS: ${total} en total (${Object.keys(capturado).length} entradas × tipo) · ${tx(resumen)}`)
 }finally{pg.cierra()}

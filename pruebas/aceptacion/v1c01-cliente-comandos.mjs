@@ -22,7 +22,7 @@
  */
 // orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
 import { anclados } from '../mercado-ancla.mjs'
-import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
+import { titulo, ver, oraculo, fin, importa, cuerpoEstado } from '../lib.mjs'
 import { hayPostgres } from '../pg-ensayo.mjs'
 import { montajeV1, L } from '../montaje-v1.mjs'
 import { cerrojoEnMemoria } from '../cerrojo-falso.mjs'
@@ -178,9 +178,13 @@ try {
 
   titulo('M · respuestas de servicio')
   // un servidor doble que da el escritor y contesta lo demas con la respuesta dada
+  // orden 1-180 (PSIMM2-01): el cliente ya no instala un estado sin cartera (estado: {}); orden 1-182: ni una cartera que no
+  // sea completa y verificada: el doble da una cartera nueva del motor (CA.crea) con el sobre y la huella del servidor
+  const CAm = await importa('lib/motor/cartera.mjs'), COm = await importa('lib/motor/costes.mjs')
+  const carteraNueva = JSON.parse(CAm.serializa(CAm.crea({ pares: ['EURUSD'], costes: COm.COSTES_1, capital: '100000' })))
+  const cuerpo3 = await cuerpoEstado({ sessionId: SID, version: 3, estado: carteraNueva })
   const fijo = (http, motivo) => async ruta => (ruta === '/api/sim/tomar' ? { http: 200, cuerpo: { ok: true, http: 200, testigo: 'a'.repeat(64) } }
-    // orden 1-180 (PSIMM2-01): el cliente ya no instala un estado sin cartera (estado: {}); el doble da la cartera minima
-    : ruta === '/api/sim/estado' ? { http: 200, cuerpo: { ok: true, http: 200, version: 3, epoca: 1, estado: { esquema: 'sim-cartera@1', estado: 'activo', pares: ['EURUSD'], posiciones: [], ordenes: [], reloj: { cursor: null } } } } : { http, cuerpo: { ok: false, http, motivo } })
+    : ruta === '/api/sim/estado' ? { http: 200, cuerpo: structuredClone(cuerpo3) } : { http, cuerpo: { ok: false, http, motivo } })
   const c5 = C.creaCliente({ sessionId: SID, usuario: AL, epoca: 1, llama: fijo(503, 'mantenimiento'), local: almacenWeb(), sesion: almacenWeb(), nuevoId, plazoMs: 500 })
   await c5.toma()
   const r12 = await c5.envia('avanzar', { hasta: m(60), motivo: 'goto' })
