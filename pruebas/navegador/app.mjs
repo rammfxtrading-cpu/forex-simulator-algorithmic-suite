@@ -17,12 +17,14 @@ export const SESION = '5e5e5e5e-0000-4000-8000-000000000001'
 const SUPA = 'http://supabase.prueba'
 const UNICAS = { session_drawings: [[['session_id', 'pair'], 'session_drawings_session_id_pair_key']] }
 
-export async function arrancaNext() {
+// env (orden 1-175): variables PUBLICAS de mas para `next dev` (p. ej. NEXT_PUBLIC_SIM_V1_PANTALLA=encendido); nunca claves
+export async function arrancaNext({ env: extra = {} } = {}) {
   const puerto = 3400 + Math.floor(Math.random() * 400)
   fs.mkdirSync(path.join(REPO, '.pruebas'), { recursive: true })
   const log = fs.openSync(path.join(REPO, '.pruebas', 'next-navegador.log'), 'a')
   const env = { PATH: process.env.PATH, HOME: process.env.HOME, TZ: 'Europe/Madrid', NEXT_TELEMETRY_DISABLED: '1',
     NEXT_PUBLIC_SUPABASE_URL: SUPA, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-inventada' }
+  for (const [k, v] of Object.entries(extra)) { if (!/^NEXT_PUBLIC_/.test(k)) throw new Error(`arrancaNext: solo variables NEXT_PUBLIC_ (${k})`); env[k] = v }
   for (const f of fs.readdirSync(REPO)) if (/^\.env/.test(f)) throw new Error(`hay ${f} en el worktree: no se arranca (podria apuntar a la base real)`)
   const p = spawn(path.join(REPO, 'node_modules/.bin/next'), ['dev', '-p', String(puerto), '-H', 'localhost'], { cwd: REPO, env, detached: true, stdio: ['ignore', log, log] })
   const mata = () => { try { process.kill(-p.pid, 'SIGKILL') } catch {} }
@@ -94,6 +96,8 @@ export function dobleSupabase({ sesion = {} } = {}) {
 
 // abre la pagina de la sesion con todo interceptado; devuelve el navegador (cdp.mjs) y lo de fuera
 // latApi: lo que tarda en responder cada /api/* que no es de velas (por defecto, nada; como la red: hd01, el Go to de un reto)
+// api (orden 1-175, ps01/ps02): async (url, request) → { estado, cuerpo } | null; responde a /api/* (salvo velas) antes que
+// lo de siempre (null: lo de siempre). Con el, /api/sim/* lo atiende el servidor REAL de la prueba (lib/servidor + PostgreSQL local)
 // reto (orden 1-158, pl03): /api/challenge/status responde con el reto evaluado por el motor de la app (lib/challengeEngine.js)
 // sobre la sesion y los trades del doble, con la hora que pide la pagina; sin el, {} como siempre
 // El motor de la app importa sin extension ('./challengeRules'): un resolutor minimo le pone el .js, solo en esta prueba
@@ -109,7 +113,7 @@ async function evaluaReto(doble, u) {
     trades: doble.tablas.sim_trades, currentTimeIso: ct ? new Date(ct * 1000).toISOString() : undefined })
   return { session: { ...ses, status: ses.status || 'active' }, config: motorReto.getChallengeConfig(ses.challenge_type), evaluation }
 }
-export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana(), latApi = 0, reto = false } = {}) {
+export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana(), latApi = 0, reto = false, api = null } = {}) {
   const fuera = []
   const sesionAuth = { access_token: 'tok-a', refresh_token: 'ref-a', token_type: 'bearer', expires_in: 360000, expires_at: Math.floor(Date.now() / 1000) + 360000,
     user: { id: USUARIO, email: 'a@ejemplo.test', aud: 'authenticated', role: 'authenticated' } }
@@ -134,6 +138,7 @@ export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, 
             const y = Number(u.searchParams.get('year')), from = Number(u.searchParams.get('from')), to = Number(u.searchParams.get('to'))
             return llena(requestId, 200, { candles: velas.filter(v => v.time >= from && v.time <= to && new Date(v.time * 1000).getUTCFullYear() === y) })
           }
+          if (api) { const r = await api(u, request); if (r) return llena(requestId, r.estado, r.cuerpo) }
           if (latApi) await espera(latApi)
           if (reto && u.pathname === '/api/challenge/status') return llena(requestId, 200, await evaluaReto(doble, u))
           return llena(requestId, 200, {})
