@@ -47,7 +47,11 @@ mal=""
 #                                (revisiones-suite/2026-10-30-psimm1-r2-evidencias/rojo-*.log)
 #   v1c13 (orden 1-176)          igual (R2-5/R2-6/R2-7); su rojo semantico es contra 042976f (rojo-v1c13-huecos-r2-042976f.log)
 #   v1c14 (orden 1-177)          igual; es una declaracion (verde ya en 16ccc74): lo vivo se ve y se cancela sin su dibujo
-NO_CONTRA_AUDITADO="af01-advance-end-timestamp srk01-clave-servidor v1c01-cliente-comandos v1c02-vista-y-ordenes v1c03-ocultos-breach-reto v1c04-step-play-goto v1c05-pantalla-v1 v1c07-como-hoy v1c08-spread-a-la-vista v1c09-lote-pausa-autopausa v1c10-comision-y-pausa v1c11-ack-sin-relectura v1c12-aperturas-solapadas v1c13-huecos-r2 v1c14-huerfana-visible"
+#   v1c15, v1c16, cv02           (orden 1-179) el rango publicado al crear, el grafico v1 del mercado v1, una carga por par
+#                                y el plazo de las velas: leen lib/servidor/ y lib/sim/v1/ (no existen en c470c8f) o el
+#                                banco de hoy. Su rojo semantico es contra f54e987 (revisiones-suite/2026-10-30-simulador-r3-evidencias/)
+#   v1c17 (orden 1-180)          PSIMM2-01/02 de la pantalla v1 (como v1c11–v1c14); rojo semantico contra f54e987
+NO_CONTRA_AUDITADO="af01-advance-end-timestamp srk01-clave-servidor v1c01-cliente-comandos v1c02-vista-y-ordenes v1c03-ocultos-breach-reto v1c04-step-play-goto v1c05-pantalla-v1 v1c07-como-hoy v1c08-spread-a-la-vista v1c09-lote-pausa-autopausa v1c10-comision-y-pausa v1c11-ack-sin-relectura v1c12-aperturas-solapadas v1c13-huecos-r2 v1c14-huerfana-visible v1c15-rango-publicado v1c16-grafico-del-mercado-v1 cv02-una-carga-sin-espera-infinita v1c17-psimm2"
 fuera=0
 echo "contra $AUDITADO:"
 for f in pruebas/historicas/*.mjs pruebas/aceptacion/*.mjs; do

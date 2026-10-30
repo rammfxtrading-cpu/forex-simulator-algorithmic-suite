@@ -16,14 +16,16 @@
 //                                pierdeAbrir   el siguiente abrir llega al servidor, pero a la pagina le llega un 500 (incierto)
 //                                conflictosCancelar  los N siguientes cancelar responden 409 conflicto sin llegar al servidor
 //   m.caducaEscritor()         el escritor de la pagina cerrada caduca (para abrir otra, como un alumno que vuelve)
+//   m.velasMotor({ desde, hasta })  (orden 1-179) las velas que lee el motor de la sesion, en numeros, y su version fijada
 //   m.cierra()                 apaga el PostgreSQL y el hijo
 // Datos inventados.
 import { fork } from 'node:child_process'
 import path from 'node:path'
 import { REPO } from './cdp.mjs'
 
-export async function motorV1Real() {
-  const hijo = fork(path.join(REPO, 'pruebas/navegador/motor-v1-hijo.mjs'), [], { cwd: REPO, execArgv: ['--import', './pruebas/sin-red.mjs', '--import', './pruebas/registro.mjs'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] })
+// desplazaPips (orden 1-179, ps04): el mercado v1 de EURUSD desplazado esos pips respecto a /api/candles del arnes
+export async function motorV1Real({ desplazaPips = 0 } = {}) {
+  const hijo = fork(path.join(REPO, 'pruebas/navegador/motor-v1-hijo.mjs'), [String(desplazaPips)], { cwd: REPO, execArgv: ['--import', './pruebas/sin-red.mjs', '--import', './pruebas/registro.mjs'], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] })
   let n = 0
   const pend = new Map()
   let listo
@@ -33,7 +35,7 @@ export async function motorV1Real() {
   await arrancado
   const llamadas = [], retenidas = []
   const trampas = { estadoCaido: false, caeTrasAbrir: false, retenerAbrir: false, pierdeAbrir: false, conflictosCancelar: 0 }
-  const RUTAS = new Set(['/api/sim/tomar', '/api/sim/estado', '/api/sim/comando'])
+  const RUTAS = new Set(['/api/sim/tomar', '/api/sim/estado', '/api/sim/comando', '/api/sim/velas'])   // velas: orden 1-179 (d)
   async function api(u, request) {
     const ruta = u.pathname
     if (!RUTAS.has(ruta)) return null
@@ -52,7 +54,7 @@ export async function motorV1Real() {
   let cerrado = false
   const cierra = () => { if (cerrado) return; cerrado = true; try { hijo.send({ id: ++n, op: 'cierra' }) } catch {} ; setTimeout(() => { try { hijo.kill('SIGKILL') } catch {} }, 5000).unref() }
   process.on('exit', () => { try { hijo.kill('SIGKILL') } catch {} })
-  return { prepara: arg => pide('prepara', arg), api, fila: () => pide('fila'), caducaEscritor: () => pide('caducaEscritor'), llamadas, trampas, retenidas, suelta: () => { for (const r of retenidas.splice(0)) r() }, cierra }
+  return { prepara: arg => pide('prepara', arg), api, fila: () => pide('fila'), velasMotor: arg => pide('velasMotor', arg), caducaEscritor: () => pide('caducaEscritor'), llamadas, trampas, retenidas, suelta: () => { for (const r of retenidas.splice(0)) r() }, cierra }
 }
 
 // la fila de la sesion v1 para el doble de Supabase de la pagina (lo que lee _SessionInner al abrir)

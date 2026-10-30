@@ -1,6 +1,8 @@
 // EL HIJO DE motor-v1-real.mjs (orden 1-175): lib/servidor REAL + PostgreSQL desechable, en un proceso con sin-red.mjs y
 // registro.mjs delante (como la tanda: el arnes de nodo no arranca sin ellos, y asi el servidor de la prueba no tiene red).
 // Habla con el padre por IPC: { id, op: 'prepara'|'api'|'fila'|'cierra', ... } → { id, ok, valor | error }.
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from '../mercado-ancla.mjs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import fs from 'node:fs'
@@ -18,6 +20,8 @@ const { cerrojoEnMemoria } = await import('../cerrojo-falso.mjs')
 const P = await importa('lib/mercado/publicador-v1.mjs'), PV = await importa('lib/mercado/publica-v1.mjs')
 const SO = await importa('lib/servidor/sobre.mjs'), CR = await importa('lib/servidor/crear.mjs'), TO = await importa('lib/servidor/tomar.mjs')
 const CO = await importa('lib/servidor/comando.mjs'), ES = await importa('lib/servidor/estado.mjs')
+// orden 1-179 (d): el grafico v1 pide sus velas al servidor (en el codigo de antes, f54e987, no existe: la pagina no las pide)
+const VE = await importa('lib/servidor/velas.mjs').catch(() => null)
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
 const fuente = p => fs.readFileSync(path.join(REPO, p), 'utf8')
 const HUECO = "v_guarda pg_catalog.text := '⟦HUECO guarda canonica⟧';"
@@ -26,10 +30,14 @@ const deEnsayo = t => { if (t.split(HUECO).length !== 2) throw new Error('el hue
 // el mercado: EUR/USD con las velas de la pagina; el resto constante en los mismos minutos (sin los cerrados)
 const eur = velasDosSemanas()
 const PX = { AUDCAD: 0.9, AUDUSD: 0.65, GBPJPY: 190.5, GBPUSD: 1.3, NZDUSD: 0.6, USDCAD: 1.37, USDCHF: 0.88, USDJPY: 150.2 }
-const velasDe = par => (par === 'EURUSD' ? eur.filter(v => !minutoCerrado(v.time)) : eur.filter(v => !minutoCerrado(v.time)).map(v => ({ time: v.time, open: PX[par], high: PX[par], low: PX[par], close: PX[par], volume: 1 })))
+// orden 1-179 (ps04): con DESPLAZA_EURUSD (pips, argv del hijo) el mercado v1 de EURUSD va desplazado respecto a las velas de
+// /api/candles del arnes: asi se ve de cual de las dos fuentes pinta el grafico. Por defecto 0 (ps01–ps03, cv01: igual que antes)
+const DESPLAZA = Number(process.argv[2] ?? 0) / 1e4
+const mueve = v => (DESPLAZA ? { ...v, open: Math.round((v.open + DESPLAZA) * 1e5) / 1e5, high: Math.round((v.high + DESPLAZA) * 1e5) / 1e5, low: Math.round((v.low + DESPLAZA) * 1e5) / 1e5, close: Math.round((v.close + DESPLAZA) * 1e5) / 1e5 } : v)
+const velasDe = par => (par === 'EURUSD' ? eur.filter(v => !minutoCerrado(v.time)).map(mueve) : eur.filter(v => !minutoCerrado(v.time)).map(v => ({ time: v.time, open: PX[par], high: PX[par], low: PX[par], close: PX[par], volume: 1 })))
 const o = new Map()
 const almacen = { async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } }
-await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen, planes: anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), '2026-09-30'), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 
 const pg = montajeV1()
 pg.arranca()
@@ -41,7 +49,7 @@ pg.alumno(d, USUARIO)
 const uno = q => pg.uno(d, q)
 const fila = async (id = SESION) => { const t = uno(`select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
 const puertos = { almacen, rpc: pg.rpc(d), parDeId: pg.parDeId(d), leeSesion: fila, ahora: () => Date.parse('2026-10-14T10:00:00Z') }
-const orden = { '/api/sim/tomar': TO.ordenTomar, '/api/sim/estado': ES.ordenEstado, '/api/sim/comando': CO.ordenComando }
+const orden = { '/api/sim/tomar': TO.ordenTomar, '/api/sim/estado': ES.ordenEstado, '/api/sim/comando': CO.ordenComando, ...(VE ? { '/api/sim/velas': VE.ordenVelas } : {}) }
 let n = 600000
 const nuevoId = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`
 
@@ -71,7 +79,17 @@ async function api({ ruta, cuerpo }) {
 }
 // una pagina nueva toma el escritor como al abrir: el de la pagina cerrada caduca
 const caducaEscritor = () => { uno("update public.sim_arrendamientos set hasta = now() - interval '1 minute'"); return true }
-const ops = { prepara, api, fila: () => fila(), caducaEscritor, cierra: () => { pg.cierra(); return true } }
+// orden 1-179 (d): las velas que lee el MOTOR para la sesion (como comando.mjs: el manifiesto fijado en su estado, el lector
+// y la fuente), en numeros (ticks / 10^digitos), para comparar con las del grafico de la pagina
+const ME = await importa('lib/servidor/mercado.mjs'), CA = await importa('lib/motor/cartera.mjs'), FU = await importa('lib/motor/fuente.mjs'), IN = await importa('lib/motor/instrumentos.mjs')
+async function velasMotor({ par = 'EURUSD', desde, hasta }) {
+  const est = CA.deserializa(JSON.stringify((await fila()).estado)), car = est.esquema === 'reto@1' ? est.motor : est
+  const m = (await ME.manifiestosFijados(almacen, car.versiones, [par]))[par]
+  const fu = (await ME.creaLector({ almacen }).fuentes({ [par]: m }, { desde, hasta }))[par]
+  const n = x => Number(IN.deTicks(par, x))
+  return { fijado: FU.mercadoEfectivo(car.versiones, par), cursor: car.reloj.cursor, velas: fu.tramo(null, hasta, { desde }).velas.map(v => ({ time: v.time, open: n(v.open), high: n(v.high), low: n(v.low), close: n(v.close) })) }
+}
+const ops = { prepara, api, fila: () => fila(), caducaEscritor, velasMotor, cierra: () => { pg.cierra(); return true } }
 process.on('message', async ({ id, op, arg }) => {
   try { const valor = await ops[op](arg); process.send({ id, ok: true, valor }); if (op === 'cierra') process.exit(0) }
   catch (e) { process.send({ id, ok: false, error: String(e?.stack ?? e) }) }

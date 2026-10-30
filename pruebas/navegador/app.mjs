@@ -113,7 +113,10 @@ async function evaluaReto(doble, u) {
     trades: doble.tablas.sim_trades, currentTimeIso: ct ? new Date(ct * 1000).toISOString() : undefined })
   return { session: { ...ses, status: ses.status || 'active' }, config: motorReto.getChallengeConfig(ses.challenge_type), evaluation }
 }
-export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana(), latApi = 0, reto = false, api = null } = {}) {
+// orden 1-179: velasCaidas (años): /api/candles responde 503 para esos años, como la rama sin el historico de 2025 (el texto
+// de pages/api/candles.js); velasColgadas (años): esas peticiones no se responden nunca (la red que no contesta); red: async
+// (cdp, on) al final de la preparacion (p. ej. Debugger y Network para el initiator de cada peticion)
+export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, velas = velasSemana(), latApi = 0, reto = false, api = null, velasCaidas = [], velasColgadas = [], red = null } = {}) {
   const fuera = []
   const sesionAuth = { access_token: 'tok-a', refresh_token: 'ref-a', token_type: 'bearer', expires_in: 360000, expires_at: Math.floor(Date.now() / 1000) + 360000,
     user: { id: USUARIO, email: 'a@ejemplo.test', aud: 'authenticated', role: 'authenticated' } }
@@ -136,6 +139,8 @@ export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, 
           if (u.pathname === '/api/candles') {
             await espera(Number(process.env.LAT_VELAS ?? 1500))   // como la red: con respuesta instantanea la pagina pinta antes de tener el grafico
             const y = Number(u.searchParams.get('year')), from = Number(u.searchParams.get('from')), to = Number(u.searchParams.get('to'))
+            if (velasColgadas.includes(y)) return
+            if (velasCaidas.includes(y)) return llena(requestId, 503, { error: `El historico de ${u.searchParams.get('pair')} ${y} no esta disponible.` })
             return llena(requestId, 200, { candles: velas.filter(v => v.time >= from && v.time <= to && new Date(v.time * 1000).getUTCFullYear() === y) })
           }
           if (api) { const r = await api(u, request); if (r) return llena(requestId, r.estado, r.cuerpo) }
@@ -147,6 +152,7 @@ export async function abreSesion(app, { doble = dobleSupabase(), tope = 240000, 
         if (u.origin === SUPA) { const r = doble.responde(request); return llena(requestId, r.estado, r.cuerpo, [{ name: 'content-range', value: '0-0/*' }]) }
         fuera.push(request.url); return cdp('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
       })
+      if (red) await red(cdp, on)
     } })
   return { b, fuera, doble }
 }
