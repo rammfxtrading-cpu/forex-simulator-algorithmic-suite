@@ -53,7 +53,9 @@ mal=""
 #   v1c17 (orden 1-180)          PSIMM2-01/02 de la pantalla v1 (como v1c11–v1c14); rojo semantico contra f54e987
 #   v1c18, v1c19, cv04 (1-182)   PSIMM3-01/02/03: la pantalla v1, la huella generativa y el contexto v0 del banco de hoy;
 #                                rojo semantico contra 2e1edc1 (revisiones-suite/2026-10-30-simulador-r4-evidencias/)
-NO_CONTRA_AUDITADO="af01-advance-end-timestamp srk01-clave-servidor v1c01-cliente-comandos v1c02-vista-y-ordenes v1c03-ocultos-breach-reto v1c04-step-play-goto v1c05-pantalla-v1 v1c07-como-hoy v1c08-spread-a-la-vista v1c09-lote-pausa-autopausa v1c10-comision-y-pausa v1c11-ack-sin-relectura v1c12-aperturas-solapadas v1c13-huecos-r2 v1c14-huerfana-visible v1c15-rango-publicado v1c16-grafico-del-mercado-v1 cv02-una-carga-sin-espera-infinita v1c17-psimm2 v1c18-psimm3 v1c19-huella-generativa cv04-contexto-v0-rechazo"
+#   v1c20, cv05, pg01 (1-183)    la huella del sobre, el contexto v1 y los PostgreSQL huerfanos del arnes: leen lib/sim/v1/ y
+#                                montaje-v1 (no existen en c470c8f); rojo semantico contra c5f2ac0 (mismas evidencias)
+NO_CONTRA_AUDITADO="af01-advance-end-timestamp srk01-clave-servidor v1c01-cliente-comandos v1c02-vista-y-ordenes v1c03-ocultos-breach-reto v1c04-step-play-goto v1c05-pantalla-v1 v1c07-como-hoy v1c08-spread-a-la-vista v1c09-lote-pausa-autopausa v1c10-comision-y-pausa v1c11-ack-sin-relectura v1c12-aperturas-solapadas v1c13-huecos-r2 v1c14-huerfana-visible v1c15-rango-publicado v1c16-grafico-del-mercado-v1 cv02-una-carga-sin-espera-infinita v1c17-psimm2 v1c18-psimm3 v1c19-huella-generativa cv04-contexto-v0-rechazo v1c20-huella-sobre cv05-contexto-v1 pg01-sin-huerfanos"
 fuera=0
 echo "contra $AUDITADO:"
 for f in pruebas/historicas/*.mjs pruebas/aceptacion/*.mjs; do

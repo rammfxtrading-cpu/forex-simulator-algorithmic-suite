@@ -29,7 +29,9 @@ export const espera = ms => new Promise(r => setTimeout(r, ms))
 // entero y su huella (lib/sim/v1/huella.mjs), que el cliente v1 recalcula. Un doble sin huella seria una relectura fallida
 export async function cuerpoEstado({ sessionId, version, estado, epoca = 1, terminal = null, legado = false, escritor = null, valoracion = null }) {
   const { huellaDe } = await importa('lib/sim/v1/huella.mjs')
-  return { ok: true, http: 200, session_id: sessionId, motor_version: 1, version, epoca, terminal, legado, escritor, estado, huella: huellaDe(version, estado), valoracion }
+  // 1-183 (2): la huella cubre tambien terminal, escritor y valoracion (las toma del cuerpo)
+  const c = { ok: true, http: 200, session_id: sessionId, motor_version: 1, version, epoca, terminal, legado, escritor, estado, valoracion }
+  return { ...c, huella: huellaDe(version, estado, c) }
 }
 export const asienta = async (n = 40) => { for (let k = 0; k < n; k++) await new Promise(r => setImmediate(r)) }
 

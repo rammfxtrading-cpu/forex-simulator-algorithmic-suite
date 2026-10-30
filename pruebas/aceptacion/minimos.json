@@ -112,6 +112,9 @@
   "cv02-una-carga-sin-espera-infinita": 6,
   "v1c17-psimm2": 6,
   "v1c18-psimm3": 21,
-  "v1c19-huella-generativa": 22,
-  "cv04-contexto-v0-rechazo": 9
+  "v1c19-huella-generativa": 23,
+  "cv04-contexto-v0-rechazo": 9,
+  "v1c20-huella-sobre": 7,
+  "cv05-contexto-v1": 12,
+  "pg01-sin-huerfanos": 6
 }

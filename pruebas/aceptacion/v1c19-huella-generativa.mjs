@@ -24,7 +24,7 @@ register('../espias-vela.mjs', import.meta.url)
 const { titulo, ver, oraculo, fin, importa, fuente, asienta, escenario } = await import('../lib.mjs')
 const HOOK = await importa('components/useSesionV1.js').catch(() => null)
 const PA = await importa('lib/sim/v1/pantalla.js').catch(() => null)
-if (!HOOK?.default || !PA?.creaPantallaV1) { for (let i = 0; i < 22; i++) oraculo('V1C19', `caso ${i}: sin la pantalla v1 no se puede`, false, 'no esta'); fin() }
+if (!HOOK?.default || !PA?.creaPantallaV1) { for (let i = 0; i < 23; i++) oraculo('V1C19', `caso ${i}: sin la pantalla v1 no se puede`, false, 'no esta'); fin() }
 const { hayPostgres } = await import('../pg-ensayo.mjs')
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay', false); fin() }
 const { banco, velasEnStorage } = await import('../banco-motor.mjs')
@@ -234,7 +234,7 @@ try {
         const c = structuredClone(anterior), e = c.estado.esquema === 'reto@1' ? c.estado.motor : c.estado
         if (!e[lista].length) continue
         e[lista] = e[lista].slice(1)
-        if (c.huella && HU?.huellaDe) c.huella = HU.huellaDe(c.version, c.estado)
+        if (c.huella && HU?.huellaDe) c.huella = HU.huellaDe(c.version, c.estado, c)
         mete(`version instalada (la anterior) coherente ${que} (huella recalculada)`, c)
       }
     }
@@ -242,7 +242,7 @@ try {
       const c = structuredClone(cuerpo), e = c.estado.esquema === 'reto@1' ? c.estado.motor : c.estado
       if (!e[lista].length) continue
       e[lista] = e[lista].slice(1)
-      if (c.huella && HU?.huellaDe) c.huella = HU.huellaDe(c.version, c.estado)
+      if (c.huella && HU?.huellaDe) c.huella = HU.huellaDe(c.version, c.estado, c)
       mete(`misma version coherente ${que} (huella recalculada)`, c)
     }
     return out
@@ -336,7 +336,7 @@ try {
   }
 
   let total = 0
-  const resumen = {}
+  const resumen = {}, todasAceptadas = []
   for (const [k, cap] of Object.entries(capturado)) {
     const [tipo, entrada] = k.split('/')
     titulo(`${tipo} · ${entrada}`)
@@ -358,6 +358,7 @@ try {
     resumen[k] = { formas: fs_.length, bloqueadas, rompen: mal.length, sinRecuperar: noRecupera.length }
     // las que se aceptan (sin bloqueo): el invariante ya exige que pinten = servidor; aqui, cuales son
     console.log(`  aceptadas sin bloqueo (${aceptadas.length}): ${aceptadas.join(' | ')}`)
+    todasAceptadas.push(...aceptadas.map(a => `${k}: ${a}`))
     if (entrada !== 'relectura') ver(`control: ${k} · el detector bloquea alguna forma (no aprueba en vacio)`, bloqueadas > 0, `${bloqueadas} de ${fs_.length}`)
     // la relectura de la version instalada: lo pintado sigue siendo el servidor aunque la respuesta falle, pero la 1-182 pide
     // que una relectura fallida avise y bloquee: al menos las que no traen cartera completa o traen otra en la misma version
@@ -368,6 +369,11 @@ try {
     oraculo('V1C19', `${k} · con la respuesta sana de la misma version de vuelta, las ${fs_.length} se reconcilian (pinta = servidor)`, noRecupera.length === 0,
       `${noRecupera.length} sin recuperar · ${tx(noRecupera.slice(0, 3).map(r => ({ forma: r.forma, fallos: r.fallos.map(x => x.slice(0, 300)) })))} · ${noRecupera.slice(3, 12).map(r => r.forma).join(' | ')}`)
   }
+  // ORDEN 1-183 (2): terminal, escritor y valoracion entran en la huella; fuera quedan epoca y legado (declarados) y el
+  // eco http. Las formas aceptadas sin bloqueo solo pueden ser de esos campos
+  const FUERA = /^(http|epoca|legado)( |$)/
+  const ajenas = todasAceptadas.filter(a => !FUERA.test(a.split(': ').slice(1).join(': ')))
+  oraculo('V1C19', `1-183 (2): en los ${Object.keys(capturado).length} grupos, las formas aceptadas sin bloqueo son solo de http, epoca y legado`, ajenas.length === 0, `${ajenas.length} de otros campos · ${ajenas.slice(0, 12).join(' | ')}`)
   console.log(`\nFORMAS: ${total} en total (${Object.keys(capturado).length} entradas × tipo) · ${tx(resumen)}`)
 }finally{pg.cierra()}
 fin();

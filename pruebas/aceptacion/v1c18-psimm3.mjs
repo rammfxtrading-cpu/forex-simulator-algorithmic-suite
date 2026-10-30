@@ -138,7 +138,7 @@ try {
     if (v === 'igual-sin-posiciones') {
       // otra cartera en la MISMA version, coherente: sin posiciones y, si el servidor manda huella, con la suya recalculada
       c.estado.posiciones = []
-      if (c.huella && HU?.huellaDe) c.huella = HU.huellaDe(c.version, c.estado)
+      if (c.huella && HU?.huellaDe) c.huella = HU.huellaDe(c.version, c.estado, c)
     }
     return r
   }
