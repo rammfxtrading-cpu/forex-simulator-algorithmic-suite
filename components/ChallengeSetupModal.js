@@ -47,9 +47,10 @@ export default function ChallengeSetupModal({ open, onClose }) {
       const token = session?.access_token
       if (!token) throw new Error('Sesión expirada. Vuelve a iniciar sesión.')
 
-      // orden 1-127 (i): con la bandera de la pantalla v1, el reto nace v1 en /api/sim/crear, con lo mismo de abajo
+      // orden 1-127 (i): con la bandera de la pantalla v1, el reto nace v1 en /api/sim/crear; orden 1-179 (a): con las
+      // fechas por defecto del rango publicado del mercado v1 (lib/sim/v1/crear.js), no las de hoy de abajo
       if (pantallaV1()) {
-        const r = await creaRetoV1({ llama: llamaConFetch(supabase), nuevoId: () => crypto.randomUUID(), tipo: type, capital: size, hoy: today })
+        const r = await creaRetoV1({ llama: llamaConFetch(supabase), nuevoId: () => crypto.randomUUID(), tipo: type, capital: size })
         if (!r.ok) throw new Error(r.error)
         router.push(`/session/${r.id}`)
         return

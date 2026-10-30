@@ -14,6 +14,8 @@
  *     _SessionInner.js) pasan a una lista de columnas SIN estado ni escritor, y cada
  *     columna de la lista existe en el catalogo (s04 + sim-003 + preparatoria).
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from './mercado-ancla.mjs'
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa, escenario, perfil, tok, db, fuente } from './lib.mjs'
 import { llama } from './supabase-falso.mjs'
@@ -46,7 +48,7 @@ const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3,
 function velas(par) { const o = []; for (let t = Date.parse('2025-01-06T00:00:00Z') / 1000; t < Date.parse('2025-01-11T00:00:00Z') / 1000; t += 60) if (!minutoCerrado(t)) o.push({ time: t, open: PX[par], high: PX[par], low: PX[par], close: PX[par], volume: 1 }); return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31'), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay; la parte contra la base real no se ha ejecutado', false); fin() }
 const pg = montajeV1()

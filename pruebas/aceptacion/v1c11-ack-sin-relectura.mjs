@@ -18,6 +18,8 @@
  * Transporte sintetico en A–C (un servidor en memoria que aplica cada comando y sube la version, como la RPC). Datos
  * inventados. Sin red.
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from '../mercado-ancla.mjs'
 const { titulo, ver, oraculo, fin, importa, fuente, asienta } = await import('../lib.mjs')
 const N = 34
 const PA = await importa('lib/sim/v1/pantalla.js').catch(() => null)
@@ -140,6 +142,7 @@ const { cerrojoEnMemoria } = await import('../cerrojo-falso.mjs')
 const P = await importa('lib/mercado/publicador-v1.mjs'), PV = await importa('lib/mercado/publica-v1.mjs')
 const CR = await importa('lib/servidor/crear.mjs'), TO = await importa('lib/servidor/tomar.mjs'), SO = await importa('lib/servidor/sobre.mjs')
 const CO = await importa('lib/servidor/comando.mjs'), ES = await importa('lib/servidor/estado.mjs')
+const VE = await importa('lib/servidor/velas.mjs')   // orden 1-179 (d): el grafico v1 pide sus velas al servidor
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
 const HUECO = "v_guarda pg_catalog.text := '⟦HUECO guarda canonica⟧';"
 const deEnsayo = t => { if (t.split(HUECO).length !== 2) throw new Error('el hueco no esta una vez'); return t.replace(HUECO, "v_guarda pg_catalog.text := 'montaje de ensayo (v1c11)';") }
@@ -150,7 +153,7 @@ const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3,
 function velasDe(par) { const o = []; for (let t = M0; t < M0 + 5 * 86400; t += 60) if (!minutoCerrado(t)) o.push({ time: t, open: PX[par], high: PX[par], low: PX[par], close: PX[par], volume: 1 }); return o }
 function almacen() { const o = new Map(); return { async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31'), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 const AL = u(1)
 let nId = 71000
 const nuevoId = () => u(++nId)
@@ -165,7 +168,7 @@ try {
   const uno = q => pg.uno(d, q)
   const leeSesion = async id => { const t = uno(`select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
   const puertos = { almacen: mercado, rpc: pg.rpc(d), parDeId: pg.parDeId(d), leeSesion, ahora: () => Date.parse('2026-10-14T10:00:00Z') }
-  const orden = { '/api/sim/crear': CR.ordenCrear, '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado }
+  const orden = { '/api/sim/crear': CR.ordenCrear, '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado, '/api/sim/velas': VE.ordenVelas }
   let estadoCaido = false, caeTrasAbrir = false, gets = 0
   const llama = async (ruta, { cuerpo }) => {
     if (ruta === '/api/sim/estado') { gets++; if (estadoCaido) return { http: 503, cuerpo: { ok: false, motivo: 'no_disponible' } } }

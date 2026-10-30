@@ -2148,7 +2148,10 @@ export default function SessionPage(){
         />
       )}
 
-      {!dataReady&&!everReadyRef.current&&<AntimatterLoader/>}
+      {/* Orden 1-179 (b): el cargador «Cargando sesion» tapa la pagina hasta el primer par listo; si el par activo ya tiene su
+          error (un año de la sesion que no llego, o su plazo), se quita: debajo estaba el error con «Reintentar» y la pagina se
+          quedaba cargando sin final (medido en Chrome: pruebas/navegador/cv03) */}
+      {!dataReady&&!everReadyRef.current&&!pairState.current[activePair]?.error&&<AntimatterLoader/>}
 
       <style>{css}</style>
     </div>

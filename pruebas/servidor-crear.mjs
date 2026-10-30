@@ -24,6 +24,8 @@ import { titulo, ver, oraculo, fin, importa, escenario, perfil, tok, db, A, ADM 
 import { llama } from './supabase-falso.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
 import { montajeV1 } from './montaje-v1.mjs'
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from './mercado-ancla.mjs'
 const P = await importa('lib/mercado/publicador-v1.mjs')
 const PV = await importa('lib/mercado/publica-v1.mjs')
 const CA = await importa('lib/motor/cartera.mjs')
@@ -33,7 +35,7 @@ const SO = await cargar('lib/servidor/sobre.mjs'), RPC = await cargar('lib/servi
 const PARES = ['AUDCAD', 'AUDUSD', 'EURUSD', 'GBPJPY', 'GBPUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY']
 const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const AHORA = Date.parse('2026-10-14T10:00:00Z')
-const base = (o = {}) => ({ session_id: u(1001), command_id: u(2001), epoca: 1, name: 'Mi sesion', pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-01', date_to: '2025-12-31', capital: '10000', challenge_type: null, ...o })
+const base = (o = {}) => ({ session_id: u(1001), command_id: u(2001), epoca: 1, name: 'Mi sesion', pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '10000', challenge_type: null, ...o })
 const valida = c => (SO ? SO.validaCrear(c, { ahora: AHORA }) : { ok: null })
 
 titulo('1 · la intencion')
@@ -88,7 +90,7 @@ function velas(desde, hasta, px) { const o = []; for (let t = Date.parse(desde +
 function almacen() { const o = new Map(), registro = []; return { o, registro, async lee(r) { registro.push(['lee', r]); return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista(p) { return [...o].filter(([k]) => k.startsWith(p)).map(([ruta, b]) => ({ ruta, bytes: b.length })) } } }
 const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3, NZDUSD: 0.6, USDCAD: 1.37, USDCHF: 0.88, USDJPY: 150.2 }
 const mercado = almacen()
-const planes = PARES.map(par => P.planificaPar({ par, velas: velas('2025-01-06', '2025-01-11', PX[par]), texto: '', anterior: null, diasAceptados: new Map() }))
+const planes = anclados(PARES.map(par => P.planificaPar({ par, velas: velas('2025-01-06', '2025-01-11', PX[par]), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31')
 ver('control: los nueve pares publican', planes.every(p => p.estado === 'publica'), planes.map(p => p.estado).join())
 await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes, dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 const fijados = Object.fromEntries(planes.map(p => [p.par, `${p.par}@${p.manifiesto.version}:${p.manifiesto.huella}`]))

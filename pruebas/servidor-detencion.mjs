@@ -14,6 +14,8 @@
  *
  * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from './mercado-ancla.mjs'
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
@@ -35,7 +37,7 @@ const ovhl = (par, t) => (par === 'EURUSD' && t === m(30) ? [1.1, 1.1, 1.09, 1.0
 function velas(par) { const o = []; for (let t = M0; t < U('2025-01-09T00:00:00Z'); t += 60) if (!minutoCerrado(t)) { const [a, h, l, c] = ovhl(par, t); o.push({ time: t, open: a, high: h, low: l, close: c, volume: 1 }) } return o }
 function almacen() { const o = new Map(); return { async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31'), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 
 if (!hayPostgres()) { ver('PostgreSQL 17 local: NO hay; la prueba no se ha ejecutado', false); fin() }
 const pg = montajeV1()

@@ -25,6 +25,8 @@
  * V ≤ 10·L: a la velocidad «∞» de hoy (500 velas/s, lib/sessionUi.js SPEED_OPTS) el lote tiene que ser ≥ 50. El
  * precio en euros no se calcula aqui: depende del plan de Vercel (se multiplica fuera, con la tarifa vigente).
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from '../mercado-ancla.mjs'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -63,6 +65,7 @@ async function entornoLocal() {
   const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
   const CR = await importa('lib/servidor/crear.mjs'), TO = await importa('lib/servidor/tomar.mjs'), SO = await importa('lib/servidor/sobre.mjs')
   const CO = await importa('lib/servidor/comando.mjs'), ES = await importa('lib/servidor/estado.mjs')
+const VE = await importa('lib/servidor/velas.mjs')   // orden 1-179 (d): el grafico v1 pide sus velas al servidor
   const lee = p => readFileSync(path.join(REPO, p), 'utf8')
   const HUECO = "v_guarda pg_catalog.text := '⟦HUECO guarda canonica⟧';"
   const S6 = lee('sql/sim-006-tope-de-pasos.sql').replace(HUECO, "v_guarda pg_catalog.text := 'montaje de medida';")
@@ -75,7 +78,7 @@ async function entornoLocal() {
   const velasDe = par => { const o = []; let p = BASE[par]; for (let t = M0; t < U('2025-01-11T00:00:00Z'); t += 60) if (!minutoCerrado(t)) { const a = p; p = p * (1 + (azar() - 0.5) * 0.0004); const d = par.endsWith('JPY') ? 3 : 5, f = x => Number(x.toFixed(d)); o.push({ time: t, open: f(a), high: f(Math.max(a, p) * 1.0001), low: f(Math.min(a, p) * 0.9999), close: f(p), volume: 1 }) } return o }
   const velas = Object.fromEntries(SO.PARES.map(par => [par, velasDe(par)]))
   const mercado = (() => { const o = new Map(); return { async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } })()
-  await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velas[par], texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+  await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velas[par], texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31'), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
   const pg = montajeV1()
   pg.arranca()
   const AL = u(1)
@@ -87,7 +90,7 @@ async function entornoLocal() {
     pg.alumno(d, AL)
     const leeSesion = async id => { const t = pg.uno(d, `select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
     const puertos = { almacen: mercado, rpc: pg.rpc(d), leeSesion, ahora: () => Date.now() }
-    const orden = { '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado }
+    const orden = { '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado, '/api/sim/velas': VE.ordenVelas }
     const sid = u(5000 + nb)
     const c0 = await CR.ordenCrear({ actor: AL, cuerpo: { session_id: sid, command_id: u(++nId), epoca: 1, name: 'M', pair: 'EUR/USD', timeframe: 'M1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: null }, puertos })
     if (c0.http !== 201) throw new Error('crear: ' + JSON.stringify(c0.cuerpo))

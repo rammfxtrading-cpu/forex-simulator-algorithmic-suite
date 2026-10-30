@@ -30,11 +30,17 @@
  *       vela con datos (110) en un solo avance, nunca a un minuto vacio
  *   J · (i) /api/sim/crear acepta date_to = hoy (y no mañana); con la bandera encendida, el modal de reto
  *       (ChallengeSetupModal) crea el reto v1 por /api/sim/crear con lo mismo que manda hoy (EURUSD, M15, desde hace 6
- *       meses hasta HOY, sin recortar) y el mismo nombre automatico que /api/challenge/create
+ *       meses hasta HOY, sin recortar) y el mismo nombre automatico que /api/challenge/create.
+ *       ⚠️ ORDEN 1-179 (a) DEL CTO: la regla cambia. date_to = hoy solo vale si hoy esta publicado; fuera del rango
+ *       publicado del mercado vigente, 409 fuera_de_mercado (mañana sigue siendo 422 en date_to). El modal toma sus fechas
+ *       de ese rango: hasta = el ultimo dia publicado, desde = 6 meses antes. J se reescribe con la regla nueva (el mismo
+ *       numero de oraculos); su contrato nuevo completo esta en v1c15-rango-publicado.
  *   En E, F, G y H los espias siguen a cero: lo optimista es solo la accion del alumno, nunca SL/TP, fills ni breach.
  * Contra lib/servidor REAL y PostgreSQL desechable (montaje-v1 + sim-004b + sim-006, como v1c04). Datos inventados.
  * Mercado: EURUSD 1,1 hasta el minuto 10 del 6-ene-2025; 1,09 del 10 al 19; 1,1 desde el 20. El resto, constante.
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from '../mercado-ancla.mjs'
 import { register } from 'node:module'
 register('../espias-vela.mjs', import.meta.url)
 const { titulo, ver, oraculo, fin, importa, fuente, asienta, escenario } = await import('../lib.mjs')
@@ -52,6 +58,7 @@ const P = await importa('lib/mercado/publicador-v1.mjs'), PV = await importa('li
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
 const CR = await importa('lib/servidor/crear.mjs'), TO = await importa('lib/servidor/tomar.mjs'), SO = await importa('lib/servidor/sobre.mjs')
 const CO = await importa('lib/servidor/comando.mjs'), ES = await importa('lib/servidor/estado.mjs'), FA = await importa('lib/servidor/fase.mjs')
+const VE = await importa('lib/servidor/velas.mjs')   // orden 1-179 (d): el grafico v1 pide sus velas al servidor
 const CA = await importa('lib/motor/cartera.mjs')
 const HUECO = "v_guarda pg_catalog.text := '⟦HUECO guarda canonica⟧';"
 const deEnsayo = t => { if (t.split(HUECO).length !== 2) throw new Error('el hueco no esta una vez'); return t.replace(HUECO, "v_guarda pg_catalog.text := 'montaje de ensayo (v1c05)';") }
@@ -68,7 +75,7 @@ const precioEn = (par, t) => (par === 'EURUSD' && t >= m(10) && t < m(20) ? 1.09
 function velasDe(par) { const o = []; for (let t = M0; t < U('2025-01-11T00:00:00Z'); t += 60) if (!minutoCerrado(t) && !huecoI(par, t)) { const p = precioEn(par, t); o.push({ time: t, open: p, high: p, low: p, close: p, volume: 1 }) } return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31'), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 const web = () => { const o = new Map(); return { getItem: k => (o.has(k) ? o.get(k) : null), setItem: (k, v) => o.set(k, String(v)), removeItem: k => o.delete(k) } }
 const AL = u(1)
 let nId = 50000
@@ -94,7 +101,7 @@ try {
     const uno = q => pg.uno(d, q)
     const leeSesion = async id => { const t = uno(`select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
     const puertos = { almacen: mercado, rpc: pg.rpc(d), parDeId: pg.parDeId(d), leeSesion, ahora: () => Date.parse('2026-10-14T10:00:00Z') }
-    const orden = { '/api/sim/crear': CR.ordenCrear, '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado, '/api/sim/avanzar-fase': FA.ordenFase }
+    const orden = { '/api/sim/mercado': CR.ordenMercado, '/api/sim/crear': CR.ordenCrear, '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado, '/api/sim/velas': VE.ordenVelas, '/api/sim/avanzar-fase': FA.ordenFase }
     const llamadas = []
     async function llama(ruta, { cuerpo }) {
       const r = await orden[ruta]({ actor: AL, cuerpo, puertos })
@@ -411,16 +418,16 @@ try {
   const rI2 = await av7.paso()
   oraculo('V1C05', 'I · el Step siguiente, a la vela del 111', rI2.conclusion === 'confirmado' && i7.refs.v1Ref.current.cursor() === m(111) && i7.motor().currentTime === m(111), tx({ c: rI2.conclusion, cursor: (i7.refs.v1Ref.current.cursor() - M0) / 60 }))
 
-  titulo('J · (i) date_to = hoy: /api/sim/crear lo acepta y el modal de reto no recorta nada')
+  titulo('J · (orden 1-179 (a)) date_to fuera de lo publicado: 409; el modal de reto toma sus fechas del rango publicado')
   const hoyJ = new Date(B2.puertos.ahora()).toISOString().slice(0, 10)
-  const cJ = fecha => B2.llama('/api/sim/crear', { cuerpo: { session_id: nuevoId(), command_id: nuevoId(), epoca: 1, name: 'J', pair: 'EUR/USD', timeframe: 'M15', date_from: '2026-04-01', date_to: fecha, capital: '100000', challenge_type: '2F' } })
+  const cJ = fecha => B2.llama('/api/sim/crear', { cuerpo: { session_id: nuevoId(), command_id: nuevoId(), epoca: 1, name: 'J', pair: 'EUR/USD', timeframe: 'M15', date_from: '2025-06-01', date_to: fecha, capital: '100000', challenge_type: '2F' } })
   const jHoy = await cJ(hoyJ), jManana = await cJ(new Date(B2.puertos.ahora() + 86400000).toISOString().slice(0, 10))
-  oraculo('V1C05', 'J · /api/sim/crear: date_to = hoy se crea (201); mañana, 422 carga_invalida en date_to', jHoy.http === 201 && jManana.http === 422 && jManana.cuerpo?.en === 'date_to', tx({ hoy: hoyJ, a: jHoy.http, b: jManana.http, en: jManana.cuerpo?.en }))
-  const rJ = CRV.creaRetoV1 ? await CRV.creaRetoV1({ llama: B2.llama, nuevoId, tipo: '2F', capital: 100000, hoy: new Date(B2.puertos.ahora()) }) : null
+  oraculo('V1C05', 'J · /api/sim/crear: date_to = hoy (despues del ultimo dia publicado, el 31-dic-2025) 409 fuera_de_mercado con su texto; mañana, 422 carga_invalida en date_to', jHoy.http === 409 && jHoy.cuerpo?.motivo === 'fuera_de_mercado' && /31\/12\/2025/.test(jHoy.cuerpo?.texto ?? '') && jManana.http === 422 && jManana.cuerpo?.en === 'date_to', tx({ hoy: hoyJ, a: jHoy.cuerpo, b: jManana.http, en: jManana.cuerpo?.en }))
+  const rJ = CRV.creaRetoV1 ? await CRV.creaRetoV1({ llama: B2.llama, nuevoId, tipo: '2F', capital: 100000 }) : null
   const fJ = rJ?.ok ? await B2.leeSesion(rJ.id) : null
-  const desdeJ = (() => { const d = new Date(B2.puertos.ahora()); d.setMonth(d.getMonth() - 6); return d.toISOString().slice(0, 10) })()
-  oraculo('V1C05', 'J · creaRetoV1 (el modal con la bandera): reto 2F v1 por /api/sim/crear con EURUSD, M15, desde hace 6 meses hasta HOY y el nombre de hoy',
-    rJ?.ok === true && fJ?.motor_version === 1 && fJ.challenge_type === '2F' && fJ.date_to === hoyJ && fJ.date_from === desdeJ && fJ.timeframe === 'M15' && fJ.pair === 'EUR/USD' && Number(fJ.capital) === 100000 && fJ.name === 'Challenge 2 Fases · $100K · EURUSD',
+  // el rango publicado de la prueba: del 6-ene-2025 al dia ancla (31-dic-2025); 6 meses antes del 31-dic (como setMonth: 31-jun → 1-jul)
+  oraculo('V1C05', 'J · creaRetoV1 (el modal con la bandera): reto 2F v1 por /api/sim/crear con EURUSD, M15, hasta el ULTIMO DIA PUBLICADO y desde 6 meses antes, y el nombre de hoy',
+    rJ?.ok === true && fJ?.motor_version === 1 && fJ.challenge_type === '2F' && fJ.date_to === '2025-12-31' && fJ.date_from === '2025-07-01' && fJ.timeframe === 'M15' && fJ.pair === 'EUR/USD' && Number(fJ.capital) === 100000 && fJ.name === 'Challenge 2 Fases · $100K · EURUSD',
     tx({ rJ, fila: fJ && { mv: fJ.motor_version, t: fJ.challenge_type, desde: fJ.date_from, hasta: fJ.date_to, tf: fJ.timeframe, par: fJ.pair, nombre: fJ.name } }))
   const MJ = fuente('components/ChallengeSetupModal.js'), iJ = MJ.indexOf('if (pantallaV1()) {'), iF = MJ.indexOf("fetch('/api/challenge/create'")
   oraculo('V1C05', 'J · ChallengeSetupModal: con pantallaV1() llama a creaRetoV1 ANTES del /api/challenge/create de hoy, que sigue para la bandera apagada', iJ > 0 && iF > iJ && MJ.slice(iJ, iF).includes('creaRetoV1('))

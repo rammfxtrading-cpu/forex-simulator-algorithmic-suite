@@ -14,6 +14,8 @@
  *   · repetido con la misma clave tras una respuesta perdida; version vieja: la RPC decide;
  *   · la intencion cerrada; por la URL, apagado sin el interruptor y de punta a punta.
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados, siguiente } from './mercado-ancla.mjs'
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa, escenario, perfil, tok, db, REPO } from './lib.mjs'
 import { readFileSync } from 'node:fs'
@@ -39,16 +41,17 @@ const U = iso => Date.parse(iso) / 1000
 const tx = x => JSON.stringify(x, (k, v) => (typeof v === 'bigint' ? `${v}n` : v))
 const AHORA = Date.parse('2026-10-14T10:00:00Z')
 
-// el mercado v1.1 (del 6 al 10 de enero) y, despues, la continuacion v1.2 (hasta el 17)
+// el mercado v1.1 (del 6 al 10 de enero, y el dia ancla 31-dic: orden 1-179 (a)) y, despues, la continuacion v1.2 (el 7-ene-2026)
 const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3, NZDUSD: 0.6, USDCAD: 1.37, USDCHF: 0.88, USDJPY: 150.2 }
 function velas(par, hasta) { const o = []; for (let t = U('2025-01-06T00:00:00Z'); t < U(hasta + 'T00:00:00Z'); t += 60) if (!minutoCerrado(t)) o.push({ time: t, open: PX[par], high: PX[par], low: PX[par], close: PX[par], volume: 1 }); return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velas(par, '2025-01-11'), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+const planes11 = anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velas(par, '2025-01-11'), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31')
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: planes11, dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 const v11 = (await ME.manifiestosVigentes(mercado, SO.PARES)).fijados
 async function publicaV12() {
-  const planes = []
-  for (const par of SO.PARES) planes.push(P.planificaPar({ par, velas: velas(par, '2025-01-18'), texto: '', anterior: await PV.manifiestoVigente(mercado, par), diasAceptados: new Map() }))
+  // orden 1-179 (a): v1.1 lleva el dia ancla; la continuacion añade un dia despues de el (pruebas/mercado-ancla.mjs)
+  const planes = planes11.map(p => siguiente(p, '2026-01-07'))
   await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes, dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:30:00.000Z' })
   return (await ME.manifiestosVigentes(mercado, SO.PARES)).fijados
 }

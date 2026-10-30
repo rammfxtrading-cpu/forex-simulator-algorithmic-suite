@@ -68,11 +68,25 @@ export default function usePairData({ id, session, activePair, pairState, chartM
   },[])
 
   // ── Load pair data ────────────────────────────────────────────────────────────
-  const loadPair=useCallback(async(pair)=>{
+  // Orden 1-179 (e): UNA sola carga por par en vuelo. Medido en Chrome (pruebas/navegador/cv01): al abrir una sesion, tres
+  // disparadores (usePairData :299 y :303 y el montaje del grafico en _SessionInner) llamaban a loadPair antes de que el
+  // par quedara «ready» y cada uno pedia todas sus velas (3 peticiones por año) y creaba su motor. Ahora el segundo y los
+  // siguientes esperan a la carga en curso; al terminar (bien o con error) se puede volver a cargar (el «Reintentar»)
+  const enVuelo=useRef({})
+  const loadPair=useCallback((pair)=>{
+    const ya=enVuelo.current[pair]; if(ya) return ya
+    const p=cargaPar(pair).finally(()=>{ if(enVuelo.current[pair]===p) delete enVuelo.current[pair] })
+    enVuelo.current[pair]=p
+    return p
+  },[])
+  const cargaPar=async(pair)=>{
     const sess=sessionRef.current
     if(!sess||pairState.current[pair]?.ready) return
     try{
-      const result = await fetchSessionCandles({
+      // orden 1-179 (d): en modo v1, el grafico pinta del MISMO mercado v1 (manifiesto y version fijados) que valora el
+      // motor (pv0.velas: velas.js de la pantalla v1, GET /api/sim/velas), nunca de /api/candles
+      const pv0=v1Ref?.current
+      const result = pv0 ? await pv0.velas({ pair, dateFrom: sess.date_from, dateTo: sess.date_to }) : await fetchSessionCandles({
         pair, dateFrom: sess.date_from, dateTo: sess.date_to
       })
       // C04/D5: una respuesta sin velas no es silencio: error visible en el par
@@ -140,6 +154,8 @@ export default function usePairData({ id, session, activePair, pairState, chartM
           result.diasIncompletos?.length ? `${pair}: ${result.diasIncompletos.length===1?'dia incompleto':result.diasIncompletos.length+' dias incompletos'} en esta sesion: ${listaDiasCortos(result.diasIncompletos)}. Ahi faltan velas.` : '',
           // CTO 6-oct: sin prometer actualizacion ni fecha de arreglo
           result.tramoAbierto ? `${pair}: datos hasta ${fechaCorta(result.datosHasta)}; despues no hay velas.` : '',
+          // orden 1-179 (b): un año que falta FUERA de la sesion (el contexto anterior) no bloquea: se avisa
+          result.contextoIncompleto ? `${pair}: no se ha podido cargar el historico anterior a la sesion${result.contextoQueFalta?.length ? ' (' + result.contextoQueFalta.join(', ') + ')' : ''}; el grafico empieza mas tarde.` : '',
         ].filter(Boolean).join(' '),
       }
       pairState.current[pair]=ps
@@ -157,7 +173,7 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       console.error('loadPair',pair,e)
       falloPar(pair,`No se han podido cargar las velas de ${pair} (${e?.message||e}). Comprueba tu conexion y reintenta.`)
     }
-  },[])
+  }
 
   // ── Update chart ──────────────────────────────────────────────────────────────
   const updateChart=useCallback((pair,engine,full)=>{

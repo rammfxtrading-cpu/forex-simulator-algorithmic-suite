@@ -11,6 +11,8 @@
  *
  * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from '../mercado-ancla.mjs'
 import { titulo, ver, oraculo, fin, importa } from '../lib.mjs'
 import { hayPostgres } from '../pg-ensayo.mjs'
 import { montajeV1, L } from '../montaje-v1.mjs'
@@ -70,6 +72,7 @@ const P = await importa('lib/mercado/publicador-v1.mjs'), PV = await importa('li
 const { minutoCerrado } = await importa('lib/mercado/calidad.mjs')
 const CR = await importa('lib/servidor/crear.mjs'), TO = await importa('lib/servidor/tomar.mjs'), SO = await importa('lib/servidor/sobre.mjs')
 const CO = await importa('lib/servidor/comando.mjs'), ES = await importa('lib/servidor/estado.mjs')
+const VE = await importa('lib/servidor/velas.mjs')   // orden 1-179 (d): el grafico v1 pide sus velas al servidor
 const u = k => `00000000-0000-4000-8000-${String(k).padStart(12, '0')}`
 const U = iso => Date.parse(iso) / 1000
 const m = k => U('2025-01-06T00:00:00Z') + 60 * k
@@ -77,7 +80,7 @@ const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3,
 function velasDe(par) { const o = []; for (let t = U('2025-01-06T00:00:00Z'); t < U('2025-01-11T00:00:00Z'); t += 60) if (!minutoCerrado(t)) { const p = PX[par]; o.push({ time: t, open: p, high: p, low: p, close: p, volume: 1 }) } return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velasDe(par), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31'), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 const web = () => { const o = new Map(); return { getItem: k => (o.has(k) ? o.get(k) : null), setItem: (k, v) => o.set(k, String(v)), removeItem: k => o.delete(k) } }
 const AL = u(1), SID = u(1001)
 let nId = 60000
@@ -86,7 +89,7 @@ try {
   pg.arranca(); pg.base('v2'); pg.alumno('v2', AL)
   const leeSesion = async id => { const t = pg.uno('v2', `select row_to_json(s)::text from public.sim_sessions s where id = ${L(id)}`); return t ? JSON.parse(t) : null }
   const puertos = { almacen: mercado, rpc: pg.rpc('v2'), parDeId: pg.parDeId('v2'), leeSesion, ahora: () => Date.parse('2026-10-14T10:00:00Z') }
-  const orden = { '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado }
+  const orden = { '/api/sim/tomar': TO.ordenTomar, '/api/sim/comando': CO.ordenComando, '/api/sim/estado': ES.ordenEstado, '/api/sim/velas': VE.ordenVelas }
   const llama = async (ruta, { cuerpo }) => { const r = await orden[ruta]({ actor: AL, cuerpo, puertos }); return { http: r.http, cuerpo: r.cuerpo } }
   const sinTasa = () => pg.uno('v2', 'update public.sim_alumnos set siguiente_avance_desde = null')
   ver('control: sesion creada', (await CR.ordenCrear({ actor: AL, cuerpo: { session_id: SID, command_id: u(2001), epoca: 1, name: 'S', pair: 'EUR/USD', timeframe: 'H1', date_from: '2025-01-06', date_to: '2025-12-31', capital: '100000', challenge_type: null }, puertos })).http === 201)

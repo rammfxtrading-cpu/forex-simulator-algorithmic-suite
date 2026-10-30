@@ -16,7 +16,7 @@ import { sinLapidas, esLegado, ETIQUETA_LEGADO } from '../lib/sim/legado'
 import { interpretaBorrado } from '../lib/sim/respuestas'
 import { COLUMNAS_SESION } from '../lib/sim/columnas'
 import { pantallaV1 } from '../lib/sim/v1/bandera'
-import { creaSesionV1 } from '../lib/sim/v1/crear'
+import { creaSesionV1, rangoMercado, fechasPorDefecto } from '../lib/sim/v1/crear'
 import { llamaConFetch } from '../lib/sim/v1/pantalla'
 
 /**
@@ -84,6 +84,19 @@ export default function Dashboard() {
   const [borrando, setBorrando] = useState(null)        // id de la sesion que se esta borrando
   const [errorBorrado, setErrorBorrado] = useState('')
   const [showChallenge, setShowChallenge] = useState(false)
+  // orden 1-179 (a): con la bandera v1, el rango publicado del mercado (GET /api/sim/mercado) al abrir «Nueva sesion»: los
+  // limites de las fechas y sus valores por defecto (lib/sim/v1/crear.js fechasPorDefecto). null: sin leer o sin bandera
+  const [rangoV1, setRangoV1] = useState(null)
+  useEffect(() => {
+    if (!showNew || !pantallaV1()) return
+    let vivo = true
+    rangoMercado(llamaConFetch(supabase)).then(r => {
+      if (!vivo || !r) return
+      setRangoV1(r)
+      setForm(f => (f.dateFrom || f.dateTo ? f : { ...f, ...fechasPorDefecto(r) }))
+    })
+    return () => { vivo = false }
+  }, [showNew])
   // Etapa 1 (diseño sim-004, o.5): el estado del servicio, al montar y cada 30 s
   const servicio = useServicio()
 
@@ -525,11 +538,11 @@ export default function Dashboard() {
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:7}}>
                 <label style={{fontSize:10,fontWeight:700,color:'#1E90FF',letterSpacing:1.5}}>DATE FROM</label>
-                <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min="2024-07-01" max={MAX_DATE} value={form.dateFrom} onChange={e=>setForm({...form,dateFrom:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
+                <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min={rangoV1?.primer_dia ?? "2024-07-01"} max={rangoV1?.ultimo_dia ?? MAX_DATE} value={form.dateFrom} onChange={e=>setForm({...form,dateFrom:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:7}}>
                 <label style={{fontSize:10,fontWeight:700,color:'#1E90FF',letterSpacing:1.5}}>DATE TO</label>
-                <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min="2024-07-01" max={MAX_DATE} value={form.dateTo} onChange={e=>setForm({...form,dateTo:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
+                <input style={{background:'#03080f',border:'1px solid #0d1f3c',borderRadius:8,padding:'11px 14px',fontSize:13,color:'#fff',outline:'none',fontFamily:'Montserrat,sans-serif'}} type="date" min={rangoV1?.primer_dia ?? "2024-07-01"} max={rangoV1?.ultimo_dia ?? MAX_DATE} value={form.dateTo} onChange={e=>setForm({...form,dateTo:e.target.value})} onFocus={e=>e.target.style.borderColor='#1E90FF'} onBlur={e=>e.target.style.borderColor='#0d1f3c'}/>
               </div>
             </div>
             {newErr && (

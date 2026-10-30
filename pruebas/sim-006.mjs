@@ -29,6 +29,8 @@
  *       (y ya no mira los minutos del paso); el play sigue con sus 100 minutos. Un Go to disfrazado de «paso» llega a
  *       la siguiente vela con datos y ahi para: no se salta los 5 s mas alla de una vela.
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from './mercado-ancla.mjs'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
@@ -71,7 +73,7 @@ const HUECO_G = t => t >= m(1500) && t < m(1510)
 function velas(par) { const o = []; for (let t = M0; t < U('2025-01-09T00:00:00Z'); t += 60) if (!minutoCerrado(t) && !(par === 'EURUSD' && HUECO_G(t))) o.push({ time: t, open: PX[par], high: PX[par], low: PX[par], close: PX[par], volume: 1 }); return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() })), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
+await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes: anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31'), dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 
 // el cuerpo de sim_comando de sim-004b y el de sim-006: el nuevo es el viejo con SOLO estos cambios
 const cuerpo = (t, decl) => { const i = t.indexOf(decl); if (i < 0 || t.indexOf(decl, i + 1) >= 0) return null; const a = i + decl.length; return t.slice(a, t.indexOf('$c$;', a)) }

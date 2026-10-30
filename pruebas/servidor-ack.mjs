@@ -20,6 +20,8 @@
  *
  * ORDEN 1-125 (f): un avanzar «paso» llega como mucho a 1 minuto de mercado y uno «play» a 100 (lib/sim/v1/topes.mjs; el servidor corta mas alla). Los avances GRANDES de esta prueba van con motivo «goto», el de los avances grandes: fuera del tope de tamaño, el motivo no cambia el calculo del servidor y esta prueba no aplica sim-006 (con sim-004b los tres comparten los 5 s), asi que lo probado no cambia.
  */
+// orden 1-179 (a): el dia ancla del mercado de la prueba (crear exige las fechas dentro de lo publicado)
+import { anclados } from './mercado-ancla.mjs'
 import { cerrojoEnMemoria } from './cerrojo-falso.mjs'
 import { titulo, ver, oraculo, fin, importa } from './lib.mjs'
 import { hayPostgres } from './pg-ensayo.mjs'
@@ -44,7 +46,7 @@ const PX = { AUDCAD: 0.9, AUDUSD: 0.65, EURUSD: 1.1, GBPJPY: 190.5, GBPUSD: 1.3,
 function velas(par) { const o = []; for (let t = U('2025-01-06T00:00:00Z'); t < U('2025-01-11T00:00:00Z'); t += 60) if (!minutoCerrado(t)) { const p = PX[par]; o.push({ time: t, open: p, high: p, low: p, close: p, volume: 1 }) } return o }
 function almacen() { const o = new Map(); return { o, async lee(r) { return o.has(r) ? Buffer.from(o.get(r)) : null }, async sube(r, b, { upsert = false } = {}) { if (!upsert && o.has(r)) return 'existe'; o.set(r, Buffer.from(b)); return 'ok' }, async borra(r) { o.delete(r) }, async lista() { return [] } } }
 const mercado = almacen()
-const planes = SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() }))
+const planes = anclados(SO.PARES.map(par => P.planificaPar({ par, velas: velas(par), texto: '', anterior: null, diasAceptados: new Map() })), '2025-12-31')
 ver('control: los nueve pares publican', planes.every(p => p.estado === 'publica'))
 await PV.publica({ cerrojo: cerrojoEnMemoria(), almacen: mercado, planes, dueno: 'mercado-v1-publica', ahora: '2026-10-14T09:00:00.000Z' })
 
