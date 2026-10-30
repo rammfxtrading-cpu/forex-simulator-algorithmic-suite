@@ -60,6 +60,26 @@ create policy "lectura forex" on storage.objects for select to public using (buc
 create policy "subidas propias" on storage.objects for insert to authenticated with check (owner = auth.uid());
 `
 
+// ORDEN 1-183 (4): ningun cluster de prueba se queda vivo al terminar el proceso que lo arranco, tambien si la prueba falla
+// (excepcion sin capturar → lib.mjs process.exit(3), sin pasar por su finally) o recibe SIGTERM, SIGINT o SIGHUP (el plazo
+// de la tanda, Ctrl-C). Contra SIGKILL no hay nada que hacer en este proceso: ahi lo para quien lo lanzo (navegador/
+// motor-v1-real.mjs para su hijo). Medido en r4: 7 postmasters huerfanos tras las corridas de Chrome y 1 tras una caida
+const vivos = new Set()
+let enganchado = false
+const apagaTodos = () => { for (const c of [...vivos]) { try { c() } catch {} } }
+function engancha() {
+  if (enganchado) return
+  enganchado = true
+  process.on('exit', apagaTodos)
+  for (const [senal, n] of [['SIGTERM', 15], ['SIGINT', 2], ['SIGHUP', 1]]) process.on(senal, () => { apagaTodos(); process.exit(128 + n) })
+}
+// para un cluster por su carpeta (sincrono: vale en un manejador de 'exit'); nunca la del macro
+export function paraCluster(dir) {
+  if (!dir || /pg-ensayo-macro/.test(dir)) return
+  spawnSync(path.join(BIN, 'pg_ctl'), ['-D', path.join(dir, 'd'), '-m', 'immediate', 'stop'], { encoding: 'utf8' })
+  rmSync(dir, { recursive: true, force: true })
+}
+
 export function cluster() {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'simpg-'))
   const puerto = String(54900 + Math.floor(Math.random() * 90))
@@ -83,9 +103,10 @@ export function cluster() {
     const init = corre('initdb', ['-D', path.join(dir, 'd'), '-U', 'postgres', '--auth=trust'])
     if (init.status !== 0) throw new Error('initdb: ' + init.stderr)
     const arr = corre('pg_ctl', ['-D', path.join(dir, 'd'), '-l', path.join(dir, 'log'), '-w', '-o', `-k ${dir} -c listen_addresses='' -p ${puerto}`, 'start'])
+    engancha(); vivos.add(cierra)
     if (arr.status !== 0) throw new Error('pg_ctl start: ' + arr.stderr)
   }
-  const cierra = () => { corre('pg_ctl', ['-D', path.join(dir, 'd'), '-m', 'immediate', 'stop']); rmSync(dir, { recursive: true, force: true }) }
+  const cierra = () => { vivos.delete(cierra); corre('pg_ctl', ['-D', path.join(dir, 'd'), '-m', 'immediate', 'stop']); rmSync(dir, { recursive: true, force: true }) }
   const base = nombre => { psql(`create database ${nombre}`, 'postgres'); return psql(STUB, nombre) }
   return { psql, como, arranca, cierra, base, dir, puerto }
 }

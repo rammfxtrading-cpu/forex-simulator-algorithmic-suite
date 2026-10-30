@@ -95,5 +95,6 @@ process.on('message', async ({ id, op, arg }) => {
   catch (e) { process.send({ id, ok: false, error: String(e?.stack ?? e) }) }
 })
 process.on('disconnect', () => { try { pg.cierra() } catch {} ; process.exit(0) })
-process.send({ id: 0, ok: true, valor: 'listo' })
+// orden 1-183 (4): la carpeta de su PostgreSQL, para que el padre lo pare aunque este hijo muera sin poder hacerlo
+process.send({ id: 0, ok: true, valor: 'listo', dir: pg.pg.dir })
 

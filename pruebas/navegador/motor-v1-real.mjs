@@ -22,6 +22,7 @@
 import { fork } from 'node:child_process'
 import path from 'node:path'
 import { REPO } from './cdp.mjs'
+import { paraCluster } from '../pg-ensayo.mjs'
 
 // desplazaPips (orden 1-179, ps04): el mercado v1 de EURUSD desplazado esos pips respecto a /api/candles del arnes
 export async function motorV1Real({ desplazaPips = 0 } = {}) {
@@ -30,7 +31,8 @@ export async function motorV1Real({ desplazaPips = 0 } = {}) {
   const pend = new Map()
   let listo
   const arrancado = new Promise((r, j) => { listo = r; hijo.once('exit', c => j(new Error('el hijo del motor salio con ' + c))) })
-  hijo.on('message', ({ id, ok, valor, error }) => { if (id === 0) return listo(); const p = pend.get(id); if (!p) return; pend.delete(id); ok ? p.r(valor) : p.j(new Error(error)) })
+  let dirPg = null, dirDelHijo = null
+  hijo.on('message', ({ id, ok, valor, error, dir }) => { if (id === 0) { dirPg = dirDelHijo = dir ?? null; return listo() } const p = pend.get(id); if (!p) return; pend.delete(id); ok ? p.r(valor) : p.j(new Error(error)) })
   const pide = (op, arg) => new Promise((r, j) => { const id = ++n; pend.set(id, { r, j }); hijo.send({ id, op, arg }) })
   await arrancado
   const llamadas = [], retenidas = []
@@ -52,9 +54,14 @@ export async function motorV1Real({ desplazaPips = 0 } = {}) {
     return { estado: r.http, cuerpo: r.cuerpo }
   }
   let cerrado = false
-  const cierra = () => { if (cerrado) return; cerrado = true; try { hijo.send({ id: ++n, op: 'cierra' }) } catch {} ; setTimeout(() => { try { hijo.kill('SIGKILL') } catch {} }, 5000).unref() }
-  process.on('exit', () => { try { hijo.kill('SIGKILL') } catch {} })
-  return { prepara: arg => pide('prepara', arg), api, fila: () => pide('fila'), velasMotor: arg => pide('velasMotor', arg), caducaEscritor: () => pide('caducaEscritor'), llamadas, trampas, retenidas, suelta: () => { for (const r of retenidas.splice(0)) r() }, cierra }
+  // orden 1-183 (4): el PostgreSQL del hijo se para SIEMPRE: con cierra() lo para el hijo; si el hijo no sale a tiempo, o este
+  // proceso termina sin cierra() (fallo, process.exit, señal: pg-ensayo), lo para el padre por su carpeta, sincrono
+  const paraYa = () => { try { hijo.kill('SIGKILL') } catch {} ; paraCluster(dirPg); dirPg = null }
+  const cierra = () => { if (cerrado) return; cerrado = true; try { hijo.send({ id: ++n, op: 'cierra' }) } catch {} ; setTimeout(paraYa, 5000).unref() }
+  hijo.once('exit', () => { if (cerrado) dirPg = null })
+  process.on('exit', paraYa)
+  for (const [senal, k] of [['SIGTERM', 15], ['SIGINT', 2], ['SIGHUP', 1]]) process.on(senal, () => { paraYa(); process.exit(128 + k) })
+  return { dir: () => dirDelHijo, prepara: arg => pide('prepara', arg), api, fila: () => pide('fila'), velasMotor: arg => pide('velasMotor', arg), caducaEscritor: () => pide('caducaEscritor'), llamadas, trampas, retenidas, suelta: () => { for (const r of retenidas.splice(0)) r() }, cierra }
 }
 
 // la fila de la sesion v1 para el doble de Supabase de la pagina (lo que lee _SessionInner al abrir)
