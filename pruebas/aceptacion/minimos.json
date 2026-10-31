@@ -115,8 +115,8 @@
   "v1c19-huella-generativa": 23,
   "cv04-contexto-v0-rechazo": 9,
   "v1c20-huella-sobre": 7,
-  "cv05-contexto-v1": 24,
+  "cv05-contexto-v1": 32,
   "pg01-sin-huerfanos": 7,
-  "pg02-barrido-huerfanos": 6,
-  "cv06-contexto-generativa": 4
+  "pg02-barrido-huerfanos": 8,
+  "cv06-contexto-generativa": 6
 }

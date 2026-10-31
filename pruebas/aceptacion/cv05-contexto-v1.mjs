@@ -5,7 +5,8 @@
  * Sesion EUR/USD del 2 al 6-mar-2026; publicado desde el 1-dic-2025 (contexto 1-dic → 1-mar, ventanas de 31 dias).
  * Cada forma de fallo, por separado, en UNA ventana de contexto y en UNA de la sesion: 503, rechazo inmediato, rechazo
  * tardio, plazo vencido, 200 sin velas y otra identidad (fijado); y (orden 1-185, PSIMM4-01) las cinco de Astra: dias ausente,
- * null u objeto, primera vela null u objeto, mas el OHLC no numerico (NaN). La generativa de todas: cv06.
+ * null u objeto, primera vela null u objeto, mas el OHLC no numerico (NaN); y (orden 1-187, PSIMM5-01) las cuatro de Astra: motivo
+ * y fijado sin toString (por JSON) y dias con 150.000 elementos. La generativa de todas, con el eje del tamaño: cv06.
  *   C · contexto: hay velas de la sesion, sin error, contextoIncompleto y la ventana que falta nombrada
  *   S · sesion: { error } (el par con su «Reintentar»), nunca una excepcion
  * Datos inventados. Sin red. En c5f2ac0 (r4): rojos los seis del contexto y los dos rechazos de la sesion (lanzan).
@@ -43,6 +44,11 @@ const FORMAS = {
   'primera vela null (Astra)': (w) => ({ http: 200, cuerpo: { ...w, velas: [null, ...w.velas.slice(1)] } }),
   'primera vela objeto (Astra)': (w) => ({ http: 200, cuerpo: { ...w, velas: [{}, ...w.velas.slice(1)] } }),
   'OHLC no numerico (Astra: NaN)': (w) => ({ http: 200, cuerpo: { ...w, velas: [[w.velas[0][0], 'x', 'x', 'x', 'x', 1], ...w.velas.slice(1)] } }),
+  // PSIMM5-01 (Astra, propia-contexto-r4c.mjs): objetos que viajan por JSON sin metodos de conversion, y una lista enorme
+  'motivo sin toString (Astra)': () => ({ http: 200, cuerpo: JSON.parse(JSON.stringify({ ok: false, motivo: { toString: null } })) }),
+  'motivo lista sin toString (Astra)': () => ({ http: 200, cuerpo: JSON.parse(JSON.stringify({ ok: false, motivo: [{ toString: 0 }] })) }),
+  'fijado sin toString (Astra)': (w) => ({ http: 200, cuerpo: JSON.parse(JSON.stringify({ ...w, fijado: { toString: false } })) }),
+  'dias 150.000 (Astra)': (w) => ({ http: 200, cuerpo: { ...w, dias: Array.from({ length: 150000 }, () => w.dias[0]) } }),
 }
 // falla: { que: 'contexto' | 'sesion', forma }
 function llamaCon(falla) {

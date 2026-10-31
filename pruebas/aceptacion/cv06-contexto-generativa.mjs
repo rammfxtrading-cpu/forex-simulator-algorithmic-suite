@@ -65,6 +65,46 @@ function formas(cuerpo) {
   return out
 }
 const respuestaDe = c => ({ cuerpo: c })
+// ORDEN 1-187 (PSIMM5-01): el eje del TAMAÑO y los objetos que viajan por JSON sin metodos de conversion. Los MAXIMOS del
+// servidor real: v1, una ventana de ≤ 31 dias (lib/servidor/velas.mjs VENTANA_DIAS, validaVelas) con un trozo M1 por dia → ≤ 31
+// dias, ≤ 31 faltan y ≤ 31 × 1.440 = 44.640 velas; v0, /api/candles devuelve las velas M1 del año pedido entre from y to → ≤ los
+// minutos de ese tramo (un año bisiesto entero: 527.040). Se prueba el maximo (se acepta) y por encima, mas listas enormes, un
+// campo de 16 MB y un anidamiento profundo
+const porJson = x => JSON.parse(JSON.stringify(x))
+let anidado = null, anidadoNota = ''
+try { anidado = JSON.parse('['.repeat(100000) + ']'.repeat(100000)); anidadoNota = '100.000 niveles' } catch (e) { anidadoNota = `JSON.parse no lo admite (${e.constructor.name}): el transporte lo deja en un cuerpo ilegible`; anidado = undefined }
+function extrasV1(w, desde, hasta) {
+  const out = [], f = (nombre, c) => out.push({ nombre, r: () => (c === undefined ? { cuerpoCrudo: null } : { cuerpo: c }) })
+  const nDias = Math.round((D(hasta) - D(desde)) / 86400) + 1
+  const todosLosDias = Array.from({ length: nDias }, (_, i) => ({ dia: new Date((D(desde) + i * 86400) * 1000).toISOString().slice(0, 10), sha256: HEX }))
+  const maxVelas = []; for (let t = D(desde); t < D(hasta) + 86400; t += 60) maxVelas.push([t, 110000, 110010, 109990, 110005, 1])
+  f('motivo sin toString (por JSON)', porJson({ ok: false, motivo: { toString: null } }))
+  f('motivo lista sin toString (por JSON)', porJson({ ok: false, motivo: [{ toString: 0 }] }))
+  f('fijado sin toString (por JSON)', porJson({ ...w, fijado: { toString: false } }))
+  f('dias sin toString en un dia (por JSON)', porJson({ ...w, dias: [{ dia: { toString: null }, sha256: HEX }, ...w.dias.slice(1)] }))
+  f(`tamaño · dias = ${nDias} (el maximo: todos los dias de la ventana)`, { ...w, dias: todosLosDias })
+  f(`tamaño · dias = ${nDias + 1} (uno por encima)`, { ...w, dias: [...todosLosDias, todosLosDias[0]] })
+  f('tamaño · dias = 150.000', { ...w, dias: Array.from({ length: 150000 }, () => w.dias[0]) })
+  f('tamaño · faltan = 150.000', { ...w, faltan: Array.from({ length: 150000 }, () => ({ dia: desde, motivo: 'x' })) })
+  f(`tamaño · velas = ${maxVelas.length} (el maximo: un minuto tras otro toda la ventana)`, { ...w, velas: maxVelas })
+  f(`tamaño · velas = ${maxVelas.length + 1} (una por encima)`, { ...w, velas: [...maxVelas, maxVelas.at(-1)] })
+  f('tamaño · velas = 200.000', { ...w, velas: Array.from({ length: 200000 }, () => w.velas[0]) })
+  f('tamaño · un campo de 16 MB', { ...w, relleno: 'x'.repeat(16 * 1048576) })
+  f(`tamaño · anidamiento (${anidadoNota})`, anidado === undefined ? undefined : { ...w, relleno: anidado })
+  return out
+}
+function extrasV0(c, desde, hasta) {
+  const out = [], f = (nombre, x) => out.push({ nombre, r: () => x })
+  const maxVelas = []; for (let t = desde; t <= hasta; t += 60) maxVelas.push({ time: t, open: 1.1, high: 1.1001, low: 1.0999, close: 1.1, volume: 1 })
+  f('HTTP 503 con error sin toString (por JSON)', { http: 503, cuerpoError: porJson({ error: { toString: null }, problemas: [{ toString: 0 }] }) })
+  f('error sin toString en un 200 sin velas (por JSON)', { cuerpo: porJson({ error: { toString: null } }) })
+  f(`tamaño · candles = ${maxVelas.length} (el maximo: un minuto tras otro todo el tramo pedido)`, { cuerpo: { ...c, candles: maxVelas } })
+  f(`tamaño · candles = ${maxVelas.length + 1} (una por encima, repetida)`, { cuerpo: { ...c, candles: [...maxVelas, maxVelas.at(-1)] } })
+  f('tamaño · candles = 600.000', { cuerpo: { ...c, candles: Array.from({ length: 600000 }, () => c.candles[0]) } })
+  f('tamaño · un campo de 16 MB', { cuerpo: { ...c, relleno: 'x'.repeat(16 * 1048576) } })
+  f(`tamaño · anidamiento (${anidadoNota})`, anidado === undefined ? { cuerpoCrudo: null } : { cuerpo: { ...c, relleno: anidado } })
+  return out
+}
 const finitasYEnOrden = cs => Array.isArray(cs) && cs.every(c => c && Number.isInteger(c.time) && [c.open, c.high, c.low, c.close].every(Number.isFinite)) && cs.every((c, i) => i === 0 || cs[i - 1].time < c.time)
 const deSesion = (cs, desde) => (cs ?? []).filter(c => c.time >= desde)
 
@@ -110,7 +150,7 @@ async function cargaV0(anioObjetivo, forma) {
     if (f.rechazo === 'ya') retenApi.antes = s => { if (anio(s) === anioObjetivo) throw new TypeError('Failed to fetch (ficticio, inmediato)') }
     else if (f.rechazo === 'tarde') retenApi.antes = s => (anio(s) === anioObjetivo ? tarde() : null)
     else if (f.plazo) retenApi.antes = s => (anio(s) === anioObjetivo ? nunca : null)
-    else retenApi.responde = s => (anio(s) !== anioObjetivo ? null : f.http ? respuesta(f.http, { error: 'ficticio' }) : 'cuerpoCrudo' in f ? respuesta(200, f.cuerpoCrudo) : respuesta(200, f.cuerpo))
+    else retenApi.responde = s => (anio(s) !== anioObjetivo ? null : f.http ? respuesta(f.http, f.cuerpoError ?? { error: 'ficticio' }) : 'cuerpoCrudo' in f ? respuesta(200, f.cuerpoCrudo) : respuesta(200, f.cuerpo))
   }
   try { return await SD.fetchSessionCandles({ pair: 'EUR/USD', dateFrom: '2026-03-02', dateTo: '2026-03-06' }) } catch (e) { return { lanza: String(e?.message ?? e) } } finally { retenApi.antes = null; retenApi.responde = null }
 }
@@ -152,21 +192,31 @@ for (const [modo, carga, objetivos] of [
     ver('control: v0 · /api/candles sano de los dos años con velas', base.contexto?.candles?.length > 0 && base.sesion?.candles?.length > 0, tx({ c: base.contexto?.candles?.length, s: base.sesion?.candles?.length }))
   }
   for (const que of ['contexto', 'sesion']) {
-    const fs_ = formas(base[que]).map(f => ({ ...f, r: f.r }))
-    const mal = []
+    const lim = modo === 'v1' ? (que === 'contexto' ? ['2026-01-01', '2026-01-31'] : ['2026-03-02', '2026-03-06']) : null
+    // el tramo que pide fetchSessionCandles para cada año (las mismas cuentas: desde el contexto de 180 dias o el 1 de enero, hasta el
+    // 31-dic 23:59:59 o el final de la sesion, en hora local), a minutos enteros
+    const ctxTs = D('2026-03-02') - 180 * 86400, fin2025 = Math.floor(new Date('2025-12-31T23:59:59').getTime() / 1000), fin2026 = Math.floor(new Date('2026-03-06T23:59:59').getTime() / 1000)
+    const aMinuto = t => Math.floor(t / 60) * 60
+    const tramoV0 = que === 'contexto' ? [Math.ceil(ctxTs / 60) * 60, aMinuto(fin2025)] : [D('2026-01-01'), aMinuto(fin2026)]
+    const fs_ = [...formas(base[que]), ...(modo === 'v1' ? extrasV1(base[que], ...lim) : extrasV0(base[que], ...tramoV0))]
+    const mal = [], maximos = [], encima = []
     let avisadas = 0
     for (const forma of fs_) {
       const r = await carga(objetivos[que], forma)
       if (r?.contextoIncompleto) avisadas++
+      if (que === 'contexto' && /el maximo/.test(forma.nombre)) maximos.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, error: r?.error ?? null, lanza: r?.lanza ?? null })
+      if (que === 'contexto' && /por encima/.test(forma.nombre)) encima.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, lanza: r?.lanza ?? null })
       const fallos = juzga(que, r, sana)
       if (fallos.length) mal.push({ forma: forma.nombre, fallos })
     }
     total += fs_.length
     resumen[`${modo}/${que}`] = { formas: fs_.length, rompen: mal.length, ...(que === 'contexto' ? { avisan: avisadas } : {}) }
     if (que === 'contexto') ver(`control: ${modo} · el detector avisa en alguna forma del contexto (no aprueba en vacio)`, avisadas > 0, `${avisadas} de ${fs_.length}`)
+    if (que === 'contexto') oraculo('CV06', `${modo} · tamaño: el maximo que devuelve el servidor real se acepta (sin aviso) y uno por encima se descarta con aviso`,
+      maximos.length > 0 && encima.length > 0 && maximos.every(x => !x.aviso && !x.error && !x.lanza) && encima.every(x => x.aviso && !x.lanza), tx({ maximos, encima }))
     oraculo('CV06', `${modo} · ${que}: ${fs_.length} formas: ${que === 'contexto' ? 'ninguna lanza ni bloquea, la sesion intacta y sin NaN' : 'ninguna lanza; o error del par o velas finitas'}`, mal.length === 0,
       `${mal.length} rompen · ${tx(mal.slice(0, 5))}${mal.length ? ' · todas: ' + mal.map(x => x.forma).join(' | ').slice(0, 1200) : ''}`)
   }
 }
-console.log(`\nFORMAS: ${total} en total · ${tx(resumen)}`)
+console.log(`\nFORMAS: ${total} en total · ${tx(resumen)} · anidamiento: ${anidadoNota}`)
 fin()
