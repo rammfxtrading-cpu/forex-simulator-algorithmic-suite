@@ -49,11 +49,17 @@ corre() {  # corre ETIQUETA COMANDO...
 
 NODO="node --import ./pruebas/sin-red.mjs --import ./pruebas/registro.mjs"
 
+# Orden 1-185 (02): antes de la primera prueba, el barrido de los clusters simpg-* HUERFANOS (dueño muerto) de tandas o pruebas
+# anteriores; los que tienen dueño vivo (otra tanda en marcha) o sin dueño conocido no se tocan. Fuera del aislamiento (ps y
+# kill 0 tienen que ver los procesos). El recuento, en pantalla y en el log
+printf '\n######## barrido de huerfanos\n' >> "$LOG"
+node pruebas/barre-huerfanos.mjs 2>&1 | tee -a "$LOG"
+
 echo "pruebas/"
 corre arnes $NODO pruebas/arnes.mjs
 for f in pruebas/*.mjs; do
   case "$(basename "$f")" in
-    arnes.mjs|lib.mjs|cargador.mjs|registro.mjs|sin-red.mjs|mercado-ancla.mjs|entorno.mjs|supabase-falso.mjs|react-falso.mjs|next-falso.mjs|decorado-falso.mjs|proveedor-falso.mjs|pg-ensayo.mjs|banco-motor.mjs|script-falso.mjs|estado-s04.mjs|cerrojo-falso.mjs|storage-supabase.mjs|montaje-v1.mjs|genera-sim-005.mjs) continue ;;
+    arnes.mjs|lib.mjs|cargador.mjs|registro.mjs|sin-red.mjs|mercado-ancla.mjs|entorno.mjs|supabase-falso.mjs|react-falso.mjs|next-falso.mjs|decorado-falso.mjs|proveedor-falso.mjs|pg-ensayo.mjs|banco-motor.mjs|script-falso.mjs|estado-s04.mjs|cerrojo-falso.mjs|storage-supabase.mjs|montaje-v1.mjs|genera-sim-005.mjs|barre-huerfanos.mjs) continue ;;
   esac
   corre "$(basename "$f" .mjs)" $NODO "$f"
 done

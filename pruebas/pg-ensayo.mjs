@@ -80,8 +80,13 @@ export function paraCluster(dir) {
   rmSync(dir, { recursive: true, force: true })
 }
 
+// orden 1-185 (02): el DUEÑO de cada cluster (el proceso que lo arranca) queda escrito en <dir>/dueno: «pid» y su hora de
+// arranque (ps lstart; vacia si ps no ve, p. ej. en el sandbox). pruebas/barre-huerfanos.mjs para solo los clusters cuyo
+// dueño ya no vive. SIMPG_RAIZ: otra carpeta para los clusters (la prueba del barrido usa una propia)
+export const arranqueDe = pid => { try { return (spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).stdout || '').trim() } catch { return '' } }
 export function cluster() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'simpg-'))
+  const dir = mkdtempSync(path.join(process.env.SIMPG_RAIZ || os.tmpdir(), 'simpg-'))
+  writeFileSync(path.join(dir, 'dueno'), `${process.pid}\n${arranqueDe(process.pid)}\n`)
   const puerto = String(54900 + Math.floor(Math.random() * 90))
   const ENV = { PATH: process.env.PATH, LC_ALL: 'en_US.UTF-8', LANG: 'en_US.UTF-8' }
   const corre = (bin, args) => spawnSync(path.join(BIN, bin), args, { env: ENV, encoding: 'utf8' })

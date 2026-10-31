@@ -58,7 +58,9 @@ export async function motorV1Real({ desplazaPips = 0 } = {}) {
   // proceso termina sin cierra() (fallo, process.exit, señal: pg-ensayo), lo para el padre por su carpeta, sincrono
   const paraYa = () => { try { hijo.kill('SIGKILL') } catch {} ; paraCluster(dirPg); dirPg = null }
   const cierra = () => { if (cerrado) return; cerrado = true; try { hijo.send({ id: ++n, op: 'cierra' }) } catch {} ; setTimeout(paraYa, 5000).unref() }
-  hijo.once('exit', () => { if (cerrado) dirPg = null })
+  // orden 1-185 (PSIMM4-02, Astra): la carpeta NO se suelta por el mero «exit» del hijo (podia morir tras pedirle cierra() sin
+  // haber cerrado): al salir el hijo, por lo que sea, el padre para por ella (si ya estaba parado, no hace nada) y despues la suelta
+  hijo.once('exit', () => { paraCluster(dirPg); dirPg = null })
   process.on('exit', paraYa)
   for (const [senal, k] of [['SIGTERM', 15], ['SIGINT', 2], ['SIGHUP', 1]]) process.on(senal, () => { paraYa(); process.exit(128 + k) })
   // pid del hijo: solo para las pruebas de limpieza (pg01 C6, el caso de Astra PSIMM4-02)

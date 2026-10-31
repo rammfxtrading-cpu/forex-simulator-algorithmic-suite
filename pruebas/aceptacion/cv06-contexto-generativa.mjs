@@ -125,7 +125,8 @@ function juzga(que, r, sana) {
       if (!finitasYEnOrden(r?.candles)) f.push('velas no finitas o fuera de orden')
       if (tx(deSesion(r?.candles, D('2026-03-02'))) !== tx(sana)) f.push('las velas de la sesion no son las de la respuesta sana')
     }
-  } else if (!r?.lanza && !r?.error && !finitasYEnOrden(r?.candles)) f.push('ni error ni velas finitas y en orden')
+  // (null: «sin velas de la sesion»; el hook lo convierte en el error del par, components/usePairData.js C04/D5)
+  } else if (!r?.lanza && !r?.error && r !== null && !finitasYEnOrden(r?.candles)) f.push('ni error ni velas finitas y en orden')
   return f
 }
 const resumen = {}
