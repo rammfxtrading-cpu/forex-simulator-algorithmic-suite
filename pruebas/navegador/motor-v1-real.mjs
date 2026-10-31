@@ -61,7 +61,8 @@ export async function motorV1Real({ desplazaPips = 0 } = {}) {
   hijo.once('exit', () => { if (cerrado) dirPg = null })
   process.on('exit', paraYa)
   for (const [senal, k] of [['SIGTERM', 15], ['SIGINT', 2], ['SIGHUP', 1]]) process.on(senal, () => { paraYa(); process.exit(128 + k) })
-  return { dir: () => dirDelHijo, prepara: arg => pide('prepara', arg), api, fila: () => pide('fila'), velasMotor: arg => pide('velasMotor', arg), caducaEscritor: () => pide('caducaEscritor'), llamadas, trampas, retenidas, suelta: () => { for (const r of retenidas.splice(0)) r() }, cierra }
+  // pid del hijo: solo para las pruebas de limpieza (pg01 C6, el caso de Astra PSIMM4-02)
+  return { pid: () => hijo.pid, dir: () => dirDelHijo, prepara: arg => pide('prepara', arg), api, fila: () => pide('fila'), velasMotor: arg => pide('velasMotor', arg), caducaEscritor: () => pide('caducaEscritor'), llamadas, trampas, retenidas, suelta: () => { for (const r of retenidas.splice(0)) r() }, cierra }
 }
 
 // la fila de la sesion v1 para el doble de Supabase de la pagina (lo que lee _SessionInner al abrir)

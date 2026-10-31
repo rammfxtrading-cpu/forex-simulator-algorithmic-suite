@@ -6,6 +6,7 @@
  *   M · montajeV1 (aceptaciones con PG) y una excepcion sin capturar
  *   C1 · arnes de Chrome (motorV1Real) y process.exit sin cierra()      C2 · arnes de Chrome y una excepcion sin capturar
  *   C3 · SIGTERM al proceso de la prueba   C4 · SIGINT   C5 · SIGKILL (el hijo del motor se queda solo y tiene que cerrar)
+ *   C6 · PSIMM4-02 (Astra, orden 1-185): cierra() pedido, el hijo del motor muere (SIGKILL) antes de cerrar y el padre sale
  *   control · cierra() de siempre: 0
  * Si alguno queda, esta prueba lo para (pg_ctl stop -m fast sobre SU carpeta) para no dejar basura. Sin red.
  */
@@ -27,7 +28,7 @@ async function caso(modo, senal = null) {
   for (let k = 0; k < 600 && !dir && h.exitCode == null; k++) await espera(100)
   const vivoDurante = !!dir && vivo(dir)
   if (senal && dir) h.kill(senal)
-  const fin_ = await Promise.race([fuera, espera(30000).then(() => ({ c: 'plazo' }))])
+  const fin_ = await Promise.race([fuera, espera(40000).then(() => ({ c: 'plazo' }))])
   // lo que tarde un cierre ordenado del hijo del motor (envia, pg_ctl stop): hasta 10 s
   let queda = false
   for (let k = 0; k < 50; k++) { queda = !!dir && vivo(dir); if (!queda) break; await espera(200) }
@@ -42,7 +43,7 @@ titulo('control: cierra() de siempre')
 }
 for (const [id, modo, senal, que] of [['M', 'montaje-lanza', null, 'montajeV1 y una excepcion sin capturar'], ['C1', 'chrome-sale', null, 'arnes de Chrome y process.exit sin cierra()'],
   ['C2', 'chrome-lanza', null, 'arnes de Chrome y una excepcion sin capturar'], ['C3', 'chrome-espera', 'SIGTERM', 'SIGTERM a la prueba'], ['C4', 'chrome-espera', 'SIGINT', 'SIGINT a la prueba'],
-  ['C5', 'chrome-espera', 'SIGKILL', 'SIGKILL a la prueba']]) {
+  ['C5', 'chrome-espera', 'SIGKILL', 'SIGKILL a la prueba'], ['C6', 'chrome-cierra-hijo-muere', null, 'PSIMM4-02 (Astra): cierra() pedido y el hijo muere antes de cerrar; el padre sale']]) {
   titulo(`${id} · ${que}`)
   const r = await caso(modo, senal)
   ver(`control: ${id} · el PostgreSQL estaba vivo antes de salir`, r.listo && r.vivosDurante >= 1, tx({ listo: r.listo, durante: r.vivosDurante, salida: r.salida }))

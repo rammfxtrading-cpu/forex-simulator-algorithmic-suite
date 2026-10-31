@@ -4,7 +4,8 @@
  * GET /api/sim/velas (lib/servidor/velas.mjs: rango con fijado/digitos/primer_dia/ultimo_dia; ventana con dias/faltan/velas).
  * Sesion EUR/USD del 2 al 6-mar-2026; publicado desde el 1-dic-2025 (contexto 1-dic → 1-mar, ventanas de 31 dias).
  * Cada forma de fallo, por separado, en UNA ventana de contexto y en UNA de la sesion: 503, rechazo inmediato, rechazo
- * tardio, plazo vencido, 200 sin velas y otra identidad (fijado).
+ * tardio, plazo vencido, 200 sin velas y otra identidad (fijado); y (orden 1-185, PSIMM4-01) las cinco de Astra: dias ausente,
+ * null u objeto, primera vela null u objeto, mas el OHLC no numerico (NaN). La generativa de todas: cv06.
  *   C · contexto: hay velas de la sesion, sin error, contextoIncompleto y la ventana que falta nombrada
  *   S · sesion: { error } (el par con su «Reintentar»), nunca una excepcion
  * Datos inventados. Sin red. En c5f2ac0 (r4): rojos los seis del contexto y los dos rechazos de la sesion (lanzan).
@@ -22,7 +23,7 @@ function ventana(desde, hasta) {
   for (let t = D(desde); t <= D(hasta); t += 86400) {
     const w = new Date(t * 1000).getUTCDay(); if (w === 0 || w === 6) continue
     const dia = new Date(t * 1000).toISOString().slice(0, 10)
-    dias.push({ dia, sha256: 'x'.repeat(64) })
+    dias.push({ dia, sha256: 'ab'.repeat(32) })
     for (let h = 0; h < 24; h++) velas.push([t + h * 3600, 110000, 110010, 109990, 110005, 1])
   }
   return { ok: true, http: 200, par: 'EURUSD', fijado: FIJADO, digitos: 5, primer_dia: PRIMERO, ultimo_dia: ULTIMO, desde, hasta, dias, faltan: [], velas }
@@ -35,6 +36,13 @@ const FORMAS = {
   'plazo vencido': () => nunca,
   '200 sin velas': (w) => ({ http: 200, cuerpo: { ...w, velas: undefined } }),
   'otra identidad': (w) => ({ http: 200, cuerpo: { ...w, fijado: 'EURUSD@v1:otra' } }),
+  // PSIMM4-01 (Astra, propia-contexto-r4b.mjs): 200 con ok, identidad y velas, pero la ventana incompleta o no verificable
+  'dias ausente (Astra)': (w) => { const c = { ...w }; delete c.dias; return { http: 200, cuerpo: c } },
+  'dias null (Astra)': (w) => ({ http: 200, cuerpo: { ...w, dias: null } }),
+  'dias objeto (Astra)': (w) => ({ http: 200, cuerpo: { ...w, dias: {} } }),
+  'primera vela null (Astra)': (w) => ({ http: 200, cuerpo: { ...w, velas: [null, ...w.velas.slice(1)] } }),
+  'primera vela objeto (Astra)': (w) => ({ http: 200, cuerpo: { ...w, velas: [{}, ...w.velas.slice(1)] } }),
+  'OHLC no numerico (Astra: NaN)': (w) => ({ http: 200, cuerpo: { ...w, velas: [[w.velas[0][0], 'x', 'x', 'x', 'x', 1], ...w.velas.slice(1)] } }),
 }
 // falla: { que: 'contexto' | 'sesion', forma }
 function llamaCon(falla) {
@@ -70,7 +78,7 @@ for (const forma of Object.keys(FORMAS)) {
   const { llama } = llamaCon({ que: 'contexto', forma, desde })
   const r = await carga(llama)
   oraculo('CV05', `C · ${forma} en la ventana de contexto del ${desde}: sin error, con las velas de la sesion, contextoIncompleto y la ventana nombrada`,
-    !r?.error && !r?.lanza && deSesion(r) > 0 && r.contextoIncompleto === true && (r.contextoQueFalta ?? []).some(x => String(x).includes(desde)), tx({ error: r?.error, lanza: r?.lanza, sesion: deSesion(r), ctx: r?.contextoIncompleto, falta: r?.contextoQueFalta }))
+    !r?.error && !r?.lanza && deSesion(r) > 0 && r.contextoIncompleto === true && (r.contextoQueFalta ?? []).some(x => String(x).includes(desde)) && r.candles.every(c => [c.open, c.high, c.low, c.close].every(Number.isFinite)), tx({ error: r?.error, lanza: r?.lanza, sesion: deSesion(r), ctx: r?.contextoIncompleto, falta: r?.contextoQueFalta }))
 }
 
 titulo('S · falla la ventana de la sesion: error (con reintento), nunca una excepcion')
