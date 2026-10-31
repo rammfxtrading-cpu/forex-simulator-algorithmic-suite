@@ -118,5 +118,6 @@
   "cv05-contexto-v1": 32,
   "pg01-sin-huerfanos": 7,
   "pg02-barrido-huerfanos": 8,
-  "cv06-contexto-generativa": 6
+  "cv06-contexto-generativa": 8,
+  "cv07-frontera-contexto": 9
 }

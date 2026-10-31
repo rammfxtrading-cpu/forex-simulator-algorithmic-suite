@@ -20,6 +20,11 @@ const { respuesta } = await import('../entorno.mjs')
 const { velasEnStorage } = await import('../banco-motor.mjs')
 const VV = await importa('lib/sim/v1/velas.js')
 const SD = await importa('lib/sessionData.js')
+// orden 1-189 (PSIMM6-01): la frontera unica del contexto (si existe) y los calculos derivados de verdad: el motor del replay
+// (agregados de TODOS los timeframes, volumen incluido) y las killzones
+const FR = await importa('lib/fronteraContexto.js').catch(() => null)
+const RE = (await importa('lib/replayEngine.js')).default, { TIMEFRAMES } = await importa('lib/replayEngine.js')
+const KZ = await importa('lib/killzonesDomain.js')
 import fs from 'node:fs'
 const REPO = new URL('../../', import.meta.url).pathname
 const tx = x => JSON.stringify(x)
@@ -93,6 +98,31 @@ function extrasV1(w, desde, hasta) {
   f(`tamaño · anidamiento (${anidadoNota})`, anidado === undefined ? undefined : { ...w, relleno: anidado })
   return out
 }
+// orden 1-189: CONTEXTO VALIDO EN FORMA PERO DEFECTUOSO EN VALORES, en las dos primeras velas (el mismo bloque H1 en v0, el mismo
+// D1 en v1): volumen negativo, texto, objeto o lista sin conversion (por JSON), enorme hasta desbordar la suma, null (= NaN por
+// JSON: compatible, cuenta 0); OHLC incoherente, por encima, negativo, cero; un hueco (legitimo); un duplicado con otros valores;
+// dos velas fuera de orden. [ruta de la vela 0, ruta de la vela 1, como se cambia un valor]
+const ACEPTABLES = /volumen null|hueco/
+function valores(cuerpo, lista, campos) {
+  const out = [], f = (nombre, mut) => { const c = structuredClone(cuerpo); mut(c[lista]); out.push({ nombre: `valores · ${nombre}`, r: () => ({ cuerpo: JSON.parse(JSON.stringify(c)) }) }) }
+  const pon2 = (v, k, x) => { if (Array.isArray(v)) v[campos[k]] = x; else v[k] = x }
+  const de = (v, k) => (Array.isArray(v) ? v[campos[k]] : v[k])
+  f('volumen negativo', L => pon2(L[0], 'volume', -1))
+  f('volumen texto', L => pon2(L[0], 'volume', 'x'))
+  f('volumen objeto sin toString (por JSON)', L => pon2(L[0], 'volume', { toString: null, valueOf: null }))
+  f('volumen lista sin toString (por JSON)', L => pon2(L[0], 'volume', [{ toString: 0 }]))
+  f('volumen enorme: dos de 1e308 en el mismo bloque (la suma desborda)', L => { pon2(L[0], 'volume', 1e308); pon2(L[1], 'volume', 1e308) })
+  f('volumen 1e300 (enorme pero finito)', L => pon2(L[0], 'volume', 1e300))
+  f('volumen null (= NaN por JSON; compatible: 0)', L => pon2(L[0], 'volume', null))
+  f('OHLC incoherente: high < low', L => { const h = de(L[0], 'high'); pon2(L[0], 'high', de(L[0], 'low')); pon2(L[0], 'low', h) })
+  f('OHLC: open por encima de high', L => pon2(L[0], 'open', de(L[0], 'high') * 2))
+  f('precio negativo', L => pon2(L[0], 'low', -de(L[0], 'low')))
+  f('precio cero', L => { pon2(L[0], 'low', 0) })
+  f('hueco (falta una vela intermedia; legitimo)', L => L.splice(2, 1))
+  f('duplicado con otros valores', L => { const d = structuredClone(L[0]); pon2(d, 'close', de(d, 'close') + 0.0001 * (Array.isArray(d) ? 100000 : 1)); L.splice(1, 0, d) })
+  f('dos velas fuera de orden', L => { const a = L[0]; L[0] = L[1]; L[1] = a })
+  return out
+}
 function extrasV0(c, desde, hasta) {
   const out = [], f = (nombre, x) => out.push({ nombre, r: () => x })
   const maxVelas = []; for (let t = desde; t <= hasta; t += 60) maxVelas.push({ time: t, open: 1.1, high: 1.1001, low: 1.0999, close: 1.1, volume: 1 })
@@ -135,7 +165,9 @@ function llamaV1(objetivo, forma) {
     return { http: 200, cuerpo: f.cuerpo }
   }
 }
-const cargaV1 = async llama => { try { return await VV.cargaVelasV1({ llama, sessionId: 's', pair: 'EUR/USD', dateFrom: '2026-03-02', dateTo: '2026-03-06' }) } catch (e) { return { lanza: String(e?.message ?? e) } } }
+// como el hook (components/usePairData.js cargaPar): la respuesta de la carga pasa por la frontera del contexto antes de nada
+const comoElHook = r => { if (!FR?.fronteraContexto || !r || r.lanza || r.error) return r; try { return FR.fronteraContexto(r) } catch (e) { return { lanza: `frontera: ${e?.message ?? e}` } } }
+const cargaV1 = async llama => { try { return comoElHook(await VV.cargaVelasV1({ llama, sessionId: 's', pair: 'EUR/USD', dateFrom: '2026-03-02', dateTo: '2026-03-06' })) } catch (e) { return { lanza: String(e?.message ?? e) } } }
 
 // ═══ v0 ═══
 escenario({ perfiles: [perfil(A)] })
@@ -152,13 +184,32 @@ async function cargaV0(anioObjetivo, forma) {
     else if (f.plazo) retenApi.antes = s => (anio(s) === anioObjetivo ? nunca : null)
     else retenApi.responde = s => (anio(s) !== anioObjetivo ? null : f.http ? respuesta(f.http, f.cuerpoError ?? { error: 'ficticio' }) : 'cuerpoCrudo' in f ? respuesta(200, f.cuerpoCrudo) : respuesta(200, f.cuerpo))
   }
-  try { return await SD.fetchSessionCandles({ pair: 'EUR/USD', dateFrom: '2026-03-02', dateTo: '2026-03-06' }) } catch (e) { return { lanza: String(e?.message ?? e) } } finally { retenApi.antes = null; retenApi.responde = null }
+  try { return comoElHook(await SD.fetchSessionCandles({ pair: 'EUR/USD', dateFrom: '2026-03-02', dateTo: '2026-03-06' })) } catch (e) { return { lanza: String(e?.message ?? e) } } finally { retenApi.antes = null; retenApi.responde = null }
 }
 
+// orden 1-189: los calculos derivados de verdad sobre lo cargado: el motor del replay en la ultima vela, getAggregated de cada
+// timeframe (M1…W1: open/high/low/close/volume finitos, volumen ≥ 0, tiempos enteros en orden) y las killzones de cada uno
+const KZ_TODAS = { asia: true, london: true, nyam: true, nypm: true }
+function derivados(candles) {
+  try {
+    const e = new RE(); e.load(candles); e.seekToTime(candles.at(-1).time)
+    for (const tf of Object.keys(TIMEFRAMES)) {
+      e._aggCache = null
+      const agg = e.getAggregated(tf)
+      for (let i = 0; i < agg.length; i++) {
+        const b = agg[i]
+        if (!Number.isSafeInteger(b.time) || (i && agg[i - 1].time >= b.time) || ![b.open, b.high, b.low, b.close, b.volume].every(Number.isFinite) || b.volume < 0) return `agregado ${tf} no finito: ${tx(b).slice(0, 120)}`
+      }
+      for (const k of KZ.calcSessions(agg, KZ_TODAS)) if (![k.high, k.low].every(Number.isFinite)) return `killzone ${tf} no finita`
+    }
+    return null
+  } catch (err) { return `un calculo derivado lanza: ${err?.message ?? err}` }
+}
 // ── el juicio ──
 function juzga(que, r, sana) {
   const f = []
   if (r?.lanza) f.push(`lanza: ${r.lanza}`)
+  if (!r?.lanza && !r?.error && r && Array.isArray(r.candles) && r.candles.length) { const d = derivados(r.candles); if (d) f.push(d) }
   if (que === 'contexto') {
     if (r?.error) f.push(`error del par: ${r.error}`)
     else if (!r?.lanza) {
@@ -198,14 +249,16 @@ for (const [modo, carga, objetivos] of [
     const ctxTs = D('2026-03-02') - 180 * 86400, fin2025 = Math.floor(new Date('2025-12-31T23:59:59').getTime() / 1000), fin2026 = Math.floor(new Date('2026-03-06T23:59:59').getTime() / 1000)
     const aMinuto = t => Math.floor(t / 60) * 60
     const tramoV0 = que === 'contexto' ? [Math.ceil(ctxTs / 60) * 60, aMinuto(fin2025)] : [D('2026-01-01'), aMinuto(fin2026)]
-    const fs_ = [...formas(base[que]), ...(modo === 'v1' ? extrasV1(base[que], ...lim) : extrasV0(base[que], ...tramoV0))]
-    const mal = [], maximos = [], encima = []
+    const fs_ = [...formas(base[que]), ...(modo === 'v1' ? extrasV1(base[que], ...lim) : extrasV0(base[que], ...tramoV0)),
+      ...(modo === 'v1' ? valores(base[que], 'velas', { time: 0, open: 1, high: 2, low: 3, close: 4, volume: 5 }) : valores(base[que], 'candles', {}))]
+    const mal = [], maximos = [], encima = [], vals = []
     let avisadas = 0
     for (const forma of fs_) {
       const r = await carga(objetivos[que], forma)
       if (r?.contextoIncompleto) avisadas++
-      if (que === 'contexto' && /el maximo/.test(forma.nombre)) maximos.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, error: r?.error ?? null, lanza: r?.lanza ?? null })
-      if (que === 'contexto' && /por encima/.test(forma.nombre)) encima.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, lanza: r?.lanza ?? null })
+      if (que === 'contexto' && /^tamaño.*el maximo/.test(forma.nombre)) maximos.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, error: r?.error ?? null, lanza: r?.lanza ?? null })
+      if (que === 'contexto' && /^valores · /.test(forma.nombre)) vals.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, aceptable: ACEPTABLES.test(forma.nombre), error: r?.error ?? null, lanza: r?.lanza ?? null })
+      if (que === 'contexto' && /^tamaño.*por encima/.test(forma.nombre)) encima.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, lanza: r?.lanza ?? null })
       const fallos = juzga(que, r, sana)
       if (fallos.length) mal.push({ forma: forma.nombre, fallos })
     }
@@ -214,7 +267,9 @@ for (const [modo, carga, objetivos] of [
     if (que === 'contexto') ver(`control: ${modo} · el detector avisa en alguna forma del contexto (no aprueba en vacio)`, avisadas > 0, `${avisadas} de ${fs_.length}`)
     if (que === 'contexto') oraculo('CV06', `${modo} · tamaño: el maximo que devuelve el servidor real se acepta (sin aviso) y uno por encima se descarta con aviso`,
       maximos.length > 0 && encima.length > 0 && maximos.every(x => !x.aviso && !x.error && !x.lanza) && encima.every(x => x.aviso && !x.lanza), tx({ maximos, encima }))
-    oraculo('CV06', `${modo} · ${que}: ${fs_.length} formas: ${que === 'contexto' ? 'ninguna lanza ni bloquea, la sesion intacta y sin NaN' : 'ninguna lanza; o error del par o velas finitas'}`, mal.length === 0,
+    if (que === 'contexto') oraculo('CV06', `${modo} · valores (1-189): el contexto con valores defectuosos se descarta con aviso; el volumen null y el hueco se aceptan; nunca error ni excepcion`,
+      vals.length > 0 && vals.every(x => !x.error && !x.lanza && (x.aceptable ? !x.aviso : x.aviso)), tx(vals.filter(x => x.error || x.lanza || (x.aceptable ? x.aviso : !x.aviso))))
+    oraculo('CV06', `${modo} · ${que}: ${fs_.length} formas: ${que === 'contexto' ? 'ninguna lanza ni bloquea, la sesion intacta, sin NaN y todos los agregados y killzones finitos' : 'ninguna lanza; o error del par o velas finitas con agregados finitos'}`, mal.length === 0,
       `${mal.length} rompen · ${tx(mal.slice(0, 5))}${mal.length ? ' · todas: ' + mal.map(x => x.forma).join(' | ').slice(0, 1200) : ''}`)
   }
 }
