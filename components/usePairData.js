@@ -20,6 +20,7 @@ import { progresoMonotono, siembraProgreso } from '../lib/sim/progreso'
 import { puedeEscribir } from '../lib/sim/servicio'
 import { avisa, avisaSiError } from '../lib/sim/avisos'
 import { fetchSessionCandles, setSeriesData, setMasterTime, getMasterTime } from '../lib/sessionData'
+import { fronteraContexto } from '../lib/fronteraContexto'
 import { captureSavedRange, initVisibleRange, restoreSavedRange, restoreOnNewBar } from '../lib/chartViewport'
 import { applyFullRender, applyTickUpdate, applyNewBarUpdate } from '../lib/chartRender'
 import { computePhantomsNeeded } from '../lib/sessionUi'
@@ -86,9 +87,13 @@ export default function usePairData({ id, session, activePair, pairState, chartM
       // orden 1-179 (d): en modo v1, el grafico pinta del MISMO mercado v1 (manifiesto y version fijados) que valora el
       // motor (pv0.velas: velas.js de la pantalla v1, GET /api/sim/velas), nunca de /api/candles
       const pv0=v1Ref?.current
-      const result = pv0 ? await pv0.velas({ pair, dateFrom: sess.date_from, dateTo: sess.date_to }) : await fetchSessionCandles({
+      const bruto = pv0 ? await pv0.velas({ pair, dateFrom: sess.date_from, dateTo: sess.date_to }) : await fetchSessionCandles({
         pair, dateFrom: sess.date_from, dateTo: sess.date_to
       })
+      // orden 1-189 (PSIMM6-01): LA FRONTERA UNICA DEL CONTEXTO (lib/fronteraContexto.js). Nada usa lo cargado sin pasar por aqui:
+      // velas canonicas y validas, y los calculos derivados (agregados de todos los timeframes, volumen, killzones) probados; un
+      // contexto que falla en cualquier fase se descarta con el aviso del historico y la sesion sigue (cv07 lo vigila en el codigo)
+      const result = fronteraContexto(bruto)
       // C04/D5: una respuesta sin velas no es silencio: error visible en el par
       if (!result) { falloPar(pair, `No hay velas de ${pair} para las fechas de esta sesion.`); return }
       // D03: sin velas validas no se crea el motor (no hay sesion «valida»)

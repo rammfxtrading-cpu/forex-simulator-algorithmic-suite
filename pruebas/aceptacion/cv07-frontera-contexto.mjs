@@ -75,9 +75,10 @@ titulo('G · la garantia sobre el codigo: ningun calculo derivado lee el context
   const usosBruto = (hook.match(/\bbruto\b/g) ?? []).length
   oraculo('CV07', 'G2 · en usePairData lo que devuelve la carga (bruto) solo se usa para pasarlo por fronteraContexto, antes que nada',
     iCarga >= 0 && iFrontera > iCarga && iLoad > iFrontera && usosBruto === 2, tx({ iCarga, iFrontera, iLoad, usosBruto }))
-  const loads = fuentes.filter(p => /\.load\s*\(/.test(codigo(lee(p))) && !/^lib\/replayEngine\.js$/.test(p))
+  // (la propia frontera arranca un motor de prueba para sus calculos derivados: es la frontera, no un consumidor)
+  const loads = fuentes.filter(p => /\.load\s*\(/.test(codigo(lee(p))) && !/^lib\/(replayEngine|fronteraContexto)\.js$/.test(p))
   const cargaDeFrontera = /engine\.load\(\s*result\.candles\s*\)/.test(hook) || /const\s*\{\s*candles\s*:\s*ordinalCandles[^}]*\}\s*=\s*result\b/.test(hook)
-  oraculo('CV07', 'G3 · el unico engine.load (fuera del propio motor) es el de usePairData y carga lo que sale de la frontera',
+  oraculo('CV07', 'G3 · el unico engine.load (fuera del propio motor y de la frontera) es el de usePairData y carga lo que sale de la frontera',
     tx(loads) === tx(['components/usePairData.js']) && cargaDeFrontera, tx({ loads, cargaDeFrontera }))
 }
 fin()

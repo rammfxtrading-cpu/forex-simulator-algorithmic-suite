@@ -257,7 +257,8 @@ for (const [modo, carga, objetivos] of [
       const r = await carga(objetivos[que], forma)
       if (r?.contextoIncompleto) avisadas++
       if (que === 'contexto' && /^tamaño.*el maximo/.test(forma.nombre)) maximos.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, error: r?.error ?? null, lanza: r?.lanza ?? null })
-      if (que === 'contexto' && /^valores · /.test(forma.nombre)) vals.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, aceptable: ACEPTABLES.test(forma.nombre), error: r?.error ?? null, lanza: r?.lanza ?? null })
+      // (volumen null: compatible en v0, donde /api/candles puede no traerlo; en v1 el servidor siempre manda un numero: alli es un defecto)
+      if (que === 'contexto' && /^valores · /.test(forma.nombre)) vals.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, aceptable: modo === 'v0' ? ACEPTABLES.test(forma.nombre) : /hueco/.test(forma.nombre), error: r?.error ?? null, lanza: r?.lanza ?? null })
       if (que === 'contexto' && /^tamaño.*por encima/.test(forma.nombre)) encima.push({ forma: forma.nombre, aviso: !!r?.contextoIncompleto, lanza: r?.lanza ?? null })
       const fallos = juzga(que, r, sana)
       if (fallos.length) mal.push({ forma: forma.nombre, fallos })
@@ -267,7 +268,7 @@ for (const [modo, carga, objetivos] of [
     if (que === 'contexto') ver(`control: ${modo} · el detector avisa en alguna forma del contexto (no aprueba en vacio)`, avisadas > 0, `${avisadas} de ${fs_.length}`)
     if (que === 'contexto') oraculo('CV06', `${modo} · tamaño: el maximo que devuelve el servidor real se acepta (sin aviso) y uno por encima se descarta con aviso`,
       maximos.length > 0 && encima.length > 0 && maximos.every(x => !x.aviso && !x.error && !x.lanza) && encima.every(x => x.aviso && !x.lanza), tx({ maximos, encima }))
-    if (que === 'contexto') oraculo('CV06', `${modo} · valores (1-189): el contexto con valores defectuosos se descarta con aviso; el volumen null y el hueco se aceptan; nunca error ni excepcion`,
+    if (que === 'contexto') oraculo('CV06', `${modo} · valores (1-189): el contexto con valores defectuosos se descarta con aviso; el hueco (y en v0 el volumen null) se aceptan; nunca error ni excepcion`,
       vals.length > 0 && vals.every(x => !x.error && !x.lanza && (x.aceptable ? !x.aviso : x.aviso)), tx(vals.filter(x => x.error || x.lanza || (x.aceptable ? x.aviso : !x.aviso))))
     oraculo('CV06', `${modo} · ${que}: ${fs_.length} formas: ${que === 'contexto' ? 'ninguna lanza ni bloquea, la sesion intacta, sin NaN y todos los agregados y killzones finitos' : 'ninguna lanza; o error del par o velas finitas con agregados finitos'}`, mal.length === 0,
       `${mal.length} rompen · ${tx(mal.slice(0, 5))}${mal.length ? ' · todas: ' + mal.map(x => x.forma).join(' | ').slice(0, 1200) : ''}`)
