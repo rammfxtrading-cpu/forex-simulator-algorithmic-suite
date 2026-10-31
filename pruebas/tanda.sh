@@ -49,10 +49,10 @@ corre() {  # corre ETIQUETA COMANDO...
 
 NODO="node --import ./pruebas/sin-red.mjs --import ./pruebas/registro.mjs"
 
-# Orden 1-185 (02): antes de la primera prueba, el barrido de los clusters simpg-* HUERFANOS (dueño muerto) de tandas o pruebas
-# anteriores; los que tienen dueño vivo (otra tanda en marcha) o sin dueño conocido no se tocan. Fuera del aislamiento (ps y
-# kill 0 tienen que ver los procesos). El recuento, en pantalla y en el log
-printf '\n######## barrido de huerfanos\n' >> "$LOG"
+# Ordenes 1-185 (02) y 1-187: antes de la primera prueba, el RECUENTO de los clusters simpg-* que parecen huerfanos (ruta, pid de
+# su dueño, estado). No para ni borra nada (cada proceso para lo suyo al salir). Fuera del aislamiento (kill 0 tiene que ver los
+# procesos). En pantalla y en el log
+printf '\n######## recuento de huerfanos\n' >> "$LOG"
 node pruebas/barre-huerfanos.mjs 2>&1 | tee -a "$LOG"
 
 echo "pruebas/"

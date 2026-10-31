@@ -1,49 +1,51 @@
-// EL BARRIDO DE CLUSTERS HUERFANOS (orden 1-185 · 02 del CTO). Lo llama pruebas/tanda.sh al arrancar, antes de la primera prueba,
-// y deja su recuento en el log. No es una prueba (la tanda no lo corre como tal).
+// EL RECUENTO DE CLUSTERS QUE PARECEN HUERFANOS (orden 1-187 del CTO, que simplifica la 1-185 · 02 tras PSIMM5-02/03 de Astra).
+// Lo llama pruebas/tanda.sh al arrancar, antes de la primera prueba, y su salida queda en el log. NO PARA NI BORRA NADA: solo
+// cuenta y lista. Parar lo suyo es cosa de cada proceso al salir (pruebas/pg-ensayo.mjs; navegador/motor-v1-real.mjs).
 //   node pruebas/barre-huerfanos.mjs [--raiz <carpeta>]…     (por defecto: el tmp del sistema, /tmp y $TMPDIR)
-// Mira SOLO las carpetas simpg-* (las de pruebas/pg-ensayo.mjs) de esas raices, nunca otra cosa (nunca ~/.pg-ensayo-macro). Para
-// cada una con su PostgreSQL EN MARCHA (pg_ctl status = 0):
-//   · HUERFANO = su fichero «dueno» dice un pid que ya no vive (kill 0 → ESRCH), o que vive pero arranco a otra hora (pid
-//     reutilizado; solo si la hora quedo apuntada) → pg_ctl stop -m fast y se borra la carpeta.
-//   · con dueño vivo (kill 0 bien o EPERM: en la duda, vivo) → no se toca (p. ej. una tanda de Astra en paralelo).
-//   · sin dueño conocido (sin «dueno» legible: clusters de antes de r4c u otros) → no se toca; se cuenta.
-// Las paradas (sin PostgreSQL en marcha) no se tocan. Sale con 0 (2 si los argumentos estan mal).
-import { readdirSync, readFileSync, lstatSync, rmSync, existsSync } from 'node:fs'
+// Mira solo las entradas simpg-<alfanumerico> de esas raices (nunca otra cosa; nunca ~/.pg-ensayo-macro), sin seguir enlaces:
+//   · la carpeta o su «d» es un enlace → «enlace: <ruta>» (no se mira lo que hay detras)
+//   · su PostgreSQL en marcha (pg_ctl status = 0) y el pid de su «dueno» ya no existe (kill 0 → ESRCH) → «parece huerfano»
+//     (ruta · pid de dueno · estado); con dueño vivo (kill 0 bien o EPERM) se cuenta; sin «dueno» legible, «sin dueño conocido»
+//   · sin PostgreSQL en marcha: se cuenta como parado
+// Sale con 0 (2 si los argumentos estan mal).
+import { readdirSync, readFileSync, lstatSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
-import { BIN, arranqueDe } from './pg-ensayo.mjs'
+import { BIN } from './pg-ensayo.mjs'
 
 const a = process.argv.slice(2), raices = []
 for (let i = 0; i < a.length; i++) { if (a[i] === '--raiz' && a[i + 1]) raices.push(a[++i]); else { console.error(`barre-huerfanos: argumento no valido: ${a[i]}`); process.exit(2) } }
 if (!raices.length) raices.push(os.tmpdir(), '/tmp', ...(process.env.TMPDIR ? [process.env.TMPDIR] : []))
-const unicas = [...new Set(raices.map(r => { try { return path.resolve(r) } catch { return r } }))]
-const vivoPg = dir => spawnSync(path.join(BIN, 'pg_ctl'), ['-D', path.join(dir, 'd'), 'status'], { encoding: 'utf8' }).status === 0
-function dueñoVivo(dir) {
+const unicas = [...new Set(raices.map(r => path.resolve(r)))]
+const enMarcha = dir => spawnSync(path.join(BIN, 'pg_ctl'), ['-D', path.join(dir, 'd'), 'status'], { encoding: 'utf8' }).status === 0
+const esEnlace = p => { try { return lstatSync(p).isSymbolicLink() } catch { return false } }
+const esCarpeta = p => { try { const s = lstatSync(p); return s.isDirectory() && !s.isSymbolicLink() } catch { return false } }
+function dueño(dir) {
+  if (esEnlace(path.join(dir, 'dueno'))) return { pid: null, vivo: null }
   let t
-  try { t = readFileSync(path.join(dir, 'dueno'), 'utf8') } catch { return null }
-  const [p, hora = ''] = t.split('\n'), pid = Number(p)
-  if (!Number.isSafeInteger(pid) || pid <= 1) return null
-  try { process.kill(pid, 0) } catch (e) { if (e.code === 'ESRCH') return false; return true }
-  if (hora.trim()) { const ahora = arranqueDe(pid); if (ahora && ahora !== hora.trim()) return false }
-  return true
+  try { t = readFileSync(path.join(dir, 'dueno'), 'utf8') } catch { return { pid: null, vivo: null } }
+  const pid = Number(t.split('\n')[0])
+  if (!Number.isSafeInteger(pid) || pid <= 1) return { pid: null, vivo: null }
+  try { process.kill(pid, 0); return { pid, vivo: true } } catch (e) { return { pid, vivo: e.code !== 'ESRCH' } }
 }
-const cuenta = { vivos: 0, huerfanos: 0, conDueño: 0, sinDueño: 0 }, parados = []
+const c = { parecenHuerfanos: 0, conDueñoVivo: 0, sinDueño: 0, parados: 0, enlaces: 0 }, lineas = []
 for (const raiz of unicas) {
   let nombres = []
   try { nombres = readdirSync(raiz) } catch { continue }
-  for (const n of nombres) {
+  for (const n of nombres.sort()) {
     if (!/^simpg-[A-Za-z0-9]+$/.test(n)) continue
     const dir = path.join(raiz, n)
     if (/pg-ensayo-macro/.test(dir)) continue
-    try { if (!lstatSync(dir).isDirectory()) continue } catch { continue }
-    if (!existsSync(path.join(dir, 'd')) || !vivoPg(dir)) continue
-    cuenta.vivos++
-    const d = dueñoVivo(dir)
-    if (d === null) { cuenta.sinDueño++; continue }
-    if (d) { cuenta.conDueño++; continue }
-    spawnSync(path.join(BIN, 'pg_ctl'), ['-D', path.join(dir, 'd'), '-m', 'fast', 'stop'], { encoding: 'utf8' })
-    if (!vivoPg(dir)) { rmSync(dir, { recursive: true, force: true }); cuenta.huerfanos++; parados.push(dir) }
+    if (esEnlace(dir) || esEnlace(path.join(dir, 'd'))) { c.enlaces++; lineas.push(`  enlace: ${dir} (no se sigue)`); continue }
+    if (!esCarpeta(dir) || !esCarpeta(path.join(dir, 'd'))) continue
+    if (!enMarcha(dir)) { c.parados++; continue }
+    const d = dueño(dir)
+    if (d.pid == null) { c.sinDueño++; continue }
+    if (d.vivo) { c.conDueñoVivo++; continue }
+    c.parecenHuerfanos++
+    lineas.push(`  parece huerfano: ${dir} · dueno ${d.pid} · PostgreSQL en marcha (dueño no existe)`)
   }
 }
-console.log(`barrido simpg-* (${unicas.join(', ')}): vivos: ${cuenta.vivos} · huerfanos parados: ${cuenta.huerfanos} · con dueño vivo: ${cuenta.conDueño} · sin dueño conocido: ${cuenta.sinDueño}${parados.length ? ' · parados: ' + parados.join(', ') : ''}`)
+console.log(`recuento simpg-* (${unicas.join(', ')}): parecen huerfanos: ${c.parecenHuerfanos} · con dueño vivo: ${c.conDueñoVivo} · sin dueño conocido: ${c.sinDueño} · parados: ${c.parados} · enlaces: ${c.enlaces} (no se para ni se borra nada)`)
+for (const l of lineas) console.log(l)
